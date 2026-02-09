@@ -66,6 +66,9 @@ export function parseApiError(error: unknown, fallback: string): ParsedApiError 
     const detail = data?.detail
     const backendMessage = data?.error?.message
 
+    if (code && code.startsWith('PASSKEY_') && backendMessage) {
+      return { code, requestId, message: backendMessage }
+    }
     if (detail && backendDetailMap[detail]) {
       return { code, requestId, message: backendDetailMap[detail] }
     }

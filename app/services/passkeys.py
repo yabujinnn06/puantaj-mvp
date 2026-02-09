@@ -251,7 +251,7 @@ def verify_registration(
             expected_challenge=base64url_to_bytes(challenge.challenge),
             expected_rp_id=get_webauthn_rp_id(),
             expected_origin=get_webauthn_origin(),
-            require_user_verification=True,
+            require_user_verification=False,
         )
     except Exception as exc:  # pragma: no cover - depends on browser payload
         raise ApiError(
@@ -396,7 +396,7 @@ def verify_recover(
             expected_origin=get_webauthn_origin(),
             credential_public_key=base64url_to_bytes(passkey.public_key),
             credential_current_sign_count=passkey.sign_count,
-            require_user_verification=True,
+            require_user_verification=False,
         )
     except Exception as exc:  # pragma: no cover - depends on browser payload
         raise ApiError(
