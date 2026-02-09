@@ -106,7 +106,14 @@ def verify_admin_credentials(username: str, password: str) -> bool:
         return False
     if not env_pass_hash:
         return False
-    return verify_password(password, env_pass_hash)
+    # Remove accidental whitespace/newline breaks introduced by dashboard copy/paste.
+    env_pass_hash = "".join(env_pass_hash.split())
+
+    if env_pass_hash.startswith("$2a$") or env_pass_hash.startswith("$2b$") or env_pass_hash.startswith("$2y$"):
+        return verify_password(password, env_pass_hash)
+
+    # Backward-compatible fallback: accept plaintext env value if hash was misconfigured.
+    return hmac.compare_digest(password, env_pass_hash)
 
 
 def empty_permissions() -> dict[str, dict[str, bool]]:
