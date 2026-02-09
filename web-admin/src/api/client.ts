@@ -4,7 +4,19 @@ import { clearAuthTokens, getAccessToken, getRefreshToken, setAuthTokens } from 
 import { parseApiError } from './error'
 import type { AdminAuthResponse } from '../types/api'
 
-const baseURL = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000'
+const defaultBaseURL =
+  typeof window !== 'undefined' ? window.location.origin : 'http://127.0.0.1:8000'
+const configuredBaseURL = import.meta.env.VITE_API_BASE_URL
+const isConfiguredLocalhost =
+  !!configuredBaseURL &&
+  (configuredBaseURL.includes('127.0.0.1') || configuredBaseURL.includes('localhost'))
+const isRemoteRuntime =
+  typeof window !== 'undefined' &&
+  window.location.hostname !== '127.0.0.1' &&
+  window.location.hostname !== 'localhost'
+
+const baseURL =
+  isRemoteRuntime && isConfiguredLocalhost ? window.location.origin : configuredBaseURL ?? defaultBaseURL
 const appBaseUrl = import.meta.env.BASE_URL ?? '/'
 const appBasePrefix =
   appBaseUrl === '/' ? '' : appBaseUrl.endsWith('/') ? appBaseUrl.slice(0, -1) : appBaseUrl
