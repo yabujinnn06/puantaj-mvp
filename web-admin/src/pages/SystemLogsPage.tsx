@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
 import { getAuditLogs, type AuditLogParams } from '../api/admin'
@@ -17,6 +17,14 @@ interface LogFilters {
   limit: string
 }
 
+type ConsoleMessageLevel = 'info' | 'success' | 'warning' | 'error'
+
+interface ConsoleMessage {
+  id: number
+  level: ConsoleMessageLevel
+  text: string
+}
+
 const DEFAULT_FILTERS: LogFilters = {
   action: '',
   entityType: '',
@@ -28,19 +36,43 @@ const DEFAULT_FILTERS: LogFilters = {
 const ACTION_OPTIONS: { value: string; label: string }[] = [
   { value: '', label: 'Tüm aksiyonlar' },
   { value: 'ADMIN_LOGIN_SUCCESS', label: 'Admin giriş başarılı' },
-  { value: 'ADMIN_LOGIN_FAIL', label: 'Admin giriş hatalı' },
-  { value: 'ADMIN_LOGOUT', label: 'Admin çıkış' },
+  { value: 'ADMIN_LOGIN_FAIL', label: 'Admin giriş başarısız' },
+  { value: 'ADMIN_REFRESH', label: 'Admin token yeniledi' },
+  { value: 'ADMIN_LOGOUT', label: 'Admin çıkış yaptı' },
   { value: 'ATTENDANCE_EVENT_CREATED', label: 'Yoklama kaydı oluşturuldu' },
-  { value: 'DEVICE_CLAIMED', label: 'Cihaz eşleştirildi' },
   { value: 'DEVICE_INVITE_CREATED', label: 'Cihaz daveti oluşturuldu' },
+  { value: 'DEVICE_CLAIMED', label: 'Cihaz eşleştirildi' },
   { value: 'LEAVE_CREATED', label: 'İzin oluşturuldu' },
   { value: 'LEAVE_DELETED', label: 'İzin silindi' },
 ]
+
+const ACTION_LABELS: Record<string, string> = {
+  ADMIN_LOGIN_SUCCESS: 'Admin giriş başarılı',
+  ADMIN_LOGIN_FAIL: 'Admin giriş başarısız',
+  ADMIN_REFRESH: 'Admin token yeniledi',
+  ADMIN_LOGOUT: 'Admin çıkış yaptı',
+  ATTENDANCE_EVENT_CREATED: 'Yoklama kaydı oluşturuldu',
+  DEVICE_INVITE_CREATED: 'Cihaz daveti oluşturuldu',
+  DEVICE_CLAIMED: 'Cihaz eşleştirildi',
+  LEAVE_CREATED: 'İzin oluşturuldu',
+  LEAVE_DELETED: 'İzin silindi',
+}
 
 function formatDateTime(value: string): string {
   return new Intl.DateTimeFormat('tr-TR', {
     dateStyle: 'short',
     timeStyle: 'medium',
+  }).format(new Date(value))
+}
+
+function formatTerminalTimestamp(value: string): string {
+  return new Intl.DateTimeFormat('tr-TR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
   }).format(new Date(value))
 }
 
@@ -53,43 +85,64 @@ function detailsPreview(details: Record<string, unknown>): string {
   if (entries.length === 0) {
     return '-'
   }
+
   return entries
     .slice(0, 3)
     .map(([key, value]) => `${key}: ${String(value)}`)
     .join(' | ')
 }
 
+function actionLabel(action: string): string {
+  return ACTION_LABELS[action] ?? action
+}
+
 function toQueryParams(filters: LogFilters): AuditLogParams {
   const parsedLimit = Number(filters.limit)
-  const safeLimit =
-    Number.isInteger(parsedLimit) && parsedLimit > 0
-      ? Math.min(parsedLimit, 500)
-      : 300
+  const safeLimit = Number.isInteger(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 500) : 300
   return {
     action: filters.action || undefined,
     entity_type: filters.entityType || undefined,
     entity_id: filters.entityId || undefined,
-    success:
-      filters.success === 'all'
-        ? undefined
-        : filters.success === 'success',
+    success: filters.success === 'all' ? undefined : filters.success === 'success',
     limit: safeLimit,
   }
+}
+
+function toTerminalLine(item: AuditLog): string {
+  const actor = `${item.actor_type}:${item.actor_id}`
+  const entity = item.entity_type ? `${item.entity_type}${item.entity_id ? `#${item.entity_id}` : ''}` : '-'
+  const ip = item.ip ?? '-'
+  return `[${formatTerminalTimestamp(item.ts_utc)}] ${item.action} actor=${actor} entity=${entity} ip=${ip}`
+}
+
+function consoleMessageClass(level: ConsoleMessageLevel): string {
+  if (level === 'success') return 'text-emerald-300'
+  if (level === 'warning') return 'text-amber-300'
+  if (level === 'error') return 'text-rose-300'
+  return 'text-cyan-300'
 }
 
 export function SystemLogsPage() {
   const [draftFilters, setDraftFilters] = useState<LogFilters>(DEFAULT_FILTERS)
   const [appliedFilters, setAppliedFilters] = useState<LogFilters>(DEFAULT_FILTERS)
   const [textSearch, setTextSearch] = useState('')
+  const [followLogs, setFollowLogs] = useState(true)
+  const [commandInput, setCommandInput] = useState('')
+  const [selectedLogId, setSelectedLogId] = useState<number | null>(null)
+  const [consoleMessages, setConsoleMessages] = useState<ConsoleMessage[]>([
+    { id: 1, level: 'info', text: 'Log terminali hazır. Yardım için "help" yazın.' },
+  ])
 
-  const queryParams = useMemo(
-    () => toQueryParams(appliedFilters),
-    [appliedFilters],
-  )
+  const messageCounterRef = useRef(2)
+  const terminalScrollRef = useRef<HTMLDivElement | null>(null)
+
+  const queryParams = useMemo(() => toQueryParams(appliedFilters), [appliedFilters])
 
   const logsQuery = useQuery({
     queryKey: ['audit-logs', queryParams],
     queryFn: () => getAuditLogs(queryParams),
+    refetchInterval: followLogs ? 8000 : false,
+    refetchIntervalInBackground: true,
   })
 
   const logs = logsQuery.data ?? []
@@ -97,6 +150,7 @@ export function SystemLogsPage() {
     if (!textSearch.trim()) {
       return logs
     }
+
     const needle = textSearch.trim().toLowerCase()
     return logs.filter((item) => {
       const haystack = [
@@ -115,14 +169,20 @@ export function SystemLogsPage() {
     })
   }, [logs, textSearch])
 
+  const selectedLog = useMemo(() => {
+    if (selectedLogId !== null) {
+      const found = visibleLogs.find((item) => item.id === selectedLogId)
+      if (found) {
+        return found
+      }
+    }
+    return visibleLogs[0] ?? null
+  }, [selectedLogId, visibleLogs])
+
   const summary = useMemo(() => {
     const failed = logs.filter((item) => !item.success).length
-    const loginEvents = logs.filter((item) =>
-      item.action.startsWith('ADMIN_LOGIN'),
-    ).length
-    const attendanceEvents = logs.filter(
-      (item) => item.action === 'ATTENDANCE_EVENT_CREATED',
-    ).length
+    const loginEvents = logs.filter((item) => item.action.startsWith('ADMIN_LOGIN')).length
+    const attendanceEvents = logs.filter((item) => item.action === 'ATTENDANCE_EVENT_CREATED').length
     return {
       total: logs.length,
       failed,
@@ -131,22 +191,159 @@ export function SystemLogsPage() {
     }
   }, [logs])
 
+  useEffect(() => {
+    if (!selectedLog && selectedLogId !== null) {
+      setSelectedLogId(null)
+    }
+  }, [selectedLog, selectedLogId])
+
+  useEffect(() => {
+    if (!followLogs || terminalScrollRef.current === null) {
+      return
+    }
+    terminalScrollRef.current.scrollTop = terminalScrollRef.current.scrollHeight
+  }, [followLogs, visibleLogs, consoleMessages])
+
+  const pushConsoleMessage = (level: ConsoleMessageLevel, text: string) => {
+    setConsoleMessages((prev) => {
+      const next = [...prev, { id: messageCounterRef.current, level, text }]
+      messageCounterRef.current += 1
+      return next.slice(-120)
+    })
+  }
+
   const applyFilters = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setAppliedFilters({ ...draftFilters })
+    pushConsoleMessage('success', 'Filtreler uygulandı.')
   }
 
   const clearFilters = () => {
     setDraftFilters(DEFAULT_FILTERS)
     setAppliedFilters(DEFAULT_FILTERS)
     setTextSearch('')
+    pushConsoleMessage('info', 'Filtreler temizlendi.')
+  }
+
+  const executeCommand = (rawCommand: string) => {
+    const command = rawCommand.trim()
+    if (!command) {
+      return
+    }
+
+    pushConsoleMessage('info', `$ ${command}`)
+    const [nameRaw, ...args] = command.split(/\s+/)
+    const name = nameRaw.toLowerCase()
+    const value = command.slice(nameRaw.length).trim()
+
+    if (name === 'help' || name === 'yardim' || name === 'yardım') {
+      pushConsoleMessage('info', 'Komutlar: help, clear, apply, reset, refresh, follow on|off, status all|success|failed, action <AKSIYON>, search <METIN>, limit <N>')
+      return
+    }
+
+    if (name === 'clear' || name === 'temizle') {
+      setConsoleMessages([])
+      messageCounterRef.current = 1
+      pushConsoleMessage('success', 'Terminal çıktı geçmişi temizlendi.')
+      return
+    }
+
+    if (name === 'apply' || name === 'uygula') {
+      setAppliedFilters({ ...draftFilters })
+      pushConsoleMessage('success', 'Taslak filtreler uygulandı.')
+      return
+    }
+
+    if (name === 'reset' || name === 'sifirla' || name === 'sıfırla') {
+      setDraftFilters(DEFAULT_FILTERS)
+      setAppliedFilters(DEFAULT_FILTERS)
+      setTextSearch('')
+      pushConsoleMessage('warning', 'Filtreler sıfırlandı.')
+      return
+    }
+
+    if (name === 'refresh' || name === 'yenile') {
+      void logsQuery.refetch()
+      pushConsoleMessage('success', 'Log verisi yeniden çekiliyor.')
+      return
+    }
+
+    if (name === 'follow' || name === 'takip') {
+      const mode = args[0]?.toLowerCase()
+      if (mode === 'on' || mode === 'ac' || mode === 'aç') {
+        setFollowLogs(true)
+        pushConsoleMessage('success', 'Canlı takip açıldı.')
+        return
+      }
+      if (mode === 'off' || mode === 'kapat') {
+        setFollowLogs(false)
+        pushConsoleMessage('warning', 'Canlı takip kapatıldı.')
+        return
+      }
+      pushConsoleMessage('error', 'Kullanım: follow on|off')
+      return
+    }
+
+    if (name === 'status' || name === 'durum') {
+      const mode = args[0]?.toLowerCase()
+      let next: LogFilters['success'] | null = null
+      if (mode === 'all' || mode === 'tum' || mode === 'tümü') next = 'all'
+      if (mode === 'success' || mode === 'ok' || mode === 'basarili' || mode === 'başarılı') next = 'success'
+      if (mode === 'failed' || mode === 'error' || mode === 'hata') next = 'failed'
+      if (next === null) {
+        pushConsoleMessage('error', 'Kullanım: status all|success|failed')
+        return
+      }
+      setDraftFilters((prev) => ({ ...prev, success: next as LogFilters['success'] }))
+      setAppliedFilters((prev) => ({ ...prev, success: next as LogFilters['success'] }))
+      pushConsoleMessage('success', `Durum filtresi güncellendi: ${next}`)
+      return
+    }
+
+    if (name === 'action' || name === 'aksiyon') {
+      if (!value) {
+        pushConsoleMessage('error', 'Kullanım: action <AKSIYON_KODU>')
+        return
+      }
+      setDraftFilters((prev) => ({ ...prev, action: value }))
+      setAppliedFilters((prev) => ({ ...prev, action: value }))
+      pushConsoleMessage('success', `Aksiyon filtresi güncellendi: ${value}`)
+      return
+    }
+
+    if (name === 'search' || name === 'ara') {
+      setTextSearch(value)
+      pushConsoleMessage('success', value ? `Metin araması uygulandı: "${value}"` : 'Metin araması temizlendi.')
+      return
+    }
+
+    if (name === 'limit') {
+      const parsed = Number(args[0])
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        pushConsoleMessage('error', 'Kullanım: limit <1-500>')
+        return
+      }
+      const safe = Math.min(Math.max(Math.trunc(parsed), 1), 500)
+      setDraftFilters((prev) => ({ ...prev, limit: String(safe) }))
+      setAppliedFilters((prev) => ({ ...prev, limit: String(safe) }))
+      pushConsoleMessage('success', `Limit güncellendi: ${safe}`)
+      return
+    }
+
+    pushConsoleMessage('error', `Bilinmeyen komut: ${name}. Yardım için "help" yazın.`)
+  }
+
+  const handleCommandSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    executeCommand(commandInput)
+    setCommandInput('')
   }
 
   return (
     <div className="space-y-4">
       <PageHeader
         title="Sistem Logları"
-        description="Program hareketleri, hata kayıtları, giriş/çıkış ve yoklama işlemlerini takip edin."
+        description="Program hareketleri, hata kayıtları, giriş/çıkış ve yoklama işlemlerini terminal görünümünde izleyin."
       />
 
       <Panel>
@@ -168,6 +365,38 @@ export function SystemLogsPage() {
             <p className="text-sm font-semibold text-slate-900">{summary.attendanceEvents}</p>
           </div>
         </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setFollowLogs((prev) => !prev)
+              pushConsoleMessage('info', followLogs ? 'Canlı takip kapatıldı.' : 'Canlı takip açıldı.')
+            }}
+            className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
+              followLogs ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-700'
+            }`}
+          >
+            {followLogs ? 'Canlı takip: Açık' : 'Canlı takip: Kapalı'}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              void logsQuery.refetch()
+              pushConsoleMessage('success', 'Log listesi manuel yenilendi.')
+            }}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+          >
+            Yenile
+          </button>
+          <button
+            type="button"
+            onClick={clearFilters}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+          >
+            Filtreleri temizle
+          </button>
+        </div>
       </Panel>
 
       <Panel>
@@ -178,12 +407,7 @@ export function SystemLogsPage() {
               Aksiyon
               <select
                 value={draftFilters.action}
-                onChange={(event) =>
-                  setDraftFilters((prev) => ({
-                    ...prev,
-                    action: event.target.value,
-                  }))
-                }
+                onChange={(event) => setDraftFilters((prev) => ({ ...prev, action: event.target.value }))}
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
               >
                 {ACTION_OPTIONS.map((option) => (
@@ -199,12 +423,7 @@ export function SystemLogsPage() {
               <input
                 type="text"
                 value={draftFilters.entityType}
-                onChange={(event) =>
-                  setDraftFilters((prev) => ({
-                    ...prev,
-                    entityType: event.target.value,
-                  }))
-                }
+                onChange={(event) => setDraftFilters((prev) => ({ ...prev, entityType: event.target.value }))}
                 placeholder="attendance_event / leave"
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
               />
@@ -215,12 +434,7 @@ export function SystemLogsPage() {
               <input
                 type="text"
                 value={draftFilters.entityId}
-                onChange={(event) =>
-                  setDraftFilters((prev) => ({
-                    ...prev,
-                    entityId: event.target.value,
-                  }))
-                }
+                onChange={(event) => setDraftFilters((prev) => ({ ...prev, entityId: event.target.value }))}
                 placeholder="Örn: 42"
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
               />
@@ -231,10 +445,7 @@ export function SystemLogsPage() {
               <select
                 value={draftFilters.success}
                 onChange={(event) =>
-                  setDraftFilters((prev) => ({
-                    ...prev,
-                    success: event.target.value as LogFilters['success'],
-                  }))
+                  setDraftFilters((prev) => ({ ...prev, success: event.target.value as LogFilters['success'] }))
                 }
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
               >
@@ -251,12 +462,7 @@ export function SystemLogsPage() {
                 min={1}
                 max={500}
                 value={draftFilters.limit}
-                onChange={(event) =>
-                  setDraftFilters((prev) => ({
-                    ...prev,
-                    limit: event.target.value,
-                  }))
-                }
+                onChange={(event) => setDraftFilters((prev) => ({ ...prev, limit: event.target.value }))}
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
               />
             </label>
@@ -293,80 +499,123 @@ export function SystemLogsPage() {
       <Panel>
         {logsQuery.isLoading ? <LoadingBlock label="Log kayıtları yükleniyor..." /> : null}
         {logsQuery.isError ? (
-          <ErrorBlock
-            message={parseApiError(logsQuery.error, 'Log kayıtları alınamadı.').message}
-          />
+          <ErrorBlock message={parseApiError(logsQuery.error, 'Log kayıtları alınamadı.').message} />
         ) : null}
 
         {!logsQuery.isLoading && !logsQuery.isError ? (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
-              <thead className="text-xs uppercase text-slate-500">
-                <tr>
-                  <th className="py-2">Zaman</th>
-                  <th className="py-2">Aksiyon</th>
-                  <th className="py-2">Durum</th>
-                  <th className="py-2">Aktör</th>
-                  <th className="py-2">Varlık</th>
-                  <th className="py-2">IP</th>
-                  <th className="py-2">Detay</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleLogs.map((item) => (
-                  <LogRow key={item.id} item={item} />
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <section className="overflow-hidden rounded-xl border border-slate-900 bg-[#09131d] text-slate-200 shadow-inner">
+              <div className="flex items-center justify-between border-b border-slate-700 bg-slate-900/70 px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <span className="h-2.5 w-2.5 rounded-full bg-rose-400" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-amber-300" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
+                  <span className="ml-2 text-xs font-semibold text-slate-300">audit-terminal</span>
+                </div>
+                <span className="text-[11px] text-slate-400">
+                  {followLogs ? 'FOLLOW MODE' : 'MANUAL MODE'} • {visibleLogs.length} kayıt
+                </span>
+              </div>
+
+              <form onSubmit={handleCommandSubmit} className="border-b border-slate-700 bg-slate-900/50 p-2">
+                <label className="flex items-center gap-2 text-xs font-mono text-emerald-300">
+                  <span>admin@audit:~$</span>
+                  <input
+                    value={commandInput}
+                    onChange={(event) => setCommandInput(event.target.value)}
+                    placeholder='help, follow on, status failed, action ATTENDANCE_EVENT_CREATED, search duplicate, limit 200...'
+                    className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 font-mono text-xs text-slate-100 placeholder:text-slate-500 focus:border-cyan-400"
+                  />
+                </label>
+              </form>
+
+              <div ref={terminalScrollRef} className="h-[520px] overflow-y-auto px-3 py-2 font-mono text-xs">
+                {consoleMessages.map((item) => (
+                  <p key={item.id} className={`leading-6 ${consoleMessageClass(item.level)}`}>
+                    {item.text}
+                  </p>
                 ))}
-              </tbody>
-            </table>
-            {visibleLogs.length === 0 ? (
-              <p className="mt-3 text-sm text-slate-500">
-                Filtreye uygun log kaydı bulunamadı.
-              </p>
-            ) : null}
+
+                {visibleLogs.map((item) => {
+                  const isSelected = selectedLog?.id === item.id
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setSelectedLogId(item.id)}
+                      className={`mt-1 block w-full rounded px-2 py-1 text-left leading-6 ${
+                        isSelected ? 'bg-cyan-900/40 ring-1 ring-cyan-500/40' : 'hover:bg-slate-800/60'
+                      }`}
+                    >
+                      <span className={item.success ? 'text-emerald-300' : 'text-rose-300'}>
+                        {item.success ? '[OK]' : '[ERR]'}
+                      </span>{' '}
+                      <span className="text-slate-200">{toTerminalLine(item)}</span>
+                    </button>
+                  )
+                })}
+
+                {visibleLogs.length === 0 ? (
+                  <p className="mt-2 text-amber-300">Filtreye uygun log kaydı bulunamadı.</p>
+                ) : null}
+              </div>
+            </section>
+
+            <aside className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <h5 className="text-sm font-semibold text-slate-900">Seçili log detayı</h5>
+              {selectedLog === null ? (
+                <p className="mt-3 text-sm text-slate-600">Listeden bir kayıt seçin.</p>
+              ) : (
+                <div className="mt-3 space-y-3">
+                  <div className="rounded-lg border border-slate-200 bg-white p-2">
+                    <p className="text-xs text-slate-500">Aksiyon</p>
+                    <p className="text-sm font-semibold text-slate-900">{actionLabel(selectedLog.action)}</p>
+                    <p className="mt-1 text-xs text-slate-500">{selectedLog.action}</p>
+                  </div>
+
+                  <div className="rounded-lg border border-slate-200 bg-white p-2 text-sm text-slate-700">
+                    <p>
+                      <span className="font-semibold">Zaman:</span> {formatDateTime(selectedLog.ts_utc)}
+                    </p>
+                    <p>
+                      <span className="font-semibold">Aktör:</span> {selectedLog.actor_type}:{selectedLog.actor_id}
+                    </p>
+                    <p>
+                      <span className="font-semibold">Durum:</span> {successLabel(selectedLog.success)}
+                    </p>
+                    <p>
+                      <span className="font-semibold">Varlık:</span>{' '}
+                      {selectedLog.entity_type ?? '-'}
+                      {selectedLog.entity_id ? ` #${selectedLog.entity_id}` : ''}
+                    </p>
+                    <p>
+                      <span className="font-semibold">IP:</span> {selectedLog.ip ?? '-'}
+                    </p>
+                    <p className="break-all">
+                      <span className="font-semibold">User Agent:</span> {selectedLog.user_agent ?? '-'}
+                    </p>
+                    <p>
+                      <span className="font-semibold">Detay özeti:</span> {detailsPreview(selectedLog.details)}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="mb-1 text-xs font-semibold text-slate-600">JSON detay</p>
+                    <pre className="max-h-64 overflow-auto rounded-lg bg-slate-900 p-2 text-[11px] text-slate-100">
+                      {JSON.stringify(selectedLog.details, null, 2)}
+                    </pre>
+                  </div>
+
+                  <div className="rounded-lg border border-slate-200 bg-white p-2 text-xs text-slate-500">
+                    <p>İpucu: Satıra tıklayıp detayı sağ panelden inceleyin.</p>
+                    <p className="mt-1">Komut satırı için: help, follow on/off, status, action, search, limit.</p>
+                  </div>
+                </div>
+              )}
+            </aside>
           </div>
         ) : null}
       </Panel>
     </div>
-  )
-}
-
-function LogRow({ item }: { item: AuditLog }) {
-  return (
-    <tr className="border-t border-slate-100 align-top">
-      <td className="py-2 whitespace-nowrap">{formatDateTime(item.ts_utc)}</td>
-      <td className="py-2 font-medium text-slate-900">{item.action}</td>
-      <td className="py-2">
-        <span
-          className={`inline-flex rounded-full px-2 py-1 text-[11px] font-semibold ${
-            item.success
-              ? 'bg-emerald-100 text-emerald-700'
-              : 'bg-rose-100 text-rose-700'
-          }`}
-        >
-          {successLabel(item.success)}
-        </span>
-      </td>
-      <td className="py-2">
-        {item.actor_type}:{item.actor_id}
-      </td>
-      <td className="py-2">
-        {item.entity_type ?? '-'}
-        {item.entity_id ? ` #${item.entity_id}` : ''}
-      </td>
-      <td className="py-2">{item.ip ?? '-'}</td>
-      <td className="py-2 max-w-xl">
-        <p className="text-xs text-slate-600">{detailsPreview(item.details)}</p>
-        {Object.keys(item.details).length > 0 ? (
-          <details className="mt-1 text-xs">
-            <summary className="cursor-pointer text-brand-700 hover:text-brand-900">
-              Tam detayı göster
-            </summary>
-            <pre className="mt-1 overflow-x-auto rounded bg-slate-900 p-2 text-[11px] text-slate-100">
-              {JSON.stringify(item.details, null, 2)}
-            </pre>
-          </details>
-        ) : null}
-      </td>
-    </tr>
   )
 }
