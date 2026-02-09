@@ -4,6 +4,7 @@ import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-r
 import { BrandSignature } from './components/BrandSignature'
 import { ClaimPage } from './pages/ClaimPage'
 import { HomePage } from './pages/HomePage'
+import { RecoverPage } from './pages/RecoverPage'
 import { getStoredDeviceFingerprint } from './utils/device'
 
 function EmployeeRouteGuard({ children }: { children: ReactNode }) {
@@ -16,15 +17,15 @@ function EmployeeRouteGuard({ children }: { children: ReactNode }) {
       return
     }
 
-    const timer = window.setTimeout(() => {
-      navigate('/claim', {
+    const recoverTimer = window.setTimeout(() => {
+      navigate('/recover', {
         replace: true,
         state: { from: `${location.pathname}${location.search}` },
       })
-    }, 1200)
+    }, 150)
 
     return () => {
-      window.clearTimeout(timer)
+      window.clearTimeout(recoverTimer)
     }
   }, [hasDeviceFingerprint, location.pathname, location.search, navigate])
 
@@ -40,8 +41,8 @@ function EmployeeRouteGuard({ children }: { children: ReactNode }) {
             <p className="chip chip-warn">Uyarı</p>
             <h1>Cihaz Bağlantısı Gerekli</h1>
           </div>
-          <Link className="topbar-link" to="/claim">
-            Aktivasyon
+          <Link className="topbar-link" to="/recover">
+            Kurtarma
           </Link>
         </div>
         <div className="warn-box banner-warning">
@@ -49,13 +50,13 @@ function EmployeeRouteGuard({ children }: { children: ReactNode }) {
             <span className="banner-icon" aria-hidden="true">
               !
             </span>
-            Cihaz bağlı değil. Aktivasyon linki ile cihazı bağlayın.
+            Cihaz bağlı değil. Önce passkey kurtarma deneyin, olmazsa aktivasyon linki kullanın.
           </p>
         </div>
-        <p className="muted">Aktivasyon ekranına yönlendiriliyorsunuz...</p>
+        <p className="muted">Passkey kurtarma ekranına yönlendiriliyorsunuz...</p>
         <div className="footer-link">
-          <Link className="inline-link" to="/claim">
-            Aktivasyon ekranına git
+          <Link className="inline-link" to="/recover">
+            Kurtarma ekranına git
           </Link>
         </div>
         <BrandSignature />
@@ -96,6 +97,7 @@ export default function App() {
         }
       />
       <Route path="claim" element={<ClaimPage />} />
+      <Route path="recover" element={<RecoverPage />} />
       <Route path="settings" element={<Navigate to="/" replace />} />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>

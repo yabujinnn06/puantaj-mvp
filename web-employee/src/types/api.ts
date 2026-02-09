@@ -68,6 +68,45 @@ export interface EmployeeStatusResponse {
   suggested_action?: string | null
   last_checkin_time_utc?: string | null
   home_location_required?: boolean
+  passkey_registered?: boolean | null
+}
+
+export interface PasskeyRegisterOptionsRequest {
+  device_fingerprint: string
+}
+
+export interface PasskeyRegisterOptionsResponse {
+  challenge_id: number
+  expires_at: string
+  options: Record<string, unknown>
+}
+
+export interface PasskeyRegisterVerifyRequest {
+  challenge_id: number
+  credential: Record<string, unknown>
+}
+
+export interface PasskeyRegisterVerifyResponse {
+  ok: boolean
+  passkey_id: number
+}
+
+export interface PasskeyRecoverOptionsResponse {
+  challenge_id: number
+  expires_at: string
+  options: Record<string, unknown>
+}
+
+export interface PasskeyRecoverVerifyRequest {
+  challenge_id: number
+  credential: Record<string, unknown>
+}
+
+export interface PasskeyRecoverVerifyResponse {
+  ok: boolean
+  employee_id: number
+  device_id: number
+  device_fingerprint: string
 }
 
 export interface ApiErrorShape {

@@ -1,4 +1,5 @@
 from functools import lru_cache
+from urllib.parse import urlparse
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -18,6 +19,11 @@ class Settings(BaseSettings):
     base_public_url: str | None = None
     employee_portal_base_url: str = "http://127.0.0.1:8000/employee"
     attendance_timezone: str = "Europe/Istanbul"
+    passkey_mode: str = "off"
+    webauthn_rp_id: str | None = None
+    webauthn_rp_name: str = "PuantajMVP"
+    webauthn_origin: str | None = None
+    passkey_challenge_minutes: int = 10
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -44,4 +50,31 @@ def get_employee_portal_base_url() -> str:
             return base
         return f"{base}/employee"
     return settings.employee_portal_base_url.rstrip("/")
+
+
+def get_public_base_url() -> str:
+    settings = get_settings()
+    if settings.base_public_url:
+        return settings.base_public_url.rstrip("/")
+    return "http://127.0.0.1:8000"
+
+
+def get_webauthn_origin() -> str:
+    settings = get_settings()
+    if settings.webauthn_origin:
+        return settings.webauthn_origin.rstrip("/")
+    return get_public_base_url()
+
+
+def get_webauthn_rp_id() -> str:
+    settings = get_settings()
+    if settings.webauthn_rp_id:
+        return settings.webauthn_rp_id.strip().lower()
+
+    origin = get_webauthn_origin()
+    parsed = urlparse(origin)
+    host = (parsed.hostname or "").strip().lower()
+    if not host:
+        return "localhost"
+    return host
 

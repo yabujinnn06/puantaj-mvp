@@ -162,6 +162,68 @@ class Device(Base):
 
     employee: Mapped[Employee] = relationship(back_populates="devices")
     attendance_events: Mapped[list[AttendanceEvent]] = relationship(back_populates="device")
+    passkeys: Mapped[list[DevicePasskey]] = relationship(
+        back_populates="device",
+        cascade="all, delete-orphan",
+    )
+
+
+class DevicePasskey(Base):
+    __tablename__ = "device_passkeys"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    device_id: Mapped[int] = mapped_column(
+        ForeignKey("devices.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    credential_id: Mapped[str] = mapped_column(String(512), nullable=False, unique=True, index=True)
+    public_key: Mapped[str] = mapped_column(Text, nullable=False)
+    sign_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    transports: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    device: Mapped[Device] = relationship(back_populates="passkeys")
+
+
+class WebAuthnChallenge(Base):
+    __tablename__ = "webauthn_challenges"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    purpose: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    challenge: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    device_id: Mapped[int | None] = mapped_column(
+        ForeignKey("devices.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ip: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    device: Mapped[Device | None] = relationship()
 
 
 class DeviceInvite(Base):

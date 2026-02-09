@@ -46,6 +46,10 @@ export function getOrCreateDeviceFingerprint(): string {
   return fingerprint
 }
 
+export function setStoredDeviceFingerprint(value: string): void {
+  localStorage.setItem(DEVICE_FINGERPRINT_KEY, value)
+}
+
 export function getDeviceBinding(): DeviceBinding | null {
   const raw = localStorage.getItem(DEVICE_BINDING_KEY)
   if (!raw) {

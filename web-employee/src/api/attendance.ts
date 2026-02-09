@@ -1,4 +1,4 @@
-import axios from 'axios'
+﻿import axios from 'axios'
 
 import { apiClient } from './client'
 import type {
@@ -11,6 +11,13 @@ import type {
   EmployeeHomeLocationSetRequest,
   EmployeeHomeLocationSetResponse,
   EmployeeStatusResponse,
+  PasskeyRecoverOptionsResponse,
+  PasskeyRecoverVerifyRequest,
+  PasskeyRecoverVerifyResponse,
+  PasskeyRegisterOptionsRequest,
+  PasskeyRegisterOptionsResponse,
+  PasskeyRegisterVerifyRequest,
+  PasskeyRegisterVerifyResponse,
 } from '../types/api'
 
 export interface ParsedApiError {
@@ -29,6 +36,14 @@ const errorCodeMap: Record<string, string> = {
   ALREADY_CHECKED_IN: 'Bugün zaten giriş yaptınız. Mesaiyi bitirmeniz bekleniyor.',
   ALREADY_CHECKED_OUT: 'Bugün için çıkış işlemi zaten yapılmış.',
   DAY_ALREADY_FINISHED: 'Bugünkü mesai tamamlandı. Yeni giriş yarın yapılabilir.',
+  PASSKEY_DISABLED: 'Passkey özelliği şu anda devre dışı.',
+  PASSKEY_RUNTIME_UNAVAILABLE: 'Passkey altyapısı hazır değil.',
+  PASSKEY_CHALLENGE_NOT_FOUND: 'Passkey doğrulama oturumu bulunamadı.',
+  PASSKEY_CHALLENGE_USED: 'Bu passkey doğrulama oturumu daha önce kullanılmış.',
+  PASSKEY_CHALLENGE_EXPIRED: 'Passkey doğrulama süresi doldu.',
+  PASSKEY_REGISTRATION_FAILED: 'Passkey kaydı doğrulanamadı.',
+  PASSKEY_AUTH_FAILED: 'Passkey doğrulaması başarısız oldu.',
+  PASSKEY_NOT_REGISTERED: 'Bu cihaz için passkey kaydı bulunamadı.',
 }
 
 const backendDetailMap: Record<string, string> = {
@@ -103,5 +118,40 @@ export async function getEmployeeStatus(deviceFingerprint: string): Promise<Empl
   const response = await apiClient.get<EmployeeStatusResponse>('/api/employee/status', {
     params: { device_fingerprint: deviceFingerprint },
   })
+  return response.data
+}
+
+export async function getPasskeyRegisterOptions(
+  payload: PasskeyRegisterOptionsRequest,
+): Promise<PasskeyRegisterOptionsResponse> {
+  const response = await apiClient.post<PasskeyRegisterOptionsResponse>(
+    '/api/device/passkey/register/options',
+    payload,
+  )
+  return response.data
+}
+
+export async function verifyPasskeyRegistration(
+  payload: PasskeyRegisterVerifyRequest,
+): Promise<PasskeyRegisterVerifyResponse> {
+  const response = await apiClient.post<PasskeyRegisterVerifyResponse>(
+    '/api/device/passkey/register/verify',
+    payload,
+  )
+  return response.data
+}
+
+export async function getPasskeyRecoverOptions(): Promise<PasskeyRecoverOptionsResponse> {
+  const response = await apiClient.post<PasskeyRecoverOptionsResponse>('/api/device/passkey/recover/options')
+  return response.data
+}
+
+export async function verifyPasskeyRecover(
+  payload: PasskeyRecoverVerifyRequest,
+): Promise<PasskeyRecoverVerifyResponse> {
+  const response = await apiClient.post<PasskeyRecoverVerifyResponse>(
+    '/api/device/passkey/recover/verify',
+    payload,
+  )
   return response.data
 }

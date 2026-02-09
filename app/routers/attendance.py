@@ -20,6 +20,13 @@ from app.schemas import (
     EmployeeHomeLocationSetRequest,
     EmployeeHomeLocationSetResponse,
     EmployeeStatusResponse,
+    PasskeyRecoverOptionsResponse,
+    PasskeyRecoverVerifyRequest,
+    PasskeyRecoverVerifyResponse,
+    PasskeyRegisterOptionsRequest,
+    PasskeyRegisterOptionsResponse,
+    PasskeyRegisterVerifyRequest,
+    PasskeyRegisterVerifyResponse,
 )
 from app.services.attendance import (
     create_employee_home_location,
@@ -27,6 +34,12 @@ from app.services.attendance import (
     create_checkin_event,
     create_checkout_event,
     get_employee_status_by_device,
+)
+from app.services.passkeys import (
+    create_recover_options,
+    create_registration_options,
+    verify_recover,
+    verify_registration,
 )
 
 router = APIRouter(tags=["attendance"])
@@ -275,6 +288,147 @@ def claim_device(
         request_id=getattr(request.state, "request_id", None),
     )
     return DeviceClaimResponse(ok=True, employee_id=invite.employee_id, device_id=device.id)
+
+
+@router.post(
+    "/api/device/passkey/register/options",
+    response_model=PasskeyRegisterOptionsResponse,
+)
+def device_passkey_register_options(
+    payload: PasskeyRegisterOptionsRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> PasskeyRegisterOptionsResponse:
+    request.state.actor = "employee"
+    challenge, options_json = create_registration_options(
+        db,
+        device_fingerprint=payload.device_fingerprint,
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+    )
+    request.state.employee_id = challenge.device.employee_id if challenge.device is not None else None
+    log_audit(
+        db,
+        actor_type=AuditActorType.SYSTEM,
+        actor_id=str(request.state.employee_id or "unknown"),
+        action="PASSKEY_REGISTER_OPTIONS_CREATED",
+        success=True,
+        entity_type="webauthn_challenge",
+        entity_id=str(challenge.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={"purpose": "register"},
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return PasskeyRegisterOptionsResponse(
+        challenge_id=challenge.id,
+        expires_at=challenge.expires_at,
+        options=options_json,
+    )
+
+
+@router.post(
+    "/api/device/passkey/register/verify",
+    response_model=PasskeyRegisterVerifyResponse,
+)
+def device_passkey_register_verify(
+    payload: PasskeyRegisterVerifyRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> PasskeyRegisterVerifyResponse:
+    request.state.actor = "employee"
+    passkey = verify_registration(
+        db,
+        challenge_id=payload.challenge_id,
+        credential=payload.credential,
+    )
+    request.state.employee_id = passkey.device.employee_id if passkey.device is not None else None
+    log_audit(
+        db,
+        actor_type=AuditActorType.SYSTEM,
+        actor_id=str(request.state.employee_id or "unknown"),
+        action="PASSKEY_REGISTERED",
+        success=True,
+        entity_type="device_passkey",
+        entity_id=str(passkey.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={"device_id": passkey.device_id},
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return PasskeyRegisterVerifyResponse(ok=True, passkey_id=passkey.id)
+
+
+@router.post(
+    "/api/device/passkey/recover/options",
+    response_model=PasskeyRecoverOptionsResponse,
+)
+def device_passkey_recover_options(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> PasskeyRecoverOptionsResponse:
+    request.state.actor = "employee"
+    challenge, options_json = create_recover_options(
+        db,
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+    )
+    log_audit(
+        db,
+        actor_type=AuditActorType.SYSTEM,
+        actor_id="system",
+        action="PASSKEY_RECOVER_OPTIONS_CREATED",
+        success=True,
+        entity_type="webauthn_challenge",
+        entity_id=str(challenge.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={"purpose": "recover"},
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return PasskeyRecoverOptionsResponse(
+        challenge_id=challenge.id,
+        expires_at=challenge.expires_at,
+        options=options_json,
+    )
+
+
+@router.post(
+    "/api/device/passkey/recover/verify",
+    response_model=PasskeyRecoverVerifyResponse,
+)
+def device_passkey_recover_verify(
+    payload: PasskeyRecoverVerifyRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> PasskeyRecoverVerifyResponse:
+    request.state.actor = "employee"
+    device = verify_recover(
+        db,
+        challenge_id=payload.challenge_id,
+        credential=payload.credential,
+    )
+    employee_id = device.employee_id
+    request.state.employee_id = employee_id
+    log_audit(
+        db,
+        actor_type=AuditActorType.SYSTEM,
+        actor_id=str(employee_id),
+        action="PASSKEY_RECOVERED",
+        success=True,
+        entity_type="device",
+        entity_id=str(device.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={"device_fingerprint": device.device_fingerprint},
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return PasskeyRecoverVerifyResponse(
+        ok=True,
+        employee_id=employee_id,
+        device_id=device.id,
+        device_fingerprint=device.device_fingerprint,
+    )
 
 
 @router.get("/api/employee/status", response_model=EmployeeStatusResponse)

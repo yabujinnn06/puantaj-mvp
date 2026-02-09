@@ -3,7 +3,12 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { claimDevice, parseApiError } from '../api/attendance'
 import { BrandSignature } from '../components/BrandSignature'
-import { getOrCreateDeviceFingerprint, setDeviceBinding } from '../utils/device'
+import {
+  getOrCreateDeviceFingerprint,
+  getStoredDeviceFingerprint,
+  setDeviceBinding,
+  setStoredDeviceFingerprint,
+} from '../utils/device'
 
 type ClaimState = 'loading' | 'success' | 'error'
 
@@ -16,7 +21,16 @@ export function ClaimPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [requestId, setRequestId] = useState<string | null>(null)
 
-  const deviceFingerprint = useMemo(() => getOrCreateDeviceFingerprint(), [])
+  const deviceFingerprint = useMemo(() => {
+    const existing = getStoredDeviceFingerprint()
+    if (existing) {
+      return existing
+    }
+    if (!token) {
+      return ''
+    }
+    return getOrCreateDeviceFingerprint()
+  }, [token])
 
   const runClaim = useCallback(async () => {
     if (!token) {
@@ -26,6 +40,11 @@ export function ClaimPage() {
       return
     }
 
+    const fingerprint = deviceFingerprint || getOrCreateDeviceFingerprint()
+    if (!deviceFingerprint) {
+      setStoredDeviceFingerprint(fingerprint)
+    }
+
     setClaimState('loading')
     setErrorMessage(null)
     setRequestId(null)
@@ -33,13 +52,13 @@ export function ClaimPage() {
     try {
       const result = await claimDevice({
         token,
-        device_fingerprint: deviceFingerprint,
+        device_fingerprint: fingerprint,
       })
 
       setDeviceBinding({
         employeeId: result.employee_id,
         deviceId: result.device_id,
-        deviceFingerprint,
+        deviceFingerprint: fingerprint,
       })
 
       setClaimState('success')
@@ -75,7 +94,7 @@ export function ClaimPage() {
         <div className="stack">
           <label className="field">
             <span>Cihaz Parmak İzi</span>
-            <input value={deviceFingerprint} readOnly />
+            <input value={deviceFingerprint || '-'} readOnly />
           </label>
         </div>
 
@@ -121,7 +140,7 @@ export function ClaimPage() {
         ) : null}
 
         <div className="footer-link">
-          <Link to="/">Ana ekrana dön</Link>
+          <Link to="/recover">Passkey ile kurtarma dene</Link>
         </div>
 
         <BrandSignature />

@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { startRegistration } from '@simplewebauthn/browser'
 
-import { checkin, checkout, getEmployeeStatus, parseApiError } from '../api/attendance'
+import {
+  checkin,
+  checkout,
+  getEmployeeStatus,
+  getPasskeyRegisterOptions,
+  parseApiError,
+  verifyPasskeyRegistration,
+} from '../api/attendance'
 import { BrandSignature } from '../components/BrandSignature'
 import { QrScanner } from '../components/QrScanner'
 import type { AttendanceActionResponse, EmployeeStatusResponse } from '../types/api'
@@ -57,6 +65,8 @@ export function HomePage() {
   const [todayStatus, setTodayStatus] = useState<TodayStatus>('NOT_STARTED')
   const [statusSnapshot, setStatusSnapshot] = useState<EmployeeStatusResponse | null>(null)
   const [isHelpOpen, setIsHelpOpen] = useState(false)
+  const [isPasskeyBusy, setIsPasskeyBusy] = useState(false)
+  const [passkeyNotice, setPasskeyNotice] = useState<string | null>(null)
 
   useEffect(() => {
     if (!deviceFingerprint) {
@@ -103,6 +113,7 @@ export function HomePage() {
   }, [deviceFingerprint, statusSnapshot?.has_open_shift, todayStatus])
 
   const openShiftCheckinTime = statusSnapshot?.last_checkin_time_utc ?? statusSnapshot?.last_in_ts ?? null
+  const passkeyRegistered = Boolean(statusSnapshot?.passkey_registered)
 
   const canCheckin = Boolean(deviceFingerprint) && !isSubmitting && todayStatus === 'NOT_STARTED' && !hasOpenShift
   const canCheckout = Boolean(deviceFingerprint) && !isSubmitting && hasOpenShift
@@ -112,6 +123,45 @@ export function HomePage() {
     if (currentHour < 17 || currentHour > 22) return false
     return hasOpenShift
   }, [currentHour, hasOpenShift])
+
+  const runPasskeyRegistration = async () => {
+    if (!deviceFingerprint) {
+      setErrorMessage('Cihaz bağlı değil. Davet linkine tıklayın.')
+      return
+    }
+
+    setIsPasskeyBusy(true)
+    setPasskeyNotice(null)
+    setErrorMessage(null)
+    setRequestId(null)
+
+    try {
+      if (!window.PublicKeyCredential) {
+        throw new Error('Bu tarayıcı passkey (WebAuthn) desteklemiyor.')
+      }
+
+      const optionsData = await getPasskeyRegisterOptions({
+        device_fingerprint: deviceFingerprint,
+      })
+      const credential = await startRegistration({
+        optionsJSON: optionsData.options as unknown as Parameters<typeof startRegistration>[0]['optionsJSON'],
+      })
+
+      await verifyPasskeyRegistration({
+        challenge_id: optionsData.challenge_id,
+        credential: credential as unknown as Record<string, unknown>,
+      })
+
+      setStatusSnapshot((prev) => (prev ? { ...prev, passkey_registered: true } : prev))
+      setPasskeyNotice('Passkey başarıyla kaydedildi. Bu cihazı daha güvenli kurtarabilirsin.')
+    } catch (error) {
+      const parsed = parseApiError(error, 'Passkey kaydı başarısız oldu.')
+      setErrorMessage(parsed.message)
+      setRequestId(parsed.requestId ?? null)
+    } finally {
+      setIsPasskeyBusy(false)
+    }
+  }
 
   const runCheckinFromQr = async (rawQrValue: string) => {
     if (!deviceFingerprint) {
@@ -273,6 +323,9 @@ export function HomePage() {
             <p className="chip">Çalışan Portalı</p>
             <h1>Puantaj İşlemleri</h1>
           </div>
+          <Link className="topbar-link" to="/recover">
+            Kurtarma
+          </Link>
         </div>
 
         <div className="status-row">
@@ -283,6 +336,13 @@ export function HomePage() {
             }`}
           >
             {todayStatusLabel(todayStatus)}
+          </span>
+        </div>
+
+        <div className="status-row">
+          <p className="small-title">Passkey durumu</p>
+          <span className={`status-pill ${passkeyRegistered ? 'state-ok' : 'state-warn'}`}>
+            {passkeyRegistered ? 'Kurulu' : 'Kurulu Değil'}
           </span>
         </div>
 
@@ -299,6 +359,16 @@ export function HomePage() {
         ) : null}
 
         <div className="status-cta-row">
+          {!passkeyRegistered ? (
+            <button
+              type="button"
+              className="btn btn-soft"
+              disabled={!deviceFingerprint || isPasskeyBusy || isSubmitting}
+              onClick={() => void runPasskeyRegistration()}
+            >
+              {isPasskeyBusy ? 'Passkey kuruluyor...' : 'Passkey Kur'}
+            </button>
+          ) : null}
           <button type="button" className="btn btn-ghost" onClick={() => setIsHelpOpen(true)}>
             Nasıl çalışır?
           </button>
@@ -388,6 +458,12 @@ export function HomePage() {
             <button type="button" className="btn btn-soft" onClick={() => setScannerActive(false)}>
               Kamerayı Kapat
             </button>
+          </div>
+        ) : null}
+
+        {passkeyNotice ? (
+          <div className="notice-box notice-box-success mt-3">
+            <p>{passkeyNotice}</p>
           </div>
         ) : null}
 

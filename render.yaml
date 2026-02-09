@@ -38,3 +38,13 @@ services:
         sync: false
       - key: CORS_ALLOW_ORIGINS
         sync: false
+      - key: PASSKEY_MODE
+        value: "off"
+      - key: WEBAUTHN_RP_ID
+        sync: false
+      - key: WEBAUTHN_RP_NAME
+        value: PuantajMVP
+      - key: WEBAUTHN_ORIGIN
+        sync: false
+      - key: PASSKEY_CHALLENGE_MINUTES
+        value: "10"

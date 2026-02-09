@@ -161,6 +161,44 @@ class DeviceClaimResponse(BaseModel):
     device_id: int
 
 
+class PasskeyRegisterOptionsRequest(BaseModel):
+    device_fingerprint: str
+
+
+class PasskeyRegisterOptionsResponse(BaseModel):
+    challenge_id: int
+    expires_at: datetime
+    options: dict[str, Any]
+
+
+class PasskeyRegisterVerifyRequest(BaseModel):
+    challenge_id: int
+    credential: dict[str, Any]
+
+
+class PasskeyRegisterVerifyResponse(BaseModel):
+    ok: bool
+    passkey_id: int
+
+
+class PasskeyRecoverOptionsResponse(BaseModel):
+    challenge_id: int
+    expires_at: datetime
+    options: dict[str, Any]
+
+
+class PasskeyRecoverVerifyRequest(BaseModel):
+    challenge_id: int
+    credential: dict[str, Any]
+
+
+class PasskeyRecoverVerifyResponse(BaseModel):
+    ok: bool
+    employee_id: int
+    device_id: int
+    device_fingerprint: str
+
+
 class AdminLoginRequest(BaseModel):
     username: str
     password: str
@@ -532,6 +570,7 @@ class EmployeeStatusResponse(BaseModel):
     last_out_ts: datetime | None = None
     last_location_status: LocationStatus | None = None
     last_flags: dict[str, Any] = Field(default_factory=dict)
+    passkey_registered: bool | None = None
 
 
 class EmployeeHomeLocationSetRequest(BaseModel):

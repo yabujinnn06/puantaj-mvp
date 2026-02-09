@@ -16,6 +16,7 @@ from app.models import (
     AttendanceType,
     DepartmentShift,
     Device,
+    DevicePasskey,
     Employee,
     EmployeeLocation,
 )
@@ -843,6 +844,12 @@ def get_employee_status_by_device(
         employee_id=employee.id,
         reference_ts_utc=datetime.now(timezone.utc),
     )
+    passkey_registered = db.scalar(
+        select(DevicePasskey.id).where(
+            DevicePasskey.device_id == device.id,
+            DevicePasskey.is_active.is_(True),
+        )
+    ) is not None
 
     return {
         "employee_id": employee.id,
@@ -853,6 +860,7 @@ def get_employee_status_by_device(
             last_event_today.location_status if last_event_today is not None else None
         ),
         "last_flags": last_event_today.flags if last_event_today is not None else {},
+        "passkey_registered": passkey_registered,
     }
 
 
