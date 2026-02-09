@@ -93,11 +93,20 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 def verify_admin_credentials(username: str, password: str) -> bool:
     settings = get_settings()
-    if not hmac.compare_digest(username, settings.admin_user):
+    env_username = (settings.admin_user or "").strip()
+    env_pass_hash = (settings.admin_pass_hash or "").strip()
+
+    # Common deployment copy/paste issue: quoted env values.
+    if len(env_username) >= 2 and env_username[0] == env_username[-1] and env_username[0] in {"'", '"'}:
+        env_username = env_username[1:-1]
+    if len(env_pass_hash) >= 2 and env_pass_hash[0] == env_pass_hash[-1] and env_pass_hash[0] in {"'", '"'}:
+        env_pass_hash = env_pass_hash[1:-1]
+
+    if not hmac.compare_digest(username, env_username):
         return False
-    if not settings.admin_pass_hash:
+    if not env_pass_hash:
         return False
-    return verify_password(password, settings.admin_pass_hash)
+    return verify_password(password, env_pass_hash)
 
 
 def empty_permissions() -> dict[str, dict[str, bool]]:
