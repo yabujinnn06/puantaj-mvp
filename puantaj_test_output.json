@@ -1,0 +1,155 @@
+﻿{
+    "base_url":  "http://127.0.0.1:8000",
+    "department":  {
+                       "id":  1,
+                       "name":  "Saha"
+                   },
+    "employee":  {
+                     "id":  5,
+                     "full_name":  "Test ÃalÄ±Åan",
+                     "department_id":  1,
+                     "is_active":  true
+                 },
+    "work_rule":  {
+                      "id":  1,
+                      "department_id":  1,
+                      "daily_minutes_planned":  540,
+                      "break_minutes":  0,
+                      "grace_minutes":  5
+                  },
+    "home_location":  {
+                          "id":  2,
+                          "employee_id":  5,
+                          "home_lat":  41.0,
+                          "home_lon":  29.0,
+                          "radius_m":  300,
+                          "updated_at":  "2026-02-07T17:21:00.805553+03:00"
+                      },
+    "invite":  {
+                   "token":  "k_HTp6osKlOcYP12e1h-QwQFi1kAfPU9aCZVyQEwNE0",
+                   "invite_url":  "http://127.0.0.1:8000/employee/claim?token=k_HTp6osKlOcYP12e1h-QwQFi1kAfPU9aCZVyQEwNE0"
+               },
+    "claim":  {
+                  "ok":  true,
+                  "employee_id":  5,
+                  "device_id":  3
+              },
+    "checkin":  {
+                    "ok":  true,
+                    "employee_id":  5,
+                    "event_id":  4,
+                    "event_type":  "IN",
+                    "ts_utc":  "2026-02-07T17:21:00.872507+03:00",
+                    "location_status":  "VERIFIED_HOME",
+                    "flags":  {
+                                  "radius_m":  300,
+                                  "distance_m":  0.0
+                              }
+                },
+    "checkout":  {
+                     "ok":  true,
+                     "employee_id":  5,
+                     "event_id":  5,
+                     "event_type":  "OUT",
+                     "ts_utc":  "2026-02-07T17:21:02.902561+03:00",
+                     "location_status":  "VERIFIED_HOME",
+                     "flags":  {
+                                   "radius_m":  300,
+                                   "distance_m":  0.0
+                               }
+                 },
+    "today_report":  {
+                         "date":  "2026-02-07",
+                         "status":  "OK",
+                         "in":  "2026-02-07T17:21:00.872507+03:00",
+                         "out":  "2026-02-07T17:21:02.902561+03:00",
+                         "worked_minutes":  0,
+                         "overtime_minutes":  0,
+                         "leave_type":  null,
+                         "flags":  [
+
+                                   ]
+                     },
+    "totals":  {
+                   "worked_minutes":  0,
+                   "overtime_minutes":  0,
+                   "incomplete_days":  27
+               },
+    "top_events":  [
+                       {
+                           "id":  5,
+                           "employee_id":  5,
+                           "device_id":  3,
+                           "type":  "OUT",
+                           "ts_utc":  "2026-02-07T17:21:02.902561+03:00",
+                           "lat":  41.0,
+                           "lon":  29.0,
+                           "accuracy_m":  20.0,
+                           "location_status":  "VERIFIED_HOME",
+                           "flags":  {
+                                         "radius_m":  300,
+                                         "distance_m":  0.0
+                                     }
+                       },
+                       {
+                           "id":  4,
+                           "employee_id":  5,
+                           "device_id":  3,
+                           "type":  "IN",
+                           "ts_utc":  "2026-02-07T17:21:00.872507+03:00",
+                           "lat":  41.0,
+                           "lon":  29.0,
+                           "accuracy_m":  20.0,
+                           "location_status":  "VERIFIED_HOME",
+                           "flags":  {
+                                         "radius_m":  300,
+                                         "distance_m":  0.0
+                                     }
+                       },
+                       {
+                           "id":  3,
+                           "employee_id":  1,
+                           "device_id":  1,
+                           "type":  "OUT",
+                           "ts_utc":  "2026-02-07T00:52:09.836506+03:00",
+                           "lat":  41.0,
+                           "lon":  29.0,
+                           "accuracy_m":  20.0,
+                           "location_status":  "VERIFIED_HOME",
+                           "flags":  {
+                                         "radius_m":  300,
+                                         "distance_m":  0.0,
+                                         "duplicate_of":  2,
+                                         "DUPLICATE_EVENT":  true
+                                     }
+                       },
+                       {
+                           "id":  2,
+                           "employee_id":  1,
+                           "device_id":  1,
+                           "type":  "OUT",
+                           "ts_utc":  "2026-02-07T00:49:29.329761+03:00",
+                           "lat":  41.0,
+                           "lon":  29.0,
+                           "accuracy_m":  20.0,
+                           "location_status":  "UNVERIFIED_LOCATION",
+                           "flags":  {
+                                         "reason":  "home_location_not_set"
+                                     }
+                       },
+                       {
+                           "id":  1,
+                           "employee_id":  1,
+                           "device_id":  1,
+                           "type":  "IN",
+                           "ts_utc":  "2026-02-07T00:49:17.026503+03:00",
+                           "lat":  41.0,
+                           "lon":  29.0,
+                           "accuracy_m":  20.0,
+                           "location_status":  "UNVERIFIED_LOCATION",
+                           "flags":  {
+                                         "reason":  "home_location_not_set"
+                                     }
+                       }
+                   ]
+}

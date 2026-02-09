@@ -1,0 +1,40 @@
+services:
+  - type: web
+    name: puantaj-mvp
+    runtime: python
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /health
+    buildCommand: pip install -r requirements.txt
+    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: DATABASE_URL
+        sync: false
+      - key: ADMIN_USER
+        value: admin
+      - key: ADMIN_PASS_HASH
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_ISSUER
+        value: puantaj-mvp
+      - key: JWT_AUDIENCE
+        value: puantaj-admin
+      - key: ACCESS_TOKEN_MINUTES
+        value: "30"
+      - key: REFRESH_TOKEN_DAYS
+        value: "14"
+      - key: ALLOW_REFRESH
+        value: "true"
+      - key: APP_NAME
+        value: PuantajMVP
+      - key: ATTENDANCE_TIMEZONE
+        value: Europe/Istanbul
+      - key: BASE_PUBLIC_URL
+        sync: false
+      - key: EMPLOYEE_PORTAL_BASE_URL
+        sync: false
+      - key: CORS_ALLOW_ORIGINS
+        sync: false
