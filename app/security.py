@@ -11,6 +11,7 @@ from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+from passlib.exc import UnknownHashError
 
 from app.errors import ApiError
 from app.settings import get_settings
@@ -83,7 +84,11 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    return pwd_context.verify(password, password_hash)
+    try:
+        return pwd_context.verify(password, password_hash)
+    except (ValueError, TypeError, UnknownHashError):
+        # Invalid/legacy hash values should not crash auth flow.
+        return False
 
 
 def verify_admin_credentials(username: str, password: str) -> bool:
