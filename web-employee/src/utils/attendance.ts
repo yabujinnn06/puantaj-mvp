@@ -2,10 +2,10 @@ import type { AttendanceActionResponse, LocationStatus } from '../types/api'
 
 export function locationStatusLabel(status: LocationStatus): string {
   if (status === 'VERIFIED_HOME') {
-    return 'Evde Onaylı'
+    return 'Doğrulandı'
   }
   if (status === 'UNVERIFIED_LOCATION') {
-    return 'Ev Dışı'
+    return 'Doğrulanamadı'
   }
   return 'Konum Yok'
 }
@@ -147,7 +147,7 @@ export function flagLabel(key: string, value: unknown): string {
     return 'Manuel çıkış'
   }
   if (key === 'home_location_not_set' || (key === 'reason' && value === 'home_location_not_set')) {
-    return 'Ev konumu tanımlı değil'
+    return 'Konum doğrulama bilgisi eksik'
   }
   return key
 }

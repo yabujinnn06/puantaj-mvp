@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 
 import { checkin, checkout, getEmployeeStatus, parseApiError } from '../api/attendance'
 import { BrandSignature } from '../components/BrandSignature'
@@ -17,7 +17,6 @@ import {
 import { getStoredDeviceFingerprint } from '../utils/device'
 import { getCurrentLocation } from '../utils/location'
 
-type HomeLocationUiStatus = 'NOT_SET' | 'VERIFIED' | 'UNVERIFIED'
 type TodayStatus = EmployeeStatusResponse['today_status']
 
 interface LastAction {
@@ -27,35 +26,6 @@ interface LastAction {
 
 function eventTypeLabel(eventType: 'IN' | 'OUT'): string {
   return eventType === 'IN' ? 'Giriş' : 'Çıkış'
-}
-
-function deriveHomeLocationUiStatus(status: EmployeeStatusResponse): HomeLocationUiStatus {
-  const flags = status.last_flags ?? {}
-  if (flags.home_location_not_set === true || flags.reason === 'home_location_not_set') {
-    return 'NOT_SET'
-  }
-
-  if (status.last_location_status === 'VERIFIED_HOME') {
-    return 'VERIFIED'
-  }
-
-  if (status.last_location_status === 'UNVERIFIED_LOCATION' || status.last_location_status === 'NO_LOCATION') {
-    return 'UNVERIFIED'
-  }
-
-  return 'NOT_SET'
-}
-
-function homeLocationStatusLabel(status: HomeLocationUiStatus): string {
-  if (status === 'VERIFIED') return 'Doğrulandı'
-  if (status === 'UNVERIFIED') return 'Doğrulanamadı'
-  return 'Kayıtlı Değil'
-}
-
-function homeLocationStatusClass(status: HomeLocationUiStatus): string {
-  if (status === 'VERIFIED') return 'state-ok'
-  if (status === 'UNVERIFIED') return 'state-warn'
-  return 'state-err'
 }
 
 function todayStatusLabel(status: TodayStatus): string {
@@ -74,27 +44,7 @@ function todayStatusHint(status: TodayStatus): string {
   return 'QR ile giriş yaparak mesaiyi başlatın.'
 }
 
-function SettingsIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="14"
-      height="14"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="3.5" />
-      <path d="M12 2v2.2M12 19.8V22M4.93 4.93l1.56 1.56M17.51 17.51l1.56 1.56M2 12h2.2M19.8 12H22M4.93 19.07l1.56-1.56M17.51 6.49l1.56-1.56" />
-    </svg>
-  )
-}
-
 export function HomePage() {
-  const navigate = useNavigate()
   const [deviceFingerprint] = useState(() => getStoredDeviceFingerprint())
   const [scannerActive, setScannerActive] = useState(false)
   const [scannerError, setScannerError] = useState<string | null>(null)
@@ -104,15 +54,12 @@ export function HomePage() {
   const [locationWarning, setLocationWarning] = useState<string | null>(null)
   const [requestId, setRequestId] = useState<string | null>(null)
   const [lastAction, setLastAction] = useState<LastAction | null>(null)
-  const [homeLocationStatus, setHomeLocationStatus] = useState<HomeLocationUiStatus>('NOT_SET')
   const [todayStatus, setTodayStatus] = useState<TodayStatus>('NOT_STARTED')
   const [statusSnapshot, setStatusSnapshot] = useState<EmployeeStatusResponse | null>(null)
-  const [isHomeStatusLoading, setIsHomeStatusLoading] = useState(false)
   const [isHelpOpen, setIsHelpOpen] = useState(false)
 
   useEffect(() => {
     if (!deviceFingerprint) {
-      setHomeLocationStatus('NOT_SET')
       setTodayStatus('NOT_STARTED')
       setStatusSnapshot(null)
       return
@@ -120,29 +67,21 @@ export function HomePage() {
 
     let cancelled = false
     const loadStatus = async () => {
-      setIsHomeStatusLoading(true)
       try {
         const statusData = await getEmployeeStatus(deviceFingerprint)
         if (!cancelled) {
           setStatusSnapshot(statusData)
-          setHomeLocationStatus(deriveHomeLocationUiStatus(statusData))
           setTodayStatus(statusData.today_status)
         }
       } catch (error) {
         const parsed = parseApiError(error, 'Durum alınamadı.')
         if (!cancelled) {
           if (parsed.code === 'DEVICE_NOT_CLAIMED') {
-            setHomeLocationStatus('NOT_SET')
             setTodayStatus('NOT_STARTED')
             setStatusSnapshot(null)
           } else {
-            setHomeLocationStatus('UNVERIFIED')
             setStatusSnapshot(null)
           }
-        }
-      } finally {
-        if (!cancelled) {
-          setIsHomeStatusLoading(false)
         }
       }
     }
@@ -165,11 +104,7 @@ export function HomePage() {
 
   const openShiftCheckinTime = statusSnapshot?.last_checkin_time_utc ?? statusSnapshot?.last_in_ts ?? null
 
-  const canCheckin =
-    Boolean(deviceFingerprint) &&
-    !isSubmitting &&
-    todayStatus === 'NOT_STARTED' &&
-    !hasOpenShift
+  const canCheckin = Boolean(deviceFingerprint) && !isSubmitting && todayStatus === 'NOT_STARTED' && !hasOpenShift
   const canCheckout = Boolean(deviceFingerprint) && !isSubmitting && hasOpenShift
 
   const currentHour = new Date().getHours()
@@ -317,13 +252,13 @@ export function HomePage() {
     if (response.location_status === 'VERIFIED_HOME') {
       return {
         tone: 'success' as const,
-        text: 'Mesai bitiş kaydedildi (Ev doğrulandı)',
+        text: 'Mesai bitiş kaydı alındı (konum doğrulandı)',
       }
     }
 
     return {
       tone: 'warning' as const,
-      text: 'Mesai bitiş kaydedildi ama ev doğrulanamadı. Konum kaydedildi.',
+      text: 'Mesai bitiş kaydı alındı.',
     }
   }, [lastAction])
 
@@ -338,24 +273,15 @@ export function HomePage() {
             <p className="chip">Çalışan Portalı</p>
             <h1>Puantaj İşlemleri</h1>
           </div>
-          <Link className="topbar-link with-icon" to="/settings">
-            <span className="topbar-link-icon">
-              <SettingsIcon />
-            </span>
-            Ayarlar
-          </Link>
-        </div>
-
-        <div className="status-row">
-          <p className="small-title">Ev konumu durumu</p>
-          <span className={`status-pill ${homeLocationStatusClass(homeLocationStatus)}`}>
-            {isHomeStatusLoading ? 'Kontrol ediliyor...' : homeLocationStatusLabel(homeLocationStatus)}
-          </span>
         </div>
 
         <div className="status-row">
           <p className="small-title">Bugünkü durum</p>
-          <span className={`status-pill ${todayStatus === 'FINISHED' ? 'state-ok' : todayStatus === 'IN_PROGRESS' ? 'state-warn' : 'state-err'}`}>
+          <span
+            className={`status-pill ${
+              todayStatus === 'FINISHED' ? 'state-ok' : todayStatus === 'IN_PROGRESS' ? 'state-warn' : 'state-err'
+            }`}
+          >
             {todayStatusLabel(todayStatus)}
           </span>
         </div>
@@ -368,16 +294,11 @@ export function HomePage() {
               </span>
               Açık vardiya var, çıkış kaydı bekleniyor.
             </p>
-            {openShiftCheckinTime ? (
-              <p className="small-text">Son giriş: {formatTs(openShiftCheckinTime)}</p>
-            ) : null}
+            {openShiftCheckinTime ? <p className="small-text">Son giriş: {formatTs(openShiftCheckinTime)}</p> : null}
           </div>
         ) : null}
 
         <div className="status-cta-row">
-          <button type="button" className="btn btn-soft" onClick={() => navigate('/settings')}>
-            Ev konumunu kaydet
-          </button>
           <button type="button" className="btn btn-ghost" onClick={() => setIsHelpOpen(true)}>
             Nasıl çalışır?
           </button>
@@ -438,20 +359,9 @@ export function HomePage() {
               'Mesaiyi Bitir'
             )}
           </button>
-
-          <button
-            type="button"
-            className="btn btn-soft btn-lg"
-            disabled={!deviceFingerprint || isSubmitting}
-            onClick={() => navigate('/settings')}
-          >
-            Ev Konumu (Ayarlar)
-          </button>
         </div>
 
         <p className="muted small-text">{todayStatusHint(todayStatus)}</p>
-        <p className="muted small-text">Ev konumu kayıtlı değilse çıkış doğrulaması yapılamaz.</p>
-        <p className="muted small-text">Ev konumu kaydetmek için Ayarlar’a gidin.</p>
 
         {shouldShowEveningReminder ? (
           <div className="notice-box notice-box-warning">
@@ -523,9 +433,7 @@ export function HomePage() {
               </span>
               {resultMessage.text}
             </p>
-            {lastAction ? (
-              <p className="small-text">Konum durumu: {locationStatusLabel(lastAction.response.location_status)}</p>
-            ) : null}
+            {lastAction ? <p className="small-text">Konum durumu: {locationStatusLabel(lastAction.response.location_status)}</p> : null}
             <div className="chips">
               {duplicateDetected ? <span className="status-pill state-warn">Mükerrer kayıt</span> : null}
               {manualCheckout ? <span className="manual-badge">Manuel çıkış yapıldı</span> : null}
@@ -575,9 +483,7 @@ export function HomePage() {
           <div className="modal-backdrop" role="dialog" aria-modal="true">
             <div className="help-modal">
               <h2>Mesai Bitiş Bilgilendirmesi</h2>
-              <p>
-                Mesai bitirirken evdeysen otomatik doğrulanır; değilsen kayıt yine alınır ama raporda işaretlenir.
-              </p>
+              <p>Gün içinde girişten sonra çıkışı mutlaka “Mesaiyi Bitir” ile tamamlayın.</p>
               <button type="button" className="btn btn-primary" onClick={() => setIsHelpOpen(false)}>
                 Anladım
               </button>

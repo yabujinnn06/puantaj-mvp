@@ -1,10 +1,9 @@
 import { type ReactNode, useEffect } from 'react'
-import { Link, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 
 import { BrandSignature } from './components/BrandSignature'
 import { ClaimPage } from './pages/ClaimPage'
 import { HomePage } from './pages/HomePage'
-import { SettingsPage } from './pages/SettingsPage'
 import { getStoredDeviceFingerprint } from './utils/device'
 
 function EmployeeRouteGuard({ children }: { children: ReactNode }) {
@@ -97,14 +96,7 @@ export default function App() {
         }
       />
       <Route path="claim" element={<ClaimPage />} />
-      <Route
-        path="settings"
-        element={
-          <EmployeeRouteGuard>
-            <SettingsPage />
-          </EmployeeRouteGuard>
-        }
-      />
+      <Route path="settings" element={<Navigate to="/" replace />} />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
   )
