@@ -109,6 +109,32 @@ export interface DepartmentShift {
   updated_at: string
 }
 
+export type QrCodeType = 'CHECKIN' | 'CHECKOUT' | 'BOTH'
+
+export interface QrCode {
+  id: number
+  name: string | null
+  code_value: string
+  code_type: QrCodeType
+  is_active: boolean
+  point_ids: number[]
+  created_at: string
+  updated_at: string
+}
+
+export interface QrPoint {
+  id: number
+  name: string
+  lat: number
+  lon: number
+  radius_m: number
+  is_active: boolean
+  department_id: number | null
+  region_id: number | null
+  created_at: string
+  updated_at: string
+}
+
 export interface AttendanceEvent {
   id: number
   employee_id: number

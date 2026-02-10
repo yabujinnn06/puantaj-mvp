@@ -29,6 +29,9 @@ from app.models import (
     LocationStatus,
     ManualDayOverride,
     NotificationJob,
+    QRCode,
+    QRCodePoint,
+    QRPoint,
     Region,
     WorkRule,
 )
@@ -82,6 +85,13 @@ from app.schemas import (
     RegionCreate,
     RegionRead,
     RegionUpdate,
+    QRCodeAssignPointsRequest,
+    QRCodeCreateRequest,
+    QRCodeRead,
+    QRCodeUpdateRequest,
+    QRPointCreateRequest,
+    QRPointRead,
+    QRPointUpdateRequest,
     SoftDeleteResponse,
     WorkRuleRead,
     WorkRuleUpsert,
@@ -1611,6 +1621,48 @@ def _to_shift_read(shift: DepartmentShift) -> DepartmentShiftRead:
     )
 
 
+def _to_qr_code_read(code: QRCode) -> QRCodeRead:
+    point_ids = sorted({item.qr_point_id for item in (code.qr_code_points or [])})
+    return QRCodeRead(
+        id=code.id,
+        name=code.name,
+        code_value=code.code_value,
+        code_type=code.code_type,
+        is_active=code.is_active,
+        point_ids=point_ids,
+        created_at=code.created_at,
+        updated_at=code.updated_at,
+    )
+
+
+def _validate_qr_point_scope(
+    *,
+    db: Session,
+    department_id: int | None,
+    region_id: int | None,
+) -> tuple[int | None, int | None]:
+    department: Department | None = None
+    if department_id is not None:
+        department = db.get(Department, department_id)
+        if department is None:
+            raise HTTPException(status_code=404, detail="Department not found")
+
+    if region_id is not None:
+        region = db.get(Region, region_id)
+        if region is None:
+            raise HTTPException(status_code=404, detail="Region not found")
+
+    if (
+        department is not None
+        and region_id is not None
+        and department.region_id is not None
+        and department.region_id != region_id
+    ):
+        raise HTTPException(status_code=422, detail="QR point region must match department region")
+
+    return department_id, region_id
+
+
 def _normalize_schedule_plan_target_ids(payload: SchedulePlanUpsertRequest) -> list[int]:
     ids: list[int] = []
     if payload.target_employee_ids:
@@ -1839,6 +1891,445 @@ def delete_department_shift(
         request_id=getattr(request.state, "request_id", None),
     )
     return SoftDeleteResponse(ok=True, id=shift.id)
+
+
+@router.post(
+    "/api/admin/qr/codes",
+    response_model=QRCodeRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_admin_permission("schedule", write=True))],
+)
+def create_qr_code(
+    payload: QRCodeCreateRequest,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> QRCodeRead:
+    normalized_code_value = payload.code_value.strip()
+    if not normalized_code_value:
+        raise HTTPException(status_code=422, detail="code_value cannot be empty")
+
+    code = QRCode(
+        name=payload.name.strip() if payload.name else None,
+        code_value=normalized_code_value,
+        code_type=payload.code_type,
+        is_active=payload.is_active,
+    )
+    db.add(code)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="QR code value already exists") from exc
+
+    code = db.scalar(
+        select(QRCode)
+        .options(selectinload(QRCode.qr_code_points))
+        .where(QRCode.id == code.id)
+    )
+    if code is None:
+        raise HTTPException(status_code=404, detail="QR code not found")
+
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=str(claims.get("username") or claims.get("sub") or "admin"),
+        action="QR_CODE_CREATED",
+        success=True,
+        entity_type="qr_code",
+        entity_id=str(code.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "code_value": code.code_value,
+            "code_type": code.code_type.value,
+            "is_active": code.is_active,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return _to_qr_code_read(code)
+
+
+@router.get(
+    "/api/admin/qr/codes",
+    response_model=list[QRCodeRead],
+    dependencies=[Depends(require_admin_permission("schedule"))],
+)
+def list_qr_codes(
+    active_only: bool = Query(default=False),
+    db: Session = Depends(get_db),
+) -> list[QRCodeRead]:
+    stmt = select(QRCode).options(selectinload(QRCode.qr_code_points)).order_by(QRCode.id.desc())
+    if active_only:
+        stmt = stmt.where(QRCode.is_active.is_(True))
+    rows = list(db.scalars(stmt).all())
+    return [_to_qr_code_read(item) for item in rows]
+
+
+@router.patch(
+    "/api/admin/qr/codes/{code_id}",
+    response_model=QRCodeRead,
+    dependencies=[Depends(require_admin_permission("schedule", write=True))],
+)
+def update_qr_code(
+    code_id: int,
+    payload: QRCodeUpdateRequest,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> QRCodeRead:
+    code = db.scalar(
+        select(QRCode)
+        .options(selectinload(QRCode.qr_code_points))
+        .where(QRCode.id == code_id)
+    )
+    if code is None:
+        raise HTTPException(status_code=404, detail="QR code not found")
+
+    fields_set = payload.model_fields_set
+    if "name" in fields_set:
+        code.name = payload.name.strip() if payload.name and payload.name.strip() else None
+    if "code_value" in fields_set:
+        if payload.code_value is None:
+            raise HTTPException(status_code=422, detail="code_value cannot be null")
+        normalized_code_value = payload.code_value.strip()
+        if not normalized_code_value:
+            raise HTTPException(status_code=422, detail="code_value cannot be empty")
+        code.code_value = normalized_code_value
+    if "code_type" in fields_set:
+        if payload.code_type is None:
+            raise HTTPException(status_code=422, detail="code_type cannot be null")
+        code.code_type = payload.code_type
+    if "is_active" in fields_set:
+        if payload.is_active is None:
+            raise HTTPException(status_code=422, detail="is_active cannot be null")
+        code.is_active = payload.is_active
+
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="QR code value already exists") from exc
+
+    code = db.scalar(
+        select(QRCode)
+        .options(selectinload(QRCode.qr_code_points))
+        .where(QRCode.id == code_id)
+    )
+    if code is None:
+        raise HTTPException(status_code=404, detail="QR code not found")
+
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=str(claims.get("username") or claims.get("sub") or "admin"),
+        action="QR_CODE_UPDATED",
+        success=True,
+        entity_type="qr_code",
+        entity_id=str(code.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "code_value": code.code_value,
+            "code_type": code.code_type.value,
+            "is_active": code.is_active,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return _to_qr_code_read(code)
+
+
+@router.post(
+    "/api/admin/qr/codes/{code_id}/points",
+    response_model=QRCodeRead,
+    dependencies=[Depends(require_admin_permission("schedule", write=True))],
+)
+def assign_qr_code_points(
+    code_id: int,
+    payload: QRCodeAssignPointsRequest,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> QRCodeRead:
+    code = db.scalar(
+        select(QRCode)
+        .options(selectinload(QRCode.qr_code_points))
+        .where(QRCode.id == code_id)
+    )
+    if code is None:
+        raise HTTPException(status_code=404, detail="QR code not found")
+
+    requested_point_ids = sorted({point_id for point_id in payload.point_ids if point_id > 0})
+    if not requested_point_ids:
+        raise HTTPException(status_code=422, detail="point_ids must include at least one valid id")
+
+    found_points = list(db.scalars(select(QRPoint).where(QRPoint.id.in_(requested_point_ids))).all())
+    found_ids = {item.id for item in found_points}
+    missing_ids = [item for item in requested_point_ids if item not in found_ids]
+    if missing_ids:
+        raise HTTPException(status_code=404, detail=f"QR point not found: {missing_ids[0]}")
+
+    existing_ids = {item.qr_point_id for item in (code.qr_code_points or [])}
+    added_ids: list[int] = []
+    for point_id in requested_point_ids:
+        if point_id in existing_ids:
+            continue
+        db.add(QRCodePoint(qr_code_id=code.id, qr_point_id=point_id))
+        added_ids.append(point_id)
+
+    db.commit()
+    code = db.scalar(
+        select(QRCode)
+        .options(selectinload(QRCode.qr_code_points))
+        .where(QRCode.id == code_id)
+    )
+    if code is None:
+        raise HTTPException(status_code=404, detail="QR code not found")
+
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=str(claims.get("username") or claims.get("sub") or "admin"),
+        action="QR_CODE_POINTS_ASSIGNED",
+        success=True,
+        entity_type="qr_code",
+        entity_id=str(code.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "requested_point_ids": requested_point_ids,
+            "added_point_ids": added_ids,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return _to_qr_code_read(code)
+
+
+@router.delete(
+    "/api/admin/qr/codes/{code_id}/points/{point_id}",
+    response_model=SoftDeleteResponse,
+    dependencies=[Depends(require_admin_permission("schedule", write=True))],
+)
+def unassign_qr_code_point(
+    code_id: int,
+    point_id: int,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> SoftDeleteResponse:
+    code = db.get(QRCode, code_id)
+    if code is None:
+        raise HTTPException(status_code=404, detail="QR code not found")
+
+    relation = db.get(QRCodePoint, {"qr_code_id": code_id, "qr_point_id": point_id})
+    if relation is None:
+        raise HTTPException(status_code=404, detail="QR code point relation not found")
+
+    db.delete(relation)
+    db.commit()
+
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=str(claims.get("username") or claims.get("sub") or "admin"),
+        action="QR_CODE_POINT_UNASSIGNED",
+        success=True,
+        entity_type="qr_code",
+        entity_id=str(code_id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={"point_id": point_id},
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return SoftDeleteResponse(ok=True, id=point_id)
+
+
+@router.post(
+    "/api/admin/qr/points",
+    response_model=QRPointRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_admin_permission("schedule", write=True))],
+)
+def create_qr_point(
+    payload: QRPointCreateRequest,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> QRPointRead:
+    normalized_name = payload.name.strip()
+    if not normalized_name:
+        raise HTTPException(status_code=422, detail="name cannot be empty")
+
+    department_id, region_id = _validate_qr_point_scope(
+        db=db,
+        department_id=payload.department_id,
+        region_id=payload.region_id,
+    )
+
+    point = QRPoint(
+        name=normalized_name,
+        lat=payload.lat,
+        lon=payload.lon,
+        radius_m=payload.radius_m,
+        is_active=payload.is_active,
+        department_id=department_id,
+        region_id=region_id,
+    )
+    db.add(point)
+    db.commit()
+    db.refresh(point)
+
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=str(claims.get("username") or claims.get("sub") or "admin"),
+        action="QR_POINT_CREATED",
+        success=True,
+        entity_type="qr_point",
+        entity_id=str(point.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "name": point.name,
+            "department_id": point.department_id,
+            "region_id": point.region_id,
+            "radius_m": point.radius_m,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return point
+
+
+@router.get(
+    "/api/admin/qr/points",
+    response_model=list[QRPointRead],
+    dependencies=[Depends(require_admin_permission("schedule"))],
+)
+def list_qr_points(
+    active_only: bool = Query(default=False),
+    department_id: int | None = Query(default=None, ge=1),
+    region_id: int | None = Query(default=None, ge=1),
+    db: Session = Depends(get_db),
+) -> list[QRPointRead]:
+    stmt = select(QRPoint).order_by(QRPoint.id.desc())
+    if active_only:
+        stmt = stmt.where(QRPoint.is_active.is_(True))
+    if department_id is not None:
+        stmt = stmt.where(QRPoint.department_id == department_id)
+    if region_id is not None:
+        stmt = stmt.where(QRPoint.region_id == region_id)
+    return list(db.scalars(stmt).all())
+
+
+@router.patch(
+    "/api/admin/qr/points/{point_id}",
+    response_model=QRPointRead,
+    dependencies=[Depends(require_admin_permission("schedule", write=True))],
+)
+def update_qr_point(
+    point_id: int,
+    payload: QRPointUpdateRequest,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> QRPointRead:
+    point = db.get(QRPoint, point_id)
+    if point is None:
+        raise HTTPException(status_code=404, detail="QR point not found")
+
+    fields_set = payload.model_fields_set
+    if "name" in fields_set:
+        if payload.name is None:
+            raise HTTPException(status_code=422, detail="name cannot be null")
+        normalized_name = payload.name.strip()
+        if not normalized_name:
+            raise HTTPException(status_code=422, detail="name cannot be empty")
+        point.name = normalized_name
+    if "lat" in fields_set:
+        if payload.lat is None:
+            raise HTTPException(status_code=422, detail="lat cannot be null")
+        point.lat = payload.lat
+    if "lon" in fields_set:
+        if payload.lon is None:
+            raise HTTPException(status_code=422, detail="lon cannot be null")
+        point.lon = payload.lon
+    if "radius_m" in fields_set:
+        if payload.radius_m is None:
+            raise HTTPException(status_code=422, detail="radius_m cannot be null")
+        point.radius_m = payload.radius_m
+    if "is_active" in fields_set:
+        if payload.is_active is None:
+            raise HTTPException(status_code=422, detail="is_active cannot be null")
+        point.is_active = payload.is_active
+
+    if "department_id" in fields_set or "region_id" in fields_set:
+        next_department_id = payload.department_id if "department_id" in fields_set else point.department_id
+        next_region_id = payload.region_id if "region_id" in fields_set else point.region_id
+        validated_department_id, validated_region_id = _validate_qr_point_scope(
+            db=db,
+            department_id=next_department_id,
+            region_id=next_region_id,
+        )
+        point.department_id = validated_department_id
+        point.region_id = validated_region_id
+
+    db.commit()
+    db.refresh(point)
+
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=str(claims.get("username") or claims.get("sub") or "admin"),
+        action="QR_POINT_UPDATED",
+        success=True,
+        entity_type="qr_point",
+        entity_id=str(point.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "name": point.name,
+            "department_id": point.department_id,
+            "region_id": point.region_id,
+            "radius_m": point.radius_m,
+            "is_active": point.is_active,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return point
+
+
+@router.delete(
+    "/api/admin/qr/points/{point_id}",
+    response_model=SoftDeleteResponse,
+    dependencies=[Depends(require_admin_permission("schedule", write=True))],
+)
+def deactivate_qr_point(
+    point_id: int,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> SoftDeleteResponse:
+    point = db.get(QRPoint, point_id)
+    if point is None:
+        raise HTTPException(status_code=404, detail="QR point not found")
+
+    point.is_active = False
+    db.commit()
+
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=str(claims.get("username") or claims.get("sub") or "admin"),
+        action="QR_POINT_DEACTIVATED",
+        success=True,
+        entity_type="qr_point",
+        entity_id=str(point.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={},
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return SoftDeleteResponse(ok=True, id=point.id)
 
 
 @router.post(

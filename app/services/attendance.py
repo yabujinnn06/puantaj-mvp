@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.errors import ApiError
 from app.models import (
@@ -19,10 +19,14 @@ from app.models import (
     DevicePasskey,
     Employee,
     EmployeeLocation,
+    QRCode,
+    QRCodePoint,
+    QRCodeType,
+    QRPoint,
 )
 from app.schemas import AttendanceEventCreate
 from app.settings import get_settings
-from app.services.location import evaluate_location
+from app.services.location import distance_m, evaluate_location
 from app.services.schedule_plans import resolve_effective_plan_for_employee_day
 
 
@@ -103,6 +107,159 @@ def _resolve_active_device(db: Session, device_fingerprint: str) -> Device:
         )
 
     return device
+
+
+class QRScanDeniedError(Exception):
+    def __init__(
+        self,
+        *,
+        reason: str,
+        closest_distance_m: int | None,
+        employee_id: int | None,
+        code_id: int | None,
+    ) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.closest_distance_m = closest_distance_m
+        self.employee_id = employee_id
+        self.code_id = code_id
+
+
+def _resolve_qr_code_by_value(
+    db: Session,
+    *,
+    code_value: str,
+) -> QRCode:
+    normalized_code_value = code_value.strip()
+    qr_code = db.scalar(
+        select(QRCode).where(
+            QRCode.code_value == normalized_code_value,
+            QRCode.is_active.is_(True),
+        )
+    )
+    if qr_code is None:
+        raise ApiError(
+            status_code=404,
+            code="QR_CODE_NOT_FOUND",
+            message="Active QR code not found.",
+        )
+    return qr_code
+
+
+def _load_active_qr_points_for_code(db: Session, *, code_id: int) -> list[QRPoint]:
+    mappings = list(
+        db.scalars(
+            select(QRCodePoint)
+            .options(selectinload(QRCodePoint.qr_point))
+            .where(QRCodePoint.qr_code_id == code_id)
+        ).all()
+    )
+    active_points: list[QRPoint] = []
+    for mapping in mappings:
+        point = mapping.qr_point
+        if point is None:
+            continue
+        if not point.is_active:
+            continue
+        active_points.append(point)
+    return active_points
+
+
+def _resolve_qr_scan_event_type(
+    db: Session,
+    *,
+    employee_id: int,
+    code_type: QRCodeType,
+) -> AttendanceType:
+    if code_type == QRCodeType.CHECKIN:
+        return AttendanceType.IN
+    if code_type == QRCodeType.CHECKOUT:
+        return AttendanceType.OUT
+
+    today_status, _, _, _ = _resolve_today_status_for_employee(
+        db,
+        employee_id=employee_id,
+        reference_ts_utc=datetime.now(timezone.utc),
+    )
+    if today_status == "IN_PROGRESS":
+        return AttendanceType.OUT
+    return AttendanceType.IN
+
+
+def create_employee_qr_scan_event(
+    db: Session,
+    *,
+    device_fingerprint: str,
+    code_value: str,
+    lat: float,
+    lon: float,
+    accuracy_m: float | None,
+) -> AttendanceEvent:
+    device = _resolve_active_device(db, device_fingerprint)
+    employee = device.employee
+    if employee is None:
+        raise ApiError(
+            status_code=404,
+            code="EMPLOYEE_NOT_FOUND",
+            message="Employee not found for this device.",
+        )
+
+    qr_code = _resolve_qr_code_by_value(db, code_value=code_value)
+    active_points = _load_active_qr_points_for_code(db, code_id=qr_code.id)
+    if not active_points:
+        raise ApiError(
+            status_code=422,
+            code="QR_CODE_HAS_NO_ACTIVE_POINTS",
+            message="QR code has no active location points.",
+        )
+
+    closest_distance: float | None = None
+    matched_point: QRPoint | None = None
+    matched_distance: float | None = None
+
+    for point in active_points:
+        point_distance_m = distance_m(lat, lon, point.lat, point.lon)
+
+        if closest_distance is None or point_distance_m < closest_distance:
+            closest_distance = point_distance_m
+
+        if point_distance_m <= float(point.radius_m):
+            if matched_distance is None or point_distance_m < matched_distance:
+                matched_distance = point_distance_m
+                matched_point = point
+
+    if matched_point is None or matched_distance is None:
+        raise QRScanDeniedError(
+            reason="QR_POINT_OUT_OF_RANGE",
+            closest_distance_m=(int(round(closest_distance)) if closest_distance is not None else None),
+            employee_id=employee.id,
+            code_id=qr_code.id if qr_code is not None else None,
+        )
+
+    event_type = _resolve_qr_scan_event_type(
+        db,
+        employee_id=employee.id,
+        code_type=qr_code.code_type,
+    )
+    qr_flags = {
+        "qr": {
+            "code_id": qr_code.id,
+            "matched_point_id": matched_point.id,
+            "distance_m": int(round(matched_distance)),
+            "radius_m": int(matched_point.radius_m),
+            "accuracy_m": accuracy_m,
+        }
+    }
+
+    return _build_attendance_event(
+        db,
+        device_fingerprint=device_fingerprint,
+        event_type=event_type,
+        lat=lat,
+        lon=lon,
+        accuracy_m=accuracy_m,
+        extra_flags=qr_flags,
+    )
 
 
 def _validate_and_resolve_shift(

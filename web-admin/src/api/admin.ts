@@ -24,6 +24,9 @@ import type {
   MonthlyEmployeeResponse,
   OvertimeRoundingMode,
   Region,
+  QrCode,
+  QrCodeType,
+  QrPoint,
   SchedulePlan,
   SchedulePlanTargetType,
   WorkRule,
@@ -301,6 +304,54 @@ export interface UpdateRegionPayload {
   is_active: boolean
 }
 
+export interface CreateQrCodePayload {
+  name?: string | null
+  code_value: string
+  code_type?: QrCodeType
+  is_active?: boolean
+}
+
+export interface UpdateQrCodePayload {
+  name?: string | null
+  code_value?: string
+  code_type?: QrCodeType
+  is_active?: boolean
+}
+
+export interface AssignQrCodePointsPayload {
+  point_ids: number[]
+}
+
+export interface GetQrCodesParams {
+  active_only?: boolean
+}
+
+export interface CreateQrPointPayload {
+  name: string
+  lat: number
+  lon: number
+  radius_m?: number
+  is_active?: boolean
+  department_id?: number | null
+  region_id?: number | null
+}
+
+export interface UpdateQrPointPayload {
+  name?: string
+  lat?: number
+  lon?: number
+  radius_m?: number
+  is_active?: boolean
+  department_id?: number | null
+  region_id?: number | null
+}
+
+export interface GetQrPointsParams {
+  active_only?: boolean
+  department_id?: number
+  region_id?: number
+}
+
 export async function loginAdmin(payload: LoginPayload): Promise<AdminAuthResponse> {
   const response = await apiClient.post<AdminAuthResponse>('/api/admin/auth/login', payload)
   return response.data
@@ -475,6 +526,56 @@ export async function upsertDepartmentShift(payload: UpsertDepartmentShiftPayloa
 
 export async function deleteDepartmentShift(shiftId: number): Promise<{ ok: boolean; id: number }> {
   const response = await apiClient.delete<{ ok: boolean; id: number }>(`/admin/department-shifts/${shiftId}`)
+  return response.data
+}
+
+export async function getQrCodes(params: GetQrCodesParams = {}): Promise<QrCode[]> {
+  const response = await apiClient.get<QrCode[]>('/api/admin/qr/codes', { params })
+  return response.data
+}
+
+export async function createQrCode(payload: CreateQrCodePayload): Promise<QrCode> {
+  const response = await apiClient.post<QrCode>('/api/admin/qr/codes', payload)
+  return response.data
+}
+
+export async function updateQrCode(codeId: number, payload: UpdateQrCodePayload): Promise<QrCode> {
+  const response = await apiClient.patch<QrCode>(`/api/admin/qr/codes/${codeId}`, payload)
+  return response.data
+}
+
+export async function assignQrCodePoints(
+  codeId: number,
+  payload: AssignQrCodePointsPayload,
+): Promise<QrCode> {
+  const response = await apiClient.post<QrCode>(`/api/admin/qr/codes/${codeId}/points`, payload)
+  return response.data
+}
+
+export async function unassignQrCodePoint(codeId: number, pointId: number): Promise<{ ok: boolean; id: number }> {
+  const response = await apiClient.delete<{ ok: boolean; id: number }>(
+    `/api/admin/qr/codes/${codeId}/points/${pointId}`,
+  )
+  return response.data
+}
+
+export async function getQrPoints(params: GetQrPointsParams = {}): Promise<QrPoint[]> {
+  const response = await apiClient.get<QrPoint[]>('/api/admin/qr/points', { params })
+  return response.data
+}
+
+export async function createQrPoint(payload: CreateQrPointPayload): Promise<QrPoint> {
+  const response = await apiClient.post<QrPoint>('/api/admin/qr/points', payload)
+  return response.data
+}
+
+export async function updateQrPoint(pointId: number, payload: UpdateQrPointPayload): Promise<QrPoint> {
+  const response = await apiClient.patch<QrPoint>(`/api/admin/qr/points/${pointId}`, payload)
+  return response.data
+}
+
+export async function deactivateQrPoint(pointId: number): Promise<{ ok: boolean; id: number }> {
+  const response = await apiClient.delete<{ ok: boolean; id: number }>(`/api/admin/qr/points/${pointId}`)
   return response.data
 }
 

@@ -55,6 +55,8 @@ const ruleSourceOverrideLabels: Record<RuleSourceOverride, string> = {
   WORK_RULE: 'Temel Kural',
 }
 
+const ATTENDANCE_TIMEZONE = 'Europe/Istanbul'
+
 function getDaySuspicionReasons(day: MonthlyEmployeeDay): string[] {
   const reasons: string[] = []
   if (day.status === 'INCOMPLETE') {
@@ -69,9 +71,29 @@ function getDaySuspicionReasons(day: MonthlyEmployeeDay): string[] {
 function isoToHHMM(value: string | null): string {
   if (!value) return ''
   const date = new Date(value)
-  const hour = `${date.getUTCHours()}`.padStart(2, '0')
-  const minute = `${date.getUTCMinutes()}`.padStart(2, '0')
-  return `${hour}:${minute}`
+  if (Number.isNaN(date.getTime())) return ''
+  return new Intl.DateTimeFormat('tr-TR', {
+    timeZone: ATTENDANCE_TIMEZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date)
+}
+
+function formatLocalDateTime(value: string | null): string {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('tr-TR', {
+    timeZone: ATTENDANCE_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(date)
 }
 
 function decodeManualOverrideStatus(override: ManualDayOverride | undefined): {
@@ -750,8 +772,12 @@ export function EmployeeMonthlyReportPage() {
                               <SuspiciousBadge suspicious={suspicious} />
                             </span>
                           </td>
-                          <td className="py-2">{day.in ?? '-'}</td>
-                          <td className="py-2">{day.out ?? '-'}</td>
+                          <td className="py-2" title={day.in ?? undefined}>
+                            {formatLocalDateTime(day.in)}
+                          </td>
+                          <td className="py-2" title={day.out ?? undefined}>
+                            {formatLocalDateTime(day.out)}
+                          </td>
                           <td className="py-2">
                             <MinuteDisplay minutes={day.worked_minutes} />
                           </td>

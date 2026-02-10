@@ -70,6 +70,12 @@ class SchedulePlanTargetType(str, enum.Enum):
     ONLY_EMPLOYEE = "ONLY_EMPLOYEE"
 
 
+class QRCodeType(str, enum.Enum):
+    CHECKIN = "CHECKIN"
+    CHECKOUT = "CHECKOUT"
+    BOTH = "BOTH"
+
+
 class Region(Base):
     __tablename__ = "regions"
 
@@ -90,6 +96,7 @@ class Region(Base):
 
     departments: Mapped[list[Department]] = relationship(back_populates="region")
     employees: Mapped[list[Employee]] = relationship(back_populates="region")
+    qr_points: Mapped[list[QRPoint]] = relationship(back_populates="region")
 
 
 class Department(Base):
@@ -109,6 +116,7 @@ class Department(Base):
     weekly_rules: Mapped[list[DepartmentWeeklyRule]] = relationship(back_populates="department")
     shifts: Mapped[list[DepartmentShift]] = relationship(back_populates="department")
     schedule_plans: Mapped[list[DepartmentSchedulePlan]] = relationship(back_populates="department")
+    qr_points: Mapped[list[QRPoint]] = relationship(back_populates="department")
 
 
 class Employee(Base):
@@ -457,6 +465,124 @@ class DepartmentSchedulePlanEmployee(Base):
 
     schedule_plan: Mapped[DepartmentSchedulePlan] = relationship(back_populates="target_employees")
     employee: Mapped[Employee] = relationship(back_populates="schedule_plan_scopes")
+
+
+class QRCode(Base):
+    __tablename__ = "qr_codes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    code_value: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    code_type: Mapped[QRCodeType] = mapped_column(
+        Enum(QRCodeType, name="qr_code_type"),
+        nullable=False,
+        default=QRCodeType.BOTH,
+        server_default=text("'BOTH'"),
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    qr_code_points: Mapped[list[QRCodePoint]] = relationship(
+        back_populates="qr_code",
+        cascade="all, delete-orphan",
+    )
+    qr_points: Mapped[list[QRPoint]] = relationship(
+        secondary="qr_code_points",
+        back_populates="qr_codes",
+        viewonly=True,
+    )
+
+
+class QRPoint(Base):
+    __tablename__ = "qr_points"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    lat: Mapped[float] = mapped_column(Float, nullable=False)
+    lon: Mapped[float] = mapped_column(Float, nullable=False)
+    radius_m: Mapped[int] = mapped_column(Integer, nullable=False, default=75, server_default=text("75"))
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
+    department_id: Mapped[int | None] = mapped_column(
+        ForeignKey("departments.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    region_id: Mapped[int | None] = mapped_column(
+        ForeignKey("regions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    department: Mapped[Department | None] = relationship(back_populates="qr_points")
+    region: Mapped[Region | None] = relationship(back_populates="qr_points")
+    qr_code_points: Mapped[list[QRCodePoint]] = relationship(
+        back_populates="qr_point",
+        cascade="all, delete-orphan",
+    )
+    qr_codes: Mapped[list[QRCode]] = relationship(
+        secondary="qr_code_points",
+        back_populates="qr_points",
+        viewonly=True,
+    )
+
+
+class QRCodePoint(Base):
+    __tablename__ = "qr_code_points"
+    __table_args__ = (
+        UniqueConstraint("qr_code_id", "qr_point_id", name="uq_qr_code_points_qr_code_qr_point"),
+    )
+
+    qr_code_id: Mapped[int] = mapped_column(
+        ForeignKey("qr_codes.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+        index=True,
+    )
+    qr_point_id: Mapped[int] = mapped_column(
+        ForeignKey("qr_points.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    qr_code: Mapped[QRCode] = relationship(back_populates="qr_code_points")
+    qr_point: Mapped[QRPoint] = relationship(back_populates="qr_code_points")
 
 
 class LaborProfile(Base):

@@ -11,6 +11,7 @@ from app.models import (
     LeaveType,
     LocationStatus,
     OvertimeRoundingMode,
+    QRCodeType,
     SchedulePlanTargetType,
 )
 
@@ -369,6 +370,72 @@ class DepartmentShiftRead(BaseModel):
     updated_at: datetime
 
 
+class QRCodeCreateRequest(BaseModel):
+    name: str | None = Field(default=None, max_length=255)
+    code_value: str = Field(min_length=1, max_length=255)
+    code_type: QRCodeType = QRCodeType.BOTH
+    is_active: bool = True
+
+
+class QRCodeUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, max_length=255)
+    code_value: str | None = Field(default=None, min_length=1, max_length=255)
+    code_type: QRCodeType | None = None
+    is_active: bool | None = None
+
+
+class QRCodeAssignPointsRequest(BaseModel):
+    point_ids: list[int] = Field(min_length=1)
+
+
+class QRCodeRead(BaseModel):
+    id: int
+    name: str | None
+    code_value: str
+    code_type: QRCodeType
+    is_active: bool
+    point_ids: list[int] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class QRPointCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    lat: float
+    lon: float
+    radius_m: int = Field(default=75, ge=1)
+    is_active: bool = True
+    department_id: int | None = Field(default=None, ge=1)
+    region_id: int | None = Field(default=None, ge=1)
+
+
+class QRPointUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    lat: float | None = None
+    lon: float | None = None
+    radius_m: int | None = Field(default=None, ge=1)
+    is_active: bool | None = None
+    department_id: int | None = Field(default=None, ge=1)
+    region_id: int | None = Field(default=None, ge=1)
+
+
+class QRPointRead(BaseModel):
+    id: int
+    name: str
+    lat: float
+    lon: float
+    radius_m: int
+    is_active: bool
+    department_id: int | None = None
+    region_id: int | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class SchedulePlanUpsertRequest(BaseModel):
     id: int | None = None
     department_id: int
@@ -550,6 +617,19 @@ class AttendanceCheckoutRequest(BaseModel):
     lon: float | None = None
     accuracy_m: float | None = Field(default=None, ge=0)
     manual: bool = False
+
+
+class EmployeeQrScanRequest(BaseModel):
+    code_value: str = Field(min_length=1, max_length=255)
+    lat: float
+    lon: float
+    accuracy_m: float | None = Field(default=None, ge=0)
+    device_fingerprint: str
+
+
+class EmployeeQrScanDeniedResponse(BaseModel):
+    reason: str
+    closest_distance_m: int | None = None
 
 
 class AttendanceActionResponse(BaseModel):

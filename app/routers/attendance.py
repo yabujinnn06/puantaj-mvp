@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -19,6 +20,8 @@ from app.schemas import (
     DeviceClaimResponse,
     EmployeeHomeLocationSetRequest,
     EmployeeHomeLocationSetResponse,
+    EmployeeQrScanDeniedResponse,
+    EmployeeQrScanRequest,
     EmployeeStatusResponse,
     PasskeyRecoverOptionsResponse,
     PasskeyRecoverVerifyRequest,
@@ -29,8 +32,10 @@ from app.schemas import (
     PasskeyRegisterVerifyResponse,
 )
 from app.services.attendance import (
+    QRScanDeniedError,
     create_employee_home_location,
     create_attendance_event,
+    create_employee_qr_scan_event,
     create_checkin_event,
     create_checkout_event,
     get_employee_status_by_device,
@@ -179,6 +184,95 @@ def checkout(
         },
         request_id=getattr(request.state, "request_id", None),
     )
+    return AttendanceActionResponse(
+        ok=True,
+        employee_id=event.employee_id,
+        event_id=event.id,
+        event_type=event.type,
+        ts_utc=event.ts_utc,
+        location_status=event.location_status,
+        flags=event.flags or {},
+        shift_id=(
+            int((event.flags or {}).get("SHIFT_ID"))
+            if isinstance((event.flags or {}).get("SHIFT_ID"), int)
+            else None
+        ),
+    )
+
+
+@router.post(
+    "/api/employee/qr/scan",
+    response_model=AttendanceActionResponse,
+    responses={403: {"model": EmployeeQrScanDeniedResponse}},
+)
+def employee_qr_scan(
+    payload: EmployeeQrScanRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    request.state.actor = "employee"
+    try:
+        event = create_employee_qr_scan_event(
+            db,
+            device_fingerprint=payload.device_fingerprint,
+            code_value=payload.code_value,
+            lat=payload.lat,
+            lon=payload.lon,
+            accuracy_m=payload.accuracy_m,
+        )
+    except QRScanDeniedError as exc:
+        request.state.employee_id = exc.employee_id
+        request.state.flags = {
+            "reason": exc.reason,
+            "closest_distance_m": exc.closest_distance_m,
+        }
+        log_audit(
+            db,
+            actor_type=AuditActorType.SYSTEM,
+            actor_id=str(exc.employee_id or "unknown"),
+            action="QR_SCAN_DENIED",
+            success=False,
+            entity_type="qr_code",
+            entity_id=(str(exc.code_id) if exc.code_id is not None else None),
+            ip=_client_ip(request),
+            user_agent=_user_agent(request),
+            details={
+                "reason": exc.reason,
+                "closest_distance_m": exc.closest_distance_m,
+                "code_value": payload.code_value,
+            },
+            request_id=getattr(request.state, "request_id", None),
+        )
+        return JSONResponse(
+            status_code=403,
+            content={
+                "reason": exc.reason,
+                "closest_distance_m": exc.closest_distance_m,
+            },
+        )
+
+    request.state.employee_id = event.employee_id
+    request.state.event_id = event.id
+    request.state.location_status = event.location_status.value
+    request.state.flags = event.flags or {}
+    log_audit(
+        db,
+        actor_type=AuditActorType.SYSTEM,
+        actor_id=str(event.employee_id),
+        action="ATTENDANCE_EVENT_CREATED",
+        success=True,
+        entity_type="attendance_event",
+        entity_id=str(event.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "event_type": event.type.value,
+            "location_status": event.location_status.value,
+            "flags": event.flags or {},
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+
     return AttendanceActionResponse(
         ok=True,
         employee_id=event.employee_id,
