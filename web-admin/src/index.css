@@ -4,22 +4,24 @@
 
 /* Rain Corporate theme tokens */
 :root {
-  --cr-primary: #1f6b85;
-  --cr-primary-strong: #144e63;
-  --cr-secondary: #5a7f97;
-  --cr-bg: #dfe8ee;
-  --cr-surface: rgba(250, 253, 255, 0.9);
-  --cr-surface-soft: rgba(247, 251, 255, 0.82);
-  --cr-border: #b9c9d4;
-  --cr-text: #112534;
-  --cr-muted: #486173;
+  --cr-primary: #0f6a8c;
+  --cr-primary-strong: #08465f;
+  --cr-secondary: #3f819f;
+  --cr-bg: #d3e1ea;
+  --cr-surface: rgba(252, 255, 255, 0.9);
+  --cr-surface-soft: rgba(246, 252, 255, 0.85);
+  --cr-border: #a9c1cf;
+  --cr-text: #0c2634;
+  --cr-muted: #3f5e70;
   --cr-success: #1f7a5c;
   --cr-warning: #9a6a08;
   --cr-danger: #ab2f45;
+  --cr-rain-line: rgba(65, 101, 122, 0.16);
+  --cr-rain-glow: rgba(102, 172, 205, 0.3);
   --cr-radius: 14px;
   --cr-radius-sm: 10px;
-  --cr-shadow-soft: 0 12px 24px -18px rgba(8, 24, 36, 0.52);
-  --cr-shadow-hover: 0 18px 34px -20px rgba(7, 26, 40, 0.58);
+  --cr-shadow-soft: 0 14px 28px -18px rgba(7, 32, 48, 0.48);
+  --cr-shadow-hover: 0 20px 40px -22px rgba(6, 28, 43, 0.6);
   --cr-space-1: 0.25rem;
   --cr-space-2: 0.5rem;
   --cr-space-3: 0.75rem;
@@ -37,9 +39,9 @@ body {
   min-height: 100vh;
   color: var(--cr-text);
   background:
-    radial-gradient(circle at 8% 0%, rgba(56, 91, 115, 0.22), transparent 38%),
-    radial-gradient(circle at 90% 100%, rgba(31, 107, 133, 0.14), transparent 40%),
-    linear-gradient(180deg, #e9f0f5 0%, #d9e3ea 100%);
+    radial-gradient(circle at 8% 0%, rgba(42, 84, 109, 0.24), transparent 38%),
+    radial-gradient(circle at 88% 100%, rgba(13, 99, 132, 0.18), transparent 42%),
+    linear-gradient(180deg, #dfeaf1 0%, #cadbe5 100%);
   overflow-x: hidden;
 }
 
@@ -55,16 +57,23 @@ body::before {
   inset: 0;
   pointer-events: none;
   z-index: 0;
-  opacity: 0.24;
+  opacity: 0.3;
   background-image:
     repeating-linear-gradient(
       -73deg,
-      rgba(64, 95, 114, 0.14) 0,
-      rgba(64, 95, 114, 0.14) 1px,
+      var(--cr-rain-line) 0,
+      var(--cr-rain-line) 1px,
       transparent 1px,
       transparent 16px
+    ),
+    repeating-linear-gradient(
+      -73deg,
+      rgba(104, 145, 168, 0.08) 0,
+      rgba(104, 145, 168, 0.08) 2px,
+      transparent 1px,
+      transparent 24px
     );
-  animation: rain-drift 30s linear infinite;
+  animation: rain-drift 26s linear infinite;
 }
 
 body::after {
@@ -73,11 +82,12 @@ body::after {
   inset: 0;
   pointer-events: none;
   z-index: 0;
-  opacity: 0.1;
+  opacity: 0.16;
   background:
-    linear-gradient(125deg, rgba(255, 255, 255, 0.24) 0%, transparent 34%),
-    radial-gradient(circle at 50% -18%, rgba(255, 255, 255, 0.28), transparent 50%);
-  animation: rain-shift 26s ease-in-out infinite alternate;
+    linear-gradient(125deg, rgba(255, 255, 255, 0.3) 0%, transparent 34%),
+    radial-gradient(circle at 50% -18%, rgba(255, 255, 255, 0.24), transparent 54%),
+    radial-gradient(circle at 25% 15%, var(--cr-rain-glow), transparent 30%);
+  animation: rain-shift 22s ease-in-out infinite alternate;
 }
 
 * {
@@ -89,20 +99,88 @@ body::after {
   isolation: isolate;
 }
 
+.admin-shell::before,
+.admin-shell::after {
+  content: '';
+  position: fixed;
+  width: 42vmax;
+  height: 42vmax;
+  pointer-events: none;
+  z-index: 0;
+  filter: blur(64px);
+  opacity: 0.22;
+  animation: ambient-pulse 12s ease-in-out infinite;
+}
+
+.admin-shell::before {
+  top: -20vmax;
+  left: -12vmax;
+  background: radial-gradient(circle, rgba(116, 182, 215, 0.36), transparent 65%);
+}
+
+.admin-shell::after {
+  right: -16vmax;
+  bottom: -24vmax;
+  background: radial-gradient(circle, rgba(20, 98, 132, 0.28), transparent 65%);
+  animation-delay: 4s;
+}
+
 .admin-sidebar {
   background:
-    linear-gradient(180deg, rgba(9, 38, 54, 0.96) 0%, rgba(9, 33, 48, 0.94) 100%);
-  border-right: 1px solid rgba(151, 184, 202, 0.16);
+    linear-gradient(180deg, rgba(7, 33, 48, 0.97) 0%, rgba(6, 30, 44, 0.95) 100%);
+  border-right: 1px solid rgba(138, 180, 201, 0.24);
+  position: relative;
+}
+
+.admin-sidebar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(157, 211, 235, 0.1) 0%, transparent 32%),
+    repeating-linear-gradient(
+      -74deg,
+      rgba(137, 182, 205, 0.08) 0,
+      rgba(137, 182, 205, 0.08) 1px,
+      transparent 1px,
+      transparent 18px
+    );
 }
 
 .admin-topbar {
-  background: rgba(255, 255, 255, 0.76);
+  background: rgba(255, 255, 255, 0.8);
   border-bottom-color: var(--cr-border);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(12px);
 }
 
 .admin-main {
   animation: page-enter 180ms ease-out both;
+}
+
+.admin-sidebar nav a {
+  position: relative;
+  overflow: hidden;
+}
+
+.admin-sidebar nav a::after {
+  content: '';
+  position: absolute;
+  left: 0.7rem;
+  right: 0.7rem;
+  bottom: 0.28rem;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(174, 224, 244, 0), rgba(174, 224, 244, 0.82), rgba(174, 224, 244, 0));
+  transform: scaleX(0.25);
+  opacity: 0;
+  transition: transform 180ms ease, opacity 180ms ease;
+}
+
+.admin-sidebar nav a:hover::after,
+.admin-sidebar nav a[aria-current='page']::after {
+  transform: scaleX(1);
+  opacity: 1;
 }
 
 .admin-panel {
@@ -112,6 +190,20 @@ body::after {
   backdrop-filter: blur(4px);
   box-shadow: var(--cr-shadow-soft);
   transition: transform 180ms ease, box-shadow 180ms ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.admin-panel::after {
+  content: '';
+  position: absolute;
+  inset: -130% -40% auto;
+  height: 220%;
+  pointer-events: none;
+  background: linear-gradient(105deg, transparent 42%, rgba(255, 255, 255, 0.2) 50%, transparent 58%);
+  transform: translateX(-18%);
+  animation: panel-glint 6.5s ease-in-out infinite;
+  opacity: 0.65;
 }
 
 .admin-panel:hover {
@@ -122,15 +214,24 @@ body::after {
 .admin-signature {
   margin-top: auto;
   padding: var(--cr-space-5) var(--cr-space-2) 0;
-  font-size: 0.72rem;
-  letter-spacing: 0.06em;
-  color: rgba(185, 212, 226, 0.7);
+  font-size: 0.78rem;
+  letter-spacing: 0.18em;
+  font-weight: 800;
+  color: rgba(212, 237, 249, 0.94);
+  text-transform: uppercase;
+  text-align: center;
+  border-top: 1px solid rgba(138, 180, 201, 0.36);
+  text-shadow: 0 1px 8px rgba(150, 207, 232, 0.2);
 }
 
-.admin-signature::before {
-  content: '•';
-  margin-right: 0.35rem;
-  color: rgba(163, 198, 216, 0.78);
+.admin-footer-signature,
+.admin-auth-signature {
+  color: #2f5266;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-weight: 800;
+  border-top: 1px solid rgba(125, 167, 191, 0.38);
+  padding-top: 0.55rem;
 }
 
 .page-enter {
@@ -378,6 +479,31 @@ button[class*='border border-rose-300'] {
   }
 }
 
+@keyframes ambient-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.18;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 0.28;
+  }
+}
+
+@keyframes panel-glint {
+  0%,
+  76%,
+  100% {
+    transform: translateX(-24%);
+    opacity: 0;
+  }
+  82% {
+    transform: translateX(28%);
+    opacity: 0.78;
+  }
+}
+
 @keyframes page-enter {
   from {
     opacity: 0;
@@ -434,6 +560,11 @@ button[class*='border border-rose-300'] {
     animation: none !important;
   }
   body::after {
+    animation: none !important;
+  }
+  .admin-shell::before,
+  .admin-shell::after,
+  .admin-panel::after {
     animation: none !important;
   }
 }

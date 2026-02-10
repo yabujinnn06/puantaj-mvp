@@ -7,8 +7,8 @@ export function BrandSignature() {
 
   return (
     <div className="employee-signature" aria-hidden="true">
-      <p>{UI_BRANDING.signatureText}</p>
-      <p>Build: {UI_BRANDING.buildVersion}</p>
+      <p className="employee-signature-main">[ {UI_BRANDING.signatureText} ]</p>
+      <p className="employee-signature-build">BUILD: {UI_BRANDING.buildVersion}</p>
     </div>
   )
 }

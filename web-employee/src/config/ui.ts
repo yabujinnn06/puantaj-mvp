@@ -1,5 +1,5 @@
 export const UI_BRANDING = {
   showSignature: true,
-  signatureText: 'Made by yabujin',
+  signatureText: 'MADE BY YABUJIN',
   buildVersion: (import.meta.env.VITE_BUILD_VERSION as string | undefined)?.trim() || 'dev',
 } as const

@@ -116,8 +116,8 @@ export function LoginPage() {
           </button>
         </form>
         {UI_BRANDING.showSignature ? (
-          <p className="mt-5 text-center text-xs tracking-wide text-slate-500">
-            {UI_BRANDING.signatureText} • Build: {UI_BRANDING.buildVersion}
+          <p className="admin-auth-signature mt-5 text-center text-xs tracking-wide text-slate-500">
+            {UI_BRANDING.signatureText} | BUILD: {UI_BRANDING.buildVersion}
           </p>
         ) : null}
       </div>

@@ -98,8 +98,8 @@ export function AppLayout() {
           <Outlet />
         </main>
         {UI_BRANDING.showSignature ? (
-          <footer className="px-6 pb-4 pt-1 text-center text-xs tracking-wide text-slate-500">
-            {UI_BRANDING.signatureText} • Build: {UI_BRANDING.buildVersion}
+          <footer className="admin-footer-signature px-6 pb-4 pt-1 text-center text-xs tracking-wide text-slate-500">
+            {UI_BRANDING.signatureText} | BUILD: {UI_BRANDING.buildVersion}
           </footer>
         ) : null}
       </div>

@@ -1,19 +1,21 @@
 /* Rain Corporate theme tokens */
 :root {
-  --cr-primary: #1f6b85;
-  --cr-primary-strong: #144e63;
-  --cr-secondary: #5a7f97;
-  --cr-bg: #dfe8ee;
-  --cr-surface: rgba(249, 253, 255, 0.88);
-  --cr-border: #b9c9d4;
-  --cr-text: #112534;
-  --cr-muted: #486173;
+  --cr-primary: #0f6a8c;
+  --cr-primary-strong: #08465f;
+  --cr-secondary: #3f819f;
+  --cr-bg: #d5e3ec;
+  --cr-surface: rgba(251, 255, 255, 0.9);
+  --cr-border: #a9c1cf;
+  --cr-text: #0c2634;
+  --cr-muted: #3f5e70;
   --cr-success: #1f7a5c;
   --cr-warning: #9a6a08;
   --cr-danger: #ab2f45;
+  --cr-rain-line: rgba(65, 101, 122, 0.15);
+  --cr-rain-glow: rgba(102, 172, 205, 0.3);
   --cr-radius: 16px;
   --cr-radius-sm: 12px;
-  --cr-shadow: 0 14px 32px -20px rgba(8, 31, 45, 0.52);
+  --cr-shadow: 0 16px 34px -20px rgba(8, 31, 45, 0.54);
   --cr-shadow-soft: 0 10px 24px -20px rgba(8, 31, 45, 0.48);
 
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -31,9 +33,9 @@ body {
   min-height: 100vh;
   color: var(--cr-text);
   background:
-    radial-gradient(circle at 15% 2%, rgba(57, 92, 117, 0.18), transparent 36%),
-    radial-gradient(circle at 88% 98%, rgba(31, 107, 133, 0.12), transparent 40%),
-    linear-gradient(180deg, #e9f0f5 0%, #d9e3ea 100%);
+    radial-gradient(circle at 15% 2%, rgba(57, 92, 117, 0.22), transparent 36%),
+    radial-gradient(circle at 88% 98%, rgba(13, 99, 132, 0.16), transparent 42%),
+    linear-gradient(180deg, #dfeaf1 0%, #cadbe5 100%);
   overflow-x: hidden;
 }
 
@@ -43,16 +45,23 @@ body::before {
   inset: 0;
   pointer-events: none;
   z-index: 0;
-  opacity: 0.24;
+  opacity: 0.3;
   background-image:
     repeating-linear-gradient(
       -72deg,
-      rgba(63, 95, 114, 0.14) 0,
-      rgba(63, 95, 114, 0.14) 1px,
+      var(--cr-rain-line) 0,
+      var(--cr-rain-line) 1px,
       transparent 1px,
       transparent 15px
+    ),
+    repeating-linear-gradient(
+      -72deg,
+      rgba(104, 145, 168, 0.08) 0,
+      rgba(104, 145, 168, 0.08) 2px,
+      transparent 1px,
+      transparent 23px
     );
-  animation: rain-drift 30s linear infinite;
+  animation: rain-drift 26s linear infinite;
 }
 
 body::after {
@@ -61,11 +70,12 @@ body::after {
   inset: 0;
   pointer-events: none;
   z-index: 0;
-  opacity: 0.1;
+  opacity: 0.16;
   background:
-    linear-gradient(125deg, rgba(255, 255, 255, 0.24) 0%, transparent 34%),
-    radial-gradient(circle at 50% -18%, rgba(255, 255, 255, 0.28), transparent 50%);
-  animation: rain-shift 26s ease-in-out infinite alternate;
+    linear-gradient(125deg, rgba(255, 255, 255, 0.28) 0%, transparent 34%),
+    radial-gradient(circle at 50% -18%, rgba(255, 255, 255, 0.24), transparent 54%),
+    radial-gradient(circle at 25% 15%, var(--cr-rain-glow), transparent 30%);
+  animation: rain-shift 22s ease-in-out infinite alternate;
 }
 
 #root {
@@ -80,6 +90,34 @@ body::after {
   display: flex;
   justify-content: center;
   animation: page-enter 180ms ease-out both;
+  position: relative;
+  isolation: isolate;
+}
+
+.phone-shell::before,
+.phone-shell::after {
+  content: '';
+  position: fixed;
+  width: 40vmax;
+  height: 40vmax;
+  pointer-events: none;
+  z-index: 0;
+  filter: blur(58px);
+  opacity: 0.22;
+  animation: ambient-pulse 12s ease-in-out infinite;
+}
+
+.phone-shell::before {
+  top: -18vmax;
+  left: -10vmax;
+  background: radial-gradient(circle, rgba(116, 182, 215, 0.34), transparent 65%);
+}
+
+.phone-shell::after {
+  right: -14vmax;
+  bottom: -22vmax;
+  background: radial-gradient(circle, rgba(20, 98, 132, 0.26), transparent 65%);
+  animation-delay: 5s;
 }
 
 .phone-card {
@@ -92,6 +130,21 @@ body::after {
   box-shadow: var(--cr-shadow);
   padding: 16px;
   transition: transform 170ms ease, box-shadow 170ms ease;
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
+}
+
+.phone-card::after {
+  content: '';
+  position: absolute;
+  inset: -130% -40% auto;
+  height: 220%;
+  pointer-events: none;
+  background: linear-gradient(105deg, transparent 42%, rgba(255, 255, 255, 0.2) 50%, transparent 58%);
+  transform: translateX(-18%);
+  animation: panel-glint 6.5s ease-in-out infinite;
+  opacity: 0.62;
 }
 
 .phone-card:hover {
@@ -370,6 +423,20 @@ textarea:focus {
   min-height: 220px;
 }
 
+.scanner-wrap::before {
+  content: '';
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  top: 18%;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(120, 211, 255, 0), rgba(120, 211, 255, 0.95), rgba(120, 211, 255, 0));
+  box-shadow: 0 0 0.55rem rgba(120, 211, 255, 0.55);
+  pointer-events: none;
+  animation: scan-sweep 2.4s ease-in-out infinite;
+}
+
 .scanner-video {
   width: 100%;
   height: 240px;
@@ -509,13 +576,26 @@ textarea:focus {
 .employee-signature {
   margin-top: 0.95rem;
   text-align: center;
-  font-size: 0.67rem;
-  letter-spacing: 0.06em;
-  color: rgba(67, 97, 116, 0.65);
+  border-top: 1px solid rgba(125, 167, 191, 0.36);
+  padding-top: 0.58rem;
 }
 
-.employee-signature p {
-  margin: 0.15rem 0;
+.employee-signature-main {
+  margin: 0;
+  font-size: 0.77rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  color: #2f5266;
+  text-transform: uppercase;
+  text-shadow: 0 1px 8px rgba(150, 207, 232, 0.2);
+}
+
+.employee-signature-build {
+  margin: 0.28rem 0 0;
+  font-size: 0.66rem;
+  letter-spacing: 0.14em;
+  color: rgba(59, 90, 108, 0.76);
+  text-transform: uppercase;
 }
 
 .inline-spinner {
@@ -562,6 +642,46 @@ textarea:focus {
   margin: 0 0 0.9rem;
   color: #355268;
   font-size: 0.9rem;
+}
+
+@keyframes ambient-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.18;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 0.28;
+  }
+}
+
+@keyframes panel-glint {
+  0%,
+  76%,
+  100% {
+    transform: translateX(-24%);
+    opacity: 0;
+  }
+  82% {
+    transform: translateX(28%);
+    opacity: 0.78;
+  }
+}
+
+@keyframes scan-sweep {
+  0% {
+    top: 18%;
+    opacity: 0.35;
+  }
+  50% {
+    top: 76%;
+    opacity: 0.95;
+  }
+  100% {
+    top: 18%;
+    opacity: 0.35;
+  }
 }
 
 @keyframes page-enter {
@@ -620,6 +740,13 @@ textarea:focus {
 
   body::before,
   body::after {
+    animation: none !important;
+  }
+
+  .phone-shell::before,
+  .phone-shell::after,
+  .phone-card::after,
+  .scanner-wrap::before {
     animation: none !important;
   }
 }
