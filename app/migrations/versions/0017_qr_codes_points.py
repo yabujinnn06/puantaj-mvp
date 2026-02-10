@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
@@ -18,11 +19,26 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
-qr_code_type = sa.Enum("CHECKIN", "CHECKOUT", "BOTH", name="qr_code_type")
+qr_code_type = postgresql.ENUM(
+    "CHECKIN",
+    "CHECKOUT",
+    "BOTH",
+    name="qr_code_type",
+    create_type=False,
+)
 
 
 def upgrade() -> None:
-    qr_code_type.create(op.get_bind(), checkfirst=True)
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'qr_code_type') THEN
+                CREATE TYPE qr_code_type AS ENUM ('CHECKIN', 'CHECKOUT', 'BOTH');
+            END IF;
+        END $$;
+        """
+    )
 
     op.create_table(
         "qr_codes",
@@ -108,4 +124,4 @@ def downgrade() -> None:
     op.drop_index("ix_qr_codes_code_value", table_name="qr_codes")
     op.drop_table("qr_codes")
 
-    qr_code_type.drop(op.get_bind(), checkfirst=True)
+    op.execute("DROP TYPE IF EXISTS qr_code_type")
