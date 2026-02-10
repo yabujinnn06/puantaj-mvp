@@ -90,6 +90,24 @@ class _FakeAdminUsersDB:
             self.deleted_ids.append(obj.id)
 
 
+class _ScalarResult:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def all(self):  # type: ignore[no-untyped-def]
+        return self._rows
+
+
+class _FakeAdminUsersListDB:
+    def __init__(self, rows: list[AdminUser]):
+        self.rows = rows
+
+    def scalars(self, statement):  # type: ignore[no-untyped-def]
+        if "admin_users" in str(statement):
+            return _ScalarResult(self.rows)
+        return _ScalarResult([])
+
+
 class AdminRbacTests(unittest.TestCase):
     def tearDown(self) -> None:
         app.dependency_overrides.clear()
@@ -245,6 +263,43 @@ class AdminRbacTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 204)
         self.assertIn(22, fake_db.deleted_ids)
+
+    def test_admin_users_list_normalizes_legacy_boolean_permissions(self) -> None:
+        legacy_admin_user = AdminUser(
+            id=31,
+            username="legacy_admin",
+            password_hash=hash_password("LegacyPass123!"),
+            full_name="Legacy Admin",
+            is_active=True,
+            is_super_admin=False,
+            permissions={"reports": True, "employees": False},
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        fake_db = _FakeAdminUsersListDB([legacy_admin_user])
+        app.dependency_overrides[get_db] = _override_get_db(fake_db)
+        app.dependency_overrides[require_admin] = lambda: {
+            "sub": "admin",
+            "username": "admin",
+            "role": "admin",
+            "iat": 0,
+            "exp": 9999999999,
+            "jti": "super-token",
+            "admin_user_id": 1,
+            "is_super_admin": True,
+            "permissions": {},
+        }
+        client = TestClient(app)
+
+        response = client.get("/api/admin/admin-users")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload), 1)
+        self.assertTrue(payload[0]["permissions"]["reports"]["read"])
+        self.assertTrue(payload[0]["permissions"]["reports"]["write"])
+        self.assertFalse(payload[0]["permissions"]["employees"]["read"])
+        self.assertFalse(payload[0]["permissions"]["employees"]["write"])
 
 
 if __name__ == "__main__":

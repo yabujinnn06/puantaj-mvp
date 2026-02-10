@@ -200,6 +200,19 @@ def _to_employee_read(employee: Employee) -> EmployeeRead:
     )
 
 
+def _to_admin_user_read(admin_user: AdminUser) -> AdminUserRead:
+    return AdminUserRead(
+        id=admin_user.id,
+        username=admin_user.username,
+        full_name=admin_user.full_name,
+        is_active=admin_user.is_active,
+        is_super_admin=admin_user.is_super_admin,
+        permissions=normalize_permissions(admin_user.permissions),
+        created_at=admin_user.created_at,
+        updated_at=admin_user.updated_at,
+    )
+
+
 def _permissions_payload(claims: dict[str, Any]) -> dict[str, dict[str, bool]]:
     if str(claims.get("username") or claims.get("sub") or "") == settings.admin_user:
         return _full_permissions()
@@ -558,7 +571,8 @@ def admin_me(
     dependencies=[Depends(require_admin_permission("admin_users"))],
 )
 def list_admin_users(db: Session = Depends(get_db)) -> list[AdminUserRead]:
-    return list(db.scalars(select(AdminUser).order_by(AdminUser.id)).all())
+    rows = list(db.scalars(select(AdminUser).order_by(AdminUser.id)).all())
+    return [_to_admin_user_read(item) for item in rows]
 
 
 @router.post(
@@ -620,7 +634,7 @@ def create_admin_user(
         },
         request_id=getattr(request.state, "request_id", None),
     )
-    return admin_user
+    return _to_admin_user_read(admin_user)
 
 
 @router.patch(
@@ -713,7 +727,7 @@ def update_admin_user(
         },
         request_id=getattr(request.state, "request_id", None),
     )
-    return admin_user
+    return _to_admin_user_read(admin_user)
 
 
 @router.delete(
