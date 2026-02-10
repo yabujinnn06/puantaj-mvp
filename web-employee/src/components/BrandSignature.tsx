@@ -7,7 +7,8 @@ export function BrandSignature() {
 
   return (
     <div className="employee-signature" aria-hidden="true">
-      <p className="employee-signature-main">[ {UI_BRANDING.signatureText} ]</p>
+      <p className="employee-signature-main">{UI_BRANDING.signatureText}</p>
+      <p className="employee-signature-sub">{UI_BRANDING.signatureTagline}</p>
       <p className="employee-signature-build">BUILD: {UI_BRANDING.buildVersion}</p>
     </div>
   )

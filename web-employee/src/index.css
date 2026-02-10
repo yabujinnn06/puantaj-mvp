@@ -582,16 +582,24 @@ textarea:focus {
 
 .employee-signature-main {
   margin: 0;
-  font-size: 0.77rem;
-  font-weight: 800;
+  font-size: 0.8rem;
+  font-weight: 900;
   letter-spacing: 0.16em;
-  color: #2f5266;
+  color: #23475d;
   text-transform: uppercase;
-  text-shadow: 0 1px 8px rgba(150, 207, 232, 0.2);
+}
+
+.employee-signature-sub {
+  margin: 0.16rem 0 0;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: #4a6d82;
+  text-transform: uppercase;
 }
 
 .employee-signature-build {
-  margin: 0.28rem 0 0;
+  margin: 0.24rem 0 0;
   font-size: 0.66rem;
   letter-spacing: 0.14em;
   color: rgba(59, 90, 108, 0.76);

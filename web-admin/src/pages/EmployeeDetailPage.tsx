@@ -319,7 +319,7 @@ export function EmployeeDetailPage() {
   }
 
   const monthlyRows = monthlyQuery.data?.days ?? []
-  const topIps = detailQuery.data?.recent_ips ?? []
+  const ipSummaryRows = detailQuery.data?.ip_summary ?? []
 
   const deviceCountText = useMemo(() => {
     const count = detailQuery.data?.devices.length ?? 0
@@ -570,10 +570,10 @@ export function EmployeeDetailPage() {
         </div>
       </Panel>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
         <Panel>
           <h4 className="text-base font-semibold text-slate-900">Employee Portal Aktivite Akisi</h4>
-          <div className="mt-3 overflow-x-auto">
+          <div className="mt-3 max-h-[420px] overflow-auto rounded-lg border border-slate-200">
             <table className="min-w-full text-left text-sm">
               <thead className="text-xs uppercase text-slate-500">
                 <tr>
@@ -601,16 +601,39 @@ export function EmployeeDetailPage() {
 
         <Panel>
           <h4 className="text-base font-semibold text-slate-900">Cihaz IP Ozeti</h4>
-          <p className="mt-1 text-xs text-slate-500">En son gorulen farkli IP adresleri.</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {topIps.length ? (
-              topIps.map((ip) => (
-                <span key={ip} className="rounded-full border border-slate-300 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
-                  {ip}
-                </span>
-              ))
+          <p className="mt-1 text-xs text-slate-500">IP, son gorulme zamani ve son bilinen konum bilgisi.</p>
+          <div className="mt-3 max-h-[420px] overflow-auto rounded-lg border border-slate-200">
+            {ipSummaryRows.length ? (
+              <table className="min-w-full text-left text-sm">
+                <thead className="text-xs uppercase text-slate-500">
+                  <tr>
+                    <th className="py-2">IP</th>
+                    <th className="py-2">Son gorulme</th>
+                    <th className="py-2">Aksiyon</th>
+                    <th className="py-2">Son konum (lat/lon)</th>
+                    <th className="py-2">Konum zamani</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ipSummaryRows.map((item) => (
+                    <tr key={item.ip} className="border-t border-slate-100">
+                      <td className="py-2 font-mono text-xs">{item.ip}</td>
+                      <td className="py-2">{formatDateTime(item.last_seen_at_utc)}</td>
+                      <td className="py-2">{item.last_action}</td>
+                      <td className="py-2">
+                        {item.last_lat !== null && item.last_lon !== null
+                          ? `${item.last_lat.toFixed(6)}, ${item.last_lon.toFixed(6)}`
+                          : '-'}
+                      </td>
+                      <td className="py-2">
+                        {item.last_location_ts_utc ? formatDateTime(item.last_location_ts_utc) : '-'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             ) : (
-              <span className="text-sm text-slate-500">IP kaydi bulunamadi.</span>
+              <div className="p-3 text-sm text-slate-500">IP kaydi bulunamadi.</div>
             )}
           </div>
         </Panel>

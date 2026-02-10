@@ -50,6 +50,17 @@ export interface EmployeePortalActivity {
   user_agent: string | null
 }
 
+export interface EmployeeIpSummary {
+  ip: string
+  last_seen_at_utc: string
+  last_action: string
+  last_lat: number | null
+  last_lon: number | null
+  last_accuracy_m: number | null
+  last_location_status: LocationStatus | null
+  last_location_ts_utc: string | null
+}
+
 export interface EmployeeLiveLocation {
   lat: number
   lon: number
@@ -64,6 +75,7 @@ export interface EmployeeDetail {
   employee: Employee
   last_portal_seen_utc: string | null
   recent_ips: string[]
+  ip_summary: EmployeeIpSummary[]
   devices: EmployeeDeviceDetail[]
   latest_location: EmployeeLiveLocation | null
   recent_activity: EmployeePortalActivity[]

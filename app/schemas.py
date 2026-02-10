@@ -95,6 +95,17 @@ class EmployeePortalActivityRead(BaseModel):
     user_agent: str | None = None
 
 
+class EmployeeIpSummaryRead(BaseModel):
+    ip: str
+    last_seen_at_utc: datetime
+    last_action: str
+    last_lat: float | None = None
+    last_lon: float | None = None
+    last_accuracy_m: float | None = None
+    last_location_status: LocationStatus | None = None
+    last_location_ts_utc: datetime | None = None
+
+
 class EmployeeLiveLocationRead(BaseModel):
     lat: float
     lon: float
@@ -109,6 +120,7 @@ class EmployeeDetailResponse(BaseModel):
     employee: EmployeeRead
     last_portal_seen_utc: datetime | None = None
     recent_ips: list[str] = Field(default_factory=list)
+    ip_summary: list[EmployeeIpSummaryRead] = Field(default_factory=list)
     devices: list[EmployeeDeviceDetailRead] = Field(default_factory=list)
     latest_location: EmployeeLiveLocationRead | None = None
     recent_activity: list[EmployeePortalActivityRead] = Field(default_factory=list)

@@ -75,6 +75,7 @@ from app.schemas import (
     EmployeeShiftUpdateRequest,
     EmployeeLocationRead,
     EmployeeLiveLocationRead,
+    EmployeeIpSummaryRead,
     EmployeePortalActivityRead,
     EmployeeLocationUpsert,
     EmployeeRead,
@@ -1078,17 +1079,64 @@ def get_employee_detail(
     )
     last_portal_seen_utc = activity_logs[0].ts_utc if activity_logs else None
 
-    recent_ips: list[str] = []
-    seen_ips: set[str] = set()
+    attendance_event_ids: set[int] = set()
     for log_item in activity_logs:
-        if not log_item.ip:
+        if log_item.entity_type != "attendance_event":
             continue
-        if log_item.ip in seen_ips:
+        if log_item.entity_id is None:
             continue
-        seen_ips.add(log_item.ip)
-        recent_ips.append(log_item.ip)
-        if len(recent_ips) >= 10:
-            break
+        raw_entity_id = str(log_item.entity_id).strip()
+        if raw_entity_id.isdigit():
+            attendance_event_ids.add(int(raw_entity_id))
+
+    attendance_events_by_id: dict[int, AttendanceEvent] = {}
+    if attendance_event_ids:
+        attendance_events_by_id = {
+            event_item.id: event_item
+            for event_item in db.scalars(
+                select(AttendanceEvent).where(AttendanceEvent.id.in_(attendance_event_ids))
+            ).all()
+        }
+
+    ip_summary_rows: list[EmployeeIpSummaryRead] = []
+    ip_index: dict[str, int] = {}
+    for log_item in activity_logs:
+        raw_ip = (log_item.ip or "").strip()
+        if not raw_ip:
+            continue
+
+        if raw_ip not in ip_index:
+            ip_index[raw_ip] = len(ip_summary_rows)
+            ip_summary_rows.append(
+                EmployeeIpSummaryRead(
+                    ip=raw_ip,
+                    last_seen_at_utc=log_item.ts_utc,
+                    last_action=log_item.action,
+                )
+            )
+
+        summary = ip_summary_rows[ip_index[raw_ip]]
+        if summary.last_location_ts_utc is not None:
+            continue
+
+        if log_item.entity_type != "attendance_event" or log_item.entity_id is None:
+            continue
+
+        raw_entity_id = str(log_item.entity_id).strip()
+        if not raw_entity_id.isdigit():
+            continue
+        event_item = attendance_events_by_id.get(int(raw_entity_id))
+        if event_item is None or event_item.lat is None or event_item.lon is None:
+            continue
+
+        summary.last_lat = event_item.lat
+        summary.last_lon = event_item.lon
+        summary.last_accuracy_m = event_item.accuracy_m
+        summary.last_location_status = event_item.location_status
+        summary.last_location_ts_utc = event_item.ts_utc
+
+    ip_summary_rows = ip_summary_rows[:20]
+    recent_ips = [item.ip for item in ip_summary_rows]
 
     recent_activity = [
         EmployeePortalActivityRead(
@@ -1187,6 +1235,7 @@ def get_employee_detail(
         employee=_to_employee_read(employee),
         last_portal_seen_utc=last_portal_seen_utc,
         recent_ips=recent_ips,
+        ip_summary=ip_summary_rows,
         devices=devices,
         latest_location=latest_location,
         recent_activity=recent_activity,

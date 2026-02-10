@@ -72,7 +72,12 @@ export function AppLayout() {
             </NavLink>
           ))}
         </nav>
-        {UI_BRANDING.showSignature ? <p className="admin-signature">{UI_BRANDING.signatureText}</p> : null}
+        {UI_BRANDING.showSignature ? (
+          <div className="admin-signature">
+            <p className="admin-signature-main">{UI_BRANDING.signatureText}</p>
+            <p className="admin-signature-sub">{UI_BRANDING.signatureTagline}</p>
+          </div>
+        ) : null}
       </aside>
 
       <div className="flex min-h-screen flex-col">
@@ -99,7 +104,9 @@ export function AppLayout() {
         </main>
         {UI_BRANDING.showSignature ? (
           <footer className="admin-footer-signature px-6 pb-4 pt-1 text-center text-xs tracking-wide text-slate-500">
-            {UI_BRANDING.signatureText} | BUILD: {UI_BRANDING.buildVersion}
+            <span className="admin-footer-brand">{UI_BRANDING.signatureText}</span>
+            <span className="admin-footer-sub">{UI_BRANDING.signatureTagline}</span>
+            <span className="admin-footer-build">BUILD: {UI_BRANDING.buildVersion}</span>
           </footer>
         ) : null}
       </div>
