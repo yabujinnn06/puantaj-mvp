@@ -7,7 +7,8 @@ from typing import Literal
 
 from fastapi import HTTPException, status
 from openpyxl import Workbook
-from openpyxl.styles import Font
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -36,6 +37,24 @@ DAILY_HEADERS = [
     "Bayraklar",
 ]
 
+HEADER_FILL = PatternFill(fill_type="solid", fgColor="0B4F73")
+SUBHEADER_FILL = PatternFill(fill_type="solid", fgColor="DCEBF3")
+META_LABEL_FILL = PatternFill(fill_type="solid", fgColor="EAF4F9")
+META_VALUE_FILL = PatternFill(fill_type="solid", fgColor="F8FCFF")
+ZEBRA_FILL = PatternFill(fill_type="solid", fgColor="F7FBFE")
+WARNING_FILL = PatternFill(fill_type="solid", fgColor="FFF3CD")
+ALERT_FILL = PatternFill(fill_type="solid", fgColor="FDE2E4")
+SUCCESS_FILL = PatternFill(fill_type="solid", fgColor="E6F4EA")
+SUMMARY_FILL = PatternFill(fill_type="solid", fgColor="E9F1F7")
+
+HEADER_FONT = Font(bold=True, color="FFFFFF")
+BOLD_FONT = Font(bold=True, color="0F172A")
+TITLE_FONT = Font(bold=True, color="0B4F73", size=14)
+MUTED_FONT = Font(color="334155")
+
+THIN_SIDE = Side(style="thin", color="D5E2EC")
+THIN_BORDER = Border(left=THIN_SIDE, right=THIN_SIDE, top=THIN_SIDE, bottom=THIN_SIDE)
+
 
 def _to_excel_datetime(value: datetime | None) -> datetime | None:
     if value is None:
@@ -54,17 +73,122 @@ def _minutes_to_hhmm(minutes: int) -> str:
 
 def _style_header(ws: Worksheet, row: int = 1) -> None:
     for cell in ws[row]:
-        cell.font = Font(bold=True)
+        cell.font = HEADER_FONT
+        cell.fill = HEADER_FILL
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.border = THIN_BORDER
 
 
 def _auto_width(ws: Worksheet) -> None:
-    for column_cells in ws.columns:
+    for column_cells in ws.iter_cols(min_row=1, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
         max_len = 0
-        col_letter = column_cells[0].column_letter
+        col_letter = get_column_letter(column_cells[0].column)
         for cell in column_cells:
+            if cell.coordinate in ws.merged_cells:
+                continue
             value = "" if cell.value is None else str(cell.value)
             max_len = max(max_len, len(value))
         ws.column_dimensions[col_letter].width = min(max_len + 2, 45)
+
+
+def _merge_title(ws: Worksheet, row: int, text: str) -> None:
+    max_col = max(ws.max_column, 10)
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=max_col)
+    cell = ws.cell(row=row, column=1, value=text)
+    cell.font = TITLE_FONT
+    cell.alignment = Alignment(horizontal="left", vertical="center")
+
+
+def _style_metadata_rows(ws: Worksheet, *, start_row: int, end_row: int) -> None:
+    for row_idx in range(start_row, end_row + 1):
+        label_cell = ws.cell(row=row_idx, column=1)
+        value_cell = ws.cell(row=row_idx, column=2)
+        label_cell.font = BOLD_FONT
+        label_cell.fill = META_LABEL_FILL
+        label_cell.alignment = Alignment(horizontal="left", vertical="center")
+        label_cell.border = THIN_BORDER
+
+        value_cell.font = MUTED_FONT
+        value_cell.fill = META_VALUE_FILL
+        value_cell.alignment = Alignment(horizontal="left", vertical="center")
+        value_cell.border = THIN_BORDER
+
+
+def _is_hhmm_value(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    if len(value) != 5 or value[2] != ":":
+        return False
+    hh, mm = value.split(":")
+    return hh.isdigit() and mm.isdigit()
+
+
+def _style_table_region(
+    ws: Worksheet,
+    *,
+    header_row: int,
+    data_start_row: int,
+    data_end_row: int,
+    status_col_name: str = "Durum",
+    flags_col_name: str = "Bayraklar",
+) -> None:
+    if data_end_row < data_start_row:
+        ws.freeze_panes = f"A{header_row + 1}"
+        return
+
+    header_map: dict[str, int] = {}
+    for col_idx in range(1, ws.max_column + 1):
+        header_value = ws.cell(row=header_row, column=col_idx).value
+        if isinstance(header_value, str):
+            header_map[header_value] = col_idx
+
+    ws.auto_filter.ref = f"A{header_row}:{get_column_letter(ws.max_column)}{data_end_row}"
+    ws.freeze_panes = f"A{header_row + 1}"
+
+    status_col = header_map.get(status_col_name)
+    flags_col = header_map.get(flags_col_name)
+    overtime_cols = [
+        idx
+        for name, idx in header_map.items()
+        if "Fazla Mesai" in name or "Fazla Surelerle" in name or "Fazla S\u00fcrelerle" in name
+    ]
+
+    for row_idx in range(data_start_row, data_end_row + 1):
+        status_value = ws.cell(row=row_idx, column=status_col).value if status_col else None
+        flags_value = ws.cell(row=row_idx, column=flags_col).value if flags_col else None
+
+        if isinstance(status_value, str) and status_value.upper() in {"INCOMPLETE", "LEAVE", "OFF"}:
+            row_fill = WARNING_FILL
+        elif isinstance(status_value, str) and status_value.upper() in {"OK", "FINISHED"}:
+            row_fill = PatternFill(fill_type=None)
+        else:
+            row_fill = PatternFill(fill_type=None)
+
+        if row_fill.fill_type is None and row_idx % 2 == 0:
+            row_fill = ZEBRA_FILL
+
+        for col_idx in range(1, ws.max_column + 1):
+            cell = ws.cell(row=row_idx, column=col_idx)
+            cell.border = THIN_BORDER
+            if row_fill.fill_type:
+                cell.fill = row_fill
+            if isinstance(cell.value, (int, float)):
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+            elif _is_hhmm_value(cell.value):
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+            else:
+                cell.alignment = Alignment(horizontal="left", vertical="center")
+
+        if flags_col and flags_value not in {None, "", "-"}:
+            flag_cell = ws.cell(row=row_idx, column=flags_col)
+            flag_cell.fill = ALERT_FILL
+            flag_cell.font = Font(bold=True, color="9F1239")
+
+        for overtime_col in overtime_cols:
+            overtime_cell = ws.cell(row=row_idx, column=overtime_col)
+            if overtime_cell.value not in {None, "", "00:00", 0}:
+                overtime_cell.fill = SUCCESS_FILL
+                overtime_cell.font = Font(bold=True, color="166534")
 
 
 def _safe_sheet_title(title: str, fallback: str) -> str:
@@ -102,7 +226,7 @@ def _append_summary_area(
     *,
     report: MonthlyEmployeeResponse,
     total_extra_work_minutes: int = 0,
-) -> None:
+) -> tuple[int, int]:
     ws.append([])
     summary_start = ws.max_row + 1
     ws.append(["\u00d6zet", "De\u011fer"])
@@ -113,6 +237,20 @@ def _append_summary_area(
     ws.append(["Y\u0131ll\u0131k Fazla Mesai Kullan\u0131m\u0131", _minutes_to_hhmm(report.annual_overtime_used_minutes)])
     _style_header(ws, summary_start)
 
+    summary_end = ws.max_row
+    for row_idx in range(summary_start + 1, summary_end + 1):
+        label_cell = ws.cell(row=row_idx, column=1)
+        value_cell = ws.cell(row=row_idx, column=2)
+        label_cell.fill = SUMMARY_FILL
+        label_cell.border = THIN_BORDER
+        label_cell.font = BOLD_FONT
+        value_cell.fill = PatternFill(fill_type="solid", fgColor="F8FBFF")
+        value_cell.border = THIN_BORDER
+        value_cell.alignment = Alignment(horizontal="center", vertical="center")
+        if _is_hhmm_value(value_cell.value):
+            value_cell.font = Font(bold=True, color="0B4F73")
+    return summary_start, summary_end
+
 
 def _append_employee_daily_sheet(
     ws: Worksheet,
@@ -121,16 +259,20 @@ def _append_employee_daily_sheet(
     department_name: str | None,
     report: MonthlyEmployeeResponse,
 ) -> None:
+    _merge_title(ws, 1, "PUANTAJ AYLIK RAPORU")
     ws.append(["\u00c7al\u0131\u015fan", employee_name])
     ws.append(["Departman", department_name or "-"])
     ws.append(["D\u00f6nem", f"{report.year}-{report.month:02d}"])
+    ws.append(["Rapor \u00dcretim (UTC)", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")])
     ws.append([])
+    _style_metadata_rows(ws, start_row=2, end_row=5)
 
     header_row = ws.max_row + 1
     ws.append(DAILY_HEADERS)
     _style_header(ws, header_row)
 
     total_extra_work_minutes = sum(week.extra_work_minutes for week in report.weekly_totals)
+    data_start_row = header_row + 1
 
     for day in report.days:
         check_in = _to_excel_datetime(day.check_in)
@@ -152,9 +294,17 @@ def _append_employee_daily_sheet(
             ]
         )
 
+    data_end_row = ws.max_row
+    _style_table_region(
+        ws,
+        header_row=header_row,
+        data_start_row=data_start_row,
+        data_end_row=data_end_row,
+    )
+
     _append_summary_area(ws, report=report, total_extra_work_minutes=total_extra_work_minutes)
 
-    for row in ws.iter_rows(min_row=header_row + 1, max_row=ws.max_row):
+    for row in ws.iter_rows(min_row=data_start_row, max_row=data_end_row):
         if isinstance(row[0].value, datetime) or isinstance(row[0].value, date):
             row[0].number_format = "yyyy-mm-dd"
         if row[1].value is not None:
@@ -196,6 +346,13 @@ def _build_summary_sheet(
     rows: list[dict[str, object]],
 ) -> None:
     ws.title = _safe_sheet_title(title, "Ozet")
+    _merge_title(ws, 1, f"{title} - PUANTAJ OZET")
+    ws.append(["Rapor \u00dcretim (UTC)", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")])
+    ws.append(["Kay\u0131t Say\u0131s\u0131", len(rows)])
+    ws.append([])
+    _style_metadata_rows(ws, start_row=2, end_row=3)
+
+    header_row = ws.max_row + 1
     ws.append(
         [
             "\u00c7al\u0131\u015fan ID",
@@ -208,13 +365,14 @@ def _build_summary_sheet(
             "Y\u0131ll\u0131k Fazla Mesai Kullan\u0131m\u0131",
         ]
     )
-    _style_header(ws)
+    _style_header(ws, header_row)
 
     total_worked = 0
     total_extra = 0
     total_overtime = 0
     total_incomplete = 0
     total_annual = 0
+    data_start_row = header_row + 1
     for row in rows:
         worked = int(row["worked_minutes"])
         extra = int(row["extra_work_minutes"])
@@ -241,6 +399,16 @@ def _build_summary_sheet(
             ]
         )
 
+    data_end_row = ws.max_row
+    _style_table_region(
+        ws,
+        header_row=header_row,
+        data_start_row=data_start_row,
+        data_end_row=data_end_row,
+        status_col_name="",
+        flags_col_name="",
+    )
+
     total_row = ws.max_row + 1
     ws.append(
         [
@@ -254,7 +422,11 @@ def _build_summary_sheet(
             _minutes_to_hhmm(total_annual),
         ]
     )
-    _style_header(ws, total_row)
+    for cell in ws[total_row]:
+        cell.fill = HEADER_FILL
+        cell.font = HEADER_FONT
+        cell.border = THIN_BORDER
+        cell.alignment = Alignment(horizontal="center", vertical="center")
     _auto_width(ws)
 
 
@@ -345,6 +517,15 @@ def _build_date_range_export(
 
     ws_events = wb.active
     ws_events.title = "Ham Eventler"
+    _merge_title(ws_events, 1, "PUANTAJ HAM EVENT RAPORU")
+    ws_events.append(["Tarih Aral\u0131\u011f\u0131", f"{start_date.isoformat()} - {end_date.isoformat()}"])
+    ws_events.append(["Filtre - \u00c7al\u0131\u015fan ID", employee_id if employee_id is not None else "T\u00fcm\u00fc"])
+    ws_events.append(["Filtre - Departman ID", department_id if department_id is not None else "T\u00fcm\u00fc"])
+    ws_events.append(["Kay\u0131t Say\u0131s\u0131", len(rows)])
+    ws_events.append([])
+    _style_metadata_rows(ws_events, start_row=2, end_row=5)
+
+    events_header_row = ws_events.max_row + 1
     ws_events.append(
         [
             "Event ID",
@@ -360,7 +541,7 @@ def _build_date_range_export(
             "Bayraklar",
         ]
     )
-    _style_header(ws_events)
+    _style_header(ws_events, events_header_row)
 
     grouped: dict[tuple[int, date], dict[str, object]] = defaultdict(
         lambda: {
@@ -402,12 +583,31 @@ def _build_date_range_export(
             if isinstance(flag_value, bool) and flag_value:
                 grouped[key]["flags"].add(flag_name)
 
-    for row in ws_events.iter_rows(min_row=2, max_row=ws_events.max_row):
+    events_data_start = events_header_row + 1
+    events_data_end = ws_events.max_row
+    _style_table_region(
+        ws_events,
+        header_row=events_header_row,
+        data_start_row=events_data_start,
+        data_end_row=events_data_end,
+        status_col_name="Konum Durumu",
+        flags_col_name="Bayraklar",
+    )
+
+    for row in ws_events.iter_rows(min_row=events_data_start, max_row=events_data_end):
         if row[5].value is not None:
             row[5].number_format = "yyyy-mm-dd hh:mm"
     _auto_width(ws_events)
 
     ws_daily = wb.create_sheet("Gunluk Ozet")
+    _merge_title(ws_daily, 1, "PUANTAJ GUNLUK OZET RAPORU")
+    ws_daily.append(["Tarih Aral\u0131\u011f\u0131", f"{start_date.isoformat()} - {end_date.isoformat()}"])
+    ws_daily.append(["Filtre - \u00c7al\u0131\u015fan ID", employee_id if employee_id is not None else "T\u00fcm\u00fc"])
+    ws_daily.append(["Filtre - Departman ID", department_id if department_id is not None else "T\u00fcm\u00fc"])
+    ws_daily.append([])
+    _style_metadata_rows(ws_daily, start_row=2, end_row=4)
+
+    daily_header_row = ws_daily.max_row + 1
     ws_daily.append(
         [
             "Tarih",
@@ -425,7 +625,7 @@ def _build_date_range_export(
             "Bayraklar",
         ]
     )
-    _style_header(ws_daily)
+    _style_header(ws_daily, daily_header_row)
 
     work_rule_cache: dict[int | None, tuple[int, int]] = {}
     for (employee_id_value, day_date), bucket in sorted(grouped.items(), key=lambda item: (item[0][1], item[0][0])):
@@ -470,7 +670,16 @@ def _build_date_range_export(
             ]
         )
 
-    for row in ws_daily.iter_rows(min_row=2, max_row=ws_daily.max_row):
+    daily_data_start = daily_header_row + 1
+    daily_data_end = ws_daily.max_row
+    _style_table_region(
+        ws_daily,
+        header_row=daily_header_row,
+        data_start_row=daily_data_start,
+        data_end_row=daily_data_end,
+    )
+
+    for row in ws_daily.iter_rows(min_row=daily_data_start, max_row=daily_data_end):
         if row[0].value is not None:
             row[0].number_format = "yyyy-mm-dd"
         if row[4].value is not None:
@@ -594,6 +803,13 @@ def _write_range_sheet_rows(
     *,
     rows: list[tuple[AttendanceEvent, Employee, Department | None]],
 ) -> None:
+    _merge_title(ws, 1, "PUANTAJ TARIH ARALIGI RAPORU")
+    ws.append(["Kayıt Sayısı", len(rows)])
+    ws.append(["Rapor Üretim (UTC)", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")])
+    ws.append([])
+    _style_metadata_rows(ws, start_row=2, end_row=3)
+
+    header_row = ws.max_row + 1
     ws.append(
         [
             "Tarih",
@@ -609,7 +825,7 @@ def _write_range_sheet_rows(
             "Bayraklar",
         ]
     )
-    _style_header(ws)
+    _style_header(ws, header_row)
 
     for event, employee, department in rows:
         ts_value = _to_excel_datetime(event.ts_utc)
@@ -630,8 +846,19 @@ def _write_range_sheet_rows(
             ]
         )
 
-    if ws.max_row >= 2:
-        for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+    data_start = header_row + 1
+    data_end = ws.max_row
+    _style_table_region(
+        ws,
+        header_row=header_row,
+        data_start_row=data_start,
+        data_end_row=data_end,
+        status_col_name="Konum Durumu",
+        flags_col_name="Bayraklar",
+    )
+
+    if ws.max_row >= data_start:
+        for row in ws.iter_rows(min_row=data_start, max_row=data_end):
             if row[0].value is not None:
                 row[0].number_format = "yyyy-mm-dd"
             if row[1].value is not None:
