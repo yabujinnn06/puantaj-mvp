@@ -1,7 +1,6 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios'
 
 import { clearAuthTokens, getAccessToken, getRefreshToken, setAuthTokens } from '../auth/token'
-import { parseApiError } from './error'
 import type { AdminAuthResponse } from '../types/api'
 
 const defaultBaseURL =
@@ -89,10 +88,7 @@ apiClient.interceptors.response.use(
     }
 
     const status = error.response?.status
-    const parsedError = parseApiError(error, 'Request failed')
-    const code = parsedError.code
-
-    if (status !== 401 || code !== 'INVALID_TOKEN' || originalRequest._retry) {
+    if (status !== 401 || originalRequest._retry) {
       return Promise.reject(error)
     }
 
