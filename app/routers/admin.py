@@ -70,8 +70,12 @@ from app.schemas import (
     DepartmentWeeklyRuleUpsert,
     EmployeeActiveUpdateRequest,
     EmployeeCreate,
+    EmployeeDetailResponse,
+    EmployeeDeviceDetailRead,
     EmployeeShiftUpdateRequest,
     EmployeeLocationRead,
+    EmployeeLiveLocationRead,
+    EmployeePortalActivityRead,
     EmployeeLocationUpsert,
     EmployeeRead,
     LeaveCreateRequest,
@@ -1038,6 +1042,155 @@ def list_employees(
         )
 
     return [_to_employee_read(item) for item in db.scalars(stmt).all()]
+
+
+@router.get(
+    "/api/admin/employees/{employee_id}/detail",
+    response_model=EmployeeDetailResponse,
+    dependencies=[Depends(require_admin_permission("employees"))],
+)
+def get_employee_detail(
+    employee_id: int,
+    db: Session = Depends(get_db),
+) -> EmployeeDetailResponse:
+    employee = db.scalar(
+        select(Employee)
+        .options(
+            selectinload(Employee.region),
+            selectinload(Employee.department),
+            selectinload(Employee.devices),
+        )
+        .where(Employee.id == employee_id)
+    )
+    if employee is None:
+        raise HTTPException(status_code=404, detail="Employee not found")
+
+    activity_logs = list(
+        db.scalars(
+            select(AuditLog)
+            .where(
+                AuditLog.actor_type == AuditActorType.SYSTEM,
+                AuditLog.actor_id == str(employee_id),
+            )
+            .order_by(AuditLog.ts_utc.desc(), AuditLog.id.desc())
+            .limit(100)
+        ).all()
+    )
+    last_portal_seen_utc = activity_logs[0].ts_utc if activity_logs else None
+
+    recent_ips: list[str] = []
+    seen_ips: set[str] = set()
+    for log_item in activity_logs:
+        if not log_item.ip:
+            continue
+        if log_item.ip in seen_ips:
+            continue
+        seen_ips.add(log_item.ip)
+        recent_ips.append(log_item.ip)
+        if len(recent_ips) >= 10:
+            break
+
+    recent_activity = [
+        EmployeePortalActivityRead(
+            ts_utc=log_item.ts_utc,
+            action=log_item.action,
+            ip=log_item.ip,
+            user_agent=log_item.user_agent,
+        )
+        for log_item in activity_logs[:20]
+    ]
+
+    latest_location_event = db.scalar(
+        select(AttendanceEvent)
+        .where(
+            AttendanceEvent.employee_id == employee_id,
+            AttendanceEvent.deleted_at.is_(None),
+            AttendanceEvent.lat.is_not(None),
+            AttendanceEvent.lon.is_not(None),
+        )
+        .order_by(AttendanceEvent.ts_utc.desc(), AttendanceEvent.id.desc())
+        .limit(1)
+    )
+
+    latest_location = (
+        EmployeeLiveLocationRead(
+            lat=latest_location_event.lat if latest_location_event.lat is not None else 0.0,
+            lon=latest_location_event.lon if latest_location_event.lon is not None else 0.0,
+            accuracy_m=latest_location_event.accuracy_m,
+            ts_utc=latest_location_event.ts_utc,
+            location_status=latest_location_event.location_status,
+            event_type=latest_location_event.type,
+            device_id=latest_location_event.device_id,
+        )
+        if latest_location_event is not None
+        and latest_location_event.lat is not None
+        and latest_location_event.lon is not None
+        else None
+    )
+
+    latest_ip_log = db.scalar(
+        select(AuditLog)
+        .where(
+            AuditLog.actor_type == AuditActorType.SYSTEM,
+            AuditLog.actor_id == str(employee_id),
+            AuditLog.ip.is_not(None),
+        )
+        .order_by(AuditLog.ts_utc.desc(), AuditLog.id.desc())
+        .limit(1)
+    )
+
+    devices: list[EmployeeDeviceDetailRead] = []
+    sorted_devices = sorted(
+        list(employee.devices or []),
+        key=lambda item: (item.created_at, item.id),
+        reverse=True,
+    )
+    for device in sorted_devices:
+        last_event = db.scalar(
+            select(AttendanceEvent)
+            .where(
+                AttendanceEvent.device_id == device.id,
+                AttendanceEvent.deleted_at.is_(None),
+            )
+            .order_by(AttendanceEvent.ts_utc.desc(), AttendanceEvent.id.desc())
+            .limit(1)
+        )
+
+        event_log: AuditLog | None = None
+        if last_event is not None:
+            event_log = db.scalar(
+                select(AuditLog)
+                .where(
+                    AuditLog.entity_type == "attendance_event",
+                    AuditLog.entity_id == str(last_event.id),
+                    AuditLog.action == "ATTENDANCE_EVENT_CREATED",
+                    AuditLog.ip.is_not(None),
+                )
+                .order_by(AuditLog.ts_utc.desc(), AuditLog.id.desc())
+                .limit(1)
+            )
+
+        devices.append(
+            EmployeeDeviceDetailRead(
+                id=device.id,
+                device_fingerprint=device.device_fingerprint,
+                is_active=device.is_active,
+                created_at=device.created_at,
+                last_attendance_ts_utc=last_event.ts_utc if last_event is not None else None,
+                last_seen_ip=(event_log.ip if event_log and event_log.ip else (latest_ip_log.ip if latest_ip_log else None)),
+                last_seen_action=(event_log.action if event_log else (latest_ip_log.action if latest_ip_log else None)),
+                last_seen_at_utc=(event_log.ts_utc if event_log else (latest_ip_log.ts_utc if latest_ip_log else None)),
+            )
+        )
+
+    return EmployeeDetailResponse(
+        employee=_to_employee_read(employee),
+        last_portal_seen_utc=last_portal_seen_utc,
+        recent_ips=recent_ips,
+        devices=devices,
+        latest_location=latest_location,
+        recent_activity=recent_activity,
+    )
 
 
 @router.patch(

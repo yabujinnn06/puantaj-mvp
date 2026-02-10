@@ -32,6 +32,43 @@ export interface Employee {
   contract_weekly_minutes?: number | null
 }
 
+export interface EmployeeDeviceDetail {
+  id: number
+  device_fingerprint: string
+  is_active: boolean
+  created_at: string
+  last_attendance_ts_utc: string | null
+  last_seen_ip: string | null
+  last_seen_action: string | null
+  last_seen_at_utc: string | null
+}
+
+export interface EmployeePortalActivity {
+  ts_utc: string
+  action: string
+  ip: string | null
+  user_agent: string | null
+}
+
+export interface EmployeeLiveLocation {
+  lat: number
+  lon: number
+  accuracy_m: number | null
+  ts_utc: string
+  location_status: LocationStatus
+  event_type: AttendanceType
+  device_id: number
+}
+
+export interface EmployeeDetail {
+  employee: Employee
+  last_portal_seen_utc: string | null
+  recent_ips: string[]
+  devices: EmployeeDeviceDetail[]
+  latest_location: EmployeeLiveLocation | null
+  recent_activity: EmployeePortalActivity[]
+}
+
 export type EmployeeStatusFilter = 'active' | 'inactive' | 'all'
 
 export interface Device {

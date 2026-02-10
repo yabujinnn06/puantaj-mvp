@@ -77,6 +77,43 @@ class EmployeeRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class EmployeeDeviceDetailRead(BaseModel):
+    id: int
+    device_fingerprint: str
+    is_active: bool
+    created_at: datetime
+    last_attendance_ts_utc: datetime | None = None
+    last_seen_ip: str | None = None
+    last_seen_action: str | None = None
+    last_seen_at_utc: datetime | None = None
+
+
+class EmployeePortalActivityRead(BaseModel):
+    ts_utc: datetime
+    action: str
+    ip: str | None = None
+    user_agent: str | None = None
+
+
+class EmployeeLiveLocationRead(BaseModel):
+    lat: float
+    lon: float
+    accuracy_m: float | None = None
+    ts_utc: datetime
+    location_status: LocationStatus
+    event_type: AttendanceType
+    device_id: int
+
+
+class EmployeeDetailResponse(BaseModel):
+    employee: EmployeeRead
+    last_portal_seen_utc: datetime | None = None
+    recent_ips: list[str] = Field(default_factory=list)
+    devices: list[EmployeeDeviceDetailRead] = Field(default_factory=list)
+    latest_location: EmployeeLiveLocationRead | None = None
+    recent_activity: list[EmployeePortalActivityRead] = Field(default_factory=list)
+
+
 class EmployeeActiveUpdateRequest(BaseModel):
     is_active: bool
 

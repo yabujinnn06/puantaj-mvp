@@ -15,6 +15,7 @@ import type {
   EmployeeDeviceOverview,
   DeviceInviteCreateResponse,
   Employee,
+  EmployeeDetail,
   EmployeeLocation,
   EmployeeStatusFilter,
   LaborProfile,
@@ -439,6 +440,11 @@ export async function getEmployees(params: EmployeesParams = {}): Promise<Employ
 
 export async function createEmployee(payload: CreateEmployeePayload): Promise<Employee> {
   const response = await apiClient.post<Employee>('/admin/employees', payload)
+  return response.data
+}
+
+export async function getEmployeeDetail(employeeId: number): Promise<EmployeeDetail> {
+  const response = await apiClient.get<EmployeeDetail>(`/api/admin/employees/${employeeId}/detail`)
   return response.data
 }
 

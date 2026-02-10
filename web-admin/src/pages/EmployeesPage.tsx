@@ -38,14 +38,16 @@ export function EmployeesPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [showInactive, setShowInactive] = useState(false)
   const [regionFilterId, setRegionFilterId] = useState('')
+  const [departmentFilterId, setDepartmentFilterId] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   const employeesQuery = useQuery({
-    queryKey: ['employees', showInactive, regionFilterId],
+    queryKey: ['employees', showInactive, regionFilterId, departmentFilterId],
     queryFn: () =>
       getEmployees({
         ...(showInactive ? { include_inactive: true } : {}),
         ...(regionFilterId ? { region_id: Number(regionFilterId) } : {}),
+        ...(departmentFilterId ? { department_id: Number(departmentFilterId) } : {}),
       }),
   })
   const departmentsQuery = useQuery({ queryKey: ['departments'], queryFn: getDepartments })
@@ -142,6 +144,14 @@ export function EmployeesPage() {
     }
     return departments.filter((department) => department.region_id === selectedRegion)
   }, [departments, regionId])
+
+  const filterDepartments = useMemo(() => {
+    const selectedRegion = regionFilterId ? Number(regionFilterId) : null
+    if (!selectedRegion) {
+      return departments
+    }
+    return departments.filter((department) => department.region_id === selectedRegion)
+  }, [departments, regionFilterId])
 
   const filteredEmployees = useMemo(() => {
     const normalized = searchTerm.trim().toLowerCase()
@@ -257,7 +267,7 @@ export function EmployeesPage() {
       ) : null}
 
       <Panel>
-        <div className="mb-4 grid gap-3 md:grid-cols-4">
+        <div className="mb-4 grid gap-3 md:grid-cols-5">
           <TableSearchInput
             value={searchTerm}
             onChange={setSearchTerm}
@@ -267,13 +277,31 @@ export function EmployeesPage() {
             Bolge filtresi
             <select
               value={regionFilterId}
-              onChange={(event) => setRegionFilterId(event.target.value)}
+              onChange={(event) => {
+                setRegionFilterId(event.target.value)
+                setDepartmentFilterId('')
+              }}
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
             >
               <option value="">Tum bolgeler</option>
               {regions.map((region) => (
                 <option key={region.id} value={region.id}>
                   {region.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-sm text-slate-700">
+            Departman filtresi
+            <select
+              value={departmentFilterId}
+              onChange={(event) => setDepartmentFilterId(event.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+            >
+              <option value="">Tum departmanlar</option>
+              {filterDepartments.map((department) => (
+                <option key={department.id} value={department.id}>
+                  {department.name}
                 </option>
               ))}
             </select>
@@ -318,6 +346,10 @@ export function EmployeesPage() {
                     <div className="flex flex-wrap gap-2">
                       <Link
                         to={`/employees/${employee.id}`}
+                        onClick={() => {
+                          sessionStorage.setItem('employee-detail-origin', 'employees')
+                          sessionStorage.setItem('employee-detail-id', String(employee.id))
+                        }}
                         className="btn-secondary inline-flex rounded-lg border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
                       >
                         Duzenle
