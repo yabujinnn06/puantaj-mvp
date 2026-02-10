@@ -8,6 +8,8 @@ import type {
   AttendanceCheckoutRequest,
   DeviceClaimRequest,
   DeviceClaimResponse,
+  EmployeeQrScanRequest,
+  EmployeeQrScanDeniedResponse,
   EmployeeHomeLocationSetRequest,
   EmployeeHomeLocationSetResponse,
   EmployeeStatusResponse,
@@ -44,6 +46,9 @@ const errorCodeMap: Record<string, string> = {
   PASSKEY_REGISTRATION_FAILED: 'Passkey kaydı doğrulanamadı.',
   PASSKEY_AUTH_FAILED: 'Passkey doğrulaması başarısız oldu.',
   PASSKEY_NOT_REGISTERED: 'Bu cihaz için passkey kaydı bulunamadı.',
+  QR_POINT_OUT_OF_RANGE: 'Bu QR kod sadece tanımlı konum içinde okutulabilir.',
+  QR_CODE_NOT_FOUND: 'QR kod bulunamadı veya pasif durumda.',
+  QR_CODE_HAS_NO_ACTIVE_POINTS: 'Bu QR koda aktif konum noktası atanmadı.',
 }
 
 const backendDetailMap: Record<string, string> = {
@@ -56,15 +61,44 @@ const backendDetailMap: Record<string, string> = {
 
 export function parseApiError(error: unknown, fallback: string): ParsedApiError {
   if (axios.isAxiosError(error)) {
-    const data = error.response?.data as ApiErrorShape | string | undefined
+    const data = error.response?.data as
+      | ApiErrorShape
+      | EmployeeQrScanDeniedResponse
+      | string
+      | undefined
     if (typeof data === 'string') {
       return { message: data }
     }
 
-    const code = data?.error?.code
-    const requestId = data?.error?.request_id
-    const detail = data?.detail
-    const backendMessage = data?.error?.message
+    const errorObj =
+      typeof data === 'object' && data !== null && 'error' in data && typeof data.error === 'object'
+        ? (data.error as { code?: string; request_id?: string; message?: string })
+        : undefined
+    const code = errorObj?.code
+    const requestId = errorObj?.request_id
+    const detail =
+      typeof data === 'object' && data !== null && 'detail' in data
+        ? (data.detail as string | undefined)
+        : undefined
+    const backendMessage = errorObj?.message
+    const deniedReason =
+      typeof data === 'object' && data !== null && 'reason' in data
+        ? (data.reason as string | undefined)
+        : undefined
+    const deniedDistance =
+      typeof data === 'object' && data !== null && 'closest_distance_m' in data
+        ? (data.closest_distance_m as number | null | undefined)
+        : undefined
+
+    if (deniedReason === 'QR_POINT_OUT_OF_RANGE') {
+      const distanceText =
+        typeof deniedDistance === 'number' ? `${Math.round(deniedDistance)}m` : 'bilinmiyor'
+      return {
+        code: deniedReason,
+        requestId,
+        message: `Bu QR kod bu konumda geçerli değil. En yakın nokta: ${distanceText}.`,
+      }
+    }
 
     if (code && code.startsWith('PASSKEY_') && backendMessage) {
       return { code, requestId, message: backendMessage }
@@ -104,6 +138,11 @@ export async function checkin(payload: AttendanceCheckinRequest): Promise<Attend
 
 export async function checkout(payload: AttendanceCheckoutRequest): Promise<AttendanceActionResponse> {
   const response = await apiClient.post<AttendanceActionResponse>('/api/attendance/checkout', payload)
+  return response.data
+}
+
+export async function scanEmployeeQr(payload: EmployeeQrScanRequest): Promise<AttendanceActionResponse> {
+  const response = await apiClient.post<AttendanceActionResponse>('/api/employee/qr/scan', payload)
   return response.data
 }
 

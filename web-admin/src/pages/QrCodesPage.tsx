@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import QRCode from 'qrcode'
 
 import {
   assignQrCodePoints,
@@ -71,6 +72,7 @@ export function QrCodesPage() {
   const [codeForm, setCodeForm] = useState<CodeFormState>(defaultCodeForm)
   const [pointForm, setPointForm] = useState<PointFormState>(defaultPointForm)
   const [assignSelectedPointIds, setAssignSelectedPointIds] = useState<number[]>([])
+  const [selectedCodeQrDataUrl, setSelectedCodeQrDataUrl] = useState<string | null>(null)
 
   const qrCodesQuery = useQuery({
     queryKey: ['qr-codes'],
@@ -245,6 +247,34 @@ export function QrCodesPage() {
     () => qrCodes.find((item) => item.id === selectedCodeId) ?? null,
     [qrCodes, selectedCodeId],
   )
+
+  useEffect(() => {
+    if (!selectedCode) {
+      setSelectedCodeQrDataUrl(null)
+      return
+    }
+
+    let cancelled = false
+    void QRCode.toDataURL(selectedCode.code_value, {
+      errorCorrectionLevel: 'M',
+      margin: 2,
+      width: 360,
+    })
+      .then((dataUrl) => {
+        if (!cancelled) {
+          setSelectedCodeQrDataUrl(dataUrl)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSelectedCodeQrDataUrl(null)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedCode?.id, selectedCode?.code_value])
 
   const pointsById = useMemo(() => {
     const map = new Map<number, QrPoint>()
@@ -426,6 +456,50 @@ export function QrCodesPage() {
     assignPointsMutation.mutate({ codeId: selectedCode.id, pointIds: assignSelectedPointIds })
   }
 
+  const copyCodeValue = async (codeValue: string) => {
+    try {
+      await navigator.clipboard.writeText(codeValue)
+      pushToast({
+        variant: 'success',
+        title: 'Kopyalandi',
+        description: 'QR kod degeri panoya kopyalandi.',
+      })
+    } catch {
+      pushToast({
+        variant: 'error',
+        title: 'Kopyalama basarisiz',
+        description: 'Lutfen manuel olarak kopyalayin.',
+      })
+    }
+  }
+
+  const downloadQrPng = async (code: QrCode) => {
+    try {
+      const dataUrl = await QRCode.toDataURL(code.code_value, {
+        errorCorrectionLevel: 'M',
+        margin: 2,
+        width: 900,
+      })
+      const link = document.createElement('a')
+      link.href = dataUrl
+      link.download = `qr-kod-${code.id}.png`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      pushToast({
+        variant: 'success',
+        title: 'PNG indirildi',
+        description: `QR kod #${code.id} dosyasi indirildi.`,
+      })
+    } catch {
+      pushToast({
+        variant: 'error',
+        title: 'Indirme basarisiz',
+        description: 'QR kod PNG olusturulamadi.',
+      })
+    }
+  }
+
   if (qrCodesQuery.isLoading || qrPointsQuery.isLoading) {
     return <LoadingBlock />
   }
@@ -555,13 +629,24 @@ export function QrCodesPage() {
                     <td className="px-3 py-2">{code.code_type}</td>
                     <td className="px-3 py-2">{code.point_ids.length}</td>
                     <td className="px-3 py-2">
-                      <button
-                        type="button"
-                        onClick={() => startEditCode(code)}
-                        className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                      >
-                        Duzenle
-                      </button>
+                      <div className="flex flex-wrap gap-1">
+                        <button
+                          type="button"
+                          onClick={() => startEditCode(code)}
+                          className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          Duzenle
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void downloadQrPng(code)
+                          }}
+                          className="rounded-md border border-brand-300 px-2 py-1 text-xs font-medium text-brand-700 hover:bg-brand-50"
+                        >
+                          PNG
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -593,6 +678,47 @@ export function QrCodesPage() {
                 <p>
                   <span className="font-semibold">Durum:</span> {selectedCode.is_active ? 'Aktif' : 'Pasif'}
                 </p>
+              </div>
+
+              <div className="rounded-lg border border-brand-200 bg-brand-50/60 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-brand-700">QR Onizleme</p>
+                <p className="mt-1 break-all text-xs text-slate-700">{selectedCode.code_value}</p>
+                {selectedCodeQrDataUrl ? (
+                  <div className="mt-3 flex flex-col items-start gap-3">
+                    <img
+                      src={selectedCodeQrDataUrl}
+                      alt={`QR Kod ${selectedCode.id}`}
+                      className="h-52 w-52 rounded-lg border border-brand-200 bg-white p-2"
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void downloadQrPng(selectedCode)
+                        }}
+                        className="rounded-md bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700"
+                      >
+                        PNG Indir
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void copyCodeValue(selectedCode.code_value)
+                        }}
+                        className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-white"
+                      >
+                        Kodu Kopyala
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mt-2 text-xs text-rose-700">QR onizleme olusturulamadi.</p>
+                )}
+              </div>
+
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                Bu QR kod, sadece bu koda atanmis aktif konum noktalarinin radius alaninda okutuldugunda
+                gecerli olur. Diger konumlarda sistem isleme izin vermez.
               </div>
 
               <h5 className="text-sm font-semibold text-slate-900">Atanmis Noktalar</h5>
@@ -827,4 +953,3 @@ export function QrCodesPage() {
     </div>
   )
 }
-

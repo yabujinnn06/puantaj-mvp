@@ -3,11 +3,11 @@ import { Link } from 'react-router-dom'
 import { startRegistration } from '@simplewebauthn/browser'
 
 import {
-  checkin,
   checkout,
   getEmployeeStatus,
   getPasskeyRegisterOptions,
   parseApiError,
+  scanEmployeeQr,
   verifyPasskeyRegistration,
 } from '../api/attendance'
 import { BrandSignature } from '../components/BrandSignature'
@@ -19,7 +19,6 @@ import {
   hasDuplicateFlag,
   locationStatusClass,
   locationStatusLabel,
-  parseQrPayload,
   prettyFlagValue,
 } from '../utils/attendance'
 import { getStoredDeviceFingerprint } from '../utils/device'
@@ -28,7 +27,7 @@ import { getCurrentLocation } from '../utils/location'
 type TodayStatus = EmployeeStatusResponse['today_status']
 
 interface LastAction {
-  siteId?: string
+  codeValue?: string
   response: AttendanceActionResponse
 }
 
@@ -115,7 +114,7 @@ export function HomePage() {
   const openShiftCheckinTime = statusSnapshot?.last_checkin_time_utc ?? statusSnapshot?.last_in_ts ?? null
   const passkeyRegistered = Boolean(statusSnapshot?.passkey_registered)
 
-  const canCheckin = Boolean(deviceFingerprint) && !isSubmitting && todayStatus === 'NOT_STARTED' && !hasOpenShift
+  const canQrScan = Boolean(deviceFingerprint) && !isSubmitting && todayStatus !== 'FINISHED'
   const canCheckout = Boolean(deviceFingerprint) && !isSubmitting && hasOpenShift
 
   const currentHour = new Date().getHours()
@@ -163,26 +162,19 @@ export function HomePage() {
     }
   }
 
-  const runCheckinFromQr = async (rawQrValue: string) => {
+  const runQrScan = async (rawQrValue: string) => {
     if (!deviceFingerprint) {
       setErrorMessage('Cihaz bağlı değil. Davet linkine tıklayın.')
       return
     }
-    if (todayStatus !== 'NOT_STARTED' || hasOpenShift) {
+    if (todayStatus === 'FINISHED' && !hasOpenShift) {
       setErrorMessage(todayStatusHint(todayStatus))
       return
     }
 
-    const payload = parseQrPayload(rawQrValue)
-    if (!payload) {
-      setErrorMessage(
-        'QR formatı geçersiz. Desteklenen formatlar: {"site_id":"HQ","type":"IN"} veya site_id=HQ&type=IN',
-      )
-      setRequestId(null)
-      return
-    }
-    if (payload.type !== 'IN') {
-      setErrorMessage('Bu QR giriş için değil.')
+    const codeValue = rawQrValue.trim()
+    if (!codeValue) {
+      setErrorMessage('QR kod değeri boş olamaz.')
       setRequestId(null)
       return
     }
@@ -195,38 +187,44 @@ export function HomePage() {
 
     try {
       const locationResult = await getCurrentLocation()
-      setLocationWarning(locationResult.warning)
-      const response = await checkin({
+      if (!locationResult.location) {
+        setErrorMessage(
+          locationResult.warning ??
+            'QR okutma işlemi için konum izni gereklidir. Lütfen konumu açıp tekrar deneyin.',
+        )
+        return
+      }
+
+      const response = await scanEmployeeQr({
+        code_value: codeValue,
         device_fingerprint: deviceFingerprint,
-        qr: {
-          type: 'IN',
-          site_id: payload.site_id,
-          shift_id: payload.shift_id,
-        },
-        lat: locationResult.location?.lat,
-        lon: locationResult.location?.lon,
-        accuracy_m: locationResult.location?.accuracy_m,
+        lat: locationResult.location.lat,
+        lon: locationResult.location.lon,
+        accuracy_m: locationResult.location.accuracy_m,
       })
-      setLastAction({ siteId: payload.site_id, response })
-      setTodayStatus('IN_PROGRESS')
+      const nextStatus: TodayStatus = response.event_type === 'IN' ? 'IN_PROGRESS' : 'FINISHED'
+      setLastAction({ codeValue, response })
+      setTodayStatus(nextStatus)
       setStatusSnapshot((prev) => ({
         ...(prev ?? {
           employee_id: response.employee_id,
-          today_status: 'IN_PROGRESS',
+          today_status: nextStatus,
           last_in_ts: null,
           last_out_ts: null,
           last_location_status: null,
           last_flags: {},
         }),
-        has_open_shift: true,
-        today_status: 'IN_PROGRESS',
-        last_in_ts: response.ts_utc,
-        last_checkin_time_utc: response.ts_utc,
+        has_open_shift: response.event_type === 'IN',
+        today_status: nextStatus,
+        last_in_ts: response.event_type === 'IN' ? response.ts_utc : (prev?.last_in_ts ?? null),
+        last_out_ts: response.event_type === 'OUT' ? response.ts_utc : (prev?.last_out_ts ?? null),
+        last_checkin_time_utc:
+          response.event_type === 'IN' ? response.ts_utc : (prev?.last_checkin_time_utc ?? null),
         last_location_status: response.location_status,
         last_flags: response.flags,
       }))
     } catch (error) {
-      const parsed = parseApiError(error, 'Giriş kaydı oluşturulamadı.')
+      const parsed = parseApiError(error, 'QR işlemi tamamlanamadı.')
       setErrorMessage(parsed.message)
       setRequestId(parsed.requestId ?? null)
     } finally {
@@ -391,9 +389,9 @@ export function HomePage() {
           <button
             type="button"
             className="btn btn-primary btn-lg"
-            disabled={!canCheckin}
+            disabled={!canQrScan}
             onClick={() => {
-              if (!canCheckin) {
+              if (!canQrScan) {
                 setErrorMessage(todayStatusHint(todayStatus))
                 return
               }
@@ -407,7 +405,7 @@ export function HomePage() {
                 İşlem yapılıyor...
               </>
             ) : (
-              'QR ile Giriş'
+              'QR ile Giriş/Çıkış'
             )}
           </button>
 
@@ -451,7 +449,7 @@ export function HomePage() {
               active={scannerActive}
               onDetected={(raw) => {
                 setScannerActive(false)
-                void runCheckinFromQr(raw)
+                void runQrScan(raw)
               }}
               onError={(message) => setScannerError(message)}
             />
@@ -523,9 +521,9 @@ export function HomePage() {
             <p>
               event_type: <strong>{lastAction.response.event_type}</strong> ({eventTypeLabel(lastAction.response.event_type)})
             </p>
-            {lastAction.siteId ? (
+            {lastAction.codeValue ? (
               <p>
-                site_id: <strong>{lastAction.siteId}</strong>
+                code_value: <strong>{lastAction.codeValue}</strong>
               </p>
             ) : null}
             <p>

@@ -42,6 +42,19 @@ export interface AttendanceActionResponse {
   shift_id?: number | null
 }
 
+export interface EmployeeQrScanRequest {
+  code_value: string
+  lat: number
+  lon: number
+  accuracy_m?: number | null
+  device_fingerprint: string
+}
+
+export interface EmployeeQrScanDeniedResponse {
+  reason: string
+  closest_distance_m: number | null
+}
+
 export interface EmployeeHomeLocationSetRequest {
   device_fingerprint: string
   home_lat: number

@@ -13,7 +13,7 @@ const navItems = [
   { to: '/attendance-events', label: 'Yoklama Kayıtları', permission: 'attendance_events' },
   { to: '/devices', label: 'Cihazlar', permission: 'devices' },
   { to: '/compliance-settings', label: 'Uyumluluk Ayarları', permission: 'compliance' },
-  { to: '/qr-kodlar', label: 'QR Kodlar', permission: 'schedule' },
+  { to: '/qr-kodlar', label: 'QR Kodlar' },
   { to: '/leaves', label: 'İzinler', permission: 'leaves' },
   { to: '/reports/employee-monthly', label: 'Aylık Çalışan Raporu', permission: 'reports' },
   { to: '/reports/department-summary', label: 'Departman Özeti', permission: 'reports' },
