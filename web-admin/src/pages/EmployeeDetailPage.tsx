@@ -384,7 +384,31 @@ export function EmployeeDetailPage() {
     [mapMarkers, visibleMarkerKinds],
   )
 
+  useEffect(() => {
+    if (!mapMarkers.length) {
+      return
+    }
+    if (filteredMapMarkers.length) {
+      return
+    }
+    setVisibleMarkerKinds({
+      checkin: true,
+      checkout: true,
+      latest: true,
+    })
+  }, [filteredMapMarkers.length, mapMarkers.length])
+
   const focusLegendKind = (kind: EmployeeLiveLocationMapMarkerKind) => {
+    const hasRequestedKind = mapMarkers.some((item) => item.kind === kind)
+    if (!hasRequestedKind) {
+      pushToast({
+        variant: 'info',
+        title: 'Bu tipte konum yok',
+        description: 'Secili kayitta bu lejant turune ait konum bulunamadi.',
+      })
+      return
+    }
+
     const activeCount = Object.values(visibleMarkerKinds).filter(Boolean).length
     if (visibleMarkerKinds[kind] && activeCount === 1) {
       setVisibleMarkerKinds({
@@ -785,7 +809,14 @@ export function EmployeeDetailPage() {
           {selectedMapDay ? (
             <button
               type="button"
-              onClick={() => setSelectedMapDay(null)}
+              onClick={() => {
+                setSelectedMapDay(null)
+                setVisibleMarkerKinds({
+                  checkin: true,
+                  checkout: true,
+                  latest: true,
+                })
+              }}
               className="rounded-md border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
             >
               Son bildirilen konuma don
