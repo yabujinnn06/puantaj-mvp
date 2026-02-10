@@ -15,7 +15,10 @@ API adresi `.env` dosyasindan okunur:
 
 ```env
 VITE_API_BASE_URL=http://127.0.0.1:8000
+VITE_GOOGLE_MAPS_API_KEY=your_google_maps_api_key
 ```
+
+Not: `QR Kodlar` sayfasindaki harita secici icin `VITE_GOOGLE_MAPS_API_KEY` gereklidir.
 
 ## Build ve backend static kopyalama
 

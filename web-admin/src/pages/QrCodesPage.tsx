@@ -17,6 +17,7 @@ import { parseApiError } from '../api/error'
 import { LoadingBlock } from '../components/LoadingBlock'
 import { PageHeader } from '../components/PageHeader'
 import { Panel } from '../components/Panel'
+import { QrPointMapPicker } from '../components/QrPointMapPicker'
 import { TableSearchInput } from '../components/TableSearchInput'
 import { useToast } from '../hooks/useToast'
 import type { QrCode, QrCodeType, QrPoint } from '../types/api'
@@ -370,6 +371,21 @@ export function QrCodesPage() {
       codesWithoutPoint,
     }
   }, [qrCodes, qrPoints])
+
+  const mapPointLat = useMemo(() => {
+    const value = Number(pointForm.lat)
+    return Number.isFinite(value) ? value : null
+  }, [pointForm.lat])
+
+  const mapPointLon = useMemo(() => {
+    const value = Number(pointForm.lon)
+    return Number.isFinite(value) ? value : null
+  }, [pointForm.lon])
+
+  const mapPointRadius = useMemo(() => {
+    const value = Number(pointForm.radiusM)
+    return Number.isFinite(value) && value > 0 ? value : 75
+  }, [pointForm.radiusM])
 
   const toggleAssignPoint = (pointId: number) => {
     setAssignSelectedPointIds((current) => {
@@ -1022,6 +1038,19 @@ export function QrCodesPage() {
                 />
               </label>
             </div>
+
+            <QrPointMapPicker
+              lat={mapPointLat}
+              lon={mapPointLon}
+              radiusM={mapPointRadius}
+              onSelect={(nextLat, nextLon) =>
+                setPointForm((prev) => ({
+                  ...prev,
+                  lat: String(nextLat),
+                  lon: String(nextLon),
+                }))
+              }
+            />
 
             <label className="block text-sm text-slate-700">
               Radius (m)
