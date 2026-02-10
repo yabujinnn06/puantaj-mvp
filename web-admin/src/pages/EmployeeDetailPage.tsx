@@ -15,7 +15,7 @@ import {
 } from '../api/admin'
 import { parseApiError } from '../api/error'
 import { CopyField } from '../components/CopyField'
-import { EmployeeLiveLocationMap } from '../components/EmployeeLiveLocationMap'
+import { EmployeeLiveLocationMap, type EmployeeLiveLocationMapMarker } from '../components/EmployeeLiveLocationMap'
 import { ErrorBlock } from '../components/ErrorBlock'
 import { LoadingBlock } from '../components/LoadingBlock'
 import { MinuteDisplay } from '../components/MinuteDisplay'
@@ -54,6 +54,13 @@ function formatDayStatus(status: MonthlyEmployeeDay['status']): string {
   return 'Tatilde'
 }
 
+function formatCoordinate(lat: number | null, lon: number | null): string {
+  if (lat === null || lon === null) {
+    return '-'
+  }
+  return `${lat.toFixed(6)}, ${lon.toFixed(6)}`
+}
+
 export function EmployeeDetailPage() {
   const params = useParams()
   const navigate = useNavigate()
@@ -75,6 +82,7 @@ export function EmployeeDetailPage() {
 
   const [selectedYear, setSelectedYear] = useState(String(now.getFullYear()))
   const [selectedMonth, setSelectedMonth] = useState(String(now.getMonth() + 1))
+  const [selectedMapDay, setSelectedMapDay] = useState<string | null>(null)
 
   const [isInviteModalOpen, setInviteModalOpen] = useState(false)
   const [expiresInMinutes, setExpiresInMinutes] = useState('60')
@@ -321,6 +329,76 @@ export function EmployeeDetailPage() {
   const monthlyRows = monthlyQuery.data?.days ?? []
   const ipSummaryRows = detailQuery.data?.ip_summary ?? []
 
+  useEffect(() => {
+    if (!selectedMapDay) {
+      return
+    }
+    const stillExists = monthlyRows.some((item) => item.date === selectedMapDay)
+    if (!stillExists) {
+      setSelectedMapDay(null)
+    }
+  }, [monthlyRows, selectedMapDay])
+
+  const selectedMapDayRow = useMemo(
+    () => monthlyRows.find((item) => item.date === selectedMapDay) ?? null,
+    [monthlyRows, selectedMapDay],
+  )
+
+  const mapMarkers = useMemo<EmployeeLiveLocationMapMarker[]>(() => {
+    if (selectedMapDayRow) {
+      const dayMarkers: EmployeeLiveLocationMapMarker[] = []
+      if (selectedMapDayRow.in_lat !== null && selectedMapDayRow.in_lon !== null) {
+        dayMarkers.push({
+          id: `${selectedMapDayRow.date}-in`,
+          lat: selectedMapDayRow.in_lat,
+          lon: selectedMapDayRow.in_lon,
+          label: `${selectedMapDayRow.date} - Mesai Baslangici`,
+          kind: 'checkin',
+        })
+      }
+      if (selectedMapDayRow.out_lat !== null && selectedMapDayRow.out_lon !== null) {
+        dayMarkers.push({
+          id: `${selectedMapDayRow.date}-out`,
+          lat: selectedMapDayRow.out_lat,
+          lon: selectedMapDayRow.out_lon,
+          label: `${selectedMapDayRow.date} - Mesai Bitisi`,
+          kind: 'checkout',
+        })
+      }
+      if (dayMarkers.length) {
+        return dayMarkers
+      }
+    }
+
+    if (detailQuery.data?.latest_location) {
+      return [
+        {
+          id: 'latest',
+          lat: detailQuery.data.latest_location.lat,
+          lon: detailQuery.data.latest_location.lon,
+          label: 'Son bildirilen konum',
+          kind: 'latest',
+        },
+      ]
+    }
+    return []
+  }, [detailQuery.data?.latest_location, selectedMapDayRow])
+
+  const focusDayOnMap = (day: MonthlyEmployeeDay, source: 'in' | 'out') => {
+    const hasIn = day.in_lat !== null && day.in_lon !== null
+    const hasOut = day.out_lat !== null && day.out_lon !== null
+    const requestedExists = source === 'in' ? hasIn : hasOut
+    if (!requestedExists) {
+      pushToast({
+        variant: 'info',
+        title: 'Konum bulunamadi',
+        description: `${day.date} icin secilen konum kaydi yok.`,
+      })
+      return
+    }
+    setSelectedMapDay(day.date)
+  }
+
   const deviceCountText = useMemo(() => {
     const count = detailQuery.data?.devices.length ?? 0
     return `${count} cihaz`
@@ -507,6 +585,8 @@ export function EmployeeDetailPage() {
                     <th className="py-2">Durum</th>
                     <th className="py-2">Giris</th>
                     <th className="py-2">Cikis</th>
+                    <th className="py-2">Giris Konum (lat/lon)</th>
+                    <th className="py-2">Cikis Konum (lat/lon)</th>
                     <th className="py-2">Net Sure</th>
                     <th className="py-2">Fazla Mesai</th>
                     <th className="py-2">Bayraklar</th>
@@ -519,6 +599,36 @@ export function EmployeeDetailPage() {
                       <td className="py-2">{formatDayStatus(day.status)}</td>
                       <td className="py-2">{formatDateTime(day.in)}</td>
                       <td className="py-2">{formatDateTime(day.out)}</td>
+                      <td className="py-2">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs">{formatCoordinate(day.in_lat, day.in_lon)}</span>
+                          {day.in_lat !== null && day.in_lon !== null ? (
+                            <button
+                              type="button"
+                              className="rounded-md border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
+                              onClick={() => focusDayOnMap(day, 'in')}
+                              title="Mesai baslangic konumunu haritada goster"
+                            >
+                              Check
+                            </button>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="py-2">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs">{formatCoordinate(day.out_lat, day.out_lon)}</span>
+                          {day.out_lat !== null && day.out_lon !== null ? (
+                            <button
+                              type="button"
+                              className="rounded-md border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
+                              onClick={() => focusDayOnMap(day, 'out')}
+                              title="Mesai bitis konumunu haritada goster"
+                            >
+                              Check
+                            </button>
+                          ) : null}
+                        </div>
+                      </td>
                       <td className="py-2">
                         <MinuteDisplay minutes={day.worked_minutes} />
                       </td>
@@ -640,29 +750,46 @@ export function EmployeeDetailPage() {
       </div>
 
       <Panel>
-        <h4 className="text-base font-semibold text-slate-900">Canli Konum (Son Bildirilen)</h4>
-        {detailQuery.data?.latest_location ? (
-          <div className="mt-3 space-y-3">
-            <div className="grid gap-2 text-sm text-slate-700 md:grid-cols-3">
-              <p>
-                <span className="font-semibold">Zaman:</span> {formatDateTime(detailQuery.data.latest_location.ts_utc)}
-              </p>
-              <p>
-                <span className="font-semibold">Konum Durumu:</span> {detailQuery.data.latest_location.location_status}
-              </p>
-              <p>
-                <span className="font-semibold">Dogruluk:</span>{' '}
-                {detailQuery.data.latest_location.accuracy_m ?? '-'} m
-              </p>
-            </div>
-            <EmployeeLiveLocationMap
-              lat={detailQuery.data.latest_location.lat}
-              lon={detailQuery.data.latest_location.lon}
-            />
-          </div>
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <h4 className="text-base font-semibold text-slate-900">Konum Haritasi</h4>
+          {selectedMapDay ? (
+            <button
+              type="button"
+              onClick={() => setSelectedMapDay(null)}
+              className="rounded-md border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+            >
+              Son bildirilen konuma don
+            </button>
+          ) : null}
+        </div>
+        {selectedMapDayRow ? (
+          <p className="mt-2 text-sm text-slate-700">
+            Harita secimi: <span className="font-semibold">{selectedMapDayRow.date}</span> gununun giris/cikis konumlari
+          </p>
+        ) : detailQuery.data?.latest_location ? (
+          <p className="mt-2 text-sm text-slate-700">Harita secimi: son bildirilen konum</p>
         ) : (
           <p className="mt-2 text-sm text-slate-500">Calisan icin konum verisi henuz yok.</p>
         )}
+        {mapMarkers.length ? (
+          <div className="mt-3 space-y-3">
+            <EmployeeLiveLocationMap markers={mapMarkers} />
+            <div className="flex flex-wrap gap-3 text-xs text-slate-700">
+              <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1">
+                <span className="h-2 w-2 rounded-full bg-emerald-600" />
+                Mesai baslangici
+              </span>
+              <span className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3 py-1">
+                <span className="h-2 w-2 rounded-full bg-rose-600" />
+                Mesai bitisi
+              </span>
+              <span className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1">
+                <span className="h-2 w-2 rounded-full bg-sky-700" />
+                Son bildirilen konum
+              </span>
+            </div>
+          </div>
+        ) : null}
       </Panel>
 
       <Panel>

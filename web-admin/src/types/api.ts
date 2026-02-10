@@ -275,6 +275,10 @@ export interface MonthlyEmployeeDay {
   status: 'OK' | 'INCOMPLETE' | 'LEAVE' | 'OFF'
   in: string | null
   out: string | null
+  in_lat: number | null
+  in_lon: number | null
+  out_lat: number | null
+  out_lon: number | null
   worked_minutes: number
   overtime_minutes: number
   missing_minutes: number

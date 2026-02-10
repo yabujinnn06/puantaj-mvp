@@ -749,6 +749,10 @@ class MonthlyEmployeeDay(BaseModel):
     status: Literal["OK", "INCOMPLETE", "LEAVE", "OFF"]
     check_in: datetime | None = Field(default=None, serialization_alias="in")
     check_out: datetime | None = Field(default=None, serialization_alias="out")
+    check_in_lat: float | None = Field(default=None, serialization_alias="in_lat")
+    check_in_lon: float | None = Field(default=None, serialization_alias="in_lon")
+    check_out_lat: float | None = Field(default=None, serialization_alias="out_lat")
+    check_out_lon: float | None = Field(default=None, serialization_alias="out_lon")
     worked_minutes: int
     overtime_minutes: int
     missing_minutes: int = 0

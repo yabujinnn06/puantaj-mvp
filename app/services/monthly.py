@@ -63,6 +63,10 @@ class _InternalDayRecord:
     status: str
     check_in: datetime | None
     check_out: datetime | None
+    check_in_lat: float | None
+    check_in_lon: float | None
+    check_out_lat: float | None
+    check_out_lon: float | None
     worked_minutes: int
     overtime_minutes: int
     missing_minutes: int
@@ -542,6 +546,10 @@ def _build_day_records(
                         status="INCOMPLETE",
                         check_in=None,
                         check_out=None,
+                        check_in_lat=None,
+                        check_in_lon=None,
+                        check_out_lat=None,
+                        check_out_lon=None,
                         worked_minutes=0,
                         overtime_minutes=0,
                         missing_minutes=(day_planned_minutes if is_workday else 0),
@@ -592,6 +600,10 @@ def _build_day_records(
                         status=metrics.status,
                         check_in=first_in_ts,
                         check_out=last_out_ts,
+                        check_in_lat=None,
+                        check_in_lon=None,
+                        check_out_lat=None,
+                        check_out_lon=None,
                         worked_minutes=metrics.worked_minutes_net,
                         overtime_minutes=metrics.overtime_minutes,
                         missing_minutes=missing_minutes,
@@ -611,6 +623,10 @@ def _build_day_records(
                     status="LEAVE",
                     check_in=None,
                     check_out=None,
+                    check_in_lat=None,
+                    check_in_lon=None,
+                    check_out_lat=None,
+                    check_out_lon=None,
                     worked_minutes=0,
                     overtime_minutes=0,
                     missing_minutes=0,
@@ -630,6 +646,10 @@ def _build_day_records(
                     status="OFF",
                     check_in=None,
                     check_out=None,
+                    check_in_lat=None,
+                    check_in_lon=None,
+                    check_out_lat=None,
+                    check_out_lon=None,
                     worked_minutes=0,
                     overtime_minutes=0,
                     missing_minutes=0,
@@ -678,6 +698,10 @@ def _build_day_records(
                     status=metrics.status,
                     check_in=first_in.ts_utc if first_in else None,
                     check_out=last_out.ts_utc if last_out else None,
+                    check_in_lat=(first_in.lat if first_in and first_in.lat is not None else None),
+                    check_in_lon=(first_in.lon if first_in and first_in.lon is not None else None),
+                    check_out_lat=(last_out.lat if last_out and last_out.lat is not None else None),
+                    check_out_lon=(last_out.lon if last_out and last_out.lon is not None else None),
                     worked_minutes=metrics.worked_minutes_net,
                     overtime_minutes=metrics.overtime_minutes,
                     missing_minutes=missing_minutes,
@@ -856,6 +880,10 @@ def _employee_monthly_from_model(
                 status=record.status,  # type: ignore[arg-type]
                 check_in=record.check_in,
                 check_out=record.check_out,
+                check_in_lat=record.check_in_lat,
+                check_in_lon=record.check_in_lon,
+                check_out_lat=record.check_out_lat,
+                check_out_lon=record.check_out_lon,
                 worked_minutes=record.worked_minutes,
                 overtime_minutes=record.overtime_minutes,
                 missing_minutes=record.missing_minutes,
