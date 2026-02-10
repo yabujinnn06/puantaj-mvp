@@ -28,6 +28,12 @@ type CodeFormState = {
   isActive: boolean
 }
 
+type CodeTemplateState = {
+  regionCode: string
+  locationCode: string
+  serialNo: string
+}
+
 type PointFormState = {
   name: string
   lat: string
@@ -51,10 +57,31 @@ const defaultPointForm: PointFormState = {
   isActive: true,
 }
 
+const defaultCodeTemplate: CodeTemplateState = {
+  regionCode: 'IST',
+  locationCode: 'MERKEZ',
+  serialNo: '1',
+}
+
 function formatCodeType(value: QrCodeType): string {
   if (value === 'CHECKIN') return 'CHECKIN (Giris)'
   if (value === 'CHECKOUT') return 'CHECKOUT (Cikis)'
   return 'BOTH (Duruma gore)'
+}
+
+function normalizeCodePart(value: string, fallback: string): string {
+  const normalized = value
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return normalized || fallback
+}
+
+function codeTypeKey(value: QrCodeType): 'IN' | 'OUT' | 'BOTH' {
+  if (value === 'CHECKIN') return 'IN'
+  if (value === 'CHECKOUT') return 'OUT'
+  return 'BOTH'
 }
 
 export function QrCodesPage() {
@@ -70,6 +97,7 @@ export function QrCodesPage() {
   const [assignSearch, setAssignSearch] = useState('')
 
   const [codeForm, setCodeForm] = useState<CodeFormState>(defaultCodeForm)
+  const [codeTemplate, setCodeTemplate] = useState<CodeTemplateState>(defaultCodeTemplate)
   const [pointForm, setPointForm] = useState<PointFormState>(defaultPointForm)
   const [assignSelectedPointIds, setAssignSelectedPointIds] = useState<number[]>([])
   const [selectedCodeQrDataUrl, setSelectedCodeQrDataUrl] = useState<string | null>(null)
@@ -330,6 +358,19 @@ export function QrCodesPage() {
     })
   }, [qrPoints, assignSearch])
 
+  const summary = useMemo(() => {
+    const activeCodes = qrCodes.filter((item) => item.is_active).length
+    const activePoints = qrPoints.filter((item) => item.is_active).length
+    const codesWithoutPoint = qrCodes.filter((item) => item.point_ids.length === 0).length
+    return {
+      codeCount: qrCodes.length,
+      activeCodes,
+      pointCount: qrPoints.length,
+      activePoints,
+      codesWithoutPoint,
+    }
+  }, [qrCodes, qrPoints])
+
   const toggleAssignPoint = (pointId: number) => {
     setAssignSelectedPointIds((current) => {
       if (current.includes(pointId)) {
@@ -352,6 +393,16 @@ export function QrCodesPage() {
   const resetCodeForm = () => {
     setEditingCodeId(null)
     setCodeForm(defaultCodeForm)
+  }
+
+  const applyMeaningfulCodeValue = () => {
+    const regionCode = normalizeCodePart(codeTemplate.regionCode, 'GEN')
+    const locationCode = normalizeCodePart(codeTemplate.locationCode, 'LOKASYON')
+    const serialRaw = Number(codeTemplate.serialNo)
+    const serialSafe = Number.isFinite(serialRaw) && serialRaw > 0 ? Math.floor(serialRaw) : 1
+    const typeToken = codeTypeKey(codeForm.codeType)
+    const nextValue = `PF-${regionCode}-${locationCode}-${typeToken}-${String(serialSafe).padStart(6, '0')}`
+    setCodeForm((prev) => ({ ...prev, codeValue: nextValue }))
   }
 
   const startEditPoint = (point: QrPoint) => {
@@ -516,14 +567,51 @@ export function QrCodesPage() {
     <div className="space-y-4">
       <PageHeader
         title="QR Kod Yonetimi"
-        description="QR kodlari olusturun, nokta listesi yonetin ve bir QR koda birden fazla konum noktasi baglayin."
+        description="Konuma bagli giris/cikis icin QR kod ve QR nokta yonetimi. Sirayla nokta olustur, kod olustur, nokta ata, sonra indir."
       />
+
+      <Panel>
+        <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
+          <div>
+            <h4 className="text-base font-semibold text-slate-900">Nasil Calisir?</h4>
+            <ol className="mt-2 space-y-1 text-sm text-slate-700">
+              <li>1) Once QR nokta olustur (ad + lat/lon + radius).</li>
+              <li>2) Sonra QR kod olustur (benzersiz code_value + tip).</li>
+              <li>3) QR koda bir veya birden fazla aktif nokta ata.</li>
+              <li>4) Calisan sadece atanmis nokta icindeyse okutma basarili olur.</li>
+            </ol>
+            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+              Onemli: Noktasi olmayan QR kod okutulamaz. Pasif nokta ya da pasif QR kod da kullanilamaz.
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <p className="text-xs text-slate-500">Toplam Kod</p>
+              <p className="text-lg font-semibold text-slate-900">{summary.codeCount}</p>
+              <p className="text-xs text-emerald-700">Aktif: {summary.activeCodes}</p>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <p className="text-xs text-slate-500">Toplam Nokta</p>
+              <p className="text-lg font-semibold text-slate-900">{summary.pointCount}</p>
+              <p className="text-xs text-emerald-700">Aktif: {summary.activePoints}</p>
+            </div>
+            <div className="col-span-2 rounded-lg border border-rose-200 bg-rose-50 p-3">
+              <p className="text-xs text-rose-700">Noktasi Atanmamis Kod</p>
+              <p className="text-lg font-semibold text-rose-800">{summary.codesWithoutPoint}</p>
+              <p className="text-xs text-rose-700">Bu kodlar okutuldugunda sistem izin vermez.</p>
+            </div>
+          </div>
+        </div>
+      </Panel>
 
       <div className="grid gap-4 xl:grid-cols-2">
         <Panel>
           <h4 className="text-base font-semibold text-slate-900">
-            {editingCodeId === null ? 'Yeni QR Kod' : `QR Kod Duzenle (#${editingCodeId})`}
+            {editingCodeId === null ? '2) QR Kod Olustur' : `2) QR Kod Duzenle (#${editingCodeId})`}
           </h4>
+          <p className="mt-1 text-xs text-slate-500">
+            Code value benzersiz olmalidir. Asagidaki anlamli format yardimcisini kullanabilirsiniz.
+          </p>
           <form className="mt-3 space-y-3" onSubmit={handleCodeSubmit}>
             <label className="block text-sm text-slate-700">
               Kod adi (opsiyonel)
@@ -534,6 +622,57 @@ export function QrCodesPage() {
                 placeholder="Orn: Merkez Giris"
               />
             </label>
+
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Anlamli Format Yardimcisi</p>
+              <div className="mt-2 grid gap-2 md:grid-cols-4">
+                <input
+                  value={codeTemplate.regionCode}
+                  onChange={(event) =>
+                    setCodeTemplate((prev) => ({
+                      ...prev,
+                      regionCode: event.target.value,
+                    }))
+                  }
+                  className="rounded-lg border border-slate-300 px-2 py-2 text-sm"
+                  placeholder="Bolge (IST)"
+                />
+                <input
+                  value={codeTemplate.locationCode}
+                  onChange={(event) =>
+                    setCodeTemplate((prev) => ({
+                      ...prev,
+                      locationCode: event.target.value,
+                    }))
+                  }
+                  className="rounded-lg border border-slate-300 px-2 py-2 text-sm"
+                  placeholder="Lokasyon (MERKEZ)"
+                />
+                <input
+                  type="number"
+                  min={1}
+                  value={codeTemplate.serialNo}
+                  onChange={(event) =>
+                    setCodeTemplate((prev) => ({
+                      ...prev,
+                      serialNo: event.target.value,
+                    }))
+                  }
+                  className="rounded-lg border border-slate-300 px-2 py-2 text-sm"
+                  placeholder="Seri No"
+                />
+                <button
+                  type="button"
+                  onClick={applyMeaningfulCodeValue}
+                  className="rounded-lg border border-brand-300 bg-white px-3 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50"
+                >
+                  Deger Uret
+                </button>
+              </div>
+              <p className="mt-2 text-xs text-slate-500">
+                Ornek: PF-IST-MERKEZ-IN-000001 / PF-ANK-SUBE1-BOTH-000014
+              </p>
+            </div>
 
             <label className="block text-sm text-slate-700">
               code_value
@@ -561,6 +700,9 @@ export function QrCodesPage() {
                 <option value="CHECKOUT">CHECKOUT</option>
                 <option value="BOTH">BOTH</option>
               </select>
+              <p className="mt-1 text-xs text-slate-500">
+                CHECKIN: sadece giris, CHECKOUT: sadece cikis, BOTH: sistem bugunku duruma gore secer.
+              </p>
             </label>
 
             <label className="inline-flex items-center gap-2 text-sm text-slate-700">
@@ -595,6 +737,9 @@ export function QrCodesPage() {
 
         <Panel>
           <h4 className="text-base font-semibold text-slate-900">QR Kod Listesi</h4>
+          <p className="mt-1 text-xs text-slate-500">
+            Detay ve nokta atama islemleri icin bir QR kod secin.
+          </p>
           <div className="mt-3">
             <TableSearchInput value={codeSearch} onChange={setCodeSearch} placeholder="Kod adi / degeri / ID ara" />
           </div>
@@ -605,6 +750,7 @@ export function QrCodesPage() {
                   <th className="px-3 py-2">ID</th>
                   <th className="px-3 py-2">Kod</th>
                   <th className="px-3 py-2">Tip</th>
+                  <th className="px-3 py-2">Durum</th>
                   <th className="px-3 py-2">Nokta</th>
                   <th className="px-3 py-2">Aksiyon</th>
                 </tr>
@@ -626,7 +772,16 @@ export function QrCodesPage() {
                       </button>
                       <div className="text-xs text-slate-500">{code.code_value}</div>
                     </td>
-                    <td className="px-3 py-2">{code.code_type}</td>
+                    <td className="px-3 py-2">{formatCodeType(code.code_type)}</td>
+                    <td className="px-3 py-2">
+                      <span
+                        className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${
+                          code.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
+                        }`}
+                      >
+                        {code.is_active ? 'Aktif' : 'Pasif'}
+                      </span>
+                    </td>
                     <td className="px-3 py-2">{code.point_ids.length}</td>
                     <td className="px-3 py-2">
                       <div className="flex flex-wrap gap-1">
@@ -650,6 +805,13 @@ export function QrCodesPage() {
                     </td>
                   </tr>
                 ))}
+                {filteredCodes.length === 0 ? (
+                  <tr>
+                    <td className="px-3 py-4 text-sm text-slate-500" colSpan={6}>
+                      Arama kriterine uygun QR kod bulunamadi.
+                    </td>
+                  </tr>
+                ) : null}
               </tbody>
             </table>
           </div>
@@ -659,7 +821,7 @@ export function QrCodesPage() {
       <div className="grid gap-4 xl:grid-cols-2">
         <Panel>
           <h4 className="text-base font-semibold text-slate-900">
-            {selectedCode ? `QR Kod Detay (#${selectedCode.id})` : 'QR Kod Detay'}
+            {selectedCode ? `3) QR Kod Detay (#${selectedCode.id})` : '3) QR Kod Detay'}
           </h4>
           {!selectedCode ? (
             <p className="mt-2 text-sm text-slate-600">Detay gormek icin listeden bir QR kod secin.</p>
@@ -678,7 +840,16 @@ export function QrCodesPage() {
                 <p>
                   <span className="font-semibold">Durum:</span> {selectedCode.is_active ? 'Aktif' : 'Pasif'}
                 </p>
+                <p>
+                  <span className="font-semibold">Atanan nokta sayisi:</span> {selectedCode.point_ids.length}
+                </p>
               </div>
+
+              {selectedCode.point_ids.length === 0 ? (
+                <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
+                  Bu QR kodda nokta atamasi yok. Okutma yapildiginda sistem izin vermez.
+                </div>
+              ) : null}
 
               <div className="rounded-lg border border-brand-200 bg-brand-50/60 p-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-brand-700">QR Onizleme</p>
@@ -760,7 +931,7 @@ export function QrCodesPage() {
         </Panel>
 
         <Panel>
-          <h4 className="text-base font-semibold text-slate-900">Nokta Ata (Coklu Secim)</h4>
+          <h4 className="text-base font-semibold text-slate-900">4) Nokta Ata (Coklu Secim)</h4>
           <p className="mt-1 text-xs text-slate-500">
             Arama ile nokta secip tek islemde birden fazla noktayi QR koda baglayabilirsiniz.
           </p>
@@ -810,8 +981,11 @@ export function QrCodesPage() {
       <div className="grid gap-4 xl:grid-cols-2">
         <Panel>
           <h4 className="text-base font-semibold text-slate-900">
-            {editingPointId === null ? 'Yeni QR Nokta' : `QR Nokta Duzenle (#${editingPointId})`}
+            {editingPointId === null ? '1) QR Nokta Olustur' : `1) QR Nokta Duzenle (#${editingPointId})`}
           </h4>
+          <p className="mt-1 text-xs text-slate-500">
+            QR noktasi okutmanin izinli oldugu fiziksel konumu temsil eder.
+          </p>
           <form className="mt-3 space-y-3" onSubmit={handlePointSubmit}>
             <label className="block text-sm text-slate-700">
               Nokta adi
@@ -821,6 +995,9 @@ export function QrCodesPage() {
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
                 placeholder="Orn: Merkez Ofis Kapi"
               />
+              <p className="mt-1 text-xs text-slate-500">
+                Ornek: Istanbul Merkez Kapi, Ankara Sube Giris.
+              </p>
             </label>
 
             <div className="grid gap-3 md:grid-cols-2">
@@ -855,6 +1032,9 @@ export function QrCodesPage() {
                 onChange={(event) => setPointForm((prev) => ({ ...prev, radiusM: event.target.value }))}
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
               />
+              <p className="mt-1 text-xs text-slate-500">
+                Oneri: bina ici 50-80m, acik alan 80-150m.
+              </p>
             </label>
 
             <label className="inline-flex items-center gap-2 text-sm text-slate-700">
@@ -888,7 +1068,7 @@ export function QrCodesPage() {
         </Panel>
 
         <Panel>
-          <h4 className="text-base font-semibold text-slate-900">QR Nokta Listesi</h4>
+          <h4 className="text-base font-semibold text-slate-900">5) QR Nokta Listesi</h4>
           <div className="mt-3">
             <TableSearchInput value={pointSearch} onChange={setPointSearch} placeholder="Nokta adi / ID ara" />
           </div>
@@ -945,6 +1125,13 @@ export function QrCodesPage() {
                     </td>
                   </tr>
                 ))}
+                {filteredPoints.length === 0 ? (
+                  <tr>
+                    <td className="px-3 py-4 text-sm text-slate-500" colSpan={5}>
+                      Arama kriterine uygun nokta bulunamadi.
+                    </td>
+                  </tr>
+                ) : null}
               </tbody>
             </table>
           </div>
