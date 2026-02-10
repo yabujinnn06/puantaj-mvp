@@ -1231,6 +1231,10 @@ def get_employee_detail(
             )
         )
 
+    home_location = db.scalar(
+        select(EmployeeLocation).where(EmployeeLocation.employee_id == employee_id)
+    )
+
     return EmployeeDetailResponse(
         employee=_to_employee_read(employee),
         last_portal_seen_utc=last_portal_seen_utc,
@@ -1238,6 +1242,7 @@ def get_employee_detail(
         ip_summary=ip_summary_rows,
         devices=devices,
         latest_location=latest_location,
+        home_location=home_location,
         recent_activity=recent_activity,
     )
 

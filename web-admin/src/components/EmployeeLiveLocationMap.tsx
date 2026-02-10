@@ -34,11 +34,11 @@ function markerStyle(kind: EmployeeLiveLocationMapMarkerKind): {
   }
   if (kind === 'checkout') {
     return {
-      radius: 8,
+      radius: 11,
       color: '#be123c',
-      fillColor: '#be123c',
-      fillOpacity: 0.85,
-      weight: 2,
+      fillColor: '#ffffff',
+      fillOpacity: 0,
+      weight: 3,
     }
   }
   return {
@@ -100,14 +100,35 @@ export function EmployeeLiveLocationMap({ markers }: EmployeeLiveLocationMapProp
     }
 
     const latLngs: L.LatLngExpression[] = []
+    const groupedByCoord = new Map<string, number>()
     for (const marker of markers) {
+      const key = `${marker.lat.toFixed(6)}:${marker.lon.toFixed(6)}`
+      groupedByCoord.set(key, (groupedByCoord.get(key) ?? 0) + 1)
+    }
+    const groupedCursor = new Map<string, number>()
+
+    for (const marker of markers) {
+      const key = `${marker.lat.toFixed(6)}:${marker.lon.toFixed(6)}`
+      const total = groupedByCoord.get(key) ?? 1
+      const index = groupedCursor.get(key) ?? 0
+      groupedCursor.set(key, index + 1)
+
+      let displayLat = marker.lat
+      let displayLon = marker.lon
+      if (total > 1) {
+        const angle = (2 * Math.PI * index) / total
+        const offsetDeg = 0.00012
+        displayLat = marker.lat + Math.sin(angle) * offsetDeg
+        displayLon = marker.lon + Math.cos(angle) * offsetDeg
+      }
+
       const style = markerStyle(marker.kind)
-      L.circleMarker([marker.lat, marker.lon], style)
+      L.circleMarker([displayLat, displayLon], style)
         .bindPopup(
           `${marker.label}<br/>${marker.lat.toFixed(6)}, ${marker.lon.toFixed(6)}`,
         )
         .addTo(layer)
-      latLngs.push([marker.lat, marker.lon])
+      latLngs.push([displayLat, displayLon])
     }
 
     if (latLngs.length === 1) {
@@ -130,4 +151,3 @@ export function EmployeeLiveLocationMap({ markers }: EmployeeLiveLocationMapProp
     />
   )
 }
-
