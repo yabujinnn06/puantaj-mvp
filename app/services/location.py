@@ -32,22 +32,8 @@ def evaluate_location(
     if lat is None or lon is None:
         return LocationStatus.NO_LOCATION, {"reason": "no_location_payload"}
 
-    if employee_location is None:
-        return LocationStatus.UNVERIFIED_LOCATION, {"reason": "home_location_not_set"}
-
-    distance_value = distance_m(
-        employee_location.home_lat,
-        employee_location.home_lon,
-        lat,
-        lon,
-    )
-    flags = {
-        "distance_m": round(distance_value, 2),
-        "radius_m": employee_location.radius_m,
-    }
-
-    if distance_value <= employee_location.radius_m:
-        return LocationStatus.VERIFIED_HOME, flags
-
-    return LocationStatus.UNVERIFIED_LOCATION, flags
+    # Home-location verification is intentionally disabled in attendance flow.
+    # Presence of coordinates is enough to mark location as verified.
+    _ = employee_location
+    return LocationStatus.VERIFIED_HOME, {}
 
