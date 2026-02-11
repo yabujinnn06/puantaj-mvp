@@ -101,11 +101,12 @@ function locationStatusLabel(status: LocationStatus): string {
 
 function suspiciousReasons(event: AttendanceEvent): string[] {
   const reasons: string[] = []
+  const homeLocationMissing = event.flags['reason'] === 'home_location_not_set'
   if (flagIsTrue(event.flags, 'DUPLICATE_EVENT')) reasons.push('DUPLICATE_EVENT')
   if (flagIsTrue(event.flags, 'MANUAL_CHECKOUT')) reasons.push('MANUAL_CHECKOUT')
   if (flagIsTrue(event.flags, 'NEEDS_SHIFT_REVIEW')) reasons.push('NEEDS_SHIFT_REVIEW')
   if (event.location_status === 'NO_LOCATION') reasons.push('LOCATION_NO_LOCATION')
-  if (event.location_status === 'UNVERIFIED_LOCATION') reasons.push('LOCATION_UNVERIFIED')
+  if (event.location_status === 'UNVERIFIED_LOCATION' && !homeLocationMissing) reasons.push('LOCATION_UNVERIFIED')
   if (event.source === 'MANUAL' || event.created_by_admin || flagIsTrue(event.flags, 'ADMIN_MANUAL')) {
     reasons.push('ADMIN_MANUAL_EVENT')
   }
