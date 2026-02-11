@@ -147,7 +147,7 @@ export function flagLabel(key: string, value: unknown): string {
     return 'Manuel çıkış'
   }
   if (key === 'home_location_not_set' || (key === 'reason' && value === 'home_location_not_set')) {
-    return 'Konum doğrulama bilgisi eksik'
+    return 'Konum bilgisi eksik'
   }
   return key
 }

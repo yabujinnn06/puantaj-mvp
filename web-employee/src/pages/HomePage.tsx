@@ -17,8 +17,6 @@ import {
   flagLabel,
   formatTs,
   hasDuplicateFlag,
-  locationStatusClass,
-  locationStatusLabel,
   prettyFlagValue,
 } from '../utils/attendance'
 import { getStoredDeviceFingerprint } from '../utils/device'
@@ -297,13 +295,6 @@ export function HomePage() {
       }
     }
 
-    if (response.location_status === 'VERIFIED_HOME') {
-      return {
-        tone: 'success' as const,
-        text: 'Mesai bitiş kaydı alındı (konum doğrulandı)',
-      }
-    }
-
     return {
       tone: 'warning' as const,
       text: 'Mesai bitiş kaydı alındı.',
@@ -312,6 +303,14 @@ export function HomePage() {
 
   const duplicateDetected = lastAction !== null && hasDuplicateFlag(lastAction.response)
   const manualCheckout = lastAction?.response.flags.MANUAL_CHECKOUT === true
+  const visibleFlags = useMemo(() => {
+    if (!lastAction) return []
+    return Object.entries(lastAction.response.flags).filter(([key, value]) => {
+      if (key === 'home_location_not_set') return false
+      if (key === 'reason' && value === 'home_location_not_set') return false
+      return true
+    })
+  }, [lastAction])
 
   return (
     <main className="phone-shell">
@@ -507,7 +506,6 @@ export function HomePage() {
               </span>
               {resultMessage.text}
             </p>
-            {lastAction ? <p className="small-text">Konum durumu: {locationStatusLabel(lastAction.response.location_status)}</p> : null}
             <div className="chips">
               {duplicateDetected ? <span className="status-pill state-warn">Mükerrer kayıt</span> : null}
               {manualCheckout ? <span className="manual-badge">Manuel çıkış yapıldı</span> : null}
@@ -529,20 +527,14 @@ export function HomePage() {
             <p>
               ts_utc: <strong>{formatTs(lastAction.response.ts_utc)}</strong>
             </p>
-            <p>
-              location_status:{' '}
-              <span className={`status-pill ${locationStatusClass(lastAction.response.location_status)}`}>
-                {locationStatusLabel(lastAction.response.location_status)}
-              </span>
-            </p>
 
             <div className="stack-tight">
               <p className="small-title">Flags</p>
-              {Object.keys(lastAction.response.flags).length === 0 ? (
+              {visibleFlags.length === 0 ? (
                 <p className="muted">Flag yok</p>
               ) : (
                 <ul className="flag-list">
-                  {Object.entries(lastAction.response.flags).map(([key, value]) => (
+                  {visibleFlags.map(([key, value]) => (
                     <li key={key}>
                       <strong>{flagLabel(key, value)}</strong>: {prettyFlagValue(value)}
                     </li>
