@@ -1,6 +1,7 @@
 import { apiClient } from './client'
 import type {
   AdminDailyReportArchive,
+  AdminDailyReportArchiveNotifyResponse,
   AdminDeviceClaimResponse,
   AdminDeviceInviteCreateResponse,
   AdminDevicePushSubscription,
@@ -259,6 +260,10 @@ export interface DailyReportArchivesParams {
   department_id?: number
   region_id?: number
   limit?: number
+}
+
+export interface NotifyDailyReportArchivePayload {
+  admin_user_ids?: number[]
 }
 
 export interface CreateLeavePayload {
@@ -776,6 +781,17 @@ export async function downloadDailyReportArchive(archiveId: number): Promise<Blo
   const response = await apiClient.get<Blob>(`/api/admin/daily-report-archives/${archiveId}/download`, {
     responseType: 'blob',
   })
+  return response.data
+}
+
+export async function notifyDailyReportArchive(
+  archiveId: number,
+  payload: NotifyDailyReportArchivePayload = {},
+): Promise<AdminDailyReportArchiveNotifyResponse> {
+  const response = await apiClient.post<AdminDailyReportArchiveNotifyResponse>(
+    `/api/admin/daily-report-archives/${archiveId}/notify`,
+    payload,
+  )
   return response.data
 }
 

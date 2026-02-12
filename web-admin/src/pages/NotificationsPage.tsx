@@ -13,6 +13,7 @@ import {
   getEmployees,
   getNotificationJobs,
   getNotificationSubscriptions,
+  notifyDailyReportArchive,
   sendManualNotification,
 } from '../api/admin'
 import { parseApiError } from '../api/error'
@@ -126,6 +127,26 @@ export function NotificationsPage() {
     onSuccess: (blob, id) => {
       const item = (archivesQuery.data ?? []).find((x) => x.id === id)
       downloadBlob(blob, item?.file_name ?? `arsiv-${id}.xlsx`)
+    },
+  })
+
+  const notifyArchiveMutation = useMutation({
+    mutationFn: (archiveId: number) => notifyDailyReportArchive(archiveId),
+    onSuccess: (result) => {
+      pushToast({
+        variant: 'success',
+        title: 'Admin bildirimleri gönderildi',
+        description: `Hedef: ${result.total_targets} | Gönderilen: ${result.sent} | Hata: ${result.failed}`,
+      })
+      void queryClient.invalidateQueries({ queryKey: ['notification-jobs'] })
+    },
+    onError: (error) => {
+      const parsed = parseApiError(error, 'Arşiv bildirimi gönderilemedi.')
+      pushToast({
+        variant: 'error',
+        title: 'Arşiv bildirimi başarısız',
+        description: parsed.message,
+      })
     },
   })
 
@@ -290,7 +311,21 @@ export function NotificationsPage() {
               {(archivesQuery.data ?? []).map((item) => (
                 <tr key={item.id} className="border-t border-slate-100">
                   <td className="py-2">{item.id}</td><td>{item.report_date}</td><td>{item.file_name}</td><td>{(item.file_size_bytes / 1024).toFixed(1)} KB</td>
-                  <td><button type="button" className="rounded border border-brand-300 px-2 py-1 text-xs text-brand-700" onClick={() => downloadMutation.mutate(item.id)}>Excel indir</button></td>
+                  <td>
+                    <div className="flex gap-1">
+                      <button type="button" className="rounded border border-brand-300 px-2 py-1 text-xs text-brand-700" onClick={() => downloadMutation.mutate(item.id)}>
+                        Excel indir
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700"
+                        onClick={() => notifyArchiveMutation.mutate(item.id)}
+                        disabled={notifyArchiveMutation.isPending}
+                      >
+                        Adminlere bildir
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>

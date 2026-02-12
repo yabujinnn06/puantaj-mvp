@@ -735,6 +735,22 @@ class AdminDailyReportArchiveRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class AdminDailyReportArchiveNotifyRequest(BaseModel):
+    admin_user_ids: list[int] | None = None
+
+
+class AdminDailyReportArchiveNotifyResponse(BaseModel):
+    ok: bool
+    archive_id: int
+    archive_url: str
+    total_targets: int
+    sent: int
+    failed: int
+    deactivated: int = 0
+    admin_user_ids: list[int] = Field(default_factory=list)
+    admin_usernames: list[str] = Field(default_factory=list)
+
+
 class AdminManualNotificationSendRequest(BaseModel):
     title: str = Field(min_length=1, max_length=120)
     message: str = Field(min_length=1, max_length=2000)

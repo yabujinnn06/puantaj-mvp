@@ -305,6 +305,18 @@ export interface AdminDailyReportArchive {
   created_at: string
 }
 
+export interface AdminDailyReportArchiveNotifyResponse {
+  ok: boolean
+  archive_id: number
+  archive_url: string
+  total_targets: number
+  sent: number
+  failed: number
+  deactivated: number
+  admin_user_ids: number[]
+  admin_usernames: string[]
+}
+
 export interface AdminManualNotificationSendResponse {
   ok: boolean
   total_targets: number

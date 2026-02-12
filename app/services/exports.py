@@ -221,6 +221,16 @@ def _gross_minutes(check_in: datetime | None, check_out: datetime | None) -> int
     return max(0, int((check_out - check_in).total_seconds() // 60))
 
 
+def _time_range_label(check_in: datetime | None, check_out: datetime | None) -> str:
+    if check_in is None or check_out is None:
+        return "-"
+    in_ts = _to_excel_datetime(check_in)
+    out_ts = _to_excel_datetime(check_out)
+    if in_ts is None or out_ts is None:
+        return "-"
+    return f"{in_ts:%H:%M} - {out_ts:%H:%M}"
+
+
 def _append_summary_area(
     ws: Worksheet,
     *,
@@ -621,6 +631,7 @@ def _build_date_range_export(
             "Vardiya",
             "Giri\u015f",
             "\u00c7\u0131k\u0131\u015f",
+            "Saat Aral\u0131\u011f\u0131",
             "\u00c7al\u0131\u015fma S\u00fcresi (saat:dakika)",
             "Mola",
             "Net S\u00fcre",
@@ -633,6 +644,8 @@ def _build_date_range_export(
     _style_header(ws_daily, daily_header_row)
 
     work_rule_cache: dict[int | None, tuple[int, int]] = {}
+    total_worked_minutes = 0
+    total_overtime_minutes = 0
     for (employee_id_value, day_date), bucket in sorted(grouped.items(), key=lambda item: (item[0][1], item[0][0])):
         ins = bucket["ins"]
         outs = bucket["outs"]
@@ -651,6 +664,8 @@ def _build_date_range_export(
         )
         gross_minutes = _gross_minutes(first_in, last_out)
         break_deducted = max(0, gross_minutes - worked_minutes)
+        total_worked_minutes += worked_minutes
+        total_overtime_minutes += overtime_minutes
         flag_names = sorted(bucket["flags"])
         if first_in is None:
             flag_names.append("MISSING_IN")
@@ -666,6 +681,7 @@ def _build_date_range_export(
                 bucket["shift_name"],
                 _to_excel_datetime(first_in),
                 _to_excel_datetime(last_out),
+                _time_range_label(first_in, last_out),
                 _minutes_to_hhmm(gross_minutes),
                 _minutes_to_hhmm(break_deducted),
                 _minutes_to_hhmm(worked_minutes),
@@ -692,6 +708,12 @@ def _build_date_range_export(
             row[5].number_format = "hh:mm"
         if row[6].value is not None:
             row[6].number_format = "hh:mm"
+
+    ws_daily.append([])
+    summary_start = ws_daily.max_row + 1
+    ws_daily.append(["Toplam \u00c7al\u0131\u015f\u0131lan Net S\u00fcre", _minutes_to_hhmm(total_worked_minutes)])
+    ws_daily.append(["Toplam Fazla Mesai", _minutes_to_hhmm(total_overtime_minutes)])
+    _style_metadata_rows(ws_daily, start_row=summary_start, end_row=ws_daily.max_row)
     _auto_width(ws_daily)
 
 

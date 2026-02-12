@@ -58,6 +58,8 @@ from app.schemas import (
     AdminDevicePushSubscriptionRead,
     AdminPushSubscriptionRead,
     AdminDailyReportArchiveRead,
+    AdminDailyReportArchiveNotifyRequest,
+    AdminDailyReportArchiveNotifyResponse,
     AuditLogRead,
     AttendanceEventRead,
     AttendanceEventManualCreateRequest,
@@ -3522,6 +3524,92 @@ def download_daily_report_archive(
         content=archive.file_data,
         media_type=XLSX_MEDIA_TYPE,
         headers={"Content-Disposition": f'attachment; filename="{archive.file_name}"'},
+    )
+
+
+@router.post(
+    "/api/admin/daily-report-archives/{archive_id}/notify",
+    response_model=AdminDailyReportArchiveNotifyResponse,
+)
+def notify_daily_report_archive(
+    archive_id: int,
+    payload: AdminDailyReportArchiveNotifyRequest,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin_permission("reports", write=True)),
+    db: Session = Depends(get_db),
+) -> AdminDailyReportArchiveNotifyResponse:
+    archive = db.get(AdminDailyReportArchive, archive_id)
+    if archive is None:
+        raise HTTPException(status_code=404, detail="Daily report archive not found")
+
+    admin_user_ids: list[int] | None = None
+    if payload.admin_user_ids is not None:
+        normalized_ids = sorted(
+            {value for value in payload.admin_user_ids if isinstance(value, int) and value > 0}
+        )
+        if not normalized_ids:
+            raise ApiError(
+                status_code=422,
+                code="VALIDATION_ERROR",
+                message="At least one admin_user_id is required when admin_user_ids is provided.",
+            )
+        admin_user_ids = normalized_ids
+
+    archive_url = f"{get_public_base_url()}/admin-panel/notifications?archive_id={archive.id}"
+    report_date_text = archive.report_date.isoformat()
+    title = f"Günlük Puantaj Raporu Hazır ({report_date_text})"
+    body = (
+        f"{report_date_text} tarihli günlük puantaj Excel raporu hazır. "
+        "Bildirime dokunup doğrudan indirebilirsin."
+    )
+    push_summary = send_push_to_admins(
+        db,
+        admin_user_ids=admin_user_ids,
+        title=title,
+        body=body,
+        data={
+            "type": "ADMIN_DAILY_REPORT_ARCHIVE",
+            "archive_id": archive.id,
+            "report_date": report_date_text,
+            "file_name": archive.file_name,
+            "url": f"/admin-panel/notifications?archive_id={archive.id}",
+        },
+    )
+
+    actor_id = str(claims.get("username") or claims.get("sub") or "admin")
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=actor_id,
+        action="ADMIN_DAILY_REPORT_ARCHIVE_NOTIFY",
+        success=True,
+        entity_type="admin_daily_report_archive",
+        entity_id=str(archive.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "report_date": report_date_text,
+            "file_name": archive.file_name,
+            "archive_url": archive_url,
+            "requested_admin_user_ids": admin_user_ids,
+            "total_targets": push_summary.get("total_targets", 0),
+            "sent": push_summary.get("sent", 0),
+            "failed": push_summary.get("failed", 0),
+            "deactivated": push_summary.get("deactivated", 0),
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+
+    return AdminDailyReportArchiveNotifyResponse(
+        ok=True,
+        archive_id=archive.id,
+        archive_url=archive_url,
+        total_targets=int(push_summary.get("total_targets", 0)),
+        sent=int(push_summary.get("sent", 0)),
+        failed=int(push_summary.get("failed", 0)),
+        deactivated=int(push_summary.get("deactivated", 0)),
+        admin_user_ids=list(push_summary.get("admin_user_ids", [])),
+        admin_usernames=list(push_summary.get("admin_usernames", [])),
     )
 
 
