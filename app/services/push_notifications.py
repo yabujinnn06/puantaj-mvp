@@ -17,6 +17,18 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _resolve_vapid_subject(raw_subject: str | None) -> str:
+    """Return a valid VAPID subject claim (`mailto:` or `https:`)."""
+    subject = (raw_subject or "").strip()
+    if not subject:
+        return "mailto:admin@example.com"
+    if subject.startswith("mailto:") or subject.startswith("https://"):
+        return subject
+    if "@" in subject:
+        return f"mailto:{subject}"
+    return "mailto:admin@example.com"
+
+
 def get_push_public_config() -> dict[str, Any]:
     settings = get_settings()
     enabled = is_push_enabled()
@@ -185,6 +197,7 @@ def _send_to_subscription_row(
         return False, "push_disabled", None
 
     settings = get_settings()
+    vapid_subject = _resolve_vapid_subject(settings.push_vapid_subject)
     payload = {
         "title": title,
         "body": body,
@@ -202,7 +215,7 @@ def _send_to_subscription_row(
             },
             data=json.dumps(payload),
             vapid_private_key=settings.push_vapid_private_key,
-            vapid_claims={"sub": settings.push_vapid_subject},
+            vapid_claims={"sub": vapid_subject},
             ttl=60,
         )
         return True, None, None

@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { startRegistration } from '@simplewebauthn/browser'
 
 import {
   checkout,
-  getEmployeeStatus,
   getEmployeePushConfig,
+  getEmployeeStatus,
   getPasskeyRegisterOptions,
   parseApiError,
   scanEmployeeQr,
@@ -25,6 +25,7 @@ import { getStoredDeviceFingerprint } from '../utils/device'
 import { getCurrentLocation } from '../utils/location'
 
 type TodayStatus = EmployeeStatusResponse['today_status']
+const PUSH_VAPID_KEY_STORAGE = 'pf_push_vapid_public_key'
 
 interface LastAction {
   codeValue?: string
@@ -46,7 +47,7 @@ function todayStatusHint(status: TodayStatus): string {
     return 'Mesaiyi bitirerek bugünkü kaydı tamamlayın.'
   }
   if (status === 'FINISHED') {
-    return 'Bugünkü giriş/çıkış tamamlandı. Yeni bir vardiya başlatmak için QR okutabilirsiniz.'
+    return 'Bugünkü giriş/çıkış tamamlandı. Yeni bir vardiya için yarını bekleyin.'
   }
   return 'QR ile giriş yaparak mesaiyi başlatın.'
 }
@@ -75,11 +76,14 @@ export function HomePage() {
   const [todayStatus, setTodayStatus] = useState<TodayStatus>('NOT_STARTED')
   const [statusSnapshot, setStatusSnapshot] = useState<EmployeeStatusResponse | null>(null)
   const [isHelpOpen, setIsHelpOpen] = useState(false)
+
   const [isPasskeyBusy, setIsPasskeyBusy] = useState(false)
   const [passkeyNotice, setPasskeyNotice] = useState<string | null>(null)
+
   const [isPushBusy, setIsPushBusy] = useState(false)
   const [pushEnabled, setPushEnabled] = useState(false)
   const [pushRegistered, setPushRegistered] = useState(false)
+  const [pushNeedsResubscribe, setPushNeedsResubscribe] = useState(false)
   const [pushNotice, setPushNotice] = useState<string | null>(null)
 
   useEffect(() => {
@@ -103,8 +107,6 @@ export function HomePage() {
           if (parsed.code === 'DEVICE_NOT_CLAIMED') {
             setTodayStatus('NOT_STARTED')
             setStatusSnapshot(null)
-          } else {
-            setStatusSnapshot(null)
           }
         }
       }
@@ -116,48 +118,68 @@ export function HomePage() {
     }
   }, [deviceFingerprint, lastAction?.response.event_id])
 
-  useEffect(() => {
-    let cancelled = false
-
-    const loadPushState = async () => {
+  const syncPushState = useCallback(
+    async (attemptBackendSync: boolean) => {
+      if (!deviceFingerprint) {
+        setPushEnabled(false)
+        setPushRegistered(false)
+        return
+      }
       if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
-        if (!cancelled) {
-          setPushEnabled(false)
-          setPushRegistered(false)
-        }
+        setPushEnabled(false)
+        setPushRegistered(false)
         return
       }
 
       try {
         const config = await getEmployeePushConfig()
         const enabled = Boolean(config.enabled && config.vapid_public_key)
+        setPushEnabled(enabled)
         if (!enabled) {
-          if (!cancelled) {
-            setPushEnabled(false)
-            setPushRegistered(false)
-          }
+          setPushRegistered(false)
+          setPushNeedsResubscribe(false)
           return
         }
 
         const registration = await navigator.serviceWorker.ready
         const existingSubscription = await registration.pushManager.getSubscription()
-        if (!cancelled) {
-          setPushEnabled(true)
-          setPushRegistered(Boolean(existingSubscription))
+        const savedVapidKey =
+          typeof window !== 'undefined' ? window.localStorage.getItem(PUSH_VAPID_KEY_STORAGE) : null
+        const vapidKeyMismatch =
+          Boolean(savedVapidKey) &&
+          Boolean(config.vapid_public_key) &&
+          savedVapidKey !== config.vapid_public_key
+        setPushNeedsResubscribe(vapidKeyMismatch)
+
+        if (vapidKeyMismatch) {
+          setPushRegistered(false)
+          return
+        }
+
+        const registered = Boolean(existingSubscription && Notification.permission === 'granted')
+        setPushRegistered(registered)
+
+        if (registered && existingSubscription && attemptBackendSync) {
+          await subscribeEmployeePush({
+            device_fingerprint: deviceFingerprint,
+            subscription: existingSubscription.toJSON() as Record<string, unknown>,
+          })
+          if (config.vapid_public_key) {
+            window.localStorage.setItem(PUSH_VAPID_KEY_STORAGE, config.vapid_public_key)
+          }
         }
       } catch {
-        if (!cancelled) {
-          setPushEnabled(false)
-          setPushRegistered(false)
-        }
+        setPushEnabled(false)
+        setPushRegistered(false)
+        setPushNeedsResubscribe(false)
       }
-    }
+    },
+    [deviceFingerprint],
+  )
 
-    void loadPushState()
-    return () => {
-      cancelled = true
-    }
-  }, [])
+  useEffect(() => {
+    void syncPushState(true)
+  }, [syncPushState])
 
   const hasOpenShift = useMemo(() => {
     if (!deviceFingerprint) {
@@ -172,8 +194,9 @@ export function HomePage() {
   const openShiftCheckinTime = statusSnapshot?.last_checkin_time_utc ?? statusSnapshot?.last_in_ts ?? null
   const passkeyRegistered = Boolean(statusSnapshot?.passkey_registered)
 
-  const canQrScan = Boolean(deviceFingerprint) && !isSubmitting
-  const canCheckout = Boolean(deviceFingerprint) && !isSubmitting && hasOpenShift
+  const pushGateRequired = Boolean(deviceFingerprint) && !pushRegistered
+  const canQrScan = Boolean(deviceFingerprint) && !isSubmitting && !pushGateRequired
+  const canCheckout = Boolean(deviceFingerprint) && !isSubmitting && hasOpenShift && !pushGateRequired
 
   const currentHour = new Date().getHours()
   const shouldShowEveningReminder = useMemo(() => {
@@ -226,7 +249,7 @@ export function HomePage() {
       return
     }
     if (!pushEnabled) {
-      setErrorMessage('Bildirim servisi şu anda aktif değil.')
+      setErrorMessage('Bildirim servisi şu anda aktif değil. İK yöneticisiyle iletişime geçin.')
       return
     }
     if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
@@ -246,7 +269,7 @@ export function HomePage() {
           : Notification.permission
 
       if (notificationPermission !== 'granted') {
-        throw new Error('Bildirim izni verilmedi. Tarayıcı ayarlarından izin verin.')
+        throw new Error('Bildirim izni verilmedi. Devam etmek için bildirimi açmanız zorunlu.')
       }
 
       const config = await getEmployeePushConfig()
@@ -255,7 +278,17 @@ export function HomePage() {
       }
 
       const registration = await navigator.serviceWorker.ready
+      const savedVapidKey =
+        typeof window !== 'undefined' ? window.localStorage.getItem(PUSH_VAPID_KEY_STORAGE) : null
       let subscription = await registration.pushManager.getSubscription()
+      if (subscription && savedVapidKey && savedVapidKey !== config.vapid_public_key) {
+        try {
+          await subscription.unsubscribe()
+        } catch {
+          // Eski abonelik kaldırılamasa bile yeniden subscribe denemesi yapacağız.
+        }
+        subscription = null
+      }
       if (!subscription) {
         subscription = await registration.pushManager.subscribe({
           userVisibleOnly: true,
@@ -269,8 +302,17 @@ export function HomePage() {
         subscription: subscription.toJSON() as Record<string, unknown>,
       })
 
+      // Lokal doğrulama bildirimi (sunucu push testini beklemeden izin/abonelik kontrolü)
+      await registration.showNotification('Puantaj Bildirimleri Açıldı', {
+        body: 'Bildirim kanalı aktif. Artık sistem uyarılarını alacaksınız.',
+        icon: '/employee/icons/icon-192.svg',
+      })
+
+      window.localStorage.setItem(PUSH_VAPID_KEY_STORAGE, config.vapid_public_key)
       setPushRegistered(true)
+      setPushNeedsResubscribe(false)
       setPushNotice('Bildirimler bu cihazda etkinleştirildi.')
+      await syncPushState(true)
     } catch (error) {
       const parsed = parseApiError(error, 'Bildirim aboneliği oluşturulamadı.')
       setErrorMessage(parsed.message)
@@ -427,6 +469,19 @@ export function HomePage() {
     })
   }, [lastAction])
 
+  const pushGateMessage = useMemo(() => {
+    if (pushNeedsResubscribe) {
+      return 'Bildirim anahtarı güncellendi. Devam etmek için “Bildirimleri Aç” ile aboneliği yenileyin.'
+    }
+    if (!pushEnabled) {
+      return 'Bildirim servisi sunucuda aktif değil. İK yöneticisi ortam ayarlarını tamamlamalıdır.'
+    }
+    if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
+      return 'Tarayıcı bildirim iznini reddetti. Ayarlardan izin verip tekrar deneyin.'
+    }
+    return 'Bu portalde devam etmek için bildirimleri açmanız zorunludur.'
+  }, [pushEnabled, pushNeedsResubscribe])
+
   return (
     <main className="phone-shell">
       <section className="phone-card">
@@ -457,6 +512,7 @@ export function HomePage() {
             {passkeyRegistered ? 'Kurulu' : 'Kurulu Değil'}
           </span>
         </div>
+
         <div className="status-row">
           <p className="small-title">Bildirim durumu</p>
           <span className={`status-pill ${pushRegistered ? 'state-ok' : pushEnabled ? 'state-warn' : 'state-err'}`}>
@@ -487,9 +543,11 @@ export function HomePage() {
               {isPasskeyBusy ? 'Passkey kuruluyor...' : 'Passkey Kur'}
             </button>
           ) : null}
+
           <button type="button" className="btn btn-ghost" onClick={() => setIsHelpOpen(true)}>
             Nasıl çalışır?
           </button>
+
           <button
             type="button"
             className="btn btn-soft"
@@ -520,7 +578,7 @@ export function HomePage() {
             disabled={!canQrScan}
             onClick={() => {
               if (!canQrScan) {
-                setErrorMessage(todayStatusHint(todayStatus))
+                setErrorMessage(pushGateRequired ? 'Önce bildirimleri açmanız gerekir.' : todayStatusHint(todayStatus))
                 return
               }
               setScannerError(null)
@@ -592,6 +650,7 @@ export function HomePage() {
             <p>{passkeyNotice}</p>
           </div>
         ) : null}
+
         {pushNotice ? (
           <div className="notice-box notice-box-success mt-3">
             <p>{pushNotice}</p>
@@ -687,6 +746,32 @@ export function HomePage() {
               <button type="button" className="btn btn-primary" onClick={() => setIsHelpOpen(false)}>
                 Anladım
               </button>
+            </div>
+          </div>
+        ) : null}
+
+        {pushGateRequired ? (
+          <div className="modal-backdrop" role="dialog" aria-modal="true">
+            <div className="help-modal">
+              <h2>Bildirim İzni Zorunlu</h2>
+              <p>{pushGateMessage}</p>
+              <div className="stack">
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={isPushBusy || !pushEnabled}
+                  onClick={() => void runPushSubscription()}
+                >
+                  {isPushBusy ? 'Bildirim açılıyor...' : 'Bildirimleri Aç'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-soft"
+                  onClick={() => void syncPushState(true)}
+                >
+                  Durumu Yenile
+                </button>
+              </div>
             </div>
           </div>
         ) : null}
