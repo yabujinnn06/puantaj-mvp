@@ -44,7 +44,7 @@ function todayStatusHint(status: TodayStatus): string {
     return 'Mesaiyi bitirerek bugünkü kaydı tamamlayın.'
   }
   if (status === 'FINISHED') {
-    return 'Bugünkü giriş/çıkış tamamlandı. Yeni giriş yarın yapılabilir.'
+    return 'Bugünkü giriş/çıkış tamamlandı. Yeni bir vardiya başlatmak için QR okutabilirsiniz.'
   }
   return 'QR ile giriş yaparak mesaiyi başlatın.'
 }
@@ -112,7 +112,7 @@ export function HomePage() {
   const openShiftCheckinTime = statusSnapshot?.last_checkin_time_utc ?? statusSnapshot?.last_in_ts ?? null
   const passkeyRegistered = Boolean(statusSnapshot?.passkey_registered)
 
-  const canQrScan = Boolean(deviceFingerprint) && !isSubmitting && todayStatus !== 'FINISHED'
+  const canQrScan = Boolean(deviceFingerprint) && !isSubmitting
   const canCheckout = Boolean(deviceFingerprint) && !isSubmitting && hasOpenShift
 
   const currentHour = new Date().getHours()
@@ -165,11 +165,6 @@ export function HomePage() {
       setErrorMessage('Cihaz bağlı değil. Davet linkine tıklayın.')
       return
     }
-    if (todayStatus === 'FINISHED' && !hasOpenShift) {
-      setErrorMessage(todayStatusHint(todayStatus))
-      return
-    }
-
     const codeValue = rawQrValue.trim()
     if (!codeValue) {
       setErrorMessage('QR kod değeri boş olamaz.')

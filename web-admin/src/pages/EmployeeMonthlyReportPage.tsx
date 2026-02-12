@@ -68,6 +68,17 @@ function getDaySuspicionReasons(day: MonthlyEmployeeDay): string[] {
   return reasons
 }
 
+function buildSuspicionTooltip(reasons: string[]): string | undefined {
+  if (reasons.length === 0) {
+    return undefined
+  }
+  const lines = reasons.map((code, index) => {
+    const meta = getFlagMeta(code)
+    return `${index + 1}. ${meta.label}: ${meta.description}`
+  })
+  return `Supheli nedenleri:\n${lines.join('\n')}`
+}
+
 function isoToHHMM(value: string | null): string {
   if (!value) return ''
   const date = new Date(value)
@@ -748,6 +759,7 @@ export function EmployeeMonthlyReportPage() {
                     {shownDays.map((day) => {
                       const reasons = getDaySuspicionReasons(day)
                       const suspicious = reasons.length > 0
+                      const suspiciousTooltip = buildSuspicionTooltip(reasons)
                       const override = overridesByDate.get(day.date)
                       const decodedOverride = decodeManualOverrideStatus(override)
                       const hasManual = day.flags.includes('MANUAL_OVERRIDE') || day.flags.includes('MANUAL_EVENT') || Boolean(override)
@@ -769,7 +781,7 @@ export function EmployeeMonthlyReportPage() {
                               </span>
                             ) : null}
                             <span className="ml-2">
-                              <SuspiciousBadge suspicious={suspicious} />
+                              <SuspiciousBadge suspicious={suspicious} tooltip={suspiciousTooltip} />
                             </span>
                           </td>
                           <td className="py-2" title={day.in ?? undefined}>

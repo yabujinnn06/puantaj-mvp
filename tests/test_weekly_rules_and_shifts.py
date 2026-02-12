@@ -295,6 +295,56 @@ class WeeklyRulesAndShiftsTests(unittest.TestCase):
         self.assertEqual(monday.missing_minutes, 240)
         self.assertIn("UNDERWORKED", monday.flags)
 
+    def test_cross_midnight_checkout_is_attached_to_checkin_day(self) -> None:
+        employee = Employee(id=6, full_name="Night Shift User", department_id=1, shift_id=None, is_active=True)
+        work_rule = WorkRule(
+            id=6,
+            department_id=1,
+            daily_minutes_planned=540,
+            break_minutes=60,
+            grace_minutes=5,
+        )
+        # Europe/Istanbul local:
+        # IN  : 2026-02-10 23:30
+        # OUT : 2026-02-11 01:15
+        event_in = AttendanceEvent(
+            id=601,
+            employee_id=6,
+            device_id=1,
+            type=AttendanceType.IN,
+            ts_utc=datetime(2026, 2, 10, 20, 30, tzinfo=timezone.utc),
+            location_status=LocationStatus.NO_LOCATION,
+            flags={},
+        )
+        event_out = AttendanceEvent(
+            id=602,
+            employee_id=6,
+            device_id=1,
+            type=AttendanceType.OUT,
+            ts_utc=datetime(2026, 2, 10, 22, 15, tzinfo=timezone.utc),
+            location_status=LocationStatus.NO_LOCATION,
+            flags={},
+        )
+
+        fake_db = _FakeMonthlyDB(
+            scalar_values=[employee, work_rule, None],
+            scalars_values=[
+                [event_in, event_out],
+                [],
+                [],
+                [],
+                [],
+            ],
+        )
+
+        report = calculate_employee_monthly(fake_db, employee_id=6, year=2026, month=2)
+        target_day = next((day for day in report.days if day.date == date(2026, 2, 10)), None)
+        self.assertIsNotNone(target_day)
+        assert target_day is not None
+        self.assertEqual(target_day.check_in, event_in.ts_utc)
+        self.assertEqual(target_day.check_out, event_out.ts_utc)
+        self.assertIn("CROSS_MIDNIGHT_CHECKOUT", target_day.flags)
+
 
 if __name__ == "__main__":
     unittest.main()

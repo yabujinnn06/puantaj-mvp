@@ -26,6 +26,12 @@ const FLAG_DICTIONARY: Record<string, FlagMeta> = {
       'Aynı gün için haftalık gün kuralı ile vardiya süresi/mola bilgisi farklı. Hesaplamada vardiya kuralı önceliklendirildi.',
     tone: 'warning',
   },
+  CROSS_MIDNIGHT_CHECKOUT: {
+    label: 'Gece vardiyası çıkışı',
+    description:
+      'Giriş bir gün, çıkış ertesi gün alınmış. Sistem çıkışı önceki günün mesaisine bağlayarak hesapladı.',
+    tone: 'info',
+  },
   RULE_SOURCE_MANUAL_OVERRIDE: {
     label: 'Kural manuel seçildi',
     description: 'Bu gün için kural kaynağı İK tarafından manuel olarak seçildi.',

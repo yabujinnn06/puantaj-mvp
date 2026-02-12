@@ -49,6 +49,7 @@ const errorCodeMap: Record<string, string> = {
   QR_POINT_OUT_OF_RANGE: 'Bu QR kod sadece tanımlı konum içinde okutulabilir.',
   QR_CODE_NOT_FOUND: 'QR kod bulunamadı veya pasif durumda.',
   QR_CODE_HAS_NO_ACTIVE_POINTS: 'Bu QR koda aktif konum noktası atanmadı.',
+  QR_DOUBLE_SCAN_BLOCKED: 'Aynı çalışan için QR okutmalar arasında en az 5 dakika olmalıdır.',
 }
 
 const backendDetailMap: Record<string, string> = {

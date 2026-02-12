@@ -2,9 +2,11 @@
 :root {
   --cr-primary: #0f6a8c;
   --cr-primary-strong: #08465f;
+  --cr-primary-soft: #1f86aa;
   --cr-secondary: #3f819f;
   --cr-bg: #d5e3ec;
   --cr-surface: rgba(251, 255, 255, 0.9);
+  --cr-surface-strong: rgba(255, 255, 255, 0.96);
   --cr-border: #a9c1cf;
   --cr-text: #0c2634;
   --cr-muted: #3f5e70;
@@ -33,9 +35,9 @@ body {
   min-height: 100vh;
   color: var(--cr-text);
   background:
-    radial-gradient(circle at 15% 2%, rgba(57, 92, 117, 0.22), transparent 36%),
-    radial-gradient(circle at 88% 98%, rgba(13, 99, 132, 0.16), transparent 42%),
-    linear-gradient(180deg, #dfeaf1 0%, #cadbe5 100%);
+    radial-gradient(circle at 15% 2%, rgba(57, 92, 117, 0.24), transparent 38%),
+    radial-gradient(circle at 84% 96%, rgba(13, 99, 132, 0.2), transparent 45%),
+    linear-gradient(180deg, #e3edf3 0%, #c9d9e4 52%, #c4d4df 100%);
   overflow-x: hidden;
 }
 
@@ -125,14 +127,26 @@ body::after {
   max-width: 460px;
   border: 1px solid var(--cr-border);
   border-radius: var(--cr-radius);
-  background: var(--cr-surface);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.8), rgba(248, 253, 255, 0.86)),
+    var(--cr-surface);
   backdrop-filter: blur(5px);
   box-shadow: var(--cr-shadow);
   padding: 16px;
-  transition: transform 170ms ease, box-shadow 170ms ease;
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
   position: relative;
   z-index: 1;
   overflow: hidden;
+}
+
+.phone-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  z-index: 0;
 }
 
 .phone-card::after {
@@ -150,11 +164,18 @@ body::after {
 .phone-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 18px 34px -22px rgba(8, 31, 45, 0.58);
+  border-color: rgba(122, 165, 186, 0.9);
 }
 
 .phone-card h1 {
   margin: 8px 0 0;
   font-size: 1.35rem;
+  letter-spacing: 0.01em;
+}
+
+.phone-card > * {
+  position: relative;
+  z-index: 1;
 }
 
 .card-topbar {
@@ -174,10 +195,13 @@ body::after {
   border-radius: 999px;
   padding: 0.2rem 0.55rem;
   background: rgba(247, 252, 255, 0.82);
+  transition: all 150ms ease;
 }
 
 .topbar-link:hover {
   background: rgba(233, 246, 253, 0.95);
+  box-shadow: 0 8px 14px -12px rgba(12, 78, 106, 0.7);
+  transform: translateY(-1px);
 }
 
 .topbar-link.with-icon {
@@ -266,7 +290,12 @@ textarea:focus {
   padding: 11px 12px;
   font-size: 0.95rem;
   font-weight: 600;
-  transition: transform 150ms ease, box-shadow 150ms ease, filter 150ms ease;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    filter 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -289,14 +318,19 @@ textarea:focus {
   filter: saturate(1.02);
 }
 
+.btn:not(:disabled):active {
+  transform: translateY(0);
+  box-shadow: 0 5px 10px -10px rgba(8, 31, 45, 0.7);
+}
+
 .btn-primary {
-  background: linear-gradient(180deg, #16728a 0%, var(--cr-primary) 100%);
+  background: linear-gradient(180deg, #1a7f9e 0%, var(--cr-primary) 58%, var(--cr-primary-strong) 100%);
   color: #f7fbfd;
 }
 
 .btn-outline {
   border: 1px solid var(--cr-primary);
-  background: rgba(255, 255, 255, 0.88);
+  background: rgba(255, 255, 255, 0.9);
   color: var(--cr-primary);
 }
 
@@ -314,6 +348,13 @@ textarea:focus {
   font-size: 0.86rem;
 }
 
+.btn:focus-visible,
+.topbar-link:focus-visible,
+.inline-link:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 3px rgba(23, 110, 143, 0.2);
+}
+
 .error-box,
 .warn-box,
 .device-box,
@@ -326,6 +367,7 @@ textarea:focus {
 .device-box {
   border: 1px solid rgba(73, 146, 176, 0.35);
   background: rgba(236, 246, 252, 0.92);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
 }
 
 .warn-box {
@@ -406,6 +448,7 @@ textarea:focus {
   border-radius: var(--cr-radius-sm);
   padding: 10px;
   background: rgba(247, 252, 255, 0.85);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 
 .scanner-title {
@@ -421,6 +464,9 @@ textarea:focus {
   overflow: hidden;
   background: #0f1f2d;
   min-height: 220px;
+  box-shadow:
+    inset 0 0 0 1px rgba(181, 210, 226, 0.3),
+    0 12px 20px -18px rgba(8, 31, 45, 0.8);
 }
 
 .scanner-wrap::before {
@@ -486,6 +532,7 @@ textarea:focus {
 .result-box {
   border: 1px solid var(--cr-border);
   background: rgba(249, 253, 255, 0.9);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
 .notice-box {
@@ -493,6 +540,7 @@ textarea:focus {
   border-radius: var(--cr-radius-sm);
   padding: 10px 12px;
   border: 1px solid transparent;
+  animation: fade-up 170ms ease-out;
 }
 
 .notice-box p {
@@ -527,21 +575,25 @@ textarea:focus {
   padding: 2px 10px;
   font-size: 0.78rem;
   font-weight: 700;
+  border: 1px solid transparent;
 }
 
 .state-ok {
   background: rgba(177, 235, 209, 0.48);
   color: #15563d;
+  border-color: rgba(26, 110, 78, 0.22);
 }
 
 .state-warn {
   background: rgba(252, 227, 164, 0.58);
   color: #855e10;
+  border-color: rgba(168, 118, 18, 0.22);
 }
 
 .state-err {
   background: rgba(251, 207, 218, 0.62);
   color: #8f2139;
+  border-color: rgba(168, 47, 74, 0.2);
 }
 
 .manual-badge {
@@ -629,6 +681,8 @@ textarea:focus {
   align-items: center;
   justify-content: center;
   padding: 1rem;
+  backdrop-filter: blur(2px);
+  animation: fade-in 140ms ease-out;
 }
 
 .help-modal {
@@ -639,6 +693,7 @@ textarea:focus {
   background: rgba(250, 253, 255, 0.97);
   box-shadow: 0 20px 36px -24px rgba(7, 31, 45, 0.6);
   padding: 1rem;
+  animation: modal-in 180ms ease-out;
 }
 
 .help-modal h2 {
@@ -700,6 +755,37 @@ textarea:focus {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 

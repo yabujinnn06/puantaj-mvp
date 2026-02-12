@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import unittest
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from unittest.mock import patch
 
+from app.errors import ApiError
 from app.models import (
     AttendanceType,
     Device,
@@ -15,7 +18,13 @@ from app.services.attendance import QRScanDeniedError, create_employee_qr_scan_e
 
 
 class _DummyDB:
-    pass
+    def scalars(self, _statement):  # type: ignore[no-untyped-def]
+        class _Rows:
+            @staticmethod
+            def all():
+                return []
+
+        return _Rows()
 
 
 def _build_device(employee_id: int = 1) -> Device:
@@ -137,19 +146,19 @@ class EmployeeQrScanServiceTests(unittest.TestCase):
         code = _build_qr_code(QRCodeType.BOTH)
         point = _build_point(401, 41.0002, 29.0000, 90)
 
-        for today_status, expected_type in (
-            ("IN_PROGRESS", AttendanceType.OUT),
-            ("NOT_STARTED", AttendanceType.IN),
+        for last_event, expected_type in (
+            (SimpleNamespace(type=AttendanceType.IN), AttendanceType.OUT),
+            (None, AttendanceType.IN),
         ):
             fake_event = object()
-            with self.subTest(today_status=today_status):
+            with self.subTest(last_event_type=getattr(last_event, "type", None)):
                 with (
                     patch("app.services.attendance._resolve_active_device", return_value=device),
                     patch("app.services.attendance._resolve_qr_code_by_value", return_value=code),
                     patch("app.services.attendance._load_active_qr_points_for_code", return_value=[point]),
                     patch(
-                        "app.services.attendance._resolve_today_status_for_employee",
-                        return_value=(today_status, None, None, None),
+                        "app.services.attendance._resolve_latest_event_for_employee",
+                        return_value=last_event,
                     ),
                     patch("app.services.attendance._build_attendance_event", return_value=fake_event) as build_event_mock,
                 ):
@@ -165,6 +174,35 @@ class EmployeeQrScanServiceTests(unittest.TestCase):
                 self.assertIs(result, fake_event)
                 kwargs = build_event_mock.call_args.kwargs
                 self.assertEqual(kwargs["event_type"], expected_type)
+
+    def test_double_scan_within_five_minutes_is_blocked(self) -> None:
+        db = _DummyDB()
+        device = _build_device()
+        code = _build_qr_code(QRCodeType.CHECKIN)
+        point = _build_point(501, 41.0002, 29.0000, 90)
+        recent_event = SimpleNamespace(
+            id=999,
+            ts_utc=datetime.now(timezone.utc) - timedelta(minutes=1),
+            flags={"qr": {"code_id": 7}},
+        )
+
+        with (
+            patch("app.services.attendance._resolve_active_device", return_value=device),
+            patch("app.services.attendance._resolve_recent_qr_scan_event", return_value=recent_event),
+            patch("app.services.attendance._resolve_qr_code_by_value", return_value=code),
+            patch("app.services.attendance._load_active_qr_points_for_code", return_value=[point]),
+        ):
+            with self.assertRaises(ApiError) as ctx:
+                create_employee_qr_scan_event(
+                    db,
+                    device_fingerprint="fp-1",
+                    code_value="IN|HQ",
+                    lat=41.0,
+                    lon=29.0,
+                    accuracy_m=12.0,
+                )
+
+        self.assertEqual(ctx.exception.code, "QR_DOUBLE_SCAN_BLOCKED")
 
 
 if __name__ == "__main__":

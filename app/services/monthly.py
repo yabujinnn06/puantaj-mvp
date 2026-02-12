@@ -264,6 +264,43 @@ def _event_is_night_shift(first_in: AttendanceEvent | None, last_out: Attendance
     return False
 
 
+def _resolve_day_event_pair(
+    *,
+    day_date: date,
+    events_by_day: dict[date, dict[str, list[AttendanceEvent]]],
+    consumed_out_event_ids: set[int],
+) -> tuple[AttendanceEvent | None, AttendanceEvent | None, bool]:
+    day_bucket = events_by_day.get(day_date, {"IN": [], "OUT": []})
+    day_in_events = day_bucket["IN"]
+    day_out_events = [event for event in day_bucket["OUT"] if event.id not in consumed_out_event_ids]
+
+    first_in = day_in_events[0] if day_in_events else None
+    if first_in is not None:
+        eligible_same_day_outs = [event for event in day_out_events if event.ts_utc >= first_in.ts_utc]
+        last_out = eligible_same_day_outs[-1] if eligible_same_day_outs else None
+    else:
+        last_out = day_out_events[-1] if day_out_events else None
+
+    used_cross_midnight_checkout = False
+    if first_in is not None and last_out is None:
+        next_day = day_date + timedelta(days=1)
+        next_day_bucket = events_by_day.get(next_day, {"IN": [], "OUT": []})
+        next_day_first_in = next_day_bucket["IN"][0] if next_day_bucket["IN"] else None
+        for candidate_out in next_day_bucket["OUT"]:
+            if candidate_out.id in consumed_out_event_ids:
+                continue
+            if candidate_out.ts_utc <= first_in.ts_utc:
+                continue
+            if next_day_first_in is not None and candidate_out.ts_utc >= next_day_first_in.ts_utc:
+                continue
+            last_out = candidate_out
+            consumed_out_event_ids.add(candidate_out.id)
+            used_cross_midnight_checkout = True
+            break
+
+    return first_in, last_out, used_cross_midnight_checkout
+
+
 def _to_utc(value: datetime | None) -> datetime | None:
     if value is None:
         return None
@@ -459,12 +496,15 @@ def _build_day_records(
     )
 
     records: list[_InternalDayRecord] = []
+    consumed_out_event_ids: set[int] = set()
     cursor = start_date
     while cursor <= end_date:
         leave_type = leave_type_by_day.get(cursor)
-        day_bucket = events_by_day.get(cursor, {"IN": [], "OUT": []})
-        first_in = day_bucket["IN"][0] if day_bucket["IN"] else None
-        last_out = day_bucket["OUT"][-1] if day_bucket["OUT"] else None
+        first_in, last_out, used_cross_midnight_checkout = _resolve_day_event_pair(
+            day_date=cursor,
+            events_by_day=events_by_day,
+            consumed_out_event_ids=consumed_out_event_ids,
+        )
         manual_override = manual_override_by_day.get(cursor)
         schedule_plan = resolve_best_plan_for_day(
             department_plans,
@@ -668,6 +708,8 @@ def _build_day_records(
                 flags.append("OFF_DAY_WORKED")
             if has_shift_weekly_rule_conflict:
                 flags.append("SHIFT_WEEKLY_RULE_OVERRIDE")
+            if used_cross_midnight_checkout:
+                flags.append("CROSS_MIDNIGHT_CHECKOUT")
             metrics = calculate_day_metrics(
                 first_in_ts=first_in.ts_utc if first_in else None,
                 last_out_ts=last_out.ts_utc if last_out else None,
@@ -676,7 +718,14 @@ def _build_day_records(
                 daily_max_minutes=daily_max_minutes,
                 night_work_max_minutes=night_work_max_minutes,
                 enforce_min_break=enforce_min_break,
-                is_night_shift=_event_is_night_shift(first_in, last_out),
+                is_night_shift=(
+                    _event_is_night_shift(first_in, last_out)
+                    or (
+                        first_in is not None
+                        and last_out is not None
+                        and _local_date_from_utc(first_in.ts_utc) != _local_date_from_utc(last_out.ts_utc)
+                    )
+                ),
             )
             missing_minutes = 0
             if (

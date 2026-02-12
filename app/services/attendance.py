@@ -29,6 +29,8 @@ from app.settings import get_settings
 from app.services.location import distance_m, evaluate_location
 from app.services.schedule_plans import resolve_effective_plan_for_employee_day
 
+QR_DOUBLE_SCAN_WINDOW = timedelta(minutes=5)
+
 
 def _normalize_ts(ts_utc: datetime | None) -> datetime:
     if ts_utc is None:
@@ -165,6 +167,51 @@ def _load_active_qr_points_for_code(db: Session, *, code_id: int) -> list[QRPoin
     return active_points
 
 
+def _resolve_latest_event_for_employee(
+    db: Session,
+    *,
+    employee_id: int,
+    reference_ts_utc: datetime,
+) -> AttendanceEvent | None:
+    reference_ts = _normalize_ts(reference_ts_utc)
+    return db.scalar(
+        select(AttendanceEvent)
+        .where(
+            AttendanceEvent.employee_id == employee_id,
+            AttendanceEvent.ts_utc <= reference_ts,
+            AttendanceEvent.deleted_at.is_(None),
+        )
+        .order_by(AttendanceEvent.ts_utc.desc(), AttendanceEvent.id.desc())
+    )
+
+
+def _resolve_recent_qr_scan_event(
+    db: Session,
+    *,
+    employee_id: int,
+    reference_ts_utc: datetime,
+) -> AttendanceEvent | None:
+    reference_ts = _normalize_ts(reference_ts_utc)
+    window_start = reference_ts - QR_DOUBLE_SCAN_WINDOW
+    recent_events = list(
+        db.scalars(
+            select(AttendanceEvent)
+            .where(
+                AttendanceEvent.employee_id == employee_id,
+                AttendanceEvent.ts_utc >= window_start,
+                AttendanceEvent.ts_utc <= reference_ts,
+                AttendanceEvent.deleted_at.is_(None),
+            )
+            .order_by(AttendanceEvent.ts_utc.desc(), AttendanceEvent.id.desc())
+        ).all()
+    )
+    for event in recent_events:
+        flags = event.flags
+        if isinstance(flags, dict) and isinstance(flags.get("qr"), dict):
+            return event
+    return None
+
+
 def _resolve_qr_scan_event_type(
     db: Session,
     *,
@@ -176,12 +223,12 @@ def _resolve_qr_scan_event_type(
     if code_type == QRCodeType.CHECKOUT:
         return AttendanceType.OUT
 
-    today_status, _, _, _ = _resolve_today_status_for_employee(
+    last_event = _resolve_latest_event_for_employee(
         db,
         employee_id=employee_id,
         reference_ts_utc=datetime.now(timezone.utc),
     )
-    if today_status == "IN_PROGRESS":
+    if last_event is not None and last_event.type == AttendanceType.IN:
         return AttendanceType.OUT
     return AttendanceType.IN
 
@@ -202,6 +249,24 @@ def create_employee_qr_scan_event(
             status_code=404,
             code="EMPLOYEE_NOT_FOUND",
             message="Employee not found for this device.",
+        )
+    now_utc = datetime.now(timezone.utc)
+    recent_qr_event = _resolve_recent_qr_scan_event(
+        db,
+        employee_id=employee.id,
+        reference_ts_utc=now_utc,
+    )
+    if recent_qr_event is not None:
+        retry_after_seconds = int(
+            max(0, (recent_qr_event.ts_utc + QR_DOUBLE_SCAN_WINDOW - now_utc).total_seconds())
+        )
+        message = "Ayni calisan icin QR okutmalar arasinda en az 5 dakika olmalidir."
+        if retry_after_seconds > 0:
+            message = f"{message} Kalan sure: {retry_after_seconds} sn."
+        raise ApiError(
+            status_code=409,
+            code="QR_DOUBLE_SCAN_BLOCKED",
+            message=message,
         )
 
     qr_code = _resolve_qr_code_by_value(db, code_value=code_value)
@@ -332,21 +397,14 @@ def _resolve_shift_from_last_checkin(
     employee: Employee,
     reference_ts_utc: datetime,
 ) -> DepartmentShift | None:
-    day_start, day_end = _local_day_bounds_utc(reference_ts_utc)
-    last_in = db.scalar(
-        select(AttendanceEvent)
-        .where(
-            AttendanceEvent.employee_id == employee.id,
-            AttendanceEvent.type == AttendanceType.IN,
-            AttendanceEvent.ts_utc >= day_start,
-            AttendanceEvent.ts_utc < day_end,
-            AttendanceEvent.deleted_at.is_(None),
-        )
-        .order_by(AttendanceEvent.ts_utc.desc(), AttendanceEvent.id.desc())
+    last_event = _resolve_latest_event_for_employee(
+        db,
+        employee_id=employee.id,
+        reference_ts_utc=reference_ts_utc,
     )
-    if last_in is None:
+    if last_event is None or last_event.type != AttendanceType.IN:
         return None
-    shift_id = _extract_shift_id_from_flags(last_in.flags)
+    shift_id = _extract_shift_id_from_flags(last_event.flags)
     return _resolve_fallback_shift(db, employee=employee, shift_id=shift_id)
 
 
@@ -395,34 +453,41 @@ def _duplicate_event_id(
     exclude_event_id: int | None = None,
 ) -> int | None:
     day_start, day_end = _local_day_bounds_utc(ts_utc)
-
-    existing_event = db.scalar(
+    prev_stmt = (
         select(AttendanceEvent)
         .where(
             AttendanceEvent.employee_id == employee_id,
-            AttendanceEvent.type == event_type,
             AttendanceEvent.ts_utc >= day_start,
             AttendanceEvent.ts_utc < day_end,
+            AttendanceEvent.ts_utc <= ts_utc,
+            AttendanceEvent.deleted_at.is_(None),
+        )
+        .order_by(AttendanceEvent.ts_utc.desc(), AttendanceEvent.id.desc())
+    )
+    next_stmt = (
+        select(AttendanceEvent)
+        .where(
+            AttendanceEvent.employee_id == employee_id,
+            AttendanceEvent.ts_utc >= day_start,
+            AttendanceEvent.ts_utc < day_end,
+            AttendanceEvent.ts_utc >= ts_utc,
             AttendanceEvent.deleted_at.is_(None),
         )
         .order_by(AttendanceEvent.ts_utc.asc(), AttendanceEvent.id.asc())
     )
-    if existing_event is not None and exclude_event_id is not None and existing_event.id == exclude_event_id:
-        existing_event = db.scalar(
-            select(AttendanceEvent)
-            .where(
-                AttendanceEvent.employee_id == employee_id,
-                AttendanceEvent.type == event_type,
-                AttendanceEvent.ts_utc >= day_start,
-                AttendanceEvent.ts_utc < day_end,
-                AttendanceEvent.deleted_at.is_(None),
-                AttendanceEvent.id != exclude_event_id,
-            )
-            .order_by(AttendanceEvent.ts_utc.asc(), AttendanceEvent.id.asc())
-        )
-    if existing_event is None:
-        return None
-    return existing_event.id
+    if exclude_event_id is not None:
+        prev_stmt = prev_stmt.where(AttendanceEvent.id != exclude_event_id)
+        next_stmt = next_stmt.where(AttendanceEvent.id != exclude_event_id)
+
+    prev_event = db.scalar(prev_stmt)
+    if prev_event is not None and prev_event.type == event_type:
+        return prev_event.id
+
+    next_event = db.scalar(next_stmt)
+    if next_event is not None and next_event.type == event_type:
+        return next_event.id
+
+    return None
 
 
 def _has_sequence_conflict(
@@ -539,36 +604,30 @@ def _build_attendance_event(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Employee is not active")
 
     ts_utc = datetime.now(timezone.utc)
-    today_status, _, _, _ = _resolve_today_status_for_employee(
+    latest_event = _resolve_latest_event_for_employee(
         db,
         employee_id=employee.id,
         reference_ts_utc=ts_utc,
     )
     if event_type == AttendanceType.IN:
-        if today_status == "IN_PROGRESS":
+        if latest_event is not None and latest_event.type == AttendanceType.IN:
             raise ApiError(
                 status_code=409,
                 code="ALREADY_CHECKED_IN",
-                message="Bugun icin giris zaten yapildi. Lutfen mesaiyi bitirin.",
-            )
-        if today_status == "FINISHED":
-            raise ApiError(
-                status_code=409,
-                code="DAY_ALREADY_FINISHED",
-                message="Bugunku mesai tamamlandi. Yeni giris yarin yapilabilir.",
+                message="Acik mesai kaydi var. Lutfen once cikis yapin.",
             )
     if event_type == AttendanceType.OUT:
-        if today_status == "NOT_STARTED":
+        if latest_event is None:
             raise ApiError(
                 status_code=409,
                 code="CHECKIN_REQUIRED",
                 message="Cikis icin once giris kaydi gereklidir.",
             )
-        if today_status == "FINISHED":
+        if latest_event.type == AttendanceType.OUT:
             raise ApiError(
                 status_code=409,
                 code="ALREADY_CHECKED_OUT",
-                message="Bugun icin cikis zaten yapildi.",
+                message="Acik bir mesai bulunamadi. Cikis zaten yapilmis gorunuyor.",
             )
 
     employee_location = db.scalar(
