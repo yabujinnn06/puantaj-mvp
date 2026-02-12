@@ -442,9 +442,9 @@ def _build_message_for_job(session: Session, job: NotificationJob) -> Notificati
         report_date = str(payload.get("report_date", "-"))
         archive_id = payload.get("archive_id")
         archive_url = (
-            f"{get_public_base_url()}/admin-panel/notifications?archive_id={archive_id}"
+            f"{get_public_base_url()}/admin-panel/archive-download?archive_id={archive_id}"
             if archive_id
-            else f"{get_public_base_url()}/admin-panel/notifications"
+            else f"{get_public_base_url()}/admin-panel/archive-download"
         )
         return NotificationMessage(
             recipients=recipients,
@@ -494,7 +494,9 @@ def _send_push_for_job(
                 "job_type": job.job_type,
                 "archive_id": archive_id,
                 "report_date": payload.get("report_date"),
-                "url": f"/admin-panel/notifications?archive_id={archive_id}" if archive_id else "/admin-panel/notifications",
+                "url": f"/admin-panel/archive-download?archive_id={archive_id}"
+                if archive_id
+                else "/admin-panel/archive-download",
             },
         )
 

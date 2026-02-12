@@ -751,6 +751,11 @@ class AdminDailyReportArchiveNotifyResponse(BaseModel):
     admin_usernames: list[str] = Field(default_factory=list)
 
 
+class AdminDailyReportArchivePasswordDownloadRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=1, max_length=128)
+
+
 class AdminManualNotificationSendRequest(BaseModel):
     title: str = Field(min_length=1, max_length=120)
     message: str = Field(min_length=1, max_length=2000)

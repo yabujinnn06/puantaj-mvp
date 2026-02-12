@@ -27,6 +27,13 @@ export const apiClient = axios.create({
   },
 })
 
+export const publicApiClient = axios.create({
+  baseURL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+})
+
 function forceLogoutAndRedirect(): void {
   clearAuthTokens()
 

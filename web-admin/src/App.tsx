@@ -10,6 +10,7 @@ import { DepartmentSummaryReportPage } from './pages/DepartmentSummaryReportPage
 import { DepartmentsPage } from './pages/DepartmentsPage'
 import { DevicesPage } from './pages/DevicesPage'
 import { ComplianceSettingsPage } from './pages/ComplianceSettingsPage'
+import { ArchivePasswordDownloadPage } from './pages/ArchivePasswordDownloadPage'
 import { AdminUsersPage } from './pages/AdminUsersPage'
 import { EmployeeDetailPage } from './pages/EmployeeDetailPage'
 import { EmployeeMonthlyReportPage } from './pages/EmployeeMonthlyReportPage'
@@ -33,6 +34,7 @@ function App() {
       </Route>
 
       <Route path="/device-claim" element={<AdminDeviceClaimPage />} />
+      <Route path="/archive-download" element={<ArchivePasswordDownloadPage />} />
 
       <Route element={<AuthGuard />}>
         <Route element={<AppLayout />}>

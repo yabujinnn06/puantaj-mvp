@@ -1,6 +1,7 @@
-import { apiClient } from './client'
+import { apiClient, publicApiClient } from './client'
 import type {
   AdminDailyReportArchive,
+  AdminDailyReportArchivePasswordDownloadPayload,
   AdminDailyReportArchiveNotifyResponse,
   AdminDeviceClaimResponse,
   AdminDeviceInviteCreateResponse,
@@ -41,6 +42,11 @@ import type {
   SchedulePlanTargetType,
   WorkRule,
 } from '../types/api'
+
+export interface ArchivePasswordDownloadResult {
+  blob: Blob
+  file_name: string | null
+}
 
 export interface LoginPayload {
   username: string
@@ -777,11 +783,48 @@ export async function getDailyReportArchives(
   return response.data
 }
 
+function extractFileNameFromDisposition(disposition: string | undefined): string | null {
+  if (!disposition) {
+    return null
+  }
+
+  const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1].trim())
+    } catch {
+      return utf8Match[1].trim()
+    }
+  }
+
+  const simpleMatch = disposition.match(/filename="?([^";]+)"?/i)
+  if (!simpleMatch?.[1]) {
+    return null
+  }
+  return simpleMatch[1].trim()
+}
+
 export async function downloadDailyReportArchive(archiveId: number): Promise<Blob> {
   const response = await apiClient.get<Blob>(`/api/admin/daily-report-archives/${archiveId}/download`, {
     responseType: 'blob',
   })
   return response.data
+}
+
+export async function downloadDailyReportArchiveWithPassword(
+  archiveId: number,
+  payload: AdminDailyReportArchivePasswordDownloadPayload,
+): Promise<ArchivePasswordDownloadResult> {
+  const response = await publicApiClient.post<Blob>(
+    `/api/admin/daily-report-archives/${archiveId}/password-download`,
+    payload,
+    { responseType: 'blob' },
+  )
+  const contentDisposition = response.headers['content-disposition']
+  return {
+    blob: response.data,
+    file_name: extractFileNameFromDisposition(contentDisposition),
+  }
 }
 
 export async function notifyDailyReportArchive(

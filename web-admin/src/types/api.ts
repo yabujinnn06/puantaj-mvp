@@ -317,6 +317,11 @@ export interface AdminDailyReportArchiveNotifyResponse {
   admin_usernames: string[]
 }
 
+export interface AdminDailyReportArchivePasswordDownloadPayload {
+  username: string
+  password: string
+}
+
 export interface AdminManualNotificationSendResponse {
   ok: boolean
   total_targets: number

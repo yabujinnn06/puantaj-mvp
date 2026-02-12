@@ -60,6 +60,7 @@ from app.schemas import (
     AdminDailyReportArchiveRead,
     AdminDailyReportArchiveNotifyRequest,
     AdminDailyReportArchiveNotifyResponse,
+    AdminDailyReportArchivePasswordDownloadRequest,
     AuditLogRead,
     AttendanceEventRead,
     AttendanceEventManualCreateRequest,
@@ -3527,6 +3528,114 @@ def download_daily_report_archive(
     )
 
 
+@router.post("/api/admin/daily-report-archives/{archive_id}/password-download")
+def password_download_daily_report_archive(
+    archive_id: int,
+    payload: AdminDailyReportArchivePasswordDownloadRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Response:
+    username = payload.username.strip()
+    if not username:
+        raise ApiError(
+            status_code=422,
+            code="VALIDATION_ERROR",
+            message="Username is required.",
+        )
+
+    ip = _client_ip(request)
+    user_agent = _user_agent(request)
+    request_id = getattr(request.state, "request_id", None)
+    request.state.actor = "system"
+    request.state.actor_id = "system"
+
+    if ip:
+        try:
+            ensure_login_attempt_allowed(ip)
+        except ApiError:
+            log_audit(
+                db,
+                actor_type=AuditActorType.SYSTEM,
+                actor_id=username,
+                action="ADMIN_DAILY_REPORT_ARCHIVE_PASSWORD_DOWNLOAD_FAIL",
+                success=False,
+                entity_type="admin_daily_report_archive",
+                entity_id=str(archive_id),
+                ip=ip,
+                user_agent=user_agent,
+                details={"reason": "TOO_MANY_ATTEMPTS"},
+                request_id=request_id,
+            )
+            raise
+
+    identity: dict[str, Any] | None = None
+    if verify_admin_credentials(username, payload.password):
+        identity = _build_env_admin_identity(username)
+    else:
+        admin_user = db.scalar(select(AdminUser).where(AdminUser.username == username))
+        if admin_user is not None and admin_user.is_active and verify_password(
+            payload.password,
+            admin_user.password_hash,
+        ):
+            identity = _build_admin_user_identity(admin_user)
+
+    if identity is None:
+        if ip:
+            register_login_failure(ip)
+        log_audit(
+            db,
+            actor_type=AuditActorType.SYSTEM,
+            actor_id=username,
+            action="ADMIN_DAILY_REPORT_ARCHIVE_PASSWORD_DOWNLOAD_FAIL",
+            success=False,
+            entity_type="admin_daily_report_archive",
+            entity_id=str(archive_id),
+            ip=ip,
+            user_agent=user_agent,
+            details={"reason": "INVALID_CREDENTIALS"},
+            request_id=request_id,
+        )
+        raise ApiError(
+            status_code=401,
+            code="INVALID_CREDENTIALS",
+            message="Invalid credentials.",
+        )
+
+    if ip:
+        register_login_success(ip)
+
+    archive = db.get(AdminDailyReportArchive, archive_id)
+    if archive is None:
+        raise HTTPException(status_code=404, detail="Daily report archive not found")
+
+    actor_id = str(identity.get("username") or identity.get("sub") or username)
+    request.state.actor = "admin"
+    request.state.actor_id = actor_id
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=actor_id,
+        action="ADMIN_DAILY_REPORT_ARCHIVE_PASSWORD_DOWNLOADED",
+        success=True,
+        entity_type="admin_daily_report_archive",
+        entity_id=str(archive.id),
+        ip=ip,
+        user_agent=user_agent,
+        details={
+            "report_date": archive.report_date.isoformat(),
+            "file_name": archive.file_name,
+            "file_size_bytes": archive.file_size_bytes,
+        },
+        request_id=request_id,
+    )
+
+    return Response(
+        content=archive.file_data,
+        media_type=XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="{archive.file_name}"'},
+    )
+
+
 @router.post(
     "/api/admin/daily-report-archives/{archive_id}/notify",
     response_model=AdminDailyReportArchiveNotifyResponse,
@@ -3555,7 +3664,7 @@ def notify_daily_report_archive(
             )
         admin_user_ids = normalized_ids
 
-    archive_url = f"{get_public_base_url()}/admin-panel/notifications?archive_id={archive.id}"
+    archive_url = f"{get_public_base_url()}/admin-panel/archive-download?archive_id={archive.id}"
     report_date_text = archive.report_date.isoformat()
     title = f"Günlük Puantaj Raporu Hazır ({report_date_text})"
     body = (
@@ -3572,7 +3681,7 @@ def notify_daily_report_archive(
             "archive_id": archive.id,
             "report_date": report_date_text,
             "file_name": archive.file_name,
-            "url": f"/admin-panel/notifications?archive_id={archive.id}",
+            "url": f"/admin-panel/archive-download?archive_id={archive.id}",
         },
     )
 
