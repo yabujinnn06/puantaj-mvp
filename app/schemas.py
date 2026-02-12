@@ -143,6 +143,11 @@ class EmployeeRegionUpdateRequest(BaseModel):
     region_id: int | None = Field(default=None, ge=1)
 
 
+class EmployeeProfileUpdateRequest(BaseModel):
+    full_name: str | None = Field(default=None, min_length=1, max_length=255)
+    department_id: int | None = Field(default=None, ge=1)
+
+
 class DeviceActiveUpdateRequest(BaseModel):
     is_active: bool
 

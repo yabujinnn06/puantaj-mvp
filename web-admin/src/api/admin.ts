@@ -105,6 +105,11 @@ export interface UpdateEmployeeRegionPayload {
   region_id: number | null
 }
 
+export interface UpdateEmployeeProfilePayload {
+  full_name?: string
+  department_id?: number | null
+}
+
 export interface UpdateDeviceActivePayload {
   is_active: boolean
 }
@@ -445,6 +450,14 @@ export async function createEmployee(payload: CreateEmployeePayload): Promise<Em
 
 export async function getEmployeeDetail(employeeId: number): Promise<EmployeeDetail> {
   const response = await apiClient.get<EmployeeDetail>(`/api/admin/employees/${employeeId}/detail`)
+  return response.data
+}
+
+export async function updateEmployeeProfile(
+  employeeId: number,
+  payload: UpdateEmployeeProfilePayload,
+): Promise<Employee> {
+  const response = await apiClient.patch<Employee>(`/api/admin/employees/${employeeId}`, payload)
   return response.data
 }
 

@@ -5,10 +5,12 @@ import { z } from 'zod'
 
 import {
   createDeviceInvite,
+  getDepartments,
   getDepartmentShifts,
   getEmployeeDetail,
   getMonthlyEmployee,
   updateEmployeeActive,
+  updateEmployeeProfile,
   updateEmployeeShift,
   upsertEmployeeLocation,
 } from '../api/admin'
@@ -82,6 +84,8 @@ export function EmployeeDetailPage() {
   const [radiusM, setRadiusM] = useState('120')
   const [formError, setFormError] = useState<string | null>(null)
   const [selectedShiftId, setSelectedShiftId] = useState('')
+  const [profileFullName, setProfileFullName] = useState('')
+  const [profileDepartmentId, setProfileDepartmentId] = useState('')
 
   const [selectedYear, setSelectedYear] = useState(String(now.getFullYear()))
   const [selectedMonth, setSelectedMonth] = useState(String(now.getMonth() + 1))
@@ -105,6 +109,12 @@ export function EmployeeDetailPage() {
   })
 
   const employee = detailQuery.data?.employee
+
+  const departmentsQuery = useQuery({
+    queryKey: ['departments', 'employee-detail-edit'],
+    queryFn: () => getDepartments(),
+    enabled: Number.isFinite(employeeId),
+  })
 
   const shiftsQuery = useQuery({
     queryKey: ['department-shifts', employee?.department_id],
@@ -179,6 +189,29 @@ export function EmployeeDetailPage() {
     },
   })
 
+  const updateProfileMutation = useMutation({
+    mutationFn: (payload: { full_name?: string; department_id?: number | null }) =>
+      updateEmployeeProfile(employeeId, payload),
+    onSuccess: (updatedEmployee) => {
+      pushToast({
+        variant: 'success',
+        title: 'Calisan bilgileri guncellendi',
+        description: `${updatedEmployee.full_name} icin profil bilgileri kaydedildi.`,
+      })
+      void queryClient.invalidateQueries({ queryKey: ['employees'] })
+      void queryClient.invalidateQueries({ queryKey: ['employee-detail', employeeId] })
+      void queryClient.invalidateQueries({ queryKey: ['employee-monthly'] })
+      void queryClient.invalidateQueries({ queryKey: ['department-shifts', updatedEmployee.department_id] })
+    },
+    onError: (error) => {
+      pushToast({
+        variant: 'error',
+        title: 'Calisan bilgileri guncellenemedi',
+        description: parseApiError(error, 'Islem basarisiz.').message,
+      })
+    },
+  })
+
   const updateShiftMutation = useMutation({
     mutationFn: (shiftId: number | null) => updateEmployeeShift(employeeId, { shift_id: shiftId }),
     onSuccess: (updatedEmployee) => {
@@ -235,6 +268,12 @@ export function EmployeeDetailPage() {
   useEffect(() => {
     if (!employee) return
     setSelectedShiftId(employee.shift_id ? String(employee.shift_id) : '')
+  }, [employee])
+
+  useEffect(() => {
+    if (!employee) return
+    setProfileFullName(employee.full_name)
+    setProfileDepartmentId(employee.department_id ? String(employee.department_id) : '')
   }, [employee])
 
   useEffect(() => {
@@ -324,6 +363,37 @@ export function EmployeeDetailPage() {
     }
 
     locationMutation.mutate(parsed.data)
+  }
+
+  const onProfileSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const normalizedFullName = profileFullName.trim()
+    if (!normalizedFullName) {
+      pushToast({
+        variant: 'error',
+        title: 'Form hatasi',
+        description: 'Ad Soyad alani bos birakilamaz.',
+      })
+      return
+    }
+
+    const parsedDepartmentId = profileDepartmentId ? Number(profileDepartmentId) : null
+    if (
+      profileDepartmentId &&
+      (parsedDepartmentId === null || !Number.isFinite(parsedDepartmentId) || parsedDepartmentId <= 0)
+    ) {
+      pushToast({
+        variant: 'error',
+        title: 'Form hatasi',
+        description: 'Departman secimi gecersiz.',
+      })
+      return
+    }
+
+    updateProfileMutation.mutate({
+      full_name: normalizedFullName,
+      department_id: parsedDepartmentId,
+    })
   }
 
   const monthlyRows = monthlyQuery.data?.days ?? []
@@ -539,6 +609,50 @@ export function EmployeeDetailPage() {
             </p>
           </div>
         </div>
+      </Panel>
+
+      <Panel>
+        <h4 className="text-base font-semibold text-slate-900">Calisan Bilgileri</h4>
+        <p className="mt-1 text-xs text-slate-500">Ad Soyad ve departman bilgisini bu alandan guncelleyebilirsiniz.</p>
+        <form onSubmit={onProfileSubmit} className="mt-3 grid gap-3 md:grid-cols-3 md:items-end">
+          <label className="text-sm text-slate-700">
+            Ad Soyad
+            <input
+              value={profileFullName}
+              onChange={(event) => setProfileFullName(event.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+              placeholder="Calisan adi soyadi"
+            />
+          </label>
+
+          <label className="text-sm text-slate-700">
+            Departman
+            <select
+              value={profileDepartmentId}
+              onChange={(event) => setProfileDepartmentId(event.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+              disabled={departmentsQuery.isLoading}
+            >
+              <option value="">Atanmamis</option>
+              {(departmentsQuery.data ?? []).map((department) => (
+                <option key={department.id} value={department.id}>
+                  {department.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <button
+            type="submit"
+            disabled={updateProfileMutation.isPending || departmentsQuery.isLoading}
+            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-60"
+          >
+            {updateProfileMutation.isPending ? 'Kaydediliyor...' : 'Bilgileri Kaydet'}
+          </button>
+        </form>
+        {departmentsQuery.isError ? (
+          <p className="mt-2 text-xs text-amber-700">Departman listesi alinamadi. Lutfen tekrar deneyin.</p>
+        ) : null}
       </Panel>
 
       <Panel>

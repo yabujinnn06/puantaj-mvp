@@ -57,6 +57,7 @@ from app.schemas import (
     DeviceInviteCreateResponse,
     DeviceCreate,
     EmployeeDepartmentUpdateRequest,
+    EmployeeProfileUpdateRequest,
     EmployeeRegionUpdateRequest,
     EmployeeDeviceOverviewDevice,
     EmployeeDeviceOverviewRead,
@@ -1245,6 +1246,81 @@ def get_employee_detail(
         home_location=home_location,
         recent_activity=recent_activity,
     )
+
+
+@router.patch(
+    "/api/admin/employees/{employee_id}",
+    response_model=EmployeeRead,
+    dependencies=[Depends(require_admin_permission("employees", write=True))],
+)
+def update_employee_profile(
+    employee_id: int,
+    payload: EmployeeProfileUpdateRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> EmployeeRead:
+    employee = db.get(Employee, employee_id)
+    if employee is None:
+        raise HTTPException(status_code=404, detail="Employee not found")
+
+    changed_fields: dict[str, Any] = {}
+
+    if "full_name" in payload.model_fields_set:
+        normalized_full_name = (payload.full_name or "").strip()
+        if not normalized_full_name:
+            raise HTTPException(status_code=422, detail="full_name cannot be empty")
+        employee.full_name = normalized_full_name
+        changed_fields["full_name"] = employee.full_name
+
+    if "department_id" in payload.model_fields_set:
+        if payload.department_id is not None:
+            department = db.get(Department, payload.department_id)
+            if department is None:
+                raise HTTPException(status_code=404, detail="Department not found")
+
+        employee.department_id = payload.department_id
+
+        if employee.shift_id is not None:
+            shift = db.get(DepartmentShift, employee.shift_id)
+            if (
+                shift is None
+                or employee.department_id is None
+                or shift.department_id != employee.department_id
+            ):
+                employee.shift_id = None
+
+        if employee.department_id is None:
+            employee.region_id = None
+        else:
+            department = db.get(Department, employee.department_id)
+            if department is None:
+                raise HTTPException(status_code=404, detail="Department not found")
+            employee.region_id = department.region_id
+
+        changed_fields["department_id"] = employee.department_id
+        changed_fields["region_id"] = employee.region_id
+        changed_fields["shift_id"] = employee.shift_id
+
+    if not changed_fields:
+        raise HTTPException(status_code=422, detail="No fields provided for update")
+
+    db.commit()
+    db.refresh(employee)
+
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id="admin",
+        action="EMPLOYEE_PROFILE_UPDATED",
+        success=True,
+        entity_type="employee",
+        entity_id=str(employee.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details=changed_fields,
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return _to_employee_read(employee)
 
 
 @router.patch(
