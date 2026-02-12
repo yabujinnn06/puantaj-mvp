@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     webauthn_rp_name: str = "PuantajMVP"
     webauthn_origin: str | None = None
     passkey_challenge_minutes: int = 10
+    push_vapid_public_key: str | None = None
+    push_vapid_private_key: str | None = None
+    push_vapid_subject: str = "mailto:admin@example.com"
+    notification_worker_enabled: bool = True
+    notification_worker_interval_seconds: int = 60
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -77,4 +82,12 @@ def get_webauthn_rp_id() -> str:
     if not host:
         return "localhost"
     return host
+
+
+def is_push_enabled() -> bool:
+    settings = get_settings()
+    return bool(
+        (settings.push_vapid_public_key or "").strip()
+        and (settings.push_vapid_private_key or "").strip()
+    )
 

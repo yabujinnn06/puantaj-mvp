@@ -5,9 +5,11 @@ import { startRegistration } from '@simplewebauthn/browser'
 import {
   checkout,
   getEmployeeStatus,
+  getEmployeePushConfig,
   getPasskeyRegisterOptions,
   parseApiError,
   scanEmployeeQr,
+  subscribeEmployeePush,
   verifyPasskeyRegistration,
 } from '../api/attendance'
 import { BrandSignature } from '../components/BrandSignature'
@@ -49,6 +51,17 @@ function todayStatusHint(status: TodayStatus): string {
   return 'QR ile giriş yaparak mesaiyi başlatın.'
 }
 
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
+  const base64 = `${base64String}${padding}`.replace(/-/g, '+').replace(/_/g, '/')
+  const rawData = window.atob(base64)
+  const outputArray = new Uint8Array(rawData.length)
+  for (let index = 0; index < rawData.length; index += 1) {
+    outputArray[index] = rawData.charCodeAt(index)
+  }
+  return outputArray
+}
+
 export function HomePage() {
   const [deviceFingerprint] = useState(() => getStoredDeviceFingerprint())
   const [scannerActive, setScannerActive] = useState(false)
@@ -64,6 +77,10 @@ export function HomePage() {
   const [isHelpOpen, setIsHelpOpen] = useState(false)
   const [isPasskeyBusy, setIsPasskeyBusy] = useState(false)
   const [passkeyNotice, setPasskeyNotice] = useState<string | null>(null)
+  const [isPushBusy, setIsPushBusy] = useState(false)
+  const [pushEnabled, setPushEnabled] = useState(false)
+  const [pushRegistered, setPushRegistered] = useState(false)
+  const [pushNotice, setPushNotice] = useState<string | null>(null)
 
   useEffect(() => {
     if (!deviceFingerprint) {
@@ -98,6 +115,49 @@ export function HomePage() {
       cancelled = true
     }
   }, [deviceFingerprint, lastAction?.response.event_id])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadPushState = async () => {
+      if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+        if (!cancelled) {
+          setPushEnabled(false)
+          setPushRegistered(false)
+        }
+        return
+      }
+
+      try {
+        const config = await getEmployeePushConfig()
+        const enabled = Boolean(config.enabled && config.vapid_public_key)
+        if (!enabled) {
+          if (!cancelled) {
+            setPushEnabled(false)
+            setPushRegistered(false)
+          }
+          return
+        }
+
+        const registration = await navigator.serviceWorker.ready
+        const existingSubscription = await registration.pushManager.getSubscription()
+        if (!cancelled) {
+          setPushEnabled(true)
+          setPushRegistered(Boolean(existingSubscription))
+        }
+      } catch {
+        if (!cancelled) {
+          setPushEnabled(false)
+          setPushRegistered(false)
+        }
+      }
+    }
+
+    void loadPushState()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const hasOpenShift = useMemo(() => {
     if (!deviceFingerprint) {
@@ -157,6 +217,66 @@ export function HomePage() {
       setRequestId(parsed.requestId ?? null)
     } finally {
       setIsPasskeyBusy(false)
+    }
+  }
+
+  const runPushSubscription = async () => {
+    if (!deviceFingerprint) {
+      setErrorMessage('Cihaz bağlı değil. Davet linkine tıklayın.')
+      return
+    }
+    if (!pushEnabled) {
+      setErrorMessage('Bildirim servisi şu anda aktif değil.')
+      return
+    }
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+      setErrorMessage('Bu tarayıcı bildirim aboneliğini desteklemiyor.')
+      return
+    }
+
+    setIsPushBusy(true)
+    setPushNotice(null)
+    setErrorMessage(null)
+    setRequestId(null)
+
+    try {
+      const notificationPermission =
+        Notification.permission === 'default'
+          ? await Notification.requestPermission()
+          : Notification.permission
+
+      if (notificationPermission !== 'granted') {
+        throw new Error('Bildirim izni verilmedi. Tarayıcı ayarlarından izin verin.')
+      }
+
+      const config = await getEmployeePushConfig()
+      if (!config.enabled || !config.vapid_public_key) {
+        throw new Error('Bildirim servisi şu anda aktif değil.')
+      }
+
+      const registration = await navigator.serviceWorker.ready
+      let subscription = await registration.pushManager.getSubscription()
+      if (!subscription) {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey:
+            urlBase64ToUint8Array(config.vapid_public_key) as unknown as BufferSource,
+        })
+      }
+
+      await subscribeEmployeePush({
+        device_fingerprint: deviceFingerprint,
+        subscription: subscription.toJSON() as Record<string, unknown>,
+      })
+
+      setPushRegistered(true)
+      setPushNotice('Bildirimler bu cihazda etkinleştirildi.')
+    } catch (error) {
+      const parsed = parseApiError(error, 'Bildirim aboneliği oluşturulamadı.')
+      setErrorMessage(parsed.message)
+      setRequestId(parsed.requestId ?? null)
+    } finally {
+      setIsPushBusy(false)
     }
   }
 
@@ -337,6 +457,12 @@ export function HomePage() {
             {passkeyRegistered ? 'Kurulu' : 'Kurulu Değil'}
           </span>
         </div>
+        <div className="status-row">
+          <p className="small-title">Bildirim durumu</p>
+          <span className={`status-pill ${pushRegistered ? 'state-ok' : pushEnabled ? 'state-warn' : 'state-err'}`}>
+            {pushRegistered ? 'Açık' : pushEnabled ? 'Kapalı' : 'Servis Kapalı'}
+          </span>
+        </div>
 
         {hasOpenShift ? (
           <div className="notice-box notice-box-warning">
@@ -363,6 +489,14 @@ export function HomePage() {
           ) : null}
           <button type="button" className="btn btn-ghost" onClick={() => setIsHelpOpen(true)}>
             Nasıl çalışır?
+          </button>
+          <button
+            type="button"
+            className="btn btn-soft"
+            disabled={!deviceFingerprint || isPushBusy || isSubmitting || pushRegistered || !pushEnabled}
+            onClick={() => void runPushSubscription()}
+          >
+            {isPushBusy ? 'Bildirim açılıyor...' : pushRegistered ? 'Bildirimler Açık' : 'Bildirimleri Aç'}
           </button>
         </div>
 
@@ -456,6 +590,11 @@ export function HomePage() {
         {passkeyNotice ? (
           <div className="notice-box notice-box-success mt-3">
             <p>{passkeyNotice}</p>
+          </div>
+        ) : null}
+        {pushNotice ? (
+          <div className="notice-box notice-box-success mt-3">
+            <p>{pushNotice}</p>
           </div>
         ) : null}
 

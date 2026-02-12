@@ -18,6 +18,7 @@ const navItems = [
   { to: '/reports/employee-monthly', label: 'Aylık Çalışan Raporu', permission: 'reports' },
   { to: '/reports/department-summary', label: 'Departman Özeti', permission: 'reports' },
   { to: '/reports/excel-export', label: 'Excel Dışa Aktar', permission: 'reports' },
+  { to: '/notifications', label: 'Bildirimler', permission: 'audit' },
   { to: '/audit-logs', label: 'Sistem Logları', permission: 'audit' },
   { to: '/admin-users', label: 'Admin Kullanıcıları', permission: 'admin_users' },
 ]
@@ -37,6 +38,7 @@ const pageTitles: Record<string, string> = {
   '/reports/employee-monthly': 'Aylık Çalışan Raporu',
   '/reports/department-summary': 'Departman Özeti',
   '/reports/excel-export': 'Excel Dışa Aktar',
+  '/notifications': 'Bildirimler',
   '/audit-logs': 'Sistem Logları',
   '/admin-users': 'Admin Kullanıcıları',
 }

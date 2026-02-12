@@ -240,6 +240,45 @@ export interface AuditLog {
   details: Record<string, unknown>
 }
 
+export type NotificationJobStatus = 'PENDING' | 'SENDING' | 'SENT' | 'CANCELED' | 'FAILED'
+
+export interface NotificationJob {
+  id: number
+  employee_id: number | null
+  admin_user_id: number | null
+  job_type: string
+  payload: Record<string, unknown>
+  scheduled_at_utc: string
+  status: NotificationJobStatus
+  attempts: number
+  last_error: string | null
+  idempotency_key: string
+  created_at: string
+  updated_at: string
+}
+
+export interface AdminPushSubscription {
+  id: number
+  device_id: number
+  employee_id: number
+  endpoint: string
+  is_active: boolean
+  user_agent: string | null
+  last_error: string | null
+  created_at: string
+  updated_at: string
+  last_seen_at: string
+}
+
+export interface AdminManualNotificationSendResponse {
+  ok: boolean
+  total_targets: number
+  sent: number
+  failed: number
+  deactivated: number
+  employee_ids: number[]
+}
+
 export interface ManualDayOverride {
   id: number
   employee_id: number

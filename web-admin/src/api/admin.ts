@@ -1,8 +1,10 @@
 import { apiClient } from './client'
 import type {
+  AdminManualNotificationSendResponse,
   AdminAuthResponse,
   AdminMeResponse,
   AdminPermissions,
+  AdminPushSubscription,
   AdminUser,
   AuditLog,
   AttendanceEvent,
@@ -23,6 +25,8 @@ import type {
   LocationStatus,
   ManualDayOverride,
   MonthlyEmployeeResponse,
+  NotificationJob,
+  NotificationJobStatus,
   OvertimeRoundingMode,
   Region,
   QrCode,
@@ -211,6 +215,23 @@ export interface AuditLogParams {
   entity_id?: string
   success?: boolean
   limit?: number
+}
+
+export interface NotificationJobsParams {
+  status?: NotificationJobStatus
+  offset?: number
+  limit?: number
+}
+
+export interface NotificationSubscriptionsParams {
+  employee_id?: number
+}
+
+export interface ManualNotificationPayload {
+  title: string
+  message: string
+  password: string
+  employee_ids?: number[]
 }
 
 export interface CreateLeavePayload {
@@ -643,6 +664,38 @@ export async function softDeleteAttendanceEvent(eventId: number, force = false):
 
 export async function getAuditLogs(params: AuditLogParams = {}): Promise<AuditLog[]> {
   const response = await apiClient.get<AuditLog[]>('/api/admin/audit-logs', { params })
+  return response.data
+}
+
+export async function getNotificationJobs(
+  params: NotificationJobsParams = {},
+): Promise<NotificationJob[]> {
+  const response = await apiClient.get<NotificationJob[]>('/api/admin/notifications/jobs', { params })
+  return response.data
+}
+
+export async function cancelNotificationJob(jobId: number): Promise<NotificationJob> {
+  const response = await apiClient.post<NotificationJob>(`/api/admin/notifications/jobs/${jobId}/cancel`)
+  return response.data
+}
+
+export async function getNotificationSubscriptions(
+  params: NotificationSubscriptionsParams = {},
+): Promise<AdminPushSubscription[]> {
+  const response = await apiClient.get<AdminPushSubscription[]>(
+    '/api/admin/notifications/subscriptions',
+    { params },
+  )
+  return response.data
+}
+
+export async function sendManualNotification(
+  payload: ManualNotificationPayload,
+): Promise<AdminManualNotificationSendResponse> {
+  const response = await apiClient.post<AdminManualNotificationSendResponse>(
+    '/api/admin/notifications/send',
+    payload,
+  )
   return response.data
 }
 

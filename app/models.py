@@ -174,6 +174,10 @@ class Device(Base):
         back_populates="device",
         cascade="all, delete-orphan",
     )
+    push_subscriptions: Mapped[list[DevicePushSubscription]] = relationship(
+        back_populates="device",
+        cascade="all, delete-orphan",
+    )
 
 
 class DevicePasskey(Base):
@@ -208,6 +212,46 @@ class DevicePasskey(Base):
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     device: Mapped[Device] = relationship(back_populates="passkeys")
+
+
+class DevicePushSubscription(Base):
+    __tablename__ = "device_push_subscriptions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    device_id: Mapped[int] = mapped_column(
+        ForeignKey("devices.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    endpoint: Mapped[str] = mapped_column(String(1024), nullable=False, unique=True, index=True)
+    p256dh: Mapped[str] = mapped_column(String(512), nullable=False)
+    auth: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
+    user_agent: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    device: Mapped[Device] = relationship(back_populates="push_subscriptions")
 
 
 class WebAuthnChallenge(Base):

@@ -20,6 +20,11 @@ from app.schemas import (
     DeviceClaimResponse,
     EmployeeHomeLocationSetRequest,
     EmployeeHomeLocationSetResponse,
+    EmployeePushConfigResponse,
+    EmployeePushSubscribeRequest,
+    EmployeePushSubscribeResponse,
+    EmployeePushUnsubscribeRequest,
+    EmployeePushUnsubscribeResponse,
     EmployeeQrScanDeniedResponse,
     EmployeeQrScanRequest,
     EmployeeStatusResponse,
@@ -30,6 +35,11 @@ from app.schemas import (
     PasskeyRegisterOptionsResponse,
     PasskeyRegisterVerifyRequest,
     PasskeyRegisterVerifyResponse,
+)
+from app.services.push_notifications import (
+    deactivate_device_push_subscription,
+    get_push_public_config,
+    upsert_device_push_subscription,
 )
 from app.services.attendance import (
     QRScanDeniedError,
@@ -538,6 +548,76 @@ def employee_status(
     request.state.location_status = last_location_status.value if last_location_status else None
     request.state.flags = status_data["last_flags"]
     return EmployeeStatusResponse(**status_data)
+
+
+@router.get("/api/employee/push/config", response_model=EmployeePushConfigResponse)
+def employee_push_config() -> EmployeePushConfigResponse:
+    return EmployeePushConfigResponse(**get_push_public_config())
+
+
+@router.post("/api/employee/push/subscribe", response_model=EmployeePushSubscribeResponse)
+def employee_push_subscribe(
+    payload: EmployeePushSubscribeRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> EmployeePushSubscribeResponse:
+    request.state.actor = "employee"
+    subscription = upsert_device_push_subscription(
+        db,
+        device_fingerprint=payload.device_fingerprint,
+        subscription=payload.subscription,
+        user_agent=_user_agent(request),
+    )
+    employee_id = subscription.device.employee_id if subscription.device is not None else None
+    request.state.employee_id = employee_id
+    log_audit(
+        db,
+        actor_type=AuditActorType.SYSTEM,
+        actor_id=str(employee_id or "unknown"),
+        action="PUSH_SUBSCRIPTION_UPSERT",
+        success=True,
+        entity_type="device_push_subscription",
+        entity_id=str(subscription.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "device_id": subscription.device_id,
+            "endpoint": subscription.endpoint,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return EmployeePushSubscribeResponse(ok=True, subscription_id=subscription.id)
+
+
+@router.post("/api/employee/push/unsubscribe", response_model=EmployeePushUnsubscribeResponse)
+def employee_push_unsubscribe(
+    payload: EmployeePushUnsubscribeRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> EmployeePushUnsubscribeResponse:
+    request.state.actor = "employee"
+    removed = deactivate_device_push_subscription(
+        db,
+        device_fingerprint=payload.device_fingerprint,
+        endpoint=payload.endpoint,
+    )
+    log_audit(
+        db,
+        actor_type=AuditActorType.SYSTEM,
+        actor_id="employee",
+        action="PUSH_SUBSCRIPTION_REMOVE",
+        success=True,
+        entity_type="device_push_subscription",
+        entity_id=None,
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "endpoint": payload.endpoint,
+            "removed": removed,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return EmployeePushUnsubscribeResponse(ok=True)
 
 
 @router.post("/api/employee/home-location", response_model=EmployeeHomeLocationSetResponse)

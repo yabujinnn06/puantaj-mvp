@@ -84,6 +84,30 @@ export interface EmployeeStatusResponse {
   passkey_registered?: boolean | null
 }
 
+export interface EmployeePushConfigResponse {
+  enabled: boolean
+  vapid_public_key: string | null
+}
+
+export interface EmployeePushSubscribeRequest {
+  device_fingerprint: string
+  subscription: Record<string, unknown>
+}
+
+export interface EmployeePushSubscribeResponse {
+  ok: boolean
+  subscription_id: number
+}
+
+export interface EmployeePushUnsubscribeRequest {
+  device_fingerprint: string
+  endpoint: string
+}
+
+export interface EmployeePushUnsubscribeResponse {
+  ok: boolean
+}
+
 export interface PasskeyRegisterOptionsRequest {
   device_fingerprint: string
 }

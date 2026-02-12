@@ -20,6 +20,7 @@ import { PuantajExportPage } from './pages/PuantajExportPage'
 import { QrCodesPage } from './pages/QrCodesPage'
 import { QuickSetupPage } from './pages/QuickSetupPage'
 import { RegionsPage } from './pages/RegionsPage'
+import { NotificationsPage } from './pages/NotificationsPage'
 import { SystemLogsPage } from './pages/SystemLogsPage'
 import { WorkRulesPage } from './pages/WorkRulesPage'
 
@@ -48,6 +49,7 @@ function App() {
           <Route path="/reports/employee-monthly" element={<EmployeeMonthlyReportPage />} />
           <Route path="/reports/department-summary" element={<DepartmentSummaryReportPage />} />
           <Route path="/reports/excel-export" element={<PuantajExportPage />} />
+          <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/audit-logs" element={<SystemLogsPage />} />
           <Route path="/admin-users" element={<AdminUsersPage />} />
         </Route>

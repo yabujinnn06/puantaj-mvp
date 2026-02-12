@@ -24,6 +24,7 @@ from app.models import (
     DepartmentWeeklyRule,
     Device,
     DeviceInvite,
+    DevicePushSubscription,
     Employee,
     EmployeeLocation,
     LocationStatus,
@@ -36,6 +37,8 @@ from app.models import (
     WorkRule,
 )
 from app.schemas import (
+    AdminManualNotificationSendRequest,
+    AdminManualNotificationSendResponse,
     AdminAuthResponse,
     AdminLoginRequest,
     AdminLogoutRequest,
@@ -45,6 +48,7 @@ from app.schemas import (
     AdminUserCreateRequest,
     AdminUserRead,
     AdminUserUpdateRequest,
+    AdminPushSubscriptionRead,
     AuditLogRead,
     AttendanceEventRead,
     AttendanceEventManualCreateRequest,
@@ -132,6 +136,7 @@ from app.services.manual_overrides import (
     upsert_manual_day_override,
 )
 from app.services.monthly import calculate_department_monthly_summary, calculate_employee_monthly
+from app.services.push_notifications import list_active_push_subscriptions, send_push_to_employees
 from app.services.schedule_plans import plan_applies_to_employee
 
 router = APIRouter(tags=["admin"])
@@ -219,6 +224,22 @@ def _to_admin_user_read(admin_user: AdminUser) -> AdminUserRead:
     )
 
 
+def _to_admin_push_subscription_read(row: DevicePushSubscription) -> AdminPushSubscriptionRead:
+    employee_id = row.device.employee_id if row.device is not None else 0
+    return AdminPushSubscriptionRead(
+        id=row.id,
+        device_id=row.device_id,
+        employee_id=employee_id,
+        endpoint=row.endpoint,
+        is_active=row.is_active,
+        user_agent=row.user_agent,
+        last_error=row.last_error,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+        last_seen_at=row.last_seen_at,
+    )
+
+
 def _permissions_payload(claims: dict[str, Any]) -> dict[str, dict[str, bool]]:
     if str(claims.get("username") or claims.get("sub") or "") == settings.admin_user:
         return _full_permissions()
@@ -239,6 +260,38 @@ def _assert_super_admin(claims: dict[str, Any]) -> None:
             status_code=403,
             code="FORBIDDEN",
             message="Super admin permission is required.",
+        )
+
+
+def _verify_current_admin_password(
+    db: Session,
+    *,
+    claims: dict[str, Any],
+    password: str,
+) -> None:
+    username = str(claims.get("username") or claims.get("sub") or "").strip()
+    if not password.strip():
+        raise ApiError(
+            status_code=422,
+            code="VALIDATION_ERROR",
+            message="Password confirmation is required.",
+        )
+
+    if username and verify_admin_credentials(username, password):
+        return
+
+    admin_user: AdminUser | None = None
+    admin_user_id = claims.get("admin_user_id")
+    if isinstance(admin_user_id, int):
+        admin_user = db.get(AdminUser, admin_user_id)
+    if admin_user is None and username:
+        admin_user = db.scalar(select(AdminUser).where(AdminUser.username == username))
+
+    if admin_user is None or not admin_user.is_active or not verify_password(password, admin_user.password_hash):
+        raise ApiError(
+            status_code=401,
+            code="INVALID_CREDENTIALS",
+            message="Password confirmation failed.",
         )
 
 
@@ -3161,6 +3214,108 @@ def list_notification_jobs(
         request_id=getattr(request.state, "request_id", None),
     )
     return jobs
+
+
+@router.get(
+    "/api/admin/notifications/subscriptions",
+    response_model=list[AdminPushSubscriptionRead],
+)
+def list_notification_subscriptions(
+    request: Request,
+    employee_id: int | None = Query(default=None, ge=1),
+    claims: dict[str, Any] = Depends(require_admin_permission("audit")),
+    db: Session = Depends(get_db),
+) -> list[AdminPushSubscriptionRead]:
+    rows = list_active_push_subscriptions(db, employee_id=employee_id)
+    actor_id = str(claims.get("username") or claims.get("sub") or "admin")
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=actor_id,
+        action="NOTIFICATION_SUBSCRIPTIONS_LIST",
+        success=True,
+        entity_type="device_push_subscription",
+        entity_id=None,
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "employee_id": employee_id,
+            "count": len(rows),
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return [_to_admin_push_subscription_read(row) for row in rows]
+
+
+@router.post(
+    "/api/admin/notifications/send",
+    response_model=AdminManualNotificationSendResponse,
+)
+def send_manual_notification(
+    payload: AdminManualNotificationSendRequest,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin_permission("audit", write=True)),
+    db: Session = Depends(get_db),
+) -> AdminManualNotificationSendResponse:
+    _verify_current_admin_password(
+        db,
+        claims=claims,
+        password=payload.password,
+    )
+
+    actor_id = str(claims.get("username") or claims.get("sub") or "admin")
+    employee_ids: list[int] | None = None
+    if payload.employee_ids is not None:
+        normalized_ids = sorted({value for value in payload.employee_ids if isinstance(value, int) and value > 0})
+        if not normalized_ids:
+            raise ApiError(
+                status_code=422,
+                code="VALIDATION_ERROR",
+                message="At least one employee_id is required when employee_ids is provided.",
+            )
+        employee_ids = normalized_ids
+
+    summary = send_push_to_employees(
+        db,
+        employee_ids=employee_ids,
+        title=payload.title,
+        body=payload.message,
+        data={
+            "type": "ADMIN_MANUAL",
+            "title": payload.title,
+            "actor": actor_id,
+        },
+    )
+
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=actor_id,
+        action="ADMIN_MANUAL_PUSH_SENT",
+        success=True,
+        entity_type="notification",
+        entity_id=None,
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "employee_ids": employee_ids,
+            "title": payload.title,
+            "total_targets": summary.get("total_targets", 0),
+            "sent": summary.get("sent", 0),
+            "failed": summary.get("failed", 0),
+            "deactivated": summary.get("deactivated", 0),
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+
+    return AdminManualNotificationSendResponse(
+        ok=True,
+        total_targets=int(summary.get("total_targets", 0)),
+        sent=int(summary.get("sent", 0)),
+        failed=int(summary.get("failed", 0)),
+        deactivated=int(summary.get("deactivated", 0)),
+        employee_ids=list(summary.get("employee_ids", [])),
+    )
 
 
 @router.post(

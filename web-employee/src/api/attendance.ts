@@ -10,6 +10,11 @@ import type {
   DeviceClaimResponse,
   EmployeeQrScanRequest,
   EmployeeQrScanDeniedResponse,
+  EmployeePushConfigResponse,
+  EmployeePushSubscribeRequest,
+  EmployeePushSubscribeResponse,
+  EmployeePushUnsubscribeRequest,
+  EmployeePushUnsubscribeResponse,
   EmployeeHomeLocationSetRequest,
   EmployeeHomeLocationSetResponse,
   EmployeeStatusResponse,
@@ -50,6 +55,8 @@ const errorCodeMap: Record<string, string> = {
   QR_CODE_NOT_FOUND: 'QR kod bulunamadı veya pasif durumda.',
   QR_CODE_HAS_NO_ACTIVE_POINTS: 'Bu QR koda aktif konum noktası atanmadı.',
   QR_DOUBLE_SCAN_BLOCKED: 'Aynı çalışan için QR okutmalar arasında en az 5 dakika olmalıdır.',
+  PUSH_NOT_CONFIGURED: 'Bildirim servisi şu anda aktif değil.',
+  INVALID_PUSH_SUBSCRIPTION: 'Bildirim abonelik verisi geçersiz.',
 }
 
 const backendDetailMap: Record<string, string> = {
@@ -161,6 +168,31 @@ export async function getEmployeeStatus(deviceFingerprint: string): Promise<Empl
   const response = await apiClient.get<EmployeeStatusResponse>('/api/employee/status', {
     params: { device_fingerprint: deviceFingerprint },
   })
+  return response.data
+}
+
+export async function getEmployeePushConfig(): Promise<EmployeePushConfigResponse> {
+  const response = await apiClient.get<EmployeePushConfigResponse>('/api/employee/push/config')
+  return response.data
+}
+
+export async function subscribeEmployeePush(
+  payload: EmployeePushSubscribeRequest,
+): Promise<EmployeePushSubscribeResponse> {
+  const response = await apiClient.post<EmployeePushSubscribeResponse>(
+    '/api/employee/push/subscribe',
+    payload,
+  )
+  return response.data
+}
+
+export async function unsubscribeEmployeePush(
+  payload: EmployeePushUnsubscribeRequest,
+): Promise<EmployeePushUnsubscribeResponse> {
+  const response = await apiClient.post<EmployeePushUnsubscribeResponse>(
+    '/api/employee/push/unsubscribe',
+    payload,
+  )
   return response.data
 }
 

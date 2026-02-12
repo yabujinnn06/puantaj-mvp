@@ -25,6 +25,7 @@ from app.models import (
     WorkRule,
 )
 from app.services.attendance import _attendance_timezone, _local_day_bounds_utc, _normalize_ts
+from app.services.push_notifications import send_push_to_employees
 from app.services.schedule_plans import resolve_effective_plan_for_employee_day
 
 DEFAULT_DAILY_MINUTES_PLANNED = 540
@@ -33,6 +34,7 @@ DEFAULT_ESCALATION_DELAY_MINUTES = 30
 MAX_NOTIFICATION_ATTEMPTS = 5
 JOB_TYPE_EMPLOYEE_MISSED_CHECKOUT = "EMPLOYEE_MISSED_CHECKOUT"
 JOB_TYPE_ADMIN_ESCALATION_MISSED_CHECKOUT = "ADMIN_ESCALATION_MISSED_CHECKOUT"
+JOB_TYPE_EMPLOYEE_OVERTIME_9H = "EMPLOYEE_OVERTIME_9H"
 
 logger = logging.getLogger("app.notifications")
 
@@ -41,6 +43,7 @@ logger = logging.getLogger("app.notifications")
 class OpenShiftNotificationRecord:
     employee_id: int
     local_day: date
+    first_checkin_ts_utc: datetime
     shift_end_local: time
     grace_deadline_utc: datetime
     escalation_deadline_utc: datetime
@@ -240,6 +243,7 @@ def get_employees_with_open_shift(
             OpenShiftNotificationRecord(
                 employee_id=employee.id,
                 local_day=local_day,
+                first_checkin_ts_utc=first_in.ts_utc,
                 shift_end_local=shift_end_local_dt.timetz().replace(tzinfo=None),
                 grace_deadline_utc=grace_deadline_utc,
                 escalation_deadline_utc=escalation_deadline_utc,
@@ -269,13 +273,17 @@ def _build_notification_payload(
     shift_end_local: time,
     grace_deadline_utc: datetime,
     escalation_deadline_utc: datetime,
+    overtime_alert_at_utc: datetime | None = None,
 ) -> dict[str, str]:
-    return {
+    payload: dict[str, str] = {
         "shift_date": local_day.isoformat(),
         "planned_checkout_time": shift_end_local.isoformat(timespec="minutes"),
         "grace_deadline_utc": grace_deadline_utc.isoformat(),
         "escalation_deadline_utc": escalation_deadline_utc.isoformat(),
     }
+    if overtime_alert_at_utc is not None:
+        payload["overtime_alert_at_utc"] = overtime_alert_at_utc.isoformat()
+    return payload
 
 
 def _create_notification_job_if_needed(
@@ -405,7 +413,46 @@ def _build_message_for_job(session: Session, job: NotificationJob) -> Notificati
             ),
         )
 
+    if job.job_type == JOB_TYPE_EMPLOYEE_OVERTIME_9H:
+        recipients = _employee_notification_emails(session, job=job)
+        overtime_alert_at = str(payload.get("overtime_alert_at_utc", "-"))
+        return NotificationMessage(
+            recipients=recipients,
+            subject="Puantaj Uyarisi: 9 Saat Siniri Asildi",
+            body=(
+                f"Calisan #{job.employee_id} icin {shift_date} vardiyasinda 9 saat siniri asildi.\n"
+                f"Planli cikis saati: {planned_checkout_time}\n"
+                f"9 saat asim esigi (UTC): {overtime_alert_at}\n"
+                "Lutfen cikis kaydini tamamlayin."
+            ),
+        )
+
     raise ValueError(f"Unsupported notification job_type: {job.job_type}")
+
+
+def _send_push_for_job(
+    session: Session,
+    *,
+    job: NotificationJob,
+    message: NotificationMessage,
+) -> dict[str, Any]:
+    if job.employee_id is None:
+        return {"total_targets": 0, "sent": 0, "failed": 0, "deactivated": 0, "failures": []}
+    if job.job_type not in {JOB_TYPE_EMPLOYEE_MISSED_CHECKOUT, JOB_TYPE_EMPLOYEE_OVERTIME_9H}:
+        return {"total_targets": 0, "sent": 0, "failed": 0, "deactivated": 0, "failures": []}
+
+    return send_push_to_employees(
+        session,
+        employee_ids=[job.employee_id],
+        title=message.subject,
+        body=message.body,
+        data={
+            "job_id": job.id,
+            "job_type": job.job_type,
+            "employee_id": job.employee_id,
+            "payload": job.payload or {},
+        },
+    )
 
 
 def _mark_job_sent(session: Session, *, job_id: int) -> NotificationJob | None:
@@ -459,11 +506,13 @@ def schedule_missed_checkout_notifications(
     created_jobs: list[NotificationJob] = []
 
     for record in open_shifts:
+        overtime_alert_at_utc = _normalize_ts(record.first_checkin_ts_utc) + timedelta(hours=9)
         payload = _build_notification_payload(
             local_day=record.local_day,
             shift_end_local=record.shift_end_local,
             grace_deadline_utc=record.grace_deadline_utc,
             escalation_deadline_utc=record.escalation_deadline_utc,
+            overtime_alert_at_utc=overtime_alert_at_utc,
         )
 
         if reference_utc >= record.grace_deadline_utc:
@@ -489,6 +538,18 @@ def schedule_missed_checkout_notifications(
             )
             if escalation_job is not None:
                 created_jobs.append(escalation_job)
+
+        if reference_utc >= overtime_alert_at_utc:
+            overtime_job = _create_notification_job_if_needed(
+                session,
+                job_type=JOB_TYPE_EMPLOYEE_OVERTIME_9H,
+                employee_id=record.employee_id,
+                local_day=record.local_day,
+                scheduled_at_utc=overtime_alert_at_utc,
+                payload=payload,
+            )
+            if overtime_job is not None:
+                created_jobs.append(overtime_job)
 
     if not created_jobs:
         return []
@@ -552,6 +613,7 @@ def send_pending_notifications(
                 continue
             message = _build_message_for_job(session, current_job)
             email_channel.send(message)
+            push_summary = _send_push_for_job(session, job=current_job, message=message)
             sent_job = _mark_job_sent(session, job_id=current_job.id)
             if sent_job is not None:
                 processed.append(sent_job)
@@ -568,6 +630,8 @@ def send_pending_notifications(
                         "employee_id": sent_job.employee_id,
                         "attempts": sent_job.attempts,
                         "idempotency_key": sent_job.idempotency_key,
+                        "push_sent": push_summary.get("sent"),
+                        "push_failed": push_summary.get("failed"),
                     },
                 )
         except Exception as exc:

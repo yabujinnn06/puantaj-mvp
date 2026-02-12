@@ -1,3 +1,6 @@
+import asyncio
+from contextlib import suppress
+from datetime import datetime, timezone
 import logging
 import time
 from pathlib import Path
@@ -14,9 +17,11 @@ from app.errors import ApiError, error_response
 from app.logging_utils import setup_json_logging
 from app.routers import admin, attendance
 from app.settings import get_cors_origins, get_settings
+from app.services.notifications import schedule_missed_checkout_notifications, send_pending_notifications
 
 setup_json_logging()
 logger = logging.getLogger("app.request")
+notification_worker_logger = logging.getLogger("app.notification_worker")
 settings = get_settings()
 STATIC_ROOT = Path(__file__).resolve().parent / "static"
 ADMIN_STATIC_DIR = STATIC_ROOT / "admin"
@@ -157,6 +162,66 @@ async def handle_unexpected_error(request: Request, exc: Exception) -> JSONRespo
 
 app.include_router(attendance.router)
 app.include_router(admin.router)
+
+
+async def _notification_worker_loop(stop_event: asyncio.Event) -> None:
+    interval_seconds = max(15, int(settings.notification_worker_interval_seconds))
+    while not stop_event.is_set():
+        created_jobs_count = 0
+        processed_jobs_count = 0
+        try:
+            now_utc = datetime.now(timezone.utc)
+            created_jobs = await asyncio.to_thread(schedule_missed_checkout_notifications, now_utc)
+            processed_jobs = await asyncio.to_thread(send_pending_notifications, 100, now_utc=now_utc)
+            created_jobs_count = len(created_jobs)
+            processed_jobs_count = len(processed_jobs)
+        except Exception:
+            notification_worker_logger.exception("notification_worker_tick_failed")
+        else:
+            if created_jobs_count or processed_jobs_count:
+                notification_worker_logger.info(
+                    "notification_worker_tick",
+                    extra={
+                        "created_jobs": created_jobs_count,
+                        "processed_jobs": processed_jobs_count,
+                    },
+                )
+
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
+        except asyncio.TimeoutError:
+            continue
+
+
+@app.on_event("startup")
+async def start_notification_worker() -> None:
+    if not settings.notification_worker_enabled:
+        return
+    if getattr(app.state, "notification_worker_task", None) is not None:
+        return
+
+    stop_event = asyncio.Event()
+    task = asyncio.create_task(_notification_worker_loop(stop_event))
+    app.state.notification_worker_stop_event = stop_event
+    app.state.notification_worker_task = task
+    notification_worker_logger.info(
+        "notification_worker_started",
+        extra={"interval_seconds": max(15, int(settings.notification_worker_interval_seconds))},
+    )
+
+
+@app.on_event("shutdown")
+async def stop_notification_worker() -> None:
+    stop_event: asyncio.Event | None = getattr(app.state, "notification_worker_stop_event", None)
+    task: asyncio.Task[None] | None = getattr(app.state, "notification_worker_task", None)
+    if stop_event is not None:
+        stop_event.set()
+    if task is not None:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+    app.state.notification_worker_stop_event = None
+    app.state.notification_worker_task = None
 
 
 @app.get("/health")

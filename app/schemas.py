@@ -652,6 +652,59 @@ class NotificationJobRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class EmployeePushConfigResponse(BaseModel):
+    enabled: bool
+    vapid_public_key: str | None = None
+
+
+class EmployeePushSubscribeRequest(BaseModel):
+    device_fingerprint: str
+    subscription: dict[str, Any]
+
+
+class EmployeePushSubscribeResponse(BaseModel):
+    ok: bool
+    subscription_id: int
+
+
+class EmployeePushUnsubscribeRequest(BaseModel):
+    device_fingerprint: str
+    endpoint: str
+
+
+class EmployeePushUnsubscribeResponse(BaseModel):
+    ok: bool
+
+
+class AdminPushSubscriptionRead(BaseModel):
+    id: int
+    device_id: int
+    employee_id: int
+    endpoint: str
+    is_active: bool
+    user_agent: str | None = None
+    last_error: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    last_seen_at: datetime
+
+
+class AdminManualNotificationSendRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    message: str = Field(min_length=1, max_length=2000)
+    password: str = Field(min_length=1, max_length=128)
+    employee_ids: list[int] | None = None
+
+
+class AdminManualNotificationSendResponse(BaseModel):
+    ok: bool
+    total_targets: int
+    sent: int
+    failed: int
+    deactivated: int = 0
+    employee_ids: list[int] = Field(default_factory=list)
+
+
 class CheckinQrPayload(BaseModel):
     site_id: str
     type: Literal["IN"]
