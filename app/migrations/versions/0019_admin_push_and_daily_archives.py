@@ -1,6 +1,6 @@
 """Add admin push subscriptions, device invites, and daily report archives
 
-Revision ID: 0019_admin_push_and_daily_archives
+Revision ID: 0019_admin_push_and_archives
 Revises: 0018_device_push_subscriptions
 Create Date: 2026-02-12 23:45:00
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = "0019_admin_push_and_daily_archives"
+revision: str = "0019_admin_push_and_archives"
 down_revision: Union[str, None] = "0018_device_push_subscriptions"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
