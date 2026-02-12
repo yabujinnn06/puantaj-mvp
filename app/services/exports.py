@@ -548,6 +548,7 @@ def _build_date_range_export(
             "employee_name": "",
             "department_name": "-",
             "department_id": None,
+            "shift_name": "-",
             "ins": [],
             "outs": [],
             "flags": set(),
@@ -575,6 +576,9 @@ def _build_date_range_export(
         grouped[key]["employee_name"] = employee.full_name
         grouped[key]["department_name"] = department.name if department is not None else "-"
         grouped[key]["department_id"] = employee.department_id
+        shift_name = (event.flags or {}).get("SHIFT_NAME")
+        if isinstance(shift_name, str) and shift_name.strip():
+            grouped[key]["shift_name"] = shift_name.strip()
         if event.type == AttendanceType.IN:
             grouped[key]["ins"].append(event)
         else:
@@ -614,6 +618,7 @@ def _build_date_range_export(
             "\u00c7al\u0131\u015fan ID",
             "\u00c7al\u0131\u015fan Ad\u0131",
             "Departman",
+            "Vardiya",
             "Giri\u015f",
             "\u00c7\u0131k\u0131\u015f",
             "\u00c7al\u0131\u015fma S\u00fcresi (saat:dakika)",
@@ -658,6 +663,7 @@ def _build_date_range_export(
                 employee_id_value,
                 bucket["employee_name"],
                 bucket["department_name"],
+                bucket["shift_name"],
                 _to_excel_datetime(first_in),
                 _to_excel_datetime(last_out),
                 _minutes_to_hhmm(gross_minutes),
@@ -682,10 +688,10 @@ def _build_date_range_export(
     for row in ws_daily.iter_rows(min_row=daily_data_start, max_row=daily_data_end):
         if row[0].value is not None:
             row[0].number_format = "yyyy-mm-dd"
-        if row[4].value is not None:
-            row[4].number_format = "hh:mm"
         if row[5].value is not None:
             row[5].number_format = "hh:mm"
+        if row[6].value is not None:
+            row[6].number_format = "hh:mm"
     _auto_width(ws_daily)
 
 

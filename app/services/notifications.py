@@ -25,10 +25,11 @@ from app.models import (
     NotificationJob,
     WorkRule,
 )
-from app.services.exports import build_puantaj_range_xlsx_bytes
+from app.services.exports import build_puantaj_xlsx_bytes
 from app.services.attendance import _attendance_timezone, _local_day_bounds_utc, _normalize_ts
 from app.services.push_notifications import send_push_to_admins, send_push_to_employees
 from app.services.schedule_plans import resolve_effective_plan_for_employee_day
+from app.settings import get_public_base_url
 
 DEFAULT_DAILY_MINUTES_PLANNED = 540
 DEFAULT_GRACE_MINUTES = 5
@@ -440,13 +441,18 @@ def _build_message_for_job(session: Session, job: NotificationJob) -> Notificati
         recipients = _admin_notification_emails(session)
         report_date = str(payload.get("report_date", "-"))
         archive_id = payload.get("archive_id")
+        archive_url = (
+            f"{get_public_base_url()}/admin-panel/notifications?archive_id={archive_id}"
+            if archive_id
+            else f"{get_public_base_url()}/admin-panel/notifications"
+        )
         return NotificationMessage(
             recipients=recipients,
             subject="Puantaj Raporu Hazir: Gunluk Arsiv",
             body=(
                 f"{report_date} gunune ait gunluk puantaj Excel arsivi hazirlandi.\n"
                 f"Arsiv ID: {archive_id}\n"
-                "Admin panelinden Bildirimler > Gunluk Rapor Arsivi alanindan indirebilirsiniz."
+                f"Indirme linki: {archive_url}"
             ),
         )
 
@@ -641,11 +647,11 @@ def schedule_daily_admin_report_archive_notifications(
     if existing_archive is not None:
         return []
 
-    archive_bytes = build_puantaj_range_xlsx_bytes(
+    archive_bytes = build_puantaj_xlsx_bytes(
         session,
+        mode="date_range",
         start_date=report_date,
         end_date=report_date,
-        mode="consolidated",
     )
     file_name = f"puantaj-gunluk-{report_date.isoformat()}.xlsx"
     archive = AdminDailyReportArchive(

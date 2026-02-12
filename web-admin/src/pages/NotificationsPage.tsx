@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 
 import {
   cancelNotificationJob,
@@ -49,6 +50,7 @@ function downloadBlob(blob: Blob, name: string): void {
 export function NotificationsPage() {
   const queryClient = useQueryClient()
   const { pushToast } = useToast()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const [title, setTitle] = useState('Puantaj Bildirimi')
   const [message, setMessage] = useState('')
@@ -61,6 +63,7 @@ export function NotificationsPage() {
   const [selectedEmployees, setSelectedEmployees] = useState<number[]>([])
   const [selectedAdmins, setSelectedAdmins] = useState<number[]>([])
   const [createdInvite, setCreatedInvite] = useState<AdminDeviceInviteCreateResponse | null>(null)
+  const [archiveAutoHandled, setArchiveAutoHandled] = useState(false)
 
   const employeesQuery = useQuery({ queryKey: ['employees', 'notify'], queryFn: () => getEmployees({ status: 'active' }) })
   const adminsQuery = useQuery({ queryKey: ['admin-users', 'notify'], queryFn: getAdminUsers })
@@ -125,6 +128,37 @@ export function NotificationsPage() {
       downloadBlob(blob, item?.file_name ?? `arsiv-${id}.xlsx`)
     },
   })
+
+  useEffect(() => {
+    if (archiveAutoHandled) {
+      return
+    }
+    const rawArchiveId = searchParams.get('archive_id')
+    if (!rawArchiveId) {
+      return
+    }
+    const archiveId = Number(rawArchiveId)
+    if (!Number.isInteger(archiveId) || archiveId <= 0) {
+      setArchiveAutoHandled(true)
+      return
+    }
+    const archiveRow = (archivesQuery.data ?? []).find((x) => x.id === archiveId)
+    if (!archiveRow) {
+      return
+    }
+
+    setArchiveAutoHandled(true)
+    downloadMutation.mutate(archiveId)
+    const next = new URLSearchParams(searchParams)
+    next.delete('archive_id')
+    setSearchParams(next, { replace: true })
+  }, [
+    archiveAutoHandled,
+    archivesQuery.data,
+    downloadMutation,
+    searchParams,
+    setSearchParams,
+  ])
 
   return (
     <div className="space-y-4">
