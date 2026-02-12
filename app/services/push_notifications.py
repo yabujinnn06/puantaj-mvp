@@ -9,7 +9,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.errors import ApiError
-from app.models import Device, DevicePushSubscription, Employee
+from app.models import (
+    AdminPushSubscription,
+    AdminUser,
+    Device,
+    DevicePushSubscription,
+    Employee,
+)
 from app.settings import get_settings, is_push_enabled
 
 
@@ -186,9 +192,87 @@ def list_active_push_subscriptions(
     return list(db.scalars(stmt).all())
 
 
-def _send_to_subscription_row(
-    row: DevicePushSubscription,
+def upsert_admin_push_subscription(
+    db: Session,
     *,
+    admin_user_id: int | None,
+    admin_username: str,
+    subscription: dict[str, Any],
+    user_agent: str | None,
+) -> AdminPushSubscription:
+    if not is_push_enabled():
+        raise ApiError(
+            status_code=503,
+            code="PUSH_NOT_CONFIGURED",
+            message="Push notification service is not configured.",
+        )
+
+    normalized_username = admin_username.strip()
+    if not normalized_username:
+        raise ApiError(
+            status_code=422,
+            code="VALIDATION_ERROR",
+            message="Admin username is required.",
+        )
+
+    endpoint, p256dh, auth = _parse_subscription_payload(subscription)
+    now_utc = _utcnow()
+
+    row = db.scalar(
+        select(AdminPushSubscription).where(AdminPushSubscription.endpoint == endpoint)
+    )
+    if row is None:
+        row = AdminPushSubscription(
+            admin_user_id=admin_user_id,
+            admin_username=normalized_username,
+            endpoint=endpoint,
+            p256dh=p256dh,
+            auth=auth,
+            is_active=True,
+            user_agent=user_agent,
+            last_error=None,
+            last_seen_at=now_utc,
+        )
+        db.add(row)
+    else:
+        row.admin_user_id = admin_user_id
+        row.admin_username = normalized_username
+        row.p256dh = p256dh
+        row.auth = auth
+        row.is_active = True
+        row.user_agent = user_agent
+        row.last_error = None
+        row.last_seen_at = now_utc
+
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def list_active_admin_push_subscriptions(
+    db: Session,
+    *,
+    admin_user_id: int | None = None,
+) -> list[AdminPushSubscription]:
+    stmt = (
+        select(AdminPushSubscription)
+        .outerjoin(AdminUser, AdminUser.id == AdminPushSubscription.admin_user_id)
+        .where(
+            AdminPushSubscription.is_active.is_(True),
+            (AdminPushSubscription.admin_user_id.is_(None) | AdminUser.is_active.is_(True)),
+        )
+        .order_by(AdminPushSubscription.id.desc())
+    )
+    if admin_user_id is not None:
+        stmt = stmt.where(AdminPushSubscription.admin_user_id == admin_user_id)
+    return list(db.scalars(stmt).all())
+
+
+def _send_to_subscription_row(
+    *,
+    endpoint: str,
+    p256dh: str,
+    auth_key: str,
     title: str,
     body: str,
     data: dict[str, Any] | None,
@@ -207,10 +291,10 @@ def _send_to_subscription_row(
     try:
         webpush(
             subscription_info={
-                "endpoint": row.endpoint,
+                "endpoint": endpoint,
                 "keys": {
-                    "p256dh": row.p256dh,
-                    "auth": row.auth,
+                    "p256dh": p256dh,
+                    "auth": auth_key,
                 },
             },
             data=json.dumps(payload),
@@ -244,7 +328,9 @@ def send_push_to_subscriptions(
 
     for row in subscriptions:
         ok, error_text, status_code = _send_to_subscription_row(
-            row,
+            endpoint=row.endpoint,
+            p256dh=row.p256dh,
+            auth_key=row.auth,
             title=title,
             body=body,
             data=data,
@@ -311,4 +397,94 @@ def send_push_to_employees(
         data=data,
     )
     result["employee_ids"] = sorted({item.device.employee_id for item in subscriptions if item.device is not None})
+    return result
+
+
+def send_push_to_admin_subscriptions(
+    db: Session,
+    *,
+    subscriptions: list[AdminPushSubscription],
+    title: str,
+    body: str,
+    data: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    sent = 0
+    failed = 0
+    deactivated = 0
+    failures: list[dict[str, Any]] = []
+    now_utc = _utcnow()
+
+    for row in subscriptions:
+        ok, error_text, status_code = _send_to_subscription_row(
+            endpoint=row.endpoint,
+            p256dh=row.p256dh,
+            auth_key=row.auth,
+            title=title,
+            body=body,
+            data=data,
+        )
+        row.last_seen_at = now_utc
+        if ok:
+            sent += 1
+            row.last_error = None
+            continue
+
+        failed += 1
+        row.last_error = error_text
+        if status_code in {404, 410} and row.is_active:
+            row.is_active = False
+            deactivated += 1
+        failures.append(
+            {
+                "subscription_id": row.id,
+                "admin_user_id": row.admin_user_id,
+                "admin_username": row.admin_username,
+                "endpoint": row.endpoint,
+                "status_code": status_code,
+                "error": error_text,
+            }
+        )
+
+    db.commit()
+    return {
+        "total_targets": len(subscriptions),
+        "sent": sent,
+        "failed": failed,
+        "deactivated": deactivated,
+        "failures": failures,
+    }
+
+
+def send_push_to_admins(
+    db: Session,
+    *,
+    admin_user_ids: list[int] | None = None,
+    title: str,
+    body: str,
+    data: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    stmt = (
+        select(AdminPushSubscription)
+        .outerjoin(AdminUser, AdminUser.id == AdminPushSubscription.admin_user_id)
+        .where(
+            AdminPushSubscription.is_active.is_(True),
+            (AdminPushSubscription.admin_user_id.is_(None) | AdminUser.is_active.is_(True)),
+        )
+        .order_by(AdminPushSubscription.id.desc())
+    )
+    if admin_user_ids:
+        stmt = stmt.where(AdminPushSubscription.admin_user_id.in_(admin_user_ids))
+
+    subscriptions = list(db.scalars(stmt).all())
+    result = send_push_to_admin_subscriptions(
+        db,
+        subscriptions=subscriptions,
+        title=title,
+        body=body,
+        data=data,
+    )
+    result["admin_user_ids"] = sorted(
+        {item.admin_user_id for item in subscriptions if item.admin_user_id is not None}
+    )
+    result["admin_usernames"] = sorted({item.admin_username for item in subscriptions if item.admin_username})
     return result

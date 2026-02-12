@@ -17,7 +17,11 @@ from app.errors import ApiError, error_response
 from app.logging_utils import setup_json_logging
 from app.routers import admin, attendance
 from app.settings import get_cors_origins, get_settings
-from app.services.notifications import schedule_missed_checkout_notifications, send_pending_notifications
+from app.services.notifications import (
+    schedule_daily_admin_report_archive_notifications,
+    schedule_missed_checkout_notifications,
+    send_pending_notifications,
+)
 
 setup_json_logging()
 logger = logging.getLogger("app.request")
@@ -172,8 +176,9 @@ async def _notification_worker_loop(stop_event: asyncio.Event) -> None:
         try:
             now_utc = datetime.now(timezone.utc)
             created_jobs = await asyncio.to_thread(schedule_missed_checkout_notifications, now_utc)
+            daily_jobs = await asyncio.to_thread(schedule_daily_admin_report_archive_notifications, now_utc)
             processed_jobs = await asyncio.to_thread(send_pending_notifications, 100, now_utc=now_utc)
-            created_jobs_count = len(created_jobs)
+            created_jobs_count = len(created_jobs) + len(daily_jobs)
             processed_jobs_count = len(processed_jobs)
         except Exception:
             notification_worker_logger.exception("notification_worker_tick_failed")

@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.audit import log_audit
 from app.db import SessionLocal
 from app.models import (
+    AdminDailyReportArchive,
     AdminUser,
     AuditActorType,
     AttendanceEvent,
@@ -24,8 +25,9 @@ from app.models import (
     NotificationJob,
     WorkRule,
 )
+from app.services.exports import build_puantaj_range_xlsx_bytes
 from app.services.attendance import _attendance_timezone, _local_day_bounds_utc, _normalize_ts
-from app.services.push_notifications import send_push_to_employees
+from app.services.push_notifications import send_push_to_admins, send_push_to_employees
 from app.services.schedule_plans import resolve_effective_plan_for_employee_day
 
 DEFAULT_DAILY_MINUTES_PLANNED = 540
@@ -35,6 +37,7 @@ MAX_NOTIFICATION_ATTEMPTS = 5
 JOB_TYPE_EMPLOYEE_MISSED_CHECKOUT = "EMPLOYEE_MISSED_CHECKOUT"
 JOB_TYPE_ADMIN_ESCALATION_MISSED_CHECKOUT = "ADMIN_ESCALATION_MISSED_CHECKOUT"
 JOB_TYPE_EMPLOYEE_OVERTIME_9H = "EMPLOYEE_OVERTIME_9H"
+JOB_TYPE_ADMIN_DAILY_REPORT_READY = "ADMIN_DAILY_REPORT_READY"
 
 logger = logging.getLogger("app.notifications")
 
@@ -75,8 +78,14 @@ class EmailChannel(NotificationChannel):
 
     def send(self, message: NotificationMessage) -> None:
         recipients = [item.strip() for item in message.recipients if item and item.strip()]
-        if not recipients and self.configured:
-            raise ValueError("No email recipients resolved for configured SMTP send")
+        if not recipients:
+            logger.info(
+                "email_channel_skip_no_recipients",
+                extra={
+                    "subject": message.subject,
+                },
+            )
+            return
 
         if not self.configured:
             logger.info(
@@ -427,6 +436,20 @@ def _build_message_for_job(session: Session, job: NotificationJob) -> Notificati
             ),
         )
 
+    if job.job_type == JOB_TYPE_ADMIN_DAILY_REPORT_READY:
+        recipients = _admin_notification_emails(session)
+        report_date = str(payload.get("report_date", "-"))
+        archive_id = payload.get("archive_id")
+        return NotificationMessage(
+            recipients=recipients,
+            subject="Puantaj Raporu Hazir: Gunluk Arsiv",
+            body=(
+                f"{report_date} gunune ait gunluk puantaj Excel arsivi hazirlandi.\n"
+                f"Arsiv ID: {archive_id}\n"
+                "Admin panelinden Bildirimler > Gunluk Rapor Arsivi alanindan indirebilirsiniz."
+            ),
+        )
+
     raise ValueError(f"Unsupported notification job_type: {job.job_type}")
 
 
@@ -436,23 +459,40 @@ def _send_push_for_job(
     job: NotificationJob,
     message: NotificationMessage,
 ) -> dict[str, Any]:
-    if job.employee_id is None:
-        return {"total_targets": 0, "sent": 0, "failed": 0, "deactivated": 0, "failures": []}
-    if job.job_type not in {JOB_TYPE_EMPLOYEE_MISSED_CHECKOUT, JOB_TYPE_EMPLOYEE_OVERTIME_9H}:
-        return {"total_targets": 0, "sent": 0, "failed": 0, "deactivated": 0, "failures": []}
+    if job.job_type in {JOB_TYPE_EMPLOYEE_MISSED_CHECKOUT, JOB_TYPE_EMPLOYEE_OVERTIME_9H}:
+        if job.employee_id is None:
+            return {"total_targets": 0, "sent": 0, "failed": 0, "deactivated": 0, "failures": []}
+        return send_push_to_employees(
+            session,
+            employee_ids=[job.employee_id],
+            title=message.subject,
+            body=message.body,
+            data={
+                "job_id": job.id,
+                "job_type": job.job_type,
+                "employee_id": job.employee_id,
+                "payload": job.payload or {},
+            },
+        )
 
-    return send_push_to_employees(
-        session,
-        employee_ids=[job.employee_id],
-        title=message.subject,
-        body=message.body,
-        data={
-            "job_id": job.id,
-            "job_type": job.job_type,
-            "employee_id": job.employee_id,
-            "payload": job.payload or {},
-        },
-    )
+    if job.job_type in {JOB_TYPE_ADMIN_ESCALATION_MISSED_CHECKOUT, JOB_TYPE_ADMIN_DAILY_REPORT_READY}:
+        payload = job.payload or {}
+        archive_id = payload.get("archive_id")
+        return send_push_to_admins(
+            session,
+            admin_user_ids=None,
+            title=message.subject,
+            body=message.body,
+            data={
+                "job_id": job.id,
+                "job_type": job.job_type,
+                "archive_id": archive_id,
+                "report_date": payload.get("report_date"),
+                "url": f"/admin-panel/notifications?archive_id={archive_id}" if archive_id else "/admin-panel/notifications",
+            },
+        )
+
+    return {"total_targets": 0, "sent": 0, "failed": 0, "deactivated": 0, "failures": []}
 
 
 def _mark_job_sent(session: Session, *, job_id: int) -> NotificationJob | None:
@@ -575,6 +615,107 @@ def schedule_missed_checkout_notifications(
         )
 
     return created_jobs
+
+
+def schedule_daily_admin_report_archive_notifications(
+    now_utc: datetime,
+    db: Session | None = None,
+) -> list[NotificationJob]:
+    if db is None:
+        with SessionLocal() as managed_db:
+            return schedule_daily_admin_report_archive_notifications(now_utc, db=managed_db)
+
+    session = db
+    reference_utc = _normalize_ts(now_utc)
+    tz = _attendance_timezone()
+    local_now = reference_utc.astimezone(tz)
+    report_date = local_now.date() - timedelta(days=1)
+
+    existing_archive = session.scalar(
+        select(AdminDailyReportArchive).where(
+            AdminDailyReportArchive.report_date == report_date,
+            AdminDailyReportArchive.department_id.is_(None),
+            AdminDailyReportArchive.region_id.is_(None),
+        )
+    )
+    if existing_archive is not None:
+        return []
+
+    archive_bytes = build_puantaj_range_xlsx_bytes(
+        session,
+        start_date=report_date,
+        end_date=report_date,
+        mode="consolidated",
+    )
+    file_name = f"puantaj-gunluk-{report_date.isoformat()}.xlsx"
+    archive = AdminDailyReportArchive(
+        report_date=report_date,
+        department_id=None,
+        region_id=None,
+        file_name=file_name,
+        file_data=archive_bytes,
+        file_size_bytes=len(archive_bytes),
+    )
+    session.add(archive)
+    session.flush()
+
+    idempotency_key = f"{JOB_TYPE_ADMIN_DAILY_REPORT_READY}:{report_date.isoformat()}"
+    if _has_pending_or_sent_job(session, idempotency_key=idempotency_key):
+        session.commit()
+        return []
+
+    job = NotificationJob(
+        employee_id=None,
+        admin_user_id=None,
+        job_type=JOB_TYPE_ADMIN_DAILY_REPORT_READY,
+        payload={
+            "report_date": report_date.isoformat(),
+            "archive_id": archive.id,
+            "file_name": file_name,
+        },
+        scheduled_at_utc=reference_utc,
+        status="PENDING",
+        attempts=0,
+        last_error=None,
+        idempotency_key=idempotency_key,
+    )
+    session.add(job)
+    session.commit()
+    session.refresh(job)
+
+    log_audit(
+        session,
+        actor_type=AuditActorType.SYSTEM,
+        actor_id="notification_scheduler",
+        action="ADMIN_DAILY_REPORT_ARCHIVE_CREATED",
+        success=True,
+        entity_type="admin_daily_report_archive",
+        entity_id=str(archive.id),
+        details={
+            "report_date": report_date.isoformat(),
+            "file_name": file_name,
+            "file_size_bytes": len(archive_bytes),
+            "notification_job_id": job.id,
+        },
+    )
+    log_audit(
+        session,
+        actor_type=AuditActorType.SYSTEM,
+        actor_id="notification_scheduler",
+        action="NOTIFICATION_JOB_CREATED",
+        success=True,
+        entity_type="notification_job",
+        entity_id=str(job.id),
+        details={
+            "job_type": job.job_type,
+            "idempotency_key": job.idempotency_key,
+            "scheduled_at_utc": job.scheduled_at_utc.isoformat(),
+            "report_date": report_date.isoformat(),
+            "archive_id": archive.id,
+        },
+    )
+
+    return [job]
 
 
 def send_pending_notifications(

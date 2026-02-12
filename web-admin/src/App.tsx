@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { AppLayout } from './components/AppLayout'
 import { AuthGuard } from './auth/AuthGuard'
 import { PublicOnlyRoute } from './auth/PublicOnlyRoute'
+import { AdminDeviceClaimPage } from './pages/AdminDeviceClaimPage'
 import { AttendanceEventsPage } from './pages/AttendanceEventsPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { DepartmentSummaryReportPage } from './pages/DepartmentSummaryReportPage'
@@ -30,6 +31,8 @@ function App() {
       <Route element={<PublicOnlyRoute />}>
         <Route path="/login" element={<LoginPage />} />
       </Route>
+
+      <Route path="/device-claim" element={<AdminDeviceClaimPage />} />
 
       <Route element={<AuthGuard />}>
         <Route element={<AppLayout />}>

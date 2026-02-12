@@ -689,11 +689,59 @@ class AdminPushSubscriptionRead(BaseModel):
     last_seen_at: datetime
 
 
+class AdminDevicePushSubscriptionRead(BaseModel):
+    id: int
+    admin_user_id: int | None = None
+    admin_username: str
+    endpoint: str
+    is_active: bool
+    user_agent: str | None = None
+    last_error: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    last_seen_at: datetime
+
+
+class AdminDeviceInviteCreateRequest(BaseModel):
+    expires_in_minutes: int = Field(default=60, ge=1, le=60 * 24 * 30)
+
+
+class AdminDeviceInviteCreateResponse(BaseModel):
+    token: str
+    invite_url: str
+    expires_at: datetime
+
+
+class AdminDeviceClaimRequest(BaseModel):
+    token: str = Field(min_length=8, max_length=255)
+    subscription: dict[str, Any]
+
+
+class AdminDeviceClaimResponse(BaseModel):
+    ok: bool
+    admin_username: str
+    subscription_id: int
+
+
+class AdminDailyReportArchiveRead(BaseModel):
+    id: int
+    report_date: date
+    department_id: int | None = None
+    region_id: int | None = None
+    file_name: str
+    file_size_bytes: int
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class AdminManualNotificationSendRequest(BaseModel):
     title: str = Field(min_length=1, max_length=120)
     message: str = Field(min_length=1, max_length=2000)
     password: str = Field(min_length=1, max_length=128)
+    target: Literal["employees", "admins", "both"] = "employees"
     employee_ids: list[int] | None = None
+    admin_user_ids: list[int] | None = None
 
 
 class AdminManualNotificationSendResponse(BaseModel):
@@ -703,6 +751,8 @@ class AdminManualNotificationSendResponse(BaseModel):
     failed: int
     deactivated: int = 0
     employee_ids: list[int] = Field(default_factory=list)
+    admin_user_ids: list[int] = Field(default_factory=list)
+    admin_usernames: list[str] = Field(default_factory=list)
 
 
 class CheckinQrPayload(BaseModel):

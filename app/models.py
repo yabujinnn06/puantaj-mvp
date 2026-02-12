@@ -12,6 +12,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
     Time,
@@ -806,6 +807,15 @@ class AdminUser(Base):
     )
 
     refresh_tokens: Mapped[list[AdminRefreshToken]] = relationship(back_populates="admin_user")
+    push_subscriptions: Mapped[list[AdminPushSubscription]] = relationship(back_populates="admin_user")
+    created_device_invites: Mapped[list[AdminDeviceInvite]] = relationship(
+        back_populates="created_by_admin_user",
+        foreign_keys="AdminDeviceInvite.created_by_admin_user_id",
+    )
+    used_device_invites: Mapped[list[AdminDeviceInvite]] = relationship(
+        back_populates="used_by_admin_user",
+        foreign_keys="AdminDeviceInvite.used_by_admin_user_id",
+    )
 
 
 class AdminRefreshToken(Base):
@@ -826,6 +836,83 @@ class AdminRefreshToken(Base):
     last_user_agent: Mapped[str | None] = mapped_column(String(1024), nullable=True)
 
     admin_user: Mapped[AdminUser | None] = relationship(back_populates="refresh_tokens")
+
+
+class AdminPushSubscription(Base):
+    __tablename__ = "admin_push_subscriptions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    admin_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("admin_users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    admin_username: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    endpoint: Mapped[str] = mapped_column(String(1024), nullable=False, unique=True, index=True)
+    p256dh: Mapped[str] = mapped_column(String(512), nullable=False)
+    auth: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
+    user_agent: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    admin_user: Mapped[AdminUser | None] = relationship(back_populates="push_subscriptions")
+
+
+class AdminDeviceInvite(Base):
+    __tablename__ = "admin_device_invites"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    is_used: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    created_by_admin_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("admin_users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    created_by_username: Mapped[str] = mapped_column(String(100), nullable=False, default="admin")
+    used_by_admin_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("admin_users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    used_by_username: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    created_by_admin_user: Mapped[AdminUser | None] = relationship(
+        back_populates="created_device_invites",
+        foreign_keys=[created_by_admin_user_id],
+    )
+    used_by_admin_user: Mapped[AdminUser | None] = relationship(
+        back_populates="used_device_invites",
+        foreign_keys=[used_by_admin_user_id],
+    )
 
 
 class AuditLog(Base):
@@ -903,6 +990,42 @@ class NotificationJob(Base):
 
     employee: Mapped[Employee | None] = relationship()
     admin_user: Mapped[AdminUser | None] = relationship()
+
+
+class AdminDailyReportArchive(Base):
+    __tablename__ = "admin_daily_report_archives"
+    __table_args__ = (
+        UniqueConstraint(
+            "report_date",
+            "department_id",
+            "region_id",
+            name="uq_admin_daily_report_archives_scope",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    report_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    department_id: Mapped[int | None] = mapped_column(
+        ForeignKey("departments.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    region_id: Mapped[int | None] = mapped_column(
+        ForeignKey("regions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    file_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    file_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    department: Mapped[Department | None] = relationship()
+    region: Mapped[Region | None] = relationship()
 
 
 class AttendanceEvent(Base):

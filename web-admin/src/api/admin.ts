@@ -1,5 +1,9 @@
 import { apiClient } from './client'
 import type {
+  AdminDailyReportArchive,
+  AdminDeviceClaimResponse,
+  AdminDeviceInviteCreateResponse,
+  AdminDevicePushSubscription,
   AdminManualNotificationSendResponse,
   AdminAuthResponse,
   AdminMeResponse,
@@ -227,11 +231,34 @@ export interface NotificationSubscriptionsParams {
   employee_id?: number
 }
 
+export interface AdminNotificationSubscriptionsParams {
+  admin_user_id?: number
+}
+
 export interface ManualNotificationPayload {
   title: string
   message: string
   password: string
+  target?: 'employees' | 'admins' | 'both'
   employee_ids?: number[]
+  admin_user_ids?: number[]
+}
+
+export interface CreateAdminDeviceInvitePayload {
+  expires_in_minutes: number
+}
+
+export interface ClaimAdminDevicePayload {
+  token: string
+  subscription: Record<string, unknown>
+}
+
+export interface DailyReportArchivesParams {
+  start_date?: string
+  end_date?: string
+  department_id?: number
+  region_id?: number
+  limit?: number
 }
 
 export interface CreateLeavePayload {
@@ -689,6 +716,43 @@ export async function getNotificationSubscriptions(
   return response.data
 }
 
+export async function getAdminNotificationSubscriptions(
+  params: AdminNotificationSubscriptionsParams = {},
+): Promise<AdminDevicePushSubscription[]> {
+  const response = await apiClient.get<AdminDevicePushSubscription[]>(
+    '/api/admin/notifications/admin-subscriptions',
+    { params },
+  )
+  return response.data
+}
+
+export async function getAdminPushConfig(): Promise<{ enabled: boolean; vapid_public_key: string | null }> {
+  const response = await apiClient.get<{ enabled: boolean; vapid_public_key: string | null }>(
+    '/api/admin/notifications/push/config',
+  )
+  return response.data
+}
+
+export async function createAdminDeviceInvite(
+  payload: CreateAdminDeviceInvitePayload,
+): Promise<AdminDeviceInviteCreateResponse> {
+  const response = await apiClient.post<AdminDeviceInviteCreateResponse>(
+    '/api/admin/notifications/admin-device-invite',
+    payload,
+  )
+  return response.data
+}
+
+export async function claimAdminDevice(
+  payload: ClaimAdminDevicePayload,
+): Promise<AdminDeviceClaimResponse> {
+  const response = await apiClient.post<AdminDeviceClaimResponse>(
+    '/api/admin/notifications/admin-device-claim',
+    payload,
+  )
+  return response.data
+}
+
 export async function sendManualNotification(
   payload: ManualNotificationPayload,
 ): Promise<AdminManualNotificationSendResponse> {
@@ -696,6 +760,22 @@ export async function sendManualNotification(
     '/api/admin/notifications/send',
     payload,
   )
+  return response.data
+}
+
+export async function getDailyReportArchives(
+  params: DailyReportArchivesParams = {},
+): Promise<AdminDailyReportArchive[]> {
+  const response = await apiClient.get<AdminDailyReportArchive[]>('/api/admin/daily-report-archives', {
+    params,
+  })
+  return response.data
+}
+
+export async function downloadDailyReportArchive(archiveId: number): Promise<Blob> {
+  const response = await apiClient.get<Blob>(`/api/admin/daily-report-archives/${archiveId}/download`, {
+    responseType: 'blob',
+  })
   return response.data
 }
 

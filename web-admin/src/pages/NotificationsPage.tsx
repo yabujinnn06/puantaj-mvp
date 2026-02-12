@@ -3,6 +3,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import {
   cancelNotificationJob,
+  createAdminDeviceInvite,
+  downloadDailyReportArchive,
+  getAdminNotificationSubscriptions,
+  getAdminPushConfig,
+  getAdminUsers,
+  getDailyReportArchives,
   getEmployees,
   getNotificationJobs,
   getNotificationSubscriptions,
@@ -15,13 +21,10 @@ import { PageHeader } from '../components/PageHeader'
 import { Panel } from '../components/Panel'
 import { TableSearchInput } from '../components/TableSearchInput'
 import { useToast } from '../hooks/useToast'
-import type { NotificationJobStatus } from '../types/api'
+import type { AdminDeviceInviteCreateResponse, NotificationJobStatus } from '../types/api'
 
-function formatDateTime(value: string): string {
-  return new Intl.DateTimeFormat('tr-TR', {
-    dateStyle: 'short',
-    timeStyle: 'medium',
-  }).format(new Date(value))
+function dt(value: string): string {
+  return new Intl.DateTimeFormat('tr-TR', { dateStyle: 'short', timeStyle: 'medium' }).format(new Date(value))
 }
 
 function statusClass(status: NotificationJobStatus): string {
@@ -32,6 +35,17 @@ function statusClass(status: NotificationJobStatus): string {
   return 'bg-sky-100 text-sky-700'
 }
 
+function downloadBlob(blob: Blob, name: string): void {
+  const url = window.URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  window.URL.revokeObjectURL(url)
+}
+
 export function NotificationsPage() {
   const queryClient = useQueryClient()
   const { pushToast } = useToast()
@@ -39,438 +53,215 @@ export function NotificationsPage() {
   const [title, setTitle] = useState('Puantaj Bildirimi')
   const [message, setMessage] = useState('')
   const [password, setPassword] = useState('')
-  const [targetMode, setTargetMode] = useState<'all' | 'selected'>('all')
-  const [employeeSearch, setEmployeeSearch] = useState('')
-  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<number[]>([])
-  const [jobsStatusFilter, setJobsStatusFilter] = useState<'' | NotificationJobStatus>('')
-  const [jobsLimit, setJobsLimit] = useState(100)
-  const [subscriptionsEmployeeFilter, setSubscriptionsEmployeeFilter] = useState('')
-  const [formError, setFormError] = useState<string | null>(null)
-  const [formRequestId, setFormRequestId] = useState<string | null>(null)
+  const [target, setTarget] = useState<'employees' | 'admins' | 'both'>('employees')
+  const [expiresIn, setExpiresIn] = useState(60)
+  const [jobsStatus, setJobsStatus] = useState<'' | NotificationJobStatus>('')
+  const [searchEmployee, setSearchEmployee] = useState('')
+  const [searchAdmin, setSearchAdmin] = useState('')
+  const [selectedEmployees, setSelectedEmployees] = useState<number[]>([])
+  const [selectedAdmins, setSelectedAdmins] = useState<number[]>([])
+  const [createdInvite, setCreatedInvite] = useState<AdminDeviceInviteCreateResponse | null>(null)
 
-  const employeesQuery = useQuery({
-    queryKey: ['employees', 'notifications-active'],
-    queryFn: () => getEmployees({ status: 'active' }),
-  })
-
+  const employeesQuery = useQuery({ queryKey: ['employees', 'notify'], queryFn: () => getEmployees({ status: 'active' }) })
+  const adminsQuery = useQuery({ queryKey: ['admin-users', 'notify'], queryFn: getAdminUsers })
+  const pushConfigQuery = useQuery({ queryKey: ['admin-push-config'], queryFn: getAdminPushConfig })
   const jobsQuery = useQuery({
-    queryKey: ['notification-jobs', jobsStatusFilter, jobsLimit],
-    queryFn: () =>
-      getNotificationJobs({
-        status: jobsStatusFilter || undefined,
-        limit: jobsLimit,
-      }),
+    queryKey: ['notification-jobs', jobsStatus],
+    queryFn: () => getNotificationJobs({ status: jobsStatus || undefined, limit: 100 }),
     refetchInterval: 10000,
-    refetchIntervalInBackground: true,
   })
-
-  const subscriptionsQuery = useQuery({
-    queryKey: ['notification-subscriptions', subscriptionsEmployeeFilter],
-    queryFn: () =>
-      getNotificationSubscriptions({
-        employee_id: subscriptionsEmployeeFilter ? Number(subscriptionsEmployeeFilter) : undefined,
-      }),
+  const employeeSubsQuery = useQuery({
+    queryKey: ['notify-subs-emp'],
+    queryFn: () => getNotificationSubscriptions({}),
     refetchInterval: 15000,
-    refetchIntervalInBackground: true,
+  })
+  const adminSubsQuery = useQuery({
+    queryKey: ['notify-subs-admin'],
+    queryFn: () => getAdminNotificationSubscriptions({}),
+    refetchInterval: 15000,
+  })
+  const archivesQuery = useQuery({ queryKey: ['daily-archives'], queryFn: () => getDailyReportArchives({ limit: 90 }) })
+
+  const filteredEmployees = useMemo(() => {
+    const q = searchEmployee.trim().toLowerCase()
+    if (!q) return employeesQuery.data ?? []
+    return (employeesQuery.data ?? []).filter((x) => `${x.id} ${x.full_name}`.toLowerCase().includes(q))
+  }, [employeesQuery.data, searchEmployee])
+
+  const filteredAdmins = useMemo(() => {
+    const q = searchAdmin.trim().toLowerCase()
+    if (!q) return adminsQuery.data ?? []
+    return (adminsQuery.data ?? []).filter((x) => `${x.id} ${x.username}`.toLowerCase().includes(q))
+  }, [adminsQuery.data, searchAdmin])
+
+  const inviteMutation = useMutation({
+    mutationFn: createAdminDeviceInvite,
+    onSuccess: (res) => {
+      setCreatedInvite(res)
+      pushToast({ variant: 'success', title: 'Davet hazır', description: 'Link admin cihazına gönderildi.' })
+      void navigator.clipboard.writeText(res.invite_url)
+    },
+    onError: (e) => pushToast({ variant: 'error', title: 'Davet hatası', description: parseApiError(e, 'Davet oluşturulamadı').message }),
   })
 
   const sendMutation = useMutation({
     mutationFn: sendManualNotification,
-    onSuccess: (response) => {
-      setFormError(null)
-      setFormRequestId(null)
-      setMessage('')
-      setPassword('')
-      pushToast({
-        variant: 'success',
-        title: 'Bildirim gönderildi',
-        description: `Hedef: ${response.total_targets} | Başarılı: ${response.sent} | Hata: ${response.failed}`,
-      })
+    onSuccess: (res) => {
+      pushToast({ variant: 'success', title: 'Bildirim gönderildi', description: `Hedef: ${res.total_targets} / Gönderilen: ${res.sent}` })
       void queryClient.invalidateQueries({ queryKey: ['notification-jobs'] })
-      void queryClient.invalidateQueries({ queryKey: ['notification-subscriptions'] })
     },
-    onError: (error) => {
-      const parsed = parseApiError(error, 'Bildirim gönderilemedi.')
-      setFormError(parsed.message)
-      setFormRequestId(parsed.requestId ?? null)
-      pushToast({
-        variant: 'error',
-        title: 'Bildirim gönderilemedi',
-        description: parsed.message,
-      })
-    },
+    onError: (e) => pushToast({ variant: 'error', title: 'Gönderim hatası', description: parseApiError(e, 'Bildirim gönderilemedi').message }),
   })
 
   const cancelMutation = useMutation({
     mutationFn: cancelNotificationJob,
-    onSuccess: () => {
-      pushToast({
-        variant: 'success',
-        title: 'İş iptal edildi',
-        description: 'Bildirim işi iptal durumuna alındı.',
-      })
-      void queryClient.invalidateQueries({ queryKey: ['notification-jobs'] })
-    },
-    onError: (error) => {
-      const parsed = parseApiError(error, 'Bildirim işi iptal edilemedi.')
-      pushToast({
-        variant: 'error',
-        title: 'İptal başarısız',
-        description: parsed.message,
-      })
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['notification-jobs'] }),
+  })
+
+  const downloadMutation = useMutation({
+    mutationFn: downloadDailyReportArchive,
+    onSuccess: (blob, id) => {
+      const item = (archivesQuery.data ?? []).find((x) => x.id === id)
+      downloadBlob(blob, item?.file_name ?? `arsiv-${id}.xlsx`)
     },
   })
 
-  const employees = employeesQuery.data ?? []
-  const jobs = jobsQuery.data ?? []
-  const subscriptions = subscriptionsQuery.data ?? []
-
-  const filteredEmployees = useMemo(() => {
-    const needle = employeeSearch.trim().toLowerCase()
-    if (!needle) {
-      return employees
-    }
-    return employees.filter((item) => {
-      const text = `${item.full_name} ${item.id}`.toLowerCase()
-      return text.includes(needle)
-    })
-  }, [employees, employeeSearch])
-
-  const selectedEmployeeCount = selectedEmployeeIds.length
-
-  const toggleEmployee = (employeeId: number) => {
-    setSelectedEmployeeIds((prev) =>
-      prev.includes(employeeId) ? prev.filter((id) => id !== employeeId) : [...prev, employeeId],
-    )
-  }
-
-  const onSubmitManualSend = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setFormError(null)
-    setFormRequestId(null)
-
-    const trimmedTitle = title.trim()
-    const trimmedMessage = message.trim()
-    const trimmedPassword = password.trim()
-
-    if (!trimmedTitle) {
-      setFormError('Başlık zorunludur.')
-      return
-    }
-    if (!trimmedMessage) {
-      setFormError('Mesaj zorunludur.')
-      return
-    }
-    if (!trimmedPassword) {
-      setFormError('Gönderim için admin şifresi zorunludur.')
-      return
-    }
-    if (targetMode === 'selected' && selectedEmployeeIds.length === 0) {
-      setFormError('En az bir çalışan seçmelisiniz.')
-      return
-    }
-
-    sendMutation.mutate({
-      title: trimmedTitle,
-      message: trimmedMessage,
-      password: trimmedPassword,
-      employee_ids: targetMode === 'selected' ? selectedEmployeeIds : undefined,
-    })
-  }
-
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Bildirimler"
-        description="Çalışan cihaz aboneliklerini izleyin, sistem işlerini takip edin ve manuel bildirim gönderin."
-      />
+      <PageHeader title="Bildirim Merkezi" description="Admin claim daveti, push abonelikleri ve günlük Excel arşiv yönetimi." />
 
       <Panel>
-        <h4 className="text-base font-semibold text-slate-900">Manuel Bildirim Gönder</h4>
-        <p className="mt-1 text-sm text-slate-600">
-          Bu işlem anlık push bildirimi gönderir. Güvenlik için mevcut admin şifresi istenir.
-        </p>
-        <form className="mt-4 space-y-3" onSubmit={onSubmitManualSend}>
-          <div className="grid gap-3 md:grid-cols-2">
-            <label className="text-sm text-slate-700">
-              Başlık
-              <input
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-                maxLength={120}
-                placeholder="Puantaj Bildirimi"
-              />
-            </label>
-            <label className="text-sm text-slate-700">
-              Admin Şifresi
-              <input
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-                autoComplete="current-password"
-                placeholder="Şifre doğrulama"
-              />
-            </label>
-          </div>
-
-          <label className="text-sm text-slate-700">
-            Mesaj
-            <textarea
-              value={message}
-              onChange={(event) => setMessage(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-              rows={4}
-              maxLength={2000}
-              placeholder="Lütfen mesai çıkışınızı tamamlayın."
-            />
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="text-sm text-slate-700">Admin davet süresi (dk)
+            <input type="number" min={1} max={43200} value={expiresIn} onChange={(e) => setExpiresIn(Number(e.target.value || 60))} className="mt-1 w-40 rounded border border-slate-300 px-3 py-2" />
           </label>
-
-          <div className="grid gap-3 md:grid-cols-2">
-            <label className="text-sm text-slate-700">
-              Hedef
-              <select
-                value={targetMode}
-                onChange={(event) => setTargetMode(event.target.value as 'all' | 'selected')}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-              >
-                <option value="all">Tüm aktif abonelikler</option>
-                <option value="selected">Seçili çalışanlar</option>
-              </select>
-            </label>
-            <div className="text-sm text-slate-700">
-              Seçili çalışan sayısı
-              <div className="mt-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-semibold text-slate-900">
-                {targetMode === 'all' ? 'Tümü' : selectedEmployeeCount}
-              </div>
-            </div>
+          <button type="button" onClick={() => inviteMutation.mutate({ expires_in_minutes: expiresIn })} className="rounded bg-brand-600 px-4 py-2 text-sm font-semibold text-white">
+            Admin cihaz claim linki üret
+          </button>
+          <span className="text-xs text-slate-500">Push: {pushConfigQuery.data?.enabled ? 'Aktif' : 'Pasif'}</span>
+        </div>
+        <p className="mt-2 text-xs text-slate-500">Link kopyalama otomatik yapılır. Claim ekranı: /admin-panel/device-claim?token=...</p>
+        {createdInvite ? (
+          <div className="mt-2 rounded border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-800">
+            <p>Token: {createdInvite.token}</p>
+            <p className="break-all">Link: {createdInvite.invite_url}</p>
+            <p>Bitiş: {dt(createdInvite.expires_at)}</p>
           </div>
+        ) : null}
+      </Panel>
 
-          {targetMode === 'selected' ? (
-            <div className="rounded-lg border border-slate-200 p-3">
-              <TableSearchInput
-                value={employeeSearch}
-                onChange={setEmployeeSearch}
-                placeholder="Çalışan adı veya ID ile ara..."
-              />
-              <div className="mt-3 max-h-56 space-y-2 overflow-y-auto pr-1">
-                {employeesQuery.isLoading ? <LoadingBlock label="Çalışanlar yükleniyor..." /> : null}
-                {employeesQuery.isError ? (
-                  <ErrorBlock message="Çalışan listesi alınamadı." />
-                ) : null}
-                {!employeesQuery.isLoading && !employeesQuery.isError && filteredEmployees.length === 0 ? (
-                  <p className="text-sm text-slate-500">Eşleşen çalışan bulunamadı.</p>
-                ) : null}
-                {!employeesQuery.isLoading &&
-                  !employeesQuery.isError &&
-                  filteredEmployees.map((employee) => (
-                    <label
-                      key={employee.id}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                    >
-                      <span className="font-medium text-slate-900">
-                        #{employee.id} - {employee.full_name}
-                      </span>
-                      <input
-                        type="checkbox"
-                        checked={selectedEmployeeIds.includes(employee.id)}
-                        onChange={() => toggleEmployee(employee.id)}
-                      />
-                    </label>
-                  ))}
+      <Panel>
+        <form
+          className="space-y-3"
+          onSubmit={(e) => {
+            e.preventDefault()
+            sendMutation.mutate({
+              title: title.trim(),
+              message: message.trim(),
+              password: password.trim(),
+              target,
+              employee_ids: target !== 'admins' && selectedEmployees.length > 0 ? selectedEmployees : undefined,
+              admin_user_ids: target !== 'employees' && selectedAdmins.length > 0 ? selectedAdmins : undefined,
+            })
+          }}
+        >
+          <h4 className="text-base font-semibold text-slate-900">Manuel Push Gönder</h4>
+          <div className="grid gap-3 md:grid-cols-3">
+            <input value={title} onChange={(e) => setTitle(e.target.value)} className="rounded border border-slate-300 px-3 py-2" placeholder="Başlık" />
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="rounded border border-slate-300 px-3 py-2" placeholder="Admin şifresi" />
+            <select value={target} onChange={(e) => setTarget(e.target.value as 'employees' | 'admins' | 'both')} className="rounded border border-slate-300 px-3 py-2">
+              <option value="employees">Çalışanlara</option>
+              <option value="admins">Adminlere</option>
+              <option value="both">Her ikisine</option>
+            </select>
+          </div>
+          <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={3} className="w-full rounded border border-slate-300 px-3 py-2" placeholder="Mesaj" />
+
+          {target !== 'admins' ? (
+            <div>
+              <TableSearchInput value={searchEmployee} onChange={setSearchEmployee} placeholder="Çalışan filtrele..." />
+              <div className="mt-2 max-h-36 overflow-y-auto rounded border border-slate-200 p-2 text-sm">
+                {filteredEmployees.map((item) => (
+                  <label key={item.id} className="flex items-center justify-between py-1">
+                    <span>#{item.id} - {item.full_name}</span>
+                    <input type="checkbox" checked={selectedEmployees.includes(item.id)} onChange={() => setSelectedEmployees((prev) => prev.includes(item.id) ? prev.filter((x) => x !== item.id) : [...prev, item.id])} />
+                  </label>
+                ))}
               </div>
             </div>
           ) : null}
 
-          {formError ? (
-            <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-              <p>{formError}</p>
-              {formRequestId ? <p className="mt-1 text-xs">request_id: {formRequestId}</p> : null}
+          {target !== 'employees' ? (
+            <div>
+              <TableSearchInput value={searchAdmin} onChange={setSearchAdmin} placeholder="Admin filtrele..." />
+              <div className="mt-2 max-h-36 overflow-y-auto rounded border border-slate-200 p-2 text-sm">
+                {filteredAdmins.map((item) => (
+                  <label key={item.id} className="flex items-center justify-between py-1">
+                    <span>#{item.id} - {item.username}</span>
+                    <input type="checkbox" checked={selectedAdmins.includes(item.id)} onChange={() => setSelectedAdmins((prev) => prev.includes(item.id) ? prev.filter((x) => x !== item.id) : [...prev, item.id])} />
+                  </label>
+                ))}
+              </div>
             </div>
           ) : null}
 
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="submit"
-              disabled={sendMutation.isPending}
-              className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
-            >
-              {sendMutation.isPending ? 'Gönderiliyor...' : 'Bildirimi Gönder'}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMessage('')
-                setFormError(null)
-                setFormRequestId(null)
-              }}
-              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              Mesajı Temizle
-            </button>
-          </div>
+          <button type="submit" className="rounded bg-brand-600 px-4 py-2 text-sm font-semibold text-white">Bildirimi gönder</button>
         </form>
       </Panel>
 
       <Panel>
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="text-sm text-slate-700">
-            Job durumu
-            <select
-              value={jobsStatusFilter}
-              onChange={(event) => setJobsStatusFilter(event.target.value as '' | NotificationJobStatus)}
-              className="mt-1 w-44 rounded-lg border border-slate-300 px-3 py-2"
-            >
-              <option value="">Tümü</option>
-              <option value="PENDING">PENDING</option>
-              <option value="SENDING">SENDING</option>
-              <option value="SENT">SENT</option>
-              <option value="FAILED">FAILED</option>
-              <option value="CANCELED">CANCELED</option>
-            </select>
-          </label>
-          <label className="text-sm text-slate-700">
-            Limit
-            <input
-              type="number"
-              min={1}
-              max={500}
-              value={jobsLimit}
-              onChange={(event) => setJobsLimit(Math.min(500, Math.max(1, Number(event.target.value || 1))))}
-              className="mt-1 w-28 rounded-lg border border-slate-300 px-3 py-2"
-            />
-          </label>
-          <button
-            type="button"
-            onClick={() => void jobsQuery.refetch()}
-            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-          >
-            Job listesini yenile
-          </button>
+        <h4 className="text-base font-semibold text-slate-900">Bildirim İşleri</h4>
+        <div className="mb-2 mt-2 flex gap-2">
+          <select value={jobsStatus} onChange={(e) => setJobsStatus(e.target.value as '' | NotificationJobStatus)} className="rounded border border-slate-300 px-3 py-2 text-sm">
+            <option value="">Tümü</option><option value="PENDING">PENDING</option><option value="SENDING">SENDING</option><option value="SENT">SENT</option><option value="FAILED">FAILED</option><option value="CANCELED">CANCELED</option>
+          </select>
+          <button type="button" onClick={() => void jobsQuery.refetch()} className="rounded border border-slate-300 px-3 py-2 text-sm">Yenile</button>
         </div>
-
-        {jobsQuery.isLoading ? <LoadingBlock label="Bildirim işleri yükleniyor..." /> : null}
-        {jobsQuery.isError ? <ErrorBlock message="Bildirim işleri alınamadı." /> : null}
-
-        {!jobsQuery.isLoading && !jobsQuery.isError ? (
-          <div className="mt-3 overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
-              <thead className="text-xs uppercase text-slate-500">
-                <tr>
-                  <th className="py-2">ID</th>
-                  <th className="py-2">Tür</th>
-                  <th className="py-2">Çalışan</th>
-                  <th className="py-2">Durum</th>
-                  <th className="py-2">Planlanan</th>
-                  <th className="py-2">Deneme</th>
-                  <th className="py-2">Hata</th>
-                  <th className="py-2">İşlem</th>
+        {jobsQuery.isLoading ? <LoadingBlock label="Yükleniyor..." /> : null}
+        {jobsQuery.isError ? <ErrorBlock message="Job listesi alınamadı." /> : null}
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead><tr className="text-xs uppercase text-slate-500"><th className="py-2">ID</th><th>Tür</th><th>Durum</th><th>Planlanan</th><th>İşlem</th></tr></thead>
+            <tbody>
+              {(jobsQuery.data ?? []).map((job) => (
+                <tr key={job.id} className="border-t border-slate-100">
+                  <td className="py-2">{job.id}</td><td>{job.job_type}</td>
+                  <td><span className={`rounded px-2 py-1 text-xs ${job.status === 'SENT' ? 'bg-emerald-100 text-emerald-700' : statusClass(job.status)}`}>{job.status}</span></td>
+                  <td>{dt(job.scheduled_at_utc)}</td>
+                  <td>{job.status === 'PENDING' || job.status === 'SENDING' ? <button type="button" className="rounded border border-rose-300 px-2 py-1 text-xs text-rose-700" onClick={() => cancelMutation.mutate(job.id)}>İptal</button> : '-'}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {jobs.map((job) => (
-                  <tr key={job.id} className="border-t border-slate-100">
-                    <td className="py-2 font-medium text-slate-900">{job.id}</td>
-                    <td className="py-2 text-slate-700">{job.job_type}</td>
-                    <td className="py-2 text-slate-700">{job.employee_id ?? '-'}</td>
-                    <td className="py-2">
-                      <span className={`rounded-full px-2 py-1 text-xs font-semibold ${statusClass(job.status)}`}>
-                        {job.status}
-                      </span>
-                    </td>
-                    <td className="py-2 text-slate-700">{formatDateTime(job.scheduled_at_utc)}</td>
-                    <td className="py-2 text-slate-700">{job.attempts}</td>
-                    <td className="py-2 text-slate-700">{job.last_error ?? '-'}</td>
-                    <td className="py-2">
-                      {job.status === 'PENDING' || job.status === 'SENDING' ? (
-                        <button
-                          type="button"
-                          onClick={() => cancelMutation.mutate(job.id)}
-                          className="rounded-lg border border-rose-300 px-3 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60"
-                          disabled={cancelMutation.isPending}
-                        >
-                          İptal Et
-                        </button>
-                      ) : (
-                        <span className="text-xs text-slate-400">-</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {jobs.length === 0 ? <p className="py-3 text-sm text-slate-500">Bildirim işi bulunamadı.</p> : null}
-          </div>
-        ) : null}
+              ))}
+            </tbody>
+          </table>
+        </div>
       </Panel>
 
       <Panel>
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="text-sm text-slate-700">
-            Abonelik çalışan filtresi
-            <input
-              type="number"
-              min={1}
-              value={subscriptionsEmployeeFilter}
-              onChange={(event) => setSubscriptionsEmployeeFilter(event.target.value)}
-              className="mt-1 w-44 rounded-lg border border-slate-300 px-3 py-2"
-              placeholder="Employee ID"
-            />
-          </label>
-          <button
-            type="button"
-            onClick={() => void subscriptionsQuery.refetch()}
-            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-          >
-            Abonelikleri yenile
-          </button>
+        <h4 className="text-base font-semibold text-slate-900">Abonelik Özeti</h4>
+        <div className="grid gap-2 md:grid-cols-3">
+          <div className="rounded border border-slate-200 p-3 text-sm">Çalışan abonelik: {(employeeSubsQuery.data ?? []).length}</div>
+          <div className="rounded border border-slate-200 p-3 text-sm">Admin abonelik: {(adminSubsQuery.data ?? []).length}</div>
+          <div className="rounded border border-slate-200 p-3 text-sm">Arşiv dosyası: {(archivesQuery.data ?? []).length}</div>
         </div>
+      </Panel>
 
-        {subscriptionsQuery.isLoading ? <LoadingBlock label="Push abonelikleri yükleniyor..." /> : null}
-        {subscriptionsQuery.isError ? <ErrorBlock message="Push abonelik listesi alınamadı." /> : null}
-
-        {!subscriptionsQuery.isLoading && !subscriptionsQuery.isError ? (
-          <div className="mt-3 overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
-              <thead className="text-xs uppercase text-slate-500">
-                <tr>
-                  <th className="py-2">ID</th>
-                  <th className="py-2">Çalışan</th>
-                  <th className="py-2">Cihaz</th>
-                  <th className="py-2">Durum</th>
-                  <th className="py-2">Son Görülme</th>
-                  <th className="py-2">Endpoint</th>
+      <Panel>
+        <h4 className="text-base font-semibold text-slate-900">Günlük Excel Arşivi</h4>
+        {archivesQuery.isLoading ? <LoadingBlock label="Arşiv yükleniyor..." /> : null}
+        {archivesQuery.isError ? <ErrorBlock message="Arşiv listesi alınamadı." /> : null}
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead><tr className="text-xs uppercase text-slate-500"><th className="py-2">ID</th><th>Tarih</th><th>Dosya</th><th>Boyut</th><th>İndir</th></tr></thead>
+            <tbody>
+              {(archivesQuery.data ?? []).map((item) => (
+                <tr key={item.id} className="border-t border-slate-100">
+                  <td className="py-2">{item.id}</td><td>{item.report_date}</td><td>{item.file_name}</td><td>{(item.file_size_bytes / 1024).toFixed(1)} KB</td>
+                  <td><button type="button" className="rounded border border-brand-300 px-2 py-1 text-xs text-brand-700" onClick={() => downloadMutation.mutate(item.id)}>Excel indir</button></td>
                 </tr>
-              </thead>
-              <tbody>
-                {subscriptions.map((row) => (
-                  <tr key={row.id} className="border-t border-slate-100">
-                    <td className="py-2 font-medium text-slate-900">{row.id}</td>
-                    <td className="py-2 text-slate-700">{row.employee_id}</td>
-                    <td className="py-2 text-slate-700">{row.device_id}</td>
-                    <td className="py-2">
-                      <span
-                        className={`rounded-full px-2 py-1 text-xs font-semibold ${
-                          row.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-700'
-                        }`}
-                      >
-                        {row.is_active ? 'AKTİF' : 'PASİF'}
-                      </span>
-                    </td>
-                    <td className="py-2 text-slate-700">{formatDateTime(row.last_seen_at)}</td>
-                    <td className="py-2 text-slate-700">
-                      <span className="inline-block max-w-[460px] truncate align-bottom">{row.endpoint}</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {subscriptions.length === 0 ? (
-              <p className="py-3 text-sm text-slate-500">Aktif push aboneliği bulunamadı.</p>
-            ) : null}
-          </div>
-        ) : null}
+              ))}
+            </tbody>
+          </table>
+        </div>
       </Panel>
     </div>
   )

@@ -270,6 +270,41 @@ export interface AdminPushSubscription {
   last_seen_at: string
 }
 
+export interface AdminDevicePushSubscription {
+  id: number
+  admin_user_id: number | null
+  admin_username: string
+  endpoint: string
+  is_active: boolean
+  user_agent: string | null
+  last_error: string | null
+  created_at: string
+  updated_at: string
+  last_seen_at: string
+}
+
+export interface AdminDeviceInviteCreateResponse {
+  token: string
+  invite_url: string
+  expires_at: string
+}
+
+export interface AdminDeviceClaimResponse {
+  ok: boolean
+  admin_username: string
+  subscription_id: number
+}
+
+export interface AdminDailyReportArchive {
+  id: number
+  report_date: string
+  department_id: number | null
+  region_id: number | null
+  file_name: string
+  file_size_bytes: number
+  created_at: string
+}
+
 export interface AdminManualNotificationSendResponse {
   ok: boolean
   total_targets: number
@@ -277,6 +312,8 @@ export interface AdminManualNotificationSendResponse {
   failed: number
   deactivated: number
   employee_ids: number[]
+  admin_user_ids: number[]
+  admin_usernames: string[]
 }
 
 export interface ManualDayOverride {

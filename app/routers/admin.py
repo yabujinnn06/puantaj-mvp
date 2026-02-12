@@ -11,6 +11,9 @@ from app.audit import log_audit
 from app.db import get_db
 from app.errors import ApiError
 from app.models import (
+    AdminDeviceInvite,
+    AdminDailyReportArchive,
+    AdminPushSubscription,
     AdminUser,
     AdminRefreshToken,
     AttendanceEvent,
@@ -39,6 +42,10 @@ from app.models import (
 from app.schemas import (
     AdminManualNotificationSendRequest,
     AdminManualNotificationSendResponse,
+    AdminDeviceInviteCreateRequest,
+    AdminDeviceInviteCreateResponse,
+    AdminDeviceClaimRequest,
+    AdminDeviceClaimResponse,
     AdminAuthResponse,
     AdminLoginRequest,
     AdminLogoutRequest,
@@ -48,7 +55,9 @@ from app.schemas import (
     AdminUserCreateRequest,
     AdminUserRead,
     AdminUserUpdateRequest,
+    AdminDevicePushSubscriptionRead,
     AdminPushSubscriptionRead,
+    AdminDailyReportArchiveRead,
     AuditLogRead,
     AttendanceEventRead,
     AttendanceEventManualCreateRequest,
@@ -84,6 +93,7 @@ from app.schemas import (
     EmployeePortalActivityRead,
     EmployeeLocationUpsert,
     EmployeeRead,
+    EmployeePushConfigResponse,
     LeaveCreateRequest,
     LeaveRead,
     LaborProfileRead,
@@ -121,7 +131,7 @@ from app.security import (
     verify_admin_credentials,
     verify_password,
 )
-from app.settings import get_employee_portal_base_url, get_settings
+from app.settings import get_employee_portal_base_url, get_public_base_url, get_settings
 from app.services.attendance import (
     create_admin_manual_event,
     soft_delete_admin_attendance_event,
@@ -136,7 +146,14 @@ from app.services.manual_overrides import (
     upsert_manual_day_override,
 )
 from app.services.monthly import calculate_department_monthly_summary, calculate_employee_monthly
-from app.services.push_notifications import list_active_push_subscriptions, send_push_to_employees
+from app.services.push_notifications import (
+    get_push_public_config,
+    list_active_admin_push_subscriptions,
+    list_active_push_subscriptions,
+    send_push_to_admins,
+    send_push_to_employees,
+    upsert_admin_push_subscription,
+)
 from app.services.schedule_plans import plan_applies_to_employee
 
 router = APIRouter(tags=["admin"])
@@ -230,6 +247,23 @@ def _to_admin_push_subscription_read(row: DevicePushSubscription) -> AdminPushSu
         id=row.id,
         device_id=row.device_id,
         employee_id=employee_id,
+        endpoint=row.endpoint,
+        is_active=row.is_active,
+        user_agent=row.user_agent,
+        last_error=row.last_error,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+        last_seen_at=row.last_seen_at,
+    )
+
+
+def _to_admin_device_push_subscription_read(
+    row: AdminPushSubscription,
+) -> AdminDevicePushSubscriptionRead:
+    return AdminDevicePushSubscriptionRead(
+        id=row.id,
+        admin_user_id=row.admin_user_id,
+        admin_username=row.admin_username,
         endpoint=row.endpoint,
         is_active=row.is_active,
         user_agent=row.user_agent,
@@ -3247,6 +3281,250 @@ def list_notification_subscriptions(
     return [_to_admin_push_subscription_read(row) for row in rows]
 
 
+@router.get(
+    "/api/admin/notifications/admin-subscriptions",
+    response_model=list[AdminDevicePushSubscriptionRead],
+)
+def list_admin_notification_subscriptions(
+    request: Request,
+    admin_user_id: int | None = Query(default=None, ge=1),
+    claims: dict[str, Any] = Depends(require_admin_permission("audit")),
+    db: Session = Depends(get_db),
+) -> list[AdminDevicePushSubscriptionRead]:
+    rows = list_active_admin_push_subscriptions(db, admin_user_id=admin_user_id)
+    actor_id = str(claims.get("username") or claims.get("sub") or "admin")
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=actor_id,
+        action="ADMIN_NOTIFICATION_SUBSCRIPTIONS_LIST",
+        success=True,
+        entity_type="admin_push_subscription",
+        entity_id=None,
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "admin_user_id": admin_user_id,
+            "count": len(rows),
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return [_to_admin_device_push_subscription_read(row) for row in rows]
+
+
+@router.get(
+    "/api/admin/notifications/push/config",
+    response_model=EmployeePushConfigResponse,
+)
+def admin_push_config(
+    _claims: dict[str, Any] = Depends(require_admin),
+) -> EmployeePushConfigResponse:
+    return EmployeePushConfigResponse(**get_push_public_config())
+
+
+@router.post(
+    "/api/admin/notifications/admin-device-invite",
+    response_model=AdminDeviceInviteCreateResponse,
+)
+def create_admin_device_invite(
+    payload: AdminDeviceInviteCreateRequest,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin_permission("audit", write=True)),
+    db: Session = Depends(get_db),
+) -> AdminDeviceInviteCreateResponse:
+    now_utc = datetime.now(timezone.utc)
+    actor_id = str(claims.get("username") or claims.get("sub") or settings.admin_user)
+    admin_user_id = claims.get("admin_user_id") if isinstance(claims.get("admin_user_id"), int) else None
+
+    token = secrets.token_urlsafe(32)
+    expires_at = now_utc + timedelta(minutes=payload.expires_in_minutes)
+
+    invite = AdminDeviceInvite(
+        token=token,
+        expires_at=expires_at,
+        is_used=False,
+        created_by_admin_user_id=admin_user_id,
+        created_by_username=actor_id,
+    )
+    db.add(invite)
+    db.commit()
+    db.refresh(invite)
+
+    invite_url = f"{get_public_base_url()}/admin-panel/device-claim?token={token}"
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=actor_id,
+        action="ADMIN_DEVICE_INVITE_CREATED",
+        success=True,
+        entity_type="admin_device_invite",
+        entity_id=str(invite.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "expires_at": expires_at.isoformat(),
+            "expires_in_minutes": payload.expires_in_minutes,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return AdminDeviceInviteCreateResponse(
+        token=token,
+        invite_url=invite_url,
+        expires_at=expires_at,
+    )
+
+
+@router.post(
+    "/api/admin/notifications/admin-device-claim",
+    response_model=AdminDeviceClaimResponse,
+)
+def claim_admin_device_push(
+    payload: AdminDeviceClaimRequest,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> AdminDeviceClaimResponse:
+    now_utc = datetime.now(timezone.utc)
+    actor_id = str(claims.get("username") or claims.get("sub") or settings.admin_user)
+    admin_user_id = claims.get("admin_user_id") if isinstance(claims.get("admin_user_id"), int) else None
+    request.state.actor = "admin"
+    request.state.actor_id = actor_id
+
+    invite = db.scalar(select(AdminDeviceInvite).where(AdminDeviceInvite.token == payload.token))
+    if invite is None:
+        raise ApiError(status_code=404, code="INVITE_NOT_FOUND", message="Admin device invite token not found.")
+    if invite.is_used:
+        raise ApiError(status_code=409, code="INVITE_ALREADY_USED", message="Admin device invite already used.")
+    if invite.expires_at < now_utc:
+        raise ApiError(status_code=410, code="INVITE_EXPIRED", message="Admin device invite expired.")
+
+    subscription = upsert_admin_push_subscription(
+        db,
+        admin_user_id=admin_user_id,
+        admin_username=actor_id,
+        subscription=payload.subscription,
+        user_agent=_user_agent(request),
+    )
+
+    invite.is_used = True
+    invite.used_at = now_utc
+    invite.used_by_admin_user_id = admin_user_id
+    invite.used_by_username = actor_id
+    db.commit()
+
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=actor_id,
+        action="ADMIN_DEVICE_CLAIMED",
+        success=True,
+        entity_type="admin_push_subscription",
+        entity_id=str(subscription.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "invite_id": invite.id,
+            "admin_user_id": admin_user_id,
+            "admin_username": actor_id,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return AdminDeviceClaimResponse(
+        ok=True,
+        admin_username=actor_id,
+        subscription_id=subscription.id,
+    )
+
+
+@router.get(
+    "/api/admin/daily-report-archives",
+    response_model=list[AdminDailyReportArchiveRead],
+)
+def list_daily_report_archives(
+    request: Request,
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    department_id: int | None = Query(default=None, ge=1),
+    region_id: int | None = Query(default=None, ge=1),
+    limit: int = Query(default=60, ge=1, le=500),
+    claims: dict[str, Any] = Depends(require_admin_permission("reports")),
+    db: Session = Depends(get_db),
+) -> list[AdminDailyReportArchiveRead]:
+    stmt = select(AdminDailyReportArchive).order_by(
+        AdminDailyReportArchive.report_date.desc(),
+        AdminDailyReportArchive.id.desc(),
+    ).limit(limit)
+    if start_date is not None:
+        stmt = stmt.where(AdminDailyReportArchive.report_date >= start_date)
+    if end_date is not None:
+        stmt = stmt.where(AdminDailyReportArchive.report_date <= end_date)
+    if department_id is not None:
+        stmt = stmt.where(AdminDailyReportArchive.department_id == department_id)
+    if region_id is not None:
+        stmt = stmt.where(AdminDailyReportArchive.region_id == region_id)
+
+    rows = list(db.scalars(stmt).all())
+    actor_id = str(claims.get("username") or claims.get("sub") or "admin")
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=actor_id,
+        action="ADMIN_DAILY_REPORT_ARCHIVES_LIST",
+        success=True,
+        entity_type="admin_daily_report_archive",
+        entity_id=None,
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "start_date": start_date.isoformat() if start_date else None,
+            "end_date": end_date.isoformat() if end_date else None,
+            "department_id": department_id,
+            "region_id": region_id,
+            "limit": limit,
+            "count": len(rows),
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return rows
+
+
+@router.get(
+    "/api/admin/daily-report-archives/{archive_id}/download",
+    dependencies=[Depends(require_admin_permission("reports"))],
+)
+def download_daily_report_archive(
+    archive_id: int,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin_permission("reports")),
+    db: Session = Depends(get_db),
+) -> Response:
+    archive = db.get(AdminDailyReportArchive, archive_id)
+    if archive is None:
+        raise HTTPException(status_code=404, detail="Daily report archive not found")
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=str(claims.get("username") or claims.get("sub") or "admin"),
+        action="ADMIN_DAILY_REPORT_ARCHIVE_DOWNLOADED",
+        success=True,
+        entity_type="admin_daily_report_archive",
+        entity_id=str(archive.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "report_date": archive.report_date.isoformat(),
+            "file_name": archive.file_name,
+            "file_size_bytes": archive.file_size_bytes,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return Response(
+        content=archive.file_data,
+        media_type=XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="{archive.file_name}"'},
+    )
+
+
 @router.post(
     "/api/admin/notifications/send",
     response_model=AdminManualNotificationSendResponse,
@@ -3265,6 +3543,7 @@ def send_manual_notification(
 
     actor_id = str(claims.get("username") or claims.get("sub") or "admin")
     employee_ids: list[int] | None = None
+    admin_user_ids: list[int] | None = None
     if payload.employee_ids is not None:
         normalized_ids = sorted({value for value in payload.employee_ids if isinstance(value, int) and value > 0})
         if not normalized_ids:
@@ -3275,17 +3554,51 @@ def send_manual_notification(
             )
         employee_ids = normalized_ids
 
-    summary = send_push_to_employees(
-        db,
-        employee_ids=employee_ids,
-        title=payload.title,
-        body=payload.message,
-        data={
-            "type": "ADMIN_MANUAL",
-            "title": payload.title,
-            "actor": actor_id,
-        },
-    )
+    if payload.admin_user_ids is not None:
+        normalized_admin_ids = sorted({value for value in payload.admin_user_ids if isinstance(value, int) and value > 0})
+        if not normalized_admin_ids:
+            raise ApiError(
+                status_code=422,
+                code="VALIDATION_ERROR",
+                message="At least one admin_user_id is required when admin_user_ids is provided.",
+            )
+        admin_user_ids = normalized_admin_ids
+
+    employee_summary = {"total_targets": 0, "sent": 0, "failed": 0, "deactivated": 0, "employee_ids": []}
+    admin_summary = {"total_targets": 0, "sent": 0, "failed": 0, "deactivated": 0, "admin_user_ids": [], "admin_usernames": []}
+
+    if payload.target in {"employees", "both"}:
+        employee_summary = send_push_to_employees(
+            db,
+            employee_ids=employee_ids,
+            title=payload.title,
+            body=payload.message,
+            data={
+                "type": "ADMIN_MANUAL",
+                "target": "employees",
+                "title": payload.title,
+                "actor": actor_id,
+            },
+        )
+    if payload.target in {"admins", "both"}:
+        admin_summary = send_push_to_admins(
+            db,
+            admin_user_ids=admin_user_ids,
+            title=payload.title,
+            body=payload.message,
+            data={
+                "type": "ADMIN_MANUAL",
+                "target": "admins",
+                "title": payload.title,
+                "actor": actor_id,
+                "url": "/admin-panel/notifications",
+            },
+        )
+
+    total_targets = int(employee_summary.get("total_targets", 0)) + int(admin_summary.get("total_targets", 0))
+    sent_total = int(employee_summary.get("sent", 0)) + int(admin_summary.get("sent", 0))
+    failed_total = int(employee_summary.get("failed", 0)) + int(admin_summary.get("failed", 0))
+    deactivated_total = int(employee_summary.get("deactivated", 0)) + int(admin_summary.get("deactivated", 0))
 
     log_audit(
         db,
@@ -3298,23 +3611,29 @@ def send_manual_notification(
         ip=_client_ip(request),
         user_agent=_user_agent(request),
         details={
+            "target": payload.target,
             "employee_ids": employee_ids,
+            "admin_user_ids": admin_user_ids,
             "title": payload.title,
-            "total_targets": summary.get("total_targets", 0),
-            "sent": summary.get("sent", 0),
-            "failed": summary.get("failed", 0),
-            "deactivated": summary.get("deactivated", 0),
+            "total_targets": total_targets,
+            "sent": sent_total,
+            "failed": failed_total,
+            "deactivated": deactivated_total,
+            "employee_summary": employee_summary,
+            "admin_summary": admin_summary,
         },
         request_id=getattr(request.state, "request_id", None),
     )
 
     return AdminManualNotificationSendResponse(
         ok=True,
-        total_targets=int(summary.get("total_targets", 0)),
-        sent=int(summary.get("sent", 0)),
-        failed=int(summary.get("failed", 0)),
-        deactivated=int(summary.get("deactivated", 0)),
-        employee_ids=list(summary.get("employee_ids", [])),
+        total_targets=total_targets,
+        sent=sent_total,
+        failed=failed_total,
+        deactivated=deactivated_total,
+        employee_ids=list(employee_summary.get("employee_ids", [])),
+        admin_user_ids=list(admin_summary.get("admin_user_ids", [])),
+        admin_usernames=list(admin_summary.get("admin_usernames", [])),
     )
 
 

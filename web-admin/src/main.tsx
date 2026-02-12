@@ -31,3 +31,16 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   </React.StrictMode>,
 )
 
+if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    const swUrl = `${import.meta.env.BASE_URL}admin-sw.js`
+    void navigator.serviceWorker
+      .register(swUrl, {
+        scope: import.meta.env.BASE_URL,
+      })
+      .catch(() => {
+        // best-effort registration for push notifications
+      })
+  })
+}
+
