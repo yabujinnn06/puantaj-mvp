@@ -26,6 +26,7 @@ import { getCurrentLocation } from '../utils/location'
 
 type TodayStatus = EmployeeStatusResponse['today_status']
 const PUSH_VAPID_KEY_STORAGE = 'pf_push_vapid_public_key'
+const PUSH_REFRESH_ONCE_STORAGE = 'pf_push_refresh_once'
 
 interface LastAction {
   codeValue?: string
@@ -86,6 +87,15 @@ export function HomePage() {
   const [pushRegistered, setPushRegistered] = useState(false)
   const [pushNeedsResubscribe, setPushNeedsResubscribe] = useState(false)
   const [pushNotice, setPushNotice] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+    if (window.sessionStorage.getItem(PUSH_REFRESH_ONCE_STORAGE) === '1') {
+      window.sessionStorage.removeItem(PUSH_REFRESH_ONCE_STORAGE)
+    }
+  }, [])
 
   useEffect(() => {
     if (!deviceFingerprint) {
@@ -322,6 +332,16 @@ export function HomePage() {
       setPushNeedsResubscribe(false)
       setPushNotice('Bildirimler bu cihazda etkinleştirildi.')
       await syncPushState(true)
+      if (typeof window !== 'undefined') {
+        const refreshedBefore = window.sessionStorage.getItem(PUSH_REFRESH_ONCE_STORAGE) === '1'
+        if (!refreshedBefore) {
+          window.sessionStorage.setItem(PUSH_REFRESH_ONCE_STORAGE, '1')
+          window.setTimeout(() => {
+            window.location.reload()
+          }, 250)
+          return
+        }
+      }
     } catch (error) {
       const parsed = parseApiError(error, 'Bildirim aboneliği oluşturulamadı.')
       setErrorMessage(parsed.message)
