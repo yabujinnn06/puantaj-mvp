@@ -73,6 +73,13 @@ def _user_agent(request: Request) -> str | None:
     return request.headers.get("user-agent")
 
 
+def _archived_device_fingerprint(source_fingerprint: str, device_id: int) -> str:
+    # Keep historical device row but free the original fingerprint for reassignment.
+    suffix = f"::archived:{device_id}:{int(datetime.now(timezone.utc).timestamp())}"
+    max_base_len = max(1, 255 - len(suffix))
+    return f"{source_fingerprint[:max_base_len]}{suffix}"
+
+
 @router.post("/attendance/event", response_model=AttendanceEventRead, status_code=status.HTTP_201_CREATED)
 def create_event(
     payload: AttendanceEventCreate,
@@ -332,11 +339,21 @@ def claim_device(
     existing_device = db.scalar(
         select(Device).where(Device.device_fingerprint == payload.device_fingerprint)
     )
+    transferred_from_employee_id: int | None = None
+    archived_device_id: int | None = None
     if existing_device is not None and existing_device.employee_id != invite.employee_id:
-        raise HTTPException(
-            status_code=409,
-            detail="Device fingerprint already belongs to another employee",
+        if existing_device.is_active:
+            raise HTTPException(
+                status_code=409,
+                detail="Device fingerprint already belongs to another employee",
+            )
+        transferred_from_employee_id = existing_device.employee_id
+        archived_device_id = existing_device.id
+        existing_device.device_fingerprint = _archived_device_fingerprint(
+            payload.device_fingerprint,
+            existing_device.id,
         )
+        existing_device = None
 
     device: Device
     deactivated_device_ids: list[int] = []
@@ -388,6 +405,8 @@ def claim_device(
         details={
             "device_fingerprint": payload.device_fingerprint,
             "deactivated_device_ids": deactivated_device_ids,
+            "transferred_from_employee_id": transferred_from_employee_id,
+            "archived_device_id": archived_device_id,
         },
         request_id=getattr(request.state, "request_id", None),
     )
