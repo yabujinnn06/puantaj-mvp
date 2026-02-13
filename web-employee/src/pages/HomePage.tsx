@@ -82,6 +82,7 @@ export function HomePage() {
 
   const [isPushBusy, setIsPushBusy] = useState(false)
   const [pushEnabled, setPushEnabled] = useState(false)
+  const [pushRuntimeSupported, setPushRuntimeSupported] = useState(true)
   const [pushRegistered, setPushRegistered] = useState(false)
   const [pushNeedsResubscribe, setPushNeedsResubscribe] = useState(false)
   const [pushNotice, setPushNotice] = useState<string | null>(null)
@@ -121,15 +122,18 @@ export function HomePage() {
   const syncPushState = useCallback(
     async (attemptBackendSync: boolean) => {
       if (!deviceFingerprint) {
+        setPushRuntimeSupported(true)
         setPushEnabled(false)
         setPushRegistered(false)
         return
       }
       if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+        setPushRuntimeSupported(false)
         setPushEnabled(false)
         setPushRegistered(false)
         return
       }
+      setPushRuntimeSupported(true)
 
       try {
         const config = await getEmployeePushConfig()
@@ -194,7 +198,8 @@ export function HomePage() {
   const openShiftCheckinTime = statusSnapshot?.last_checkin_time_utc ?? statusSnapshot?.last_in_ts ?? null
   const passkeyRegistered = Boolean(statusSnapshot?.passkey_registered)
 
-  const pushGateRequired = Boolean(deviceFingerprint) && !pushRegistered
+  const pushGateRequired =
+    Boolean(deviceFingerprint) && pushRuntimeSupported && pushEnabled && !pushRegistered
   const canQrScan = Boolean(deviceFingerprint) && !isSubmitting && !pushGateRequired
   const canCheckout = Boolean(deviceFingerprint) && !isSubmitting && hasOpenShift && !pushGateRequired
 
@@ -250,6 +255,10 @@ export function HomePage() {
     }
     if (!pushEnabled) {
       setErrorMessage('Bildirim servisi şu anda aktif değil. İK yöneticisiyle iletişime geçin.')
+      return
+    }
+    if (!pushRuntimeSupported) {
+      setErrorMessage('Bu tarayıcı bildirim altyapısını desteklemiyor. Linki Chrome/Safari ile açın.')
       return
     }
     if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
@@ -470,6 +479,9 @@ export function HomePage() {
   }, [lastAction])
 
   const pushGateMessage = useMemo(() => {
+    if (!pushRuntimeSupported) {
+      return 'Bu tarayıcı bildirim altyapısını desteklemiyor. Linki Chrome (Android) veya Safari (iOS) ile açın.'
+    }
     if (pushNeedsResubscribe) {
       return 'Bildirim anahtarı güncellendi. Devam etmek için “Bildirimleri Aç” ile aboneliği yenileyin.'
     }
@@ -480,7 +492,7 @@ export function HomePage() {
       return 'Tarayıcı bildirim iznini reddetti. Ayarlardan izin verip tekrar deneyin.'
     }
     return 'Bu portalde devam etmek için bildirimleri açmanız zorunludur.'
-  }, [pushEnabled, pushNeedsResubscribe])
+  }, [pushEnabled, pushNeedsResubscribe, pushRuntimeSupported])
 
   return (
     <main className="phone-shell">
@@ -515,8 +527,12 @@ export function HomePage() {
 
         <div className="status-row">
           <p className="small-title">Bildirim durumu</p>
-          <span className={`status-pill ${pushRegistered ? 'state-ok' : pushEnabled ? 'state-warn' : 'state-err'}`}>
-            {pushRegistered ? 'Açık' : pushEnabled ? 'Kapalı' : 'Servis Kapalı'}
+          <span
+            className={`status-pill ${
+              pushRegistered ? 'state-ok' : pushEnabled && pushRuntimeSupported ? 'state-warn' : 'state-err'
+            }`}
+          >
+            {pushRegistered ? 'Açık' : !pushRuntimeSupported ? 'Destek Yok' : pushEnabled ? 'Kapalı' : 'Servis Kapalı'}
           </span>
         </div>
 
