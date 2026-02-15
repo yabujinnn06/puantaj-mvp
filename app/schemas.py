@@ -705,11 +705,15 @@ class EmployeePushConfigResponse(BaseModel):
 class EmployeePushSubscribeRequest(BaseModel):
     device_fingerprint: str
     subscription: dict[str, Any]
+    send_test: bool = False
 
 
 class EmployeePushSubscribeResponse(BaseModel):
     ok: bool
     subscription_id: int
+    test_push_ok: bool | None = None
+    test_push_error: str | None = None
+    test_push_status_code: int | None = None
 
 
 class EmployeePushUnsubscribeRequest(BaseModel):

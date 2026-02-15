@@ -39,6 +39,7 @@ from app.schemas import (
 from app.services.push_notifications import (
     deactivate_device_push_subscription,
     get_push_public_config,
+    send_test_push_to_device_subscription,
     upsert_device_push_subscription,
 )
 from app.services.attendance import (
@@ -628,6 +629,22 @@ def employee_push_subscribe(
         subscription=payload.subscription,
         user_agent=_user_agent(request),
     )
+    test_push_ok: bool | None = None
+    test_push_error: str | None = None
+    test_push_status_code: int | None = None
+    if payload.send_test:
+        test_result = send_test_push_to_device_subscription(
+            db,
+            subscription=subscription,
+            data={"url": "/employee/", "origin": "employee_push_subscribe_test"},
+        )
+        test_push_ok = bool(test_result.get("ok"))
+        test_push_error = (
+            str(test_result["error"]).strip() if test_result.get("error") is not None else None
+        )
+        status_code = test_result.get("status_code")
+        test_push_status_code = int(status_code) if isinstance(status_code, int) else None
+
     employee_id = subscription.device.employee_id if subscription.device is not None else None
     request.state.employee_id = employee_id
     log_audit(
@@ -643,10 +660,20 @@ def employee_push_subscribe(
         details={
             "device_id": subscription.device_id,
             "endpoint": subscription.endpoint,
+            "send_test": payload.send_test,
+            "test_push_ok": test_push_ok,
+            "test_push_status_code": test_push_status_code,
+            "test_push_error": test_push_error,
         },
         request_id=getattr(request.state, "request_id", None),
     )
-    return EmployeePushSubscribeResponse(ok=True, subscription_id=subscription.id)
+    return EmployeePushSubscribeResponse(
+        ok=True,
+        subscription_id=subscription.id,
+        test_push_ok=test_push_ok,
+        test_push_error=test_push_error,
+        test_push_status_code=test_push_status_code,
+    )
 
 
 @router.post("/api/employee/push/unsubscribe", response_model=EmployeePushUnsubscribeResponse)

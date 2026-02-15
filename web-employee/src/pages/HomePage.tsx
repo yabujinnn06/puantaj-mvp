@@ -355,10 +355,21 @@ export function HomePage() {
         })
       }
 
-      await subscribeEmployeePush({
+      const subscribeResult = await subscribeEmployeePush({
         device_fingerprint: deviceFingerprint,
         subscription: subscription.toJSON() as Record<string, unknown>,
+        send_test: true,
       })
+      if (subscribeResult.test_push_ok === false) {
+        const statusPart =
+          typeof subscribeResult.test_push_status_code === 'number'
+            ? ` (status ${subscribeResult.test_push_status_code})`
+            : ''
+        const errorPart = subscribeResult.test_push_error?.trim()
+          ? ` ${subscribeResult.test_push_error.trim()}`
+          : ''
+        throw new Error(`Sunucu push testi basarisiz${statusPart}.${errorPart}`.trim())
+      }
 
       // Lokal doğrulama bildirimi (sunucu push testini beklemeden izin/abonelik kontrolü)
       await registration.showNotification('Puantaj Bildirimleri Açıldı', {

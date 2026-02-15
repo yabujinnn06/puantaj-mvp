@@ -92,11 +92,15 @@ export interface EmployeePushConfigResponse {
 export interface EmployeePushSubscribeRequest {
   device_fingerprint: string
   subscription: Record<string, unknown>
+  send_test?: boolean
 }
 
 export interface EmployeePushSubscribeResponse {
   ok: boolean
   subscription_id: number
+  test_push_ok?: boolean | null
+  test_push_error?: string | null
+  test_push_status_code?: number | null
 }
 
 export interface EmployeePushUnsubscribeRequest {
