@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect } from 'react'
+import { type ReactNode, useEffect, useMemo } from 'react'
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 
 import { BrandSignature } from './components/BrandSignature'
@@ -11,8 +11,17 @@ function EmployeeRouteGuard({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
   const location = useLocation()
   const hasDeviceFingerprint = Boolean(getStoredDeviceFingerprint())
+  const queryToken = useMemo(
+    () => (new URLSearchParams(location.search).get('token') ?? '').trim(),
+    [location.search],
+  )
 
   useEffect(() => {
+    if (queryToken) {
+      navigate(`/claim?token=${encodeURIComponent(queryToken)}`, { replace: true })
+      return
+    }
+
     if (hasDeviceFingerprint) {
       return
     }
@@ -27,7 +36,7 @@ function EmployeeRouteGuard({ children }: { children: ReactNode }) {
     return () => {
       window.clearTimeout(recoverTimer)
     }
-  }, [hasDeviceFingerprint, location.pathname, location.search, navigate])
+  }, [hasDeviceFingerprint, location.pathname, location.search, navigate, queryToken])
 
   if (hasDeviceFingerprint) {
     return <>{children}</>
