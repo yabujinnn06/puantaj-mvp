@@ -1,6 +1,6 @@
 """Add employee index metadata fields to daily report archives
 
-Revision ID: 0020_daily_archive_employee_index
+Revision ID: 0020_archive_emp_index
 Revises: 0019_admin_push_and_archives
 Create Date: 2026-02-15 20:10:00
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = "0020_daily_archive_employee_index"
+revision: str = "0020_archive_emp_index"
 down_revision: Union[str, None] = "0019_admin_push_and_archives"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
