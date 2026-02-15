@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models import (
     AttendanceEventSource,
@@ -127,6 +127,39 @@ class EmployeeDetailResponse(BaseModel):
     recent_activity: list[EmployeePortalActivityRead] = Field(default_factory=list)
 
 
+class DashboardEmployeeMonthMetricsRead(BaseModel):
+    year: int
+    month: int
+    worked_minutes: int
+    extra_work_minutes: int
+    overtime_minutes: int
+    incomplete_days: int
+
+
+class DashboardEmployeeLastEventRead(BaseModel):
+    event_id: int
+    event_type: AttendanceType
+    ts_utc: datetime
+    location_status: LocationStatus
+    device_id: int
+    lat: float | None = None
+    lon: float | None = None
+    accuracy_m: float | None = None
+
+
+class DashboardEmployeeSnapshotRead(BaseModel):
+    employee: EmployeeRead
+    today_status: Literal["NOT_STARTED", "IN_PROGRESS", "FINISHED"] = "NOT_STARTED"
+    total_devices: int = 0
+    active_devices: int = 0
+    devices: list[EmployeeDeviceDetailRead] = Field(default_factory=list)
+    current_month: DashboardEmployeeMonthMetricsRead
+    previous_month: DashboardEmployeeMonthMetricsRead
+    last_event: DashboardEmployeeLastEventRead | None = None
+    latest_location: EmployeeLiveLocationRead | None = None
+    generated_at_utc: datetime
+
+
 class EmployeeActiveUpdateRequest(BaseModel):
     is_active: bool
 
@@ -195,8 +228,20 @@ class EmployeeDeviceOverviewRead(BaseModel):
 
 
 class DeviceInviteCreateRequest(BaseModel):
-    employee_id: int
+    employee_id: int | None = Field(default=None, ge=1)
+    employee_name: str | None = Field(default=None, min_length=2, max_length=255)
     expires_in_minutes: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def _validate_target(self) -> "DeviceInviteCreateRequest":
+        normalized_name = (self.employee_name or "").strip()
+        if self.employee_id is None and not normalized_name:
+            raise ValueError("Either employee_id or employee_name is required.")
+        if self.employee_id is not None and normalized_name:
+            raise ValueError("Provide employee_id or employee_name, not both.")
+        if self.employee_name is not None:
+            self.employee_name = normalized_name
+        return self
 
 
 class DeviceInviteCreateResponse(BaseModel):
@@ -730,6 +775,7 @@ class AdminDailyReportArchiveRead(BaseModel):
     region_id: int | None = None
     file_name: str
     file_size_bytes: int
+    employee_count: int = 0
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     push_vapid_subject: str = "mailto:admin@example.com"
     notification_worker_enabled: bool = True
     notification_worker_interval_seconds: int = 60
+    daily_report_archive_retention_days: int = 180
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -87,6 +87,9 @@ from app.schemas import (
     DepartmentWeeklyRuleUpsert,
     EmployeeActiveUpdateRequest,
     EmployeeCreate,
+    DashboardEmployeeLastEventRead,
+    DashboardEmployeeMonthMetricsRead,
+    DashboardEmployeeSnapshotRead,
     EmployeeDetailResponse,
     EmployeeDeviceDetailRead,
     EmployeeShiftUpdateRequest,
@@ -136,6 +139,7 @@ from app.security import (
 )
 from app.settings import get_employee_portal_base_url, get_public_base_url, get_settings
 from app.services.attendance import (
+    _attendance_timezone,
     create_admin_manual_event,
     soft_delete_admin_attendance_event,
     update_admin_manual_event,
@@ -191,6 +195,60 @@ def _client_ip(request: Request) -> str | None:
 
 def _user_agent(request: Request) -> str | None:
     return request.headers.get("user-agent")
+
+
+def _normalize_query_text(value: str | None) -> str:
+    return " ".join((value or "").strip().split())
+
+
+def _resolve_employee_by_name(db: Session, employee_name: str) -> Employee:
+    normalized_name = _normalize_query_text(employee_name)
+    if not normalized_name:
+        raise ApiError(
+            status_code=422,
+            code="VALIDATION_ERROR",
+            message="employee_name cannot be empty.",
+        )
+
+    exact_matches = list(
+        db.scalars(
+            select(Employee)
+            .where(Employee.full_name.ilike(normalized_name))
+            .order_by(Employee.is_active.desc(), Employee.id.asc())
+            .limit(10)
+        ).all()
+    )
+    if len(exact_matches) == 1:
+        return exact_matches[0]
+    if len(exact_matches) > 1:
+        raise ApiError(
+            status_code=409,
+            code="EMPLOYEE_NAME_AMBIGUOUS",
+            message="Multiple employees matched this full name. Use employee_id.",
+        )
+
+    fuzzy_matches = list(
+        db.scalars(
+            select(Employee)
+            .where(Employee.full_name.ilike(f"%{normalized_name}%"))
+            .order_by(Employee.is_active.desc(), Employee.id.asc())
+            .limit(10)
+        ).all()
+    )
+    if len(fuzzy_matches) == 1:
+        return fuzzy_matches[0]
+    if len(fuzzy_matches) > 1:
+        raise ApiError(
+            status_code=409,
+            code="EMPLOYEE_NAME_AMBIGUOUS",
+            message="Multiple employees matched this name. Use employee_id.",
+        )
+
+    raise ApiError(
+        status_code=404,
+        code="EMPLOYEE_NOT_FOUND",
+        message="Employee not found for provided name.",
+    )
 
 
 def _resolve_region_id_for_department(
@@ -1615,7 +1673,12 @@ def create_device_invite(
     request: Request,
     db: Session = Depends(get_db),
 ) -> DeviceInviteCreateResponse:
-    employee = db.get(Employee, payload.employee_id)
+    selected_by = "employee_id"
+    if payload.employee_id is not None:
+        employee = db.get(Employee, payload.employee_id)
+    else:
+        selected_by = "employee_name"
+        employee = _resolve_employee_by_name(db, payload.employee_name or "")
     if employee is None:
         raise HTTPException(status_code=404, detail="Employee not found")
     if not employee.is_active:
@@ -1624,7 +1687,7 @@ def create_device_invite(
     now_utc = datetime.now(timezone.utc)
     token = secrets.token_urlsafe(32)
     invite = DeviceInvite(
-        employee_id=payload.employee_id,
+        employee_id=employee.id,
         token=token,
         expires_at=now_utc + timedelta(minutes=payload.expires_in_minutes),
         is_used=False,
@@ -1647,7 +1710,11 @@ def create_device_invite(
         entity_id=str(invite.id),
         ip=_client_ip(request),
         user_agent=_user_agent(request),
-        details={"employee_id": payload.employee_id},
+        details={
+            "employee_id": employee.id,
+            "employee_name": employee.full_name,
+            "selected_by": selected_by,
+        },
         request_id=getattr(request.state, "request_id", None),
     )
     return DeviceInviteCreateResponse(
@@ -1794,6 +1861,210 @@ def list_employee_device_overview(
         )
 
     return rows
+
+
+@router.get(
+    "/api/admin/dashboard/employee-snapshot",
+    response_model=DashboardEmployeeSnapshotRead,
+    dependencies=[Depends(require_admin_permission("reports"))],
+)
+def get_dashboard_employee_snapshot(
+    employee_id: int | None = Query(default=None, ge=1),
+    employee_name: str | None = Query(default=None, min_length=2, max_length=255),
+    db: Session = Depends(get_db),
+) -> DashboardEmployeeSnapshotRead:
+    if employee_id is None and not _normalize_query_text(employee_name):
+        raise ApiError(
+            status_code=422,
+            code="VALIDATION_ERROR",
+            message="employee_id or employee_name is required.",
+        )
+    if employee_id is not None and _normalize_query_text(employee_name):
+        raise ApiError(
+            status_code=422,
+            code="VALIDATION_ERROR",
+            message="Provide employee_id or employee_name, not both.",
+        )
+
+    selected_employee_id: int
+    if employee_id is not None:
+        selected_employee_id = employee_id
+    else:
+        selected_employee = _resolve_employee_by_name(db, employee_name or "")
+        selected_employee_id = selected_employee.id
+
+    employee = db.scalar(
+        select(Employee)
+        .options(
+            selectinload(Employee.region),
+            selectinload(Employee.department),
+            selectinload(Employee.devices),
+        )
+        .where(Employee.id == selected_employee_id)
+    )
+    if employee is None:
+        raise HTTPException(status_code=404, detail="Employee not found")
+
+    now_utc = datetime.now(timezone.utc)
+    tz = _attendance_timezone()
+    now_local = now_utc.astimezone(tz)
+    current_year = now_local.year
+    current_month = now_local.month
+    if current_month == 1:
+        previous_year = current_year - 1
+        previous_month = 12
+    else:
+        previous_year = current_year
+        previous_month = current_month - 1
+
+    current_report = calculate_employee_monthly(
+        db,
+        employee_id=employee.id,
+        year=current_year,
+        month=current_month,
+    )
+    previous_report = calculate_employee_monthly(
+        db,
+        employee_id=employee.id,
+        year=previous_year,
+        month=previous_month,
+    )
+
+    def _to_month_metrics(report: MonthlyEmployeeResponse) -> DashboardEmployeeMonthMetricsRead:
+        return DashboardEmployeeMonthMetricsRead(
+            year=report.year,
+            month=report.month,
+            worked_minutes=report.totals.worked_minutes,
+            extra_work_minutes=sum(item.extra_work_minutes for item in report.weekly_totals),
+            overtime_minutes=sum(item.overtime_minutes for item in report.weekly_totals),
+            incomplete_days=report.totals.incomplete_days,
+        )
+
+    today_local = now_local.date()
+    today_start_local = datetime.combine(today_local, time.min, tzinfo=tz)
+    today_end_local = today_start_local + timedelta(days=1)
+    today_start_utc = today_start_local.astimezone(timezone.utc)
+    today_end_utc = today_end_local.astimezone(timezone.utc)
+
+    today_events = list(
+        db.scalars(
+            select(AttendanceEvent)
+            .where(
+                AttendanceEvent.employee_id == employee.id,
+                AttendanceEvent.deleted_at.is_(None),
+                AttendanceEvent.ts_utc >= today_start_utc,
+                AttendanceEvent.ts_utc < today_end_utc,
+            )
+            .order_by(AttendanceEvent.ts_utc.asc(), AttendanceEvent.id.asc())
+        ).all()
+    )
+
+    today_last_in = None
+    today_last_out = None
+    for event in today_events:
+        if event.type == AttendanceType.IN:
+            today_last_in = event.ts_utc
+        elif event.type == AttendanceType.OUT:
+            today_last_out = event.ts_utc
+
+    if today_last_in is None and today_last_out is None:
+        today_status: Literal["NOT_STARTED", "IN_PROGRESS", "FINISHED"] = "NOT_STARTED"
+    elif today_last_in is not None and (today_last_out is None or today_last_out < today_last_in):
+        today_status = "IN_PROGRESS"
+    else:
+        today_status = "FINISHED"
+
+    last_event = db.scalar(
+        select(AttendanceEvent)
+        .where(
+            AttendanceEvent.employee_id == employee.id,
+            AttendanceEvent.deleted_at.is_(None),
+        )
+        .order_by(AttendanceEvent.ts_utc.desc(), AttendanceEvent.id.desc())
+        .limit(1)
+    )
+    latest_location_event = db.scalar(
+        select(AttendanceEvent)
+        .where(
+            AttendanceEvent.employee_id == employee.id,
+            AttendanceEvent.deleted_at.is_(None),
+            AttendanceEvent.lat.is_not(None),
+            AttendanceEvent.lon.is_not(None),
+        )
+        .order_by(AttendanceEvent.ts_utc.desc(), AttendanceEvent.id.desc())
+        .limit(1)
+    )
+
+    latest_location = (
+        EmployeeLiveLocationRead(
+            lat=latest_location_event.lat if latest_location_event and latest_location_event.lat is not None else 0.0,
+            lon=latest_location_event.lon if latest_location_event and latest_location_event.lon is not None else 0.0,
+            accuracy_m=latest_location_event.accuracy_m if latest_location_event else None,
+            ts_utc=latest_location_event.ts_utc if latest_location_event else now_utc,
+            location_status=latest_location_event.location_status if latest_location_event else LocationStatus.NO_LOCATION,
+            event_type=latest_location_event.type if latest_location_event else AttendanceType.IN,
+            device_id=latest_location_event.device_id if latest_location_event else 0,
+        )
+        if latest_location_event is not None
+        and latest_location_event.lat is not None
+        and latest_location_event.lon is not None
+        else None
+    )
+
+    sorted_devices = sorted(
+        list(employee.devices or []),
+        key=lambda item: (item.created_at, item.id),
+        reverse=True,
+    )
+    device_rows: list[EmployeeDeviceDetailRead] = []
+    for device in sorted_devices:
+        last_device_event = db.scalar(
+            select(AttendanceEvent)
+            .where(
+                AttendanceEvent.device_id == device.id,
+                AttendanceEvent.deleted_at.is_(None),
+            )
+            .order_by(AttendanceEvent.ts_utc.desc(), AttendanceEvent.id.desc())
+            .limit(1)
+        )
+        device_rows.append(
+            EmployeeDeviceDetailRead(
+                id=device.id,
+                device_fingerprint=device.device_fingerprint,
+                is_active=device.is_active,
+                created_at=device.created_at,
+                last_attendance_ts_utc=last_device_event.ts_utc if last_device_event is not None else None,
+                last_seen_ip=None,
+                last_seen_action=None,
+                last_seen_at_utc=None,
+            )
+        )
+
+    return DashboardEmployeeSnapshotRead(
+        employee=_to_employee_read(employee),
+        today_status=today_status,
+        total_devices=len(sorted_devices),
+        active_devices=sum(1 for item in sorted_devices if item.is_active),
+        devices=device_rows,
+        current_month=_to_month_metrics(current_report),
+        previous_month=_to_month_metrics(previous_report),
+        last_event=(
+            DashboardEmployeeLastEventRead(
+                event_id=last_event.id,
+                event_type=last_event.type,
+                ts_utc=last_event.ts_utc,
+                location_status=last_event.location_status,
+                device_id=last_event.device_id,
+                lat=last_event.lat,
+                lon=last_event.lon,
+                accuracy_m=last_event.accuracy_m,
+            )
+            if last_event is not None
+            else None
+        ),
+        latest_location=latest_location,
+        generated_at_utc=now_utc,
+    )
 
 
 @router.patch(
@@ -3449,6 +3720,8 @@ def list_daily_report_archives(
     end_date: date | None = Query(default=None),
     department_id: int | None = Query(default=None, ge=1),
     region_id: int | None = Query(default=None, ge=1),
+    employee_id: int | None = Query(default=None, ge=1),
+    employee_query: str | None = Query(default=None, min_length=1, max_length=255),
     limit: int = Query(default=60, ge=1, le=500),
     claims: dict[str, Any] = Depends(require_admin_permission("reports")),
     db: Session = Depends(get_db),
@@ -3456,7 +3729,7 @@ def list_daily_report_archives(
     stmt = select(AdminDailyReportArchive).order_by(
         AdminDailyReportArchive.report_date.desc(),
         AdminDailyReportArchive.id.desc(),
-    ).limit(limit)
+    )
     if start_date is not None:
         stmt = stmt.where(AdminDailyReportArchive.report_date >= start_date)
     if end_date is not None:
@@ -3465,6 +3738,35 @@ def list_daily_report_archives(
         stmt = stmt.where(AdminDailyReportArchive.department_id == department_id)
     if region_id is not None:
         stmt = stmt.where(AdminDailyReportArchive.region_id == region_id)
+    if employee_id is not None:
+        stmt = stmt.where(
+            AdminDailyReportArchive.employee_ids_index.is_not(None),
+            AdminDailyReportArchive.employee_ids_index.like(f"%,{employee_id},%"),
+        )
+    normalized_query = _normalize_query_text(employee_query).lower()
+    if normalized_query:
+        name_expr = AdminDailyReportArchive.employee_names_index
+        file_expr = AdminDailyReportArchive.file_name
+        if normalized_query.isdigit():
+            query_id = int(normalized_query)
+            stmt = stmt.where(
+                or_(
+                    and_(
+                        AdminDailyReportArchive.employee_ids_index.is_not(None),
+                        AdminDailyReportArchive.employee_ids_index.like(f"%,{query_id},%"),
+                    ),
+                    name_expr.ilike(f"%{normalized_query}%"),
+                    file_expr.ilike(f"%{normalized_query}%"),
+                )
+            )
+        else:
+            stmt = stmt.where(
+                or_(
+                    name_expr.ilike(f"%{normalized_query}%"),
+                    file_expr.ilike(f"%{normalized_query}%"),
+                )
+            )
+    stmt = stmt.limit(limit)
 
     rows = list(db.scalars(stmt).all())
     actor_id = str(claims.get("username") or claims.get("sub") or "admin")
@@ -3483,6 +3785,8 @@ def list_daily_report_archives(
             "end_date": end_date.isoformat() if end_date else None,
             "department_id": department_id,
             "region_id": region_id,
+            "employee_id": employee_id,
+            "employee_query": normalized_query or None,
             "limit": limit,
             "count": len(rows),
         },

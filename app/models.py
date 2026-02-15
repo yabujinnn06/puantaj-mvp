@@ -1018,6 +1018,9 @@ class AdminDailyReportArchive(Base):
     file_name: Mapped[str] = mapped_column(String(255), nullable=False)
     file_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     file_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    employee_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    employee_ids_index: Mapped[str | None] = mapped_column(Text, nullable=True)
+    employee_names_index: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

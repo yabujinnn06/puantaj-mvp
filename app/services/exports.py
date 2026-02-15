@@ -23,6 +23,7 @@ RangeSheetMode = Literal["consolidated", "employee_sheets", "department_sheets"]
 
 DEFAULT_DAILY_MINUTES_PLANNED = 540
 DEFAULT_BREAK_MINUTES = 60
+DEFAULT_WEEKLY_NORMAL_MINUTES = 45 * 60
 
 DAILY_HEADERS = [
     "Tarih",
@@ -69,6 +70,115 @@ def _minutes_to_hhmm(minutes: int) -> str:
     hours = value // 60
     mins = value % 60
     return f"{hours:02d}:{mins:02d}"
+
+
+def _week_start(day_value: date) -> date:
+    return day_value - timedelta(days=day_value.weekday())
+
+
+def _effective_contract_weekly_minutes(
+    contract_weekly_minutes: int | None,
+    weekly_normal_minutes: int,
+) -> int:
+    if contract_weekly_minutes is None:
+        return weekly_normal_minutes
+    return min(max(0, int(contract_weekly_minutes)), weekly_normal_minutes)
+
+
+def _rebalance_allocations(
+    entries: list[dict[str, int | date]],
+    *,
+    field_name: str,
+    target_total: int,
+) -> None:
+    target_value = max(0, int(target_total))
+    current_value = sum(int(entry[field_name]) for entry in entries)
+    delta = target_value - current_value
+    if delta == 0:
+        return
+
+    if delta > 0:
+        for entry in reversed(entries):
+            if int(entry["worked_minutes"]) > 0:
+                entry[field_name] = int(entry[field_name]) + delta
+                return
+        if entries:
+            entries[-1][field_name] = int(entries[-1][field_name]) + delta
+        return
+
+    remaining = abs(delta)
+    for entry in reversed(entries):
+        current = int(entry[field_name])
+        take = min(current, remaining)
+        if take > 0:
+            entry[field_name] = current - take
+            remaining -= take
+        if remaining <= 0:
+            break
+
+
+def _build_daily_legal_breakdown(
+    report: MonthlyEmployeeResponse,
+    *,
+    contract_weekly_minutes: int | None,
+) -> dict[date, tuple[int, int]]:
+    weekly_normal_minutes = (
+        max(0, int(report.labor_profile.weekly_normal_minutes_default))
+        if report.labor_profile is not None
+        else DEFAULT_WEEKLY_NORMAL_MINUTES
+    )
+    effective_contract = _effective_contract_weekly_minutes(
+        contract_weekly_minutes,
+        weekly_normal_minutes,
+    )
+
+    weekly_targets = {
+        item.week_start: (
+            max(0, int(item.extra_work_minutes)),
+            max(0, int(item.overtime_minutes)),
+        )
+        for item in report.weekly_totals
+    }
+
+    week_entries: dict[date, list[dict[str, int | date]]] = defaultdict(list)
+    for day in sorted(report.days, key=lambda item: item.date):
+        week_entries[_week_start(day.date)].append(
+            {
+                "date": day.date,
+                "worked_minutes": max(0, int(day.worked_minutes)),
+                "extra_work_minutes": 0,
+                "overtime_minutes": 0,
+            }
+        )
+
+    result: dict[date, tuple[int, int]] = {}
+    for week_start, entries in week_entries.items():
+        cumulative_minutes = 0
+        for entry in entries:
+            worked_minutes = max(0, int(entry["worked_minutes"]))
+            before = cumulative_minutes
+            after = before + worked_minutes
+
+            extra_work = max(0, min(after, weekly_normal_minutes) - max(before, effective_contract))
+            overtime = max(0, after - max(before, weekly_normal_minutes))
+            entry["extra_work_minutes"] = extra_work
+            entry["overtime_minutes"] = overtime
+            cumulative_minutes = after
+
+        target_extra, target_overtime = weekly_targets.get(
+            week_start,
+            (
+                sum(int(item["extra_work_minutes"]) for item in entries),
+                sum(int(item["overtime_minutes"]) for item in entries),
+            ),
+        )
+        _rebalance_allocations(entries, field_name="extra_work_minutes", target_total=target_extra)
+        _rebalance_allocations(entries, field_name="overtime_minutes", target_total=target_overtime)
+
+        for entry in entries:
+            result[entry["date"]] = (int(entry["extra_work_minutes"]), int(entry["overtime_minutes"]))
+
+    return result
 
 
 def _style_header(ws: Worksheet, row: int = 1) -> None:
@@ -236,13 +346,17 @@ def _append_summary_area(
     *,
     report: MonthlyEmployeeResponse,
     total_extra_work_minutes: int = 0,
+    total_legal_overtime_minutes: int | None = None,
 ) -> tuple[int, int]:
+    if total_legal_overtime_minutes is None:
+        total_legal_overtime_minutes = sum(item.overtime_minutes for item in report.weekly_totals)
+
     ws.append([])
     summary_start = ws.max_row + 1
     ws.append(["\u00d6zet", "De\u011fer"])
     ws.append(["Toplam Net S\u00fcre", _minutes_to_hhmm(report.totals.worked_minutes)])
     ws.append(["Toplam Fazla S\u00fcrelerle \u00c7al\u0131\u015fma", _minutes_to_hhmm(total_extra_work_minutes)])
-    ws.append(["Toplam Fazla Mesai", _minutes_to_hhmm(report.totals.overtime_minutes)])
+    ws.append(["Toplam Fazla Mesai", _minutes_to_hhmm(total_legal_overtime_minutes)])
     ws.append(["Eksik G\u00fcn", report.totals.incomplete_days])
     ws.append(["Y\u0131ll\u0131k Fazla Mesai Kullan\u0131m\u0131", _minutes_to_hhmm(report.annual_overtime_used_minutes)])
     _style_header(ws, summary_start)
@@ -268,6 +382,7 @@ def _append_employee_daily_sheet(
     employee_name: str,
     department_name: str | None,
     report: MonthlyEmployeeResponse,
+    contract_weekly_minutes: int | None = None,
 ) -> None:
     _merge_title(ws, 1, "PUANTAJ AYLIK RAPORU")
     ws.append(["\u00c7al\u0131\u015fan", employee_name])
@@ -282,6 +397,11 @@ def _append_employee_daily_sheet(
     _style_header(ws, header_row)
 
     total_extra_work_minutes = sum(week.extra_work_minutes for week in report.weekly_totals)
+    total_legal_overtime_minutes = sum(week.overtime_minutes for week in report.weekly_totals)
+    daily_legal_breakdown = _build_daily_legal_breakdown(
+        report,
+        contract_weekly_minutes=contract_weekly_minutes,
+    )
     data_start_row = header_row + 1
 
     for day in report.days:
@@ -289,6 +409,10 @@ def _append_employee_daily_sheet(
         check_out = _to_excel_datetime(day.check_out)
         gross_minutes = _gross_minutes(day.check_in, day.check_out)
         break_minutes = max(0, gross_minutes - day.worked_minutes)
+        extra_work_minutes, legal_overtime_minutes = daily_legal_breakdown.get(
+            day.date,
+            (0, max(0, int(day.overtime_minutes))),
+        )
         ws.append(
             [
                 day.date,
@@ -297,8 +421,8 @@ def _append_employee_daily_sheet(
                 _minutes_to_hhmm(gross_minutes),
                 _minutes_to_hhmm(break_minutes),
                 _minutes_to_hhmm(day.worked_minutes),
-                "00:00",
-                _minutes_to_hhmm(day.overtime_minutes),
+                _minutes_to_hhmm(extra_work_minutes),
+                _minutes_to_hhmm(legal_overtime_minutes),
                 day.status,
                 ", ".join(day.flags) if day.flags else "-",
             ]
@@ -312,7 +436,12 @@ def _append_employee_daily_sheet(
         data_end_row=data_end_row,
     )
 
-    _append_summary_area(ws, report=report, total_extra_work_minutes=total_extra_work_minutes)
+    _append_summary_area(
+        ws,
+        report=report,
+        total_extra_work_minutes=total_extra_work_minutes,
+        total_legal_overtime_minutes=total_legal_overtime_minutes,
+    )
 
     for row in ws.iter_rows(min_row=data_start_row, max_row=data_end_row):
         if isinstance(row[0].value, datetime) or isinstance(row[0].value, date):
@@ -346,6 +475,7 @@ def _build_employee_export(
         employee_name=employee.full_name,
         department_name=department_name,
         report=report,
+        contract_weekly_minutes=employee.contract_weekly_minutes,
     )
 
 
@@ -469,7 +599,7 @@ def _build_department_or_all_export(
                 "department_name": department_name,
                 "worked_minutes": report.totals.worked_minutes,
                 "extra_work_minutes": sum(week.extra_work_minutes for week in report.weekly_totals),
-                "overtime_minutes": report.totals.overtime_minutes,
+                "overtime_minutes": sum(week.overtime_minutes for week in report.weekly_totals),
                 "incomplete_days": report.totals.incomplete_days,
                 "annual_overtime_minutes": report.annual_overtime_used_minutes,
             }
@@ -483,6 +613,7 @@ def _build_department_or_all_export(
                 employee_name=employee.full_name,
                 department_name=department_name,
                 report=report,
+                contract_weekly_minutes=employee.contract_weekly_minutes,
             )
 
     summary_title = "Departman Ozeti" if department_id is not None else "Tum Calisanlar Ozeti"
@@ -558,6 +689,7 @@ def _build_date_range_export(
             "employee_name": "",
             "department_name": "-",
             "department_id": None,
+            "employee_ref": None,
             "shift_name": "-",
             "ins": [],
             "outs": [],
@@ -586,6 +718,7 @@ def _build_date_range_export(
         grouped[key]["employee_name"] = employee.full_name
         grouped[key]["department_name"] = department.name if department is not None else "-"
         grouped[key]["department_id"] = employee.department_id
+        grouped[key]["employee_ref"] = employee
         shift_name = (event.flags or {}).get("SHIFT_NAME")
         if isinstance(shift_name, str) and shift_name.strip():
             grouped[key]["shift_name"] = shift_name.strip()
@@ -644,13 +777,42 @@ def _build_date_range_export(
     _style_header(ws_daily, daily_header_row)
 
     work_rule_cache: dict[int | None, tuple[int, int]] = {}
+    monthly_report_cache: dict[tuple[int, int, int], MonthlyEmployeeResponse] = {}
+    monthly_day_lookup_cache: dict[tuple[int, int, int], dict[date, object]] = {}
+    monthly_legal_lookup_cache: dict[tuple[int, int, int], dict[date, tuple[int, int]]] = {}
+
+    def _resolve_monthly_context(
+        employee_row: Employee,
+        day_value: date,
+    ) -> tuple[dict[date, object], dict[date, tuple[int, int]]]:
+        cache_key = (employee_row.id, day_value.year, day_value.month)
+        if cache_key not in monthly_report_cache:
+            report = calculate_employee_monthly(
+                db,
+                employee_id=employee_row.id,
+                year=day_value.year,
+                month=day_value.month,
+            )
+            monthly_report_cache[cache_key] = report
+            monthly_day_lookup_cache[cache_key] = {item.date: item for item in report.days}
+            monthly_legal_lookup_cache[cache_key] = _build_daily_legal_breakdown(
+                report,
+                contract_weekly_minutes=employee_row.contract_weekly_minutes,
+            )
+        return monthly_day_lookup_cache[cache_key], monthly_legal_lookup_cache[cache_key]
+
     total_worked_minutes = 0
+    total_extra_work_minutes = 0
     total_overtime_minutes = 0
     for (employee_id_value, day_date), bucket in sorted(grouped.items(), key=lambda item: (item[0][1], item[0][0])):
         ins = bucket["ins"]
         outs = bucket["outs"]
         first_in = ins[0].ts_utc if ins else None
         last_out = outs[-1].ts_utc if outs else None
+        employee_ref = bucket.get("employee_ref")
+        if not isinstance(employee_ref, Employee):
+            continue
+
         planned_minutes, break_minutes = _work_rule_minutes(
             db,
             bucket["department_id"],
@@ -662,9 +824,19 @@ def _build_date_range_export(
             planned_minutes=planned_minutes,
             break_minutes=break_minutes,
         )
+        monthly_day_lookup, monthly_legal_lookup = _resolve_monthly_context(employee_ref, day_date)
+        monthly_day = monthly_day_lookup.get(day_date)
+        if monthly_day is not None:
+            day_status = str(getattr(monthly_day, "status", day_status))
+            worked_minutes = max(0, int(getattr(monthly_day, "worked_minutes", worked_minutes)))
+        extra_work_minutes, overtime_minutes = monthly_legal_lookup.get(
+            day_date,
+            (0, max(0, int(overtime_minutes))),
+        )
         gross_minutes = _gross_minutes(first_in, last_out)
         break_deducted = max(0, gross_minutes - worked_minutes)
         total_worked_minutes += worked_minutes
+        total_extra_work_minutes += extra_work_minutes
         total_overtime_minutes += overtime_minutes
         flag_names = sorted(bucket["flags"])
         if first_in is None:
@@ -685,7 +857,7 @@ def _build_date_range_export(
                 _minutes_to_hhmm(gross_minutes),
                 _minutes_to_hhmm(break_deducted),
                 _minutes_to_hhmm(worked_minutes),
-                "00:00",
+                _minutes_to_hhmm(extra_work_minutes),
                 _minutes_to_hhmm(overtime_minutes),
                 day_status,
                 ", ".join(flag_names) if flag_names else "-",
@@ -712,6 +884,7 @@ def _build_date_range_export(
     ws_daily.append([])
     summary_start = ws_daily.max_row + 1
     ws_daily.append(["Toplam \u00c7al\u0131\u015f\u0131lan Net S\u00fcre", _minutes_to_hhmm(total_worked_minutes)])
+    ws_daily.append(["Toplam Fazla S\u00fcrelerle \u00c7al\u0131\u015fma", _minutes_to_hhmm(total_extra_work_minutes)])
     ws_daily.append(["Toplam Fazla Mesai", _minutes_to_hhmm(total_overtime_minutes)])
     _style_metadata_rows(ws_daily, start_row=summary_start, end_row=ws_daily.max_row)
     _auto_width(ws_daily)

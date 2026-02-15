@@ -18,7 +18,6 @@ from app.models import (
     DepartmentSchedulePlan,
     DepartmentShift,
     DepartmentWeeklyRule,
-    Device,
     Employee,
     LaborProfile,
     Leave,
@@ -420,16 +419,16 @@ def _build_day_records(
 ) -> list[_InternalDayRecord]:
     start_dt, end_dt = _local_date_range_to_utc_bounds(start_date, end_date)
 
+    # Do not hide historical events when a device is later deactivated/replaced.
+    # Puantaj is an immutable attendance history; device active state is real-time auth concern.
     events = list(
         db.scalars(
             select(AttendanceEvent)
-            .join(Device, Device.id == AttendanceEvent.device_id)
             .where(
                 AttendanceEvent.employee_id == employee.id,
                 AttendanceEvent.ts_utc >= start_dt,
                 AttendanceEvent.ts_utc < end_dt,
                 AttendanceEvent.deleted_at.is_(None),
-                Device.is_active.is_(True),
             )
             .order_by(AttendanceEvent.ts_utc.asc(), AttendanceEvent.id.asc())
         ).all()

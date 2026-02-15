@@ -302,6 +302,7 @@ export interface AdminDailyReportArchive {
   region_id: number | null
   file_name: string
   file_size_bytes: number
+  employee_count: number
   created_at: string
 }
 
@@ -362,6 +363,39 @@ export interface LeaveRecord {
 export interface DeviceInviteCreateResponse {
   token: string
   invite_url: string
+}
+
+export interface DashboardEmployeeMonthMetrics {
+  year: number
+  month: number
+  worked_minutes: number
+  extra_work_minutes: number
+  overtime_minutes: number
+  incomplete_days: number
+}
+
+export interface DashboardEmployeeLastEvent {
+  event_id: number
+  event_type: AttendanceType
+  ts_utc: string
+  location_status: LocationStatus
+  device_id: number
+  lat: number | null
+  lon: number | null
+  accuracy_m: number | null
+}
+
+export interface DashboardEmployeeSnapshot {
+  employee: Employee
+  today_status: 'NOT_STARTED' | 'IN_PROGRESS' | 'FINISHED'
+  total_devices: number
+  active_devices: number
+  devices: EmployeeDeviceDetail[]
+  current_month: DashboardEmployeeMonthMetrics
+  previous_month: DashboardEmployeeMonthMetrics
+  last_event: DashboardEmployeeLastEvent | null
+  latest_location: EmployeeLiveLocation | null
+  generated_at_utc: string
 }
 
 export interface MonthlyEmployeeDay {

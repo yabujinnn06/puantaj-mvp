@@ -48,3 +48,5 @@ services:
         sync: false
       - key: PASSKEY_CHALLENGE_MINUTES
         value: "10"
+      - key: DAILY_REPORT_ARCHIVE_RETENTION_DAYS
+        value: "180"

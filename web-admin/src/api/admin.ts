@@ -19,6 +19,7 @@ import type {
   DepartmentShift,
   DepartmentSummaryItem,
   DepartmentWeeklyRule,
+  DashboardEmployeeSnapshot,
   Device,
   EmployeeDeviceOverview,
   DeviceInviteCreateResponse,
@@ -265,6 +266,8 @@ export interface DailyReportArchivesParams {
   end_date?: string
   department_id?: number
   region_id?: number
+  employee_id?: number
+  employee_query?: string
   limit?: number
 }
 
@@ -288,8 +291,14 @@ export interface LeavesParams {
 }
 
 export interface DeviceInvitePayload {
-  employee_id: number
+  employee_id?: number
+  employee_name?: string
   expires_in_minutes: number
+}
+
+export interface DashboardEmployeeSnapshotParams {
+  employee_id?: number
+  employee_name?: string
 }
 
 export interface MonthlyEmployeeParams {
@@ -847,6 +856,15 @@ export async function getEmployeeDeviceOverview(
   params: EmployeeDeviceOverviewParams = {},
 ): Promise<EmployeeDeviceOverview[]> {
   const response = await apiClient.get<EmployeeDeviceOverview[]>('/api/admin/employee-device-overview', {
+    params,
+  })
+  return response.data
+}
+
+export async function getDashboardEmployeeSnapshot(
+  params: DashboardEmployeeSnapshotParams,
+): Promise<DashboardEmployeeSnapshot> {
+  const response = await apiClient.get<DashboardEmployeeSnapshot>('/api/admin/dashboard/employee-snapshot', {
     params,
   })
   return response.data

@@ -8,7 +8,7 @@ import smtplib
 from email.message import EmailMessage
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.audit import log_audit
@@ -19,6 +19,7 @@ from app.models import (
     AuditActorType,
     AttendanceEvent,
     AttendanceType,
+    Department,
     DepartmentShift,
     Employee,
     ManualDayOverride,
@@ -29,7 +30,7 @@ from app.services.exports import build_puantaj_xlsx_bytes
 from app.services.attendance import _attendance_timezone, _local_day_bounds_utc, _normalize_ts
 from app.services.push_notifications import send_push_to_admins, send_push_to_employees
 from app.services.schedule_plans import resolve_effective_plan_for_employee_day
-from app.settings import get_public_base_url
+from app.settings import get_public_base_url, get_settings
 
 DEFAULT_DAILY_MINUTES_PLANNED = 540
 DEFAULT_GRACE_MINUTES = 5
@@ -625,6 +626,82 @@ def schedule_missed_checkout_notifications(
     return created_jobs
 
 
+def _normalize_archive_employee_name(value: str) -> str:
+    return " ".join((value or "").strip().lower().split())
+
+
+def _build_archive_employee_index(
+    session: Session,
+    *,
+    report_date: date,
+    department_id: int | None,
+    region_id: int | None,
+) -> tuple[int, str | None, str | None]:
+    tz = _attendance_timezone()
+    start_local = datetime.combine(report_date, time.min, tzinfo=tz)
+    end_local = start_local + timedelta(days=1)
+    start_utc = start_local.astimezone(timezone.utc)
+    end_utc = end_local.astimezone(timezone.utc)
+
+    stmt = (
+        select(Employee.id, Employee.full_name)
+        .join(AttendanceEvent, AttendanceEvent.employee_id == Employee.id)
+        .outerjoin(Department, Department.id == Employee.department_id)
+        .where(
+            AttendanceEvent.deleted_at.is_(None),
+            AttendanceEvent.ts_utc >= start_utc,
+            AttendanceEvent.ts_utc < end_utc,
+        )
+    )
+    if department_id is not None:
+        stmt = stmt.where(Employee.department_id == department_id)
+    if region_id is not None:
+        stmt = stmt.where(
+            or_(
+                Employee.region_id == region_id,
+                and_(Employee.region_id.is_(None), Department.region_id == region_id),
+            )
+        )
+
+    unique_ids: set[int] = set()
+    unique_names: set[str] = set()
+    for employee_id_value, full_name in session.execute(stmt).all():
+        if isinstance(employee_id_value, int) and employee_id_value > 0:
+            unique_ids.add(employee_id_value)
+        normalized_name = _normalize_archive_employee_name(str(full_name or ""))
+        if normalized_name:
+            unique_names.add(normalized_name)
+
+    sorted_ids = sorted(unique_ids)
+    sorted_names = sorted(unique_names)
+    ids_index = f",{','.join(str(item) for item in sorted_ids)}," if sorted_ids else None
+    names_index = "|".join(sorted_names) if sorted_names else None
+    return len(sorted_ids), ids_index, names_index
+
+
+def _cleanup_expired_daily_report_archives(
+    session: Session,
+    *,
+    local_now_date: date,
+) -> int:
+    retention_days = max(0, int(get_settings().daily_report_archive_retention_days))
+    if retention_days <= 0:
+        return 0
+
+    cutoff_date = local_now_date - timedelta(days=retention_days)
+    stale_archives = list(
+        session.scalars(
+            select(AdminDailyReportArchive).where(AdminDailyReportArchive.report_date < cutoff_date)
+        ).all()
+    )
+    if not stale_archives:
+        return 0
+
+    for archive in stale_archives:
+        session.delete(archive)
+    return len(stale_archives)
+
+
 def schedule_daily_admin_report_archive_notifications(
     now_utc: datetime,
     db: Session | None = None,
@@ -638,6 +715,10 @@ def schedule_daily_admin_report_archive_notifications(
     tz = _attendance_timezone()
     local_now = reference_utc.astimezone(tz)
     report_date = local_now.date() - timedelta(days=1)
+    deleted_archive_count = _cleanup_expired_daily_report_archives(
+        session,
+        local_now_date=local_now.date(),
+    )
 
     existing_archive = session.scalar(
         select(AdminDailyReportArchive).where(
@@ -647,6 +728,21 @@ def schedule_daily_admin_report_archive_notifications(
         )
     )
     if existing_archive is not None:
+        if deleted_archive_count > 0:
+            session.commit()
+            log_audit(
+                session,
+                actor_type=AuditActorType.SYSTEM,
+                actor_id="notification_scheduler",
+                action="ADMIN_DAILY_REPORT_ARCHIVE_CLEANUP",
+                success=True,
+                entity_type="admin_daily_report_archive",
+                entity_id=None,
+                details={
+                    "deleted_count": deleted_archive_count,
+                    "retention_days": max(0, int(get_settings().daily_report_archive_retention_days)),
+                },
+            )
         return []
 
     archive_bytes = build_puantaj_xlsx_bytes(
@@ -654,6 +750,12 @@ def schedule_daily_admin_report_archive_notifications(
         mode="date_range",
         start_date=report_date,
         end_date=report_date,
+    )
+    employee_count, employee_ids_index, employee_names_index = _build_archive_employee_index(
+        session,
+        report_date=report_date,
+        department_id=None,
+        region_id=None,
     )
     file_name = f"puantaj-gunluk-{report_date.isoformat()}.xlsx"
     archive = AdminDailyReportArchive(
@@ -663,6 +765,9 @@ def schedule_daily_admin_report_archive_notifications(
         file_name=file_name,
         file_data=archive_bytes,
         file_size_bytes=len(archive_bytes),
+        employee_count=employee_count,
+        employee_ids_index=employee_ids_index,
+        employee_names_index=employee_names_index,
     )
     session.add(archive)
     session.flush()
@@ -703,6 +808,7 @@ def schedule_daily_admin_report_archive_notifications(
             "report_date": report_date.isoformat(),
             "file_name": file_name,
             "file_size_bytes": len(archive_bytes),
+            "employee_count": employee_count,
             "notification_job_id": job.id,
         },
     )
@@ -722,6 +828,20 @@ def schedule_daily_admin_report_archive_notifications(
             "archive_id": archive.id,
         },
     )
+    if deleted_archive_count > 0:
+        log_audit(
+            session,
+            actor_type=AuditActorType.SYSTEM,
+            actor_id="notification_scheduler",
+            action="ADMIN_DAILY_REPORT_ARCHIVE_CLEANUP",
+            success=True,
+            entity_type="admin_daily_report_archive",
+            entity_id=None,
+            details={
+                "deleted_count": deleted_archive_count,
+                "retention_days": max(0, int(get_settings().daily_report_archive_retention_days)),
+            },
+        )
 
     return [job]
 
