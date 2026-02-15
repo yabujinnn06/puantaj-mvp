@@ -64,6 +64,25 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return outputArray
 }
 
+function isIosFamilyDevice(): boolean {
+  if (typeof navigator === 'undefined') {
+    return false
+  }
+  const ua = navigator.userAgent || ''
+  if (/iPad|iPhone|iPod/i.test(ua)) {
+    return true
+  }
+  return navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1
+}
+
+function isStandaloneDisplayMode(): boolean {
+  if (typeof window === 'undefined') {
+    return false
+  }
+  const nav = window.navigator as Navigator & { standalone?: boolean }
+  return Boolean(window.matchMedia('(display-mode: standalone)').matches || nav.standalone)
+}
+
 export function HomePage() {
   const [deviceFingerprint] = useState(() => getStoredDeviceFingerprint())
   const [scannerActive, setScannerActive] = useState(false)
@@ -86,6 +105,7 @@ export function HomePage() {
   const [pushRuntimeSupported, setPushRuntimeSupported] = useState(true)
   const [pushRegistered, setPushRegistered] = useState(false)
   const [pushNeedsResubscribe, setPushNeedsResubscribe] = useState(false)
+  const [pushRequiresStandalone, setPushRequiresStandalone] = useState(false)
   const [pushNotice, setPushNotice] = useState<string | null>(null)
 
   useEffect(() => {
@@ -135,12 +155,16 @@ export function HomePage() {
         setPushRuntimeSupported(true)
         setPushEnabled(false)
         setPushRegistered(false)
+        setPushNeedsResubscribe(false)
+        setPushRequiresStandalone(false)
         return
       }
       if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
         setPushRuntimeSupported(false)
         setPushEnabled(false)
         setPushRegistered(false)
+        setPushNeedsResubscribe(false)
+        setPushRequiresStandalone(false)
         return
       }
       setPushRuntimeSupported(true)
@@ -150,6 +174,15 @@ export function HomePage() {
         const enabled = Boolean(config.enabled && config.vapid_public_key)
         setPushEnabled(enabled)
         if (!enabled) {
+          setPushRegistered(false)
+          setPushNeedsResubscribe(false)
+          setPushRequiresStandalone(false)
+          return
+        }
+
+        const requiresStandalone = isIosFamilyDevice() && !isStandaloneDisplayMode()
+        setPushRequiresStandalone(requiresStandalone)
+        if (requiresStandalone) {
           setPushRegistered(false)
           setPushNeedsResubscribe(false)
           return
@@ -186,6 +219,7 @@ export function HomePage() {
         setPushEnabled(false)
         setPushRegistered(false)
         setPushNeedsResubscribe(false)
+        setPushRequiresStandalone(false)
       }
     },
     [deviceFingerprint],
@@ -263,6 +297,11 @@ export function HomePage() {
       setErrorMessage('Cihaz bağlı değil. Davet linkine tıklayın.')
       return
     }
+    if (pushRequiresStandalone) {
+      setErrorMessage('iPhone/iPad icin bildirim sadece Ana Ekran uygulamasinda calisir. Portali anasayfa ikonundan acin.')
+      return
+    }
+
     if (!pushEnabled) {
       setErrorMessage('Bildirim servisi şu anda aktif değil. İK yöneticisiyle iletişime geçin.')
       return
@@ -499,6 +538,9 @@ export function HomePage() {
   }, [lastAction])
 
   const pushGateMessage = useMemo(() => {
+    if (pushRequiresStandalone) {
+      return 'iPhone/iPad bildirimleri Safari sekmesinde calismaz. Portali Ana Ekran uygulamasindan acip Bildirimleri Ac adimini tamamlayin.'
+    }
     if (!pushRuntimeSupported) {
       return 'Bu tarayıcı bildirim altyapısını desteklemiyor. Linki Chrome (Android) veya Safari (iOS) ile açın.'
     }
@@ -512,7 +554,7 @@ export function HomePage() {
       return 'Tarayıcı bildirim iznini reddetti. Ayarlardan izin verip tekrar deneyin.'
     }
     return 'Bu portalde devam etmek için bildirimleri açmanız zorunludur.'
-  }, [pushEnabled, pushNeedsResubscribe, pushRuntimeSupported])
+  }, [pushEnabled, pushNeedsResubscribe, pushRequiresStandalone, pushRuntimeSupported])
 
   return (
     <main className="phone-shell">
@@ -603,6 +645,10 @@ export function HomePage() {
             <p>Cihaz bağlı değil. Davet linkine tıklayın.</p>
             <Link className="inline-link" to="/claim">
               /claim ekranına git
+            </Link>
+            <p className="muted small-text mt-2">Daha once kurulum yaptiysan passkey ile kurtarma kullan.</p>
+            <Link className="inline-link" to="/recover">
+              /recover ekranına git
             </Link>
           </div>
         )}
@@ -817,3 +863,4 @@ export function HomePage() {
     </main>
   )
 }
+

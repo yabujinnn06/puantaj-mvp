@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -58,6 +58,8 @@ from app.services.passkeys import (
 )
 
 router = APIRouter(tags=["attendance"])
+DEVICE_FINGERPRINT_COOKIE = "pf_device_fingerprint"
+DEVICE_FINGERPRINT_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365 * 3
 
 
 def _client_ip(request: Request) -> str | None:
@@ -71,6 +73,33 @@ def _client_ip(request: Request) -> str | None:
 
 def _user_agent(request: Request) -> str | None:
     return request.headers.get("user-agent")
+
+
+def _is_secure_request(request: Request) -> bool:
+    forwarded_proto = (request.headers.get("x-forwarded-proto") or "").strip().lower()
+    if forwarded_proto:
+        return forwarded_proto.split(",")[0].strip() == "https"
+    return request.url.scheme == "https"
+
+
+def _set_device_fingerprint_cookie(
+    *,
+    response: Response,
+    request: Request,
+    device_fingerprint: str,
+) -> None:
+    normalized = device_fingerprint.strip()
+    if not normalized:
+        return
+    response.set_cookie(
+        key=DEVICE_FINGERPRINT_COOKIE,
+        value=normalized,
+        max_age=DEVICE_FINGERPRINT_COOKIE_MAX_AGE_SECONDS,
+        path="/",
+        samesite="lax",
+        secure=_is_secure_request(request),
+        httponly=False,
+    )
 
 
 def _archived_device_fingerprint(source_fingerprint: str, device_id: int) -> str:
@@ -309,6 +338,7 @@ def employee_qr_scan(
 @router.post("/api/device/claim", response_model=DeviceClaimResponse, status_code=status.HTTP_201_CREATED)
 def claim_device(
     payload: DeviceClaimRequest,
+    response: Response,
     request: Request,
     db: Session = Depends(get_db),
 ) -> DeviceClaimResponse:
@@ -409,6 +439,11 @@ def claim_device(
             "archived_device_id": archived_device_id,
         },
         request_id=getattr(request.state, "request_id", None),
+    )
+    _set_device_fingerprint_cookie(
+        response=response,
+        request=request,
+        device_fingerprint=payload.device_fingerprint,
     )
     return DeviceClaimResponse(ok=True, employee_id=invite.employee_id, device_id=device.id)
 
@@ -522,6 +557,7 @@ def device_passkey_recover_options(
 )
 def device_passkey_recover_verify(
     payload: PasskeyRecoverVerifyRequest,
+    response: Response,
     request: Request,
     db: Session = Depends(get_db),
 ) -> PasskeyRecoverVerifyResponse:
@@ -545,6 +581,11 @@ def device_passkey_recover_verify(
         user_agent=_user_agent(request),
         details={"device_fingerprint": device.device_fingerprint},
         request_id=getattr(request.state, "request_id", None),
+    )
+    _set_device_fingerprint_cookie(
+        response=response,
+        request=request,
+        device_fingerprint=device.device_fingerprint,
     )
     return PasskeyRecoverVerifyResponse(
         ok=True,

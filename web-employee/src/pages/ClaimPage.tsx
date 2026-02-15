@@ -55,6 +55,7 @@ export function ClaimPage() {
         device_fingerprint: fingerprint,
       })
 
+      setStoredDeviceFingerprint(fingerprint)
       setDeviceBinding({
         employeeId: result.employee_id,
         deviceId: result.device_id,
