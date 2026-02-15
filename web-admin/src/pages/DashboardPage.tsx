@@ -93,6 +93,17 @@ export function DashboardPage() {
     inviteMutation.mutate(parsed.data)
   }
 
+  const departments = departmentsQuery.data ?? []
+  const employees = employeesQuery.data ?? []
+  const devices = devicesQuery.data ?? []
+  const leaves = leavesQuery.data ?? []
+  const events = eventsQuery.data ?? []
+
+  const selectedEmployee = useMemo(
+    () => employees.find((item) => String(item.id) === employeeTargetId) ?? null,
+    [employees, employeeTargetId],
+  )
+
   if (
     departmentsQuery.isLoading ||
     employeesQuery.isLoading ||
@@ -112,17 +123,6 @@ export function DashboardPage() {
   ) {
     return <ErrorBlock message="Dashboard verileri alinamadi." />
   }
-
-  const departments = departmentsQuery.data ?? []
-  const employees = employeesQuery.data ?? []
-  const devices = devicesQuery.data ?? []
-  const leaves = leavesQuery.data ?? []
-  const events = eventsQuery.data ?? []
-
-  const selectedEmployee = useMemo(
-    () => employees.find((item) => String(item.id) === employeeTargetId) ?? null,
-    [employees, employeeTargetId],
-  )
 
   return (
     <div className="space-y-6">
