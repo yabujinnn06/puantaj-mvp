@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 
 import { UI_BRANDING } from '../config/ui'
@@ -46,6 +47,10 @@ const pageTitles: Record<string, string> = {
 export function AppLayout() {
   const location = useLocation()
   const { user, logout, hasPermission } = useAuth()
+  const contentRef = useRef<HTMLDivElement | null>(null)
+  const mobileNavPendingRef = useRef(false)
+  const mobileLoaderTimerRef = useRef<number | null>(null)
+  const [showMobileNavLoader, setShowMobileNavLoader] = useState(false)
 
   const visibleNavItems = navItems.filter((item) => !item.permission || hasPermission(item.permission))
 
@@ -53,8 +58,77 @@ export function AppLayout() {
     pageTitles[location.pathname] ??
     (location.pathname.startsWith('/employees/') ? 'Calisan Detayi' : 'Admin Panel')
 
+  const isMobileViewport = () => typeof window !== 'undefined' && window.innerWidth < 1024
+
+  const clearMobileLoaderTimer = () => {
+    if (mobileLoaderTimerRef.current === null) {
+      return
+    }
+    window.clearTimeout(mobileLoaderTimerRef.current)
+    mobileLoaderTimerRef.current = null
+  }
+
+  const revealContentOnMobile = () => {
+    contentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    clearMobileLoaderTimer()
+    mobileLoaderTimerRef.current = window.setTimeout(() => {
+      setShowMobileNavLoader(false)
+    }, 950)
+  }
+
+  const handleMobileNavClick = (targetPath: string) => {
+    if (!isMobileViewport()) {
+      return
+    }
+
+    setShowMobileNavLoader(true)
+
+    if (location.pathname === targetPath) {
+      window.requestAnimationFrame(() => {
+        revealContentOnMobile()
+      })
+      return
+    }
+
+    mobileNavPendingRef.current = true
+  }
+
+  useEffect(() => {
+    if (!isMobileViewport()) {
+      return
+    }
+    window.scrollTo({ top: 0 })
+  }, [])
+
+  useEffect(() => {
+    if (!mobileNavPendingRef.current) {
+      return
+    }
+    mobileNavPendingRef.current = false
+    window.requestAnimationFrame(() => {
+      revealContentOnMobile()
+    })
+  }, [location.pathname])
+
+  useEffect(() => {
+    return () => {
+      clearMobileLoaderTimer()
+    }
+  }, [])
+
   return (
     <div className="admin-shell min-h-screen bg-slate-100 lg:grid lg:grid-cols-[260px_1fr]">
+      {showMobileNavLoader ? (
+        <div className="mobile-nav-loader lg:hidden" role="status" aria-live="polite" aria-label="Sayfa gecisi">
+          <div className="mobile-nav-loader-logo" aria-hidden="true">
+            <div className="mobile-nav-loader-ring" />
+            <div className="mobile-nav-loader-orbit">YABUJIN</div>
+            <div className="mobile-nav-loader-core">YABUJIN</div>
+          </div>
+          <p className="mobile-nav-loader-text">Icerige geciliyor...</p>
+        </div>
+      ) : null}
+
       <aside className="admin-sidebar flex flex-col px-4 py-6 text-slate-100 shadow-panel">
         <h1 className="px-2 text-xl font-bold tracking-tight">Puantaj Admin</h1>
         <p className="px-2 pt-1 text-xs text-slate-400">FastAPI Yonetim Paneli</p>
@@ -63,6 +137,7 @@ export function AppLayout() {
             <NavLink
               key={item.to}
               to={item.to}
+              onClick={() => handleMobileNavClick(item.to)}
               className={({ isActive }) =>
                 `rounded-lg px-3 py-2 text-sm font-medium transition ${
                   isActive
@@ -83,7 +158,7 @@ export function AppLayout() {
         ) : null}
       </aside>
 
-      <div className="flex min-h-screen flex-col">
+      <div ref={contentRef} className="flex min-h-screen flex-col">
         <header className="admin-topbar border-b border-slate-200 bg-white/90 px-4 py-4 backdrop-blur sm:px-6">
           <div className="flex items-center justify-between gap-3">
             <div>
