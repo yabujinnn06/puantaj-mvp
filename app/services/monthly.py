@@ -36,7 +36,7 @@ from app.schemas import (
     MonthlyEmployeeWeek,
 )
 from app.settings import get_settings
-from app.services.monthly_calc import calculate_day_metrics, calculate_weekly_legal_totals
+from app.services.monthly_calc import calculate_day_metrics
 from app.services.schedule_plans import list_department_plans_in_range, resolve_best_plan_for_day
 
 DEFAULT_DAILY_MINUTES_PLANNED = 540
@@ -88,51 +88,6 @@ class _InternalWeekSummary:
     flags: list[str]
 
 
-def _week_start_for_day(day_value: date) -> date:
-    return day_value - timedelta(days=day_value.weekday())
-
-
-def _effective_contract_weekly_minutes(
-    contract_weekly_minutes: int | None,
-    weekly_normal_minutes: int,
-) -> int:
-    if contract_weekly_minutes is None:
-        return weekly_normal_minutes
-    return min(max(0, int(contract_weekly_minutes)), weekly_normal_minutes)
-
-
-def _rebalance_legal_allocations(
-    entries: list[dict[str, int | date]],
-    *,
-    field_name: str,
-    target_total: int,
-) -> None:
-    target_value = max(0, int(target_total))
-    current_value = sum(int(entry[field_name]) for entry in entries)
-    delta = target_value - current_value
-    if delta == 0:
-        return
-
-    if delta > 0:
-        for entry in reversed(entries):
-            if int(entry["worked_minutes"]) > 0:
-                entry[field_name] = int(entry[field_name]) + delta
-                return
-        if entries:
-            entries[-1][field_name] = int(entries[-1][field_name]) + delta
-        return
-
-    remaining = abs(delta)
-    for entry in reversed(entries):
-        current = int(entry[field_name])
-        take = min(current, remaining)
-        if take > 0:
-            entry[field_name] = current - take
-            remaining -= take
-        if remaining <= 0:
-            break
-
-
 def _build_daily_legal_breakdown(
     day_records: list[_InternalDayRecord],
     *,
@@ -140,56 +95,11 @@ def _build_daily_legal_breakdown(
     weekly_normal_minutes: int,
     weekly_summaries: list[_InternalWeekSummary],
 ) -> dict[date, tuple[int, int]]:
-    effective_contract = _effective_contract_weekly_minutes(
-        contract_weekly_minutes,
-        weekly_normal_minutes,
-    )
-    weekly_targets = {
-        item.week_start: (
-            max(0, int(item.extra_work_minutes)),
-            max(0, int(item.overtime_minutes)),
-        )
-        for item in weekly_summaries
-    }
-
-    week_entries: dict[date, list[dict[str, int | date]]] = {}
-    for record in sorted(day_records, key=lambda item: item.day_date):
-        week_start = _week_start_for_day(record.day_date)
-        week_entries.setdefault(week_start, []).append(
-            {
-                "date": record.day_date,
-                "worked_minutes": max(0, int(record.worked_minutes)),
-                "extra_work_minutes": 0,
-                "overtime_minutes": 0,
-            }
-        )
-
+    _ = (contract_weekly_minutes, weekly_normal_minutes, weekly_summaries)
     result: dict[date, tuple[int, int]] = {}
-    for week_start, entries in week_entries.items():
-        cumulative_minutes = 0
-        for entry in entries:
-            worked_minutes = max(0, int(entry["worked_minutes"]))
-            before = cumulative_minutes
-            after = before + worked_minutes
-            extra_work = max(0, min(after, weekly_normal_minutes) - max(before, effective_contract))
-            overtime = max(0, after - max(before, weekly_normal_minutes))
-            entry["extra_work_minutes"] = extra_work
-            entry["overtime_minutes"] = overtime
-            cumulative_minutes = after
-
-        target_extra, target_overtime = weekly_targets.get(
-            week_start,
-            (
-                sum(int(item["extra_work_minutes"]) for item in entries),
-                sum(int(item["overtime_minutes"]) for item in entries),
-            ),
-        )
-        _rebalance_legal_allocations(entries, field_name="extra_work_minutes", target_total=target_extra)
-        _rebalance_legal_allocations(entries, field_name="overtime_minutes", target_total=target_overtime)
-
-        for entry in entries:
-            result[entry["date"]] = (int(entry["extra_work_minutes"]), int(entry["overtime_minutes"]))
-
+    for record in day_records:
+        plan_overtime_minutes = max(0, int(record.overtime_minutes))
+        result[record.day_date] = (0, plan_overtime_minutes)
     return result
 
 
@@ -880,14 +790,16 @@ def _build_weekly_summaries(
     legal_weekly_minutes: int,
     rounding_mode: OvertimeRoundingMode,
 ) -> list[_InternalWeekSummary]:
+    _ = (contract_weekly_minutes, legal_weekly_minutes, rounding_mode)
     week_buckets: dict[date, dict[str, object]] = {}
     for day in day_records:
         week_start = day.day_date - timedelta(days=day.day_date.weekday())
         bucket = week_buckets.setdefault(
             week_start,
-            {"worked": 0, "flags": set()},
+            {"worked": 0, "plan_overtime": 0, "flags": set()},
         )
         bucket["worked"] = int(bucket["worked"]) + day.worked_minutes
+        bucket["plan_overtime"] = int(bucket["plan_overtime"]) + max(0, int(day.overtime_minutes))
         bucket_flags = bucket["flags"]
         if isinstance(bucket_flags, set):
             for flag in day.flags:
@@ -898,12 +810,9 @@ def _build_weekly_summaries(
     for week_start in sorted(week_buckets):
         bucket = week_buckets[week_start]
         worked = int(bucket["worked"])
-        normal, extra_work, overtime = calculate_weekly_legal_totals(
-            worked_minutes=worked,
-            contract_weekly_minutes=contract_weekly_minutes,
-            weekly_normal_minutes=legal_weekly_minutes,
-            overtime_rounding_mode=rounding_mode.value,
-        )
+        overtime = int(bucket["plan_overtime"])
+        normal = max(0, worked - overtime)
+        extra_work = 0
         flags = sorted(bucket["flags"]) if isinstance(bucket["flags"], set) else []
         summaries.append(
             _InternalWeekSummary(

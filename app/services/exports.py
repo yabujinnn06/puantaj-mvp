@@ -202,112 +202,19 @@ def _group_summary_rows_by_department(rows: list[dict[str, object]]) -> list[dic
         ordered_rows.append(row)
     return ordered_rows
 
-def _week_start(day_value: date) -> date:
-    return day_value - timedelta(days=day_value.weekday())
-
-
-def _effective_contract_weekly_minutes(
-    contract_weekly_minutes: int | None,
-    weekly_normal_minutes: int,
-) -> int:
-    if contract_weekly_minutes is None:
-        return weekly_normal_minutes
-    return min(max(0, int(contract_weekly_minutes)), weekly_normal_minutes)
-
-
-def _rebalance_allocations(
-    entries: list[dict[str, int | date]],
-    *,
-    field_name: str,
-    target_total: int,
-) -> None:
-    target_value = max(0, int(target_total))
-    current_value = sum(int(entry[field_name]) for entry in entries)
-    delta = target_value - current_value
-    if delta == 0:
-        return
-
-    if delta > 0:
-        for entry in reversed(entries):
-            if int(entry["worked_minutes"]) > 0:
-                entry[field_name] = int(entry[field_name]) + delta
-                return
-        if entries:
-            entries[-1][field_name] = int(entries[-1][field_name]) + delta
-        return
-
-    remaining = abs(delta)
-    for entry in reversed(entries):
-        current = int(entry[field_name])
-        take = min(current, remaining)
-        if take > 0:
-            entry[field_name] = current - take
-            remaining -= take
-        if remaining <= 0:
-            break
-
-
 def _build_daily_legal_breakdown(
     report: MonthlyEmployeeResponse,
     *,
     contract_weekly_minutes: int | None,
 ) -> dict[date, tuple[int, int]]:
-    weekly_normal_minutes = (
-        max(0, int(report.labor_profile.weekly_normal_minutes_default))
-        if report.labor_profile is not None
-        else DEFAULT_WEEKLY_NORMAL_MINUTES
-    )
-    effective_contract = _effective_contract_weekly_minutes(
-        contract_weekly_minutes,
-        weekly_normal_minutes,
-    )
-
-    weekly_targets = {
-        item.week_start: (
-            max(0, int(item.extra_work_minutes)),
-            max(0, int(item.overtime_minutes)),
-        )
-        for item in report.weekly_totals
-    }
-
-    week_entries: dict[date, list[dict[str, int | date]]] = defaultdict(list)
-    for day in sorted(report.days, key=lambda item: item.date):
-        week_entries[_week_start(day.date)].append(
-            {
-                "date": day.date,
-                "worked_minutes": max(0, int(day.worked_minutes)),
-                "extra_work_minutes": 0,
-                "overtime_minutes": 0,
-            }
-        )
-
+    _ = contract_weekly_minutes
     result: dict[date, tuple[int, int]] = {}
-    for week_start, entries in week_entries.items():
-        cumulative_minutes = 0
-        for entry in entries:
-            worked_minutes = max(0, int(entry["worked_minutes"]))
-            before = cumulative_minutes
-            after = before + worked_minutes
-
-            extra_work = max(0, min(after, weekly_normal_minutes) - max(before, effective_contract))
-            overtime = max(0, after - max(before, weekly_normal_minutes))
-            entry["extra_work_minutes"] = extra_work
-            entry["overtime_minutes"] = overtime
-            cumulative_minutes = after
-
-        target_extra, target_overtime = weekly_targets.get(
-            week_start,
-            (
-                sum(int(item["extra_work_minutes"]) for item in entries),
-                sum(int(item["overtime_minutes"]) for item in entries),
-            ),
+    for day in report.days:
+        plan_overtime_minutes = max(
+            0,
+            int(getattr(day, "plan_overtime_minutes", getattr(day, "overtime_minutes", 0))),
         )
-        _rebalance_allocations(entries, field_name="extra_work_minutes", target_total=target_extra)
-        _rebalance_allocations(entries, field_name="overtime_minutes", target_total=target_overtime)
-
-        for entry in entries:
-            result[entry["date"]] = (int(entry["extra_work_minutes"]), int(entry["overtime_minutes"]))
-
+        result[day.date] = (0, plan_overtime_minutes)
     return result
 
 
@@ -517,7 +424,7 @@ def _append_summary_area(
     total_legal_overtime_minutes: int | None = None,
 ) -> tuple[int, int]:
     if total_legal_overtime_minutes is None:
-        total_legal_overtime_minutes = sum(item.overtime_minutes for item in report.weekly_totals)
+        total_legal_overtime_minutes = report.totals.legal_overtime_minutes
 
     worked_days = 0
     sunday_worked_days = 0
