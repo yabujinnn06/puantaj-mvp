@@ -131,6 +131,7 @@ class DashboardEmployeeMonthMetricsRead(BaseModel):
     year: int
     month: int
     worked_minutes: int
+    plan_overtime_minutes: int = 0
     extra_work_minutes: int
     overtime_minutes: int
     incomplete_days: int
@@ -951,6 +952,9 @@ class MonthlyEmployeeDay(BaseModel):
     check_out_lon: float | None = Field(default=None, serialization_alias="out_lon")
     worked_minutes: int
     overtime_minutes: int
+    plan_overtime_minutes: int = 0
+    legal_extra_work_minutes: int = 0
+    legal_overtime_minutes: int = 0
     missing_minutes: int = 0
     rule_source: Literal["SHIFT", "WEEKLY", "WORK_RULE"] = "WORK_RULE"
     applied_planned_minutes: int = 0
@@ -964,6 +968,9 @@ class MonthlyEmployeeDay(BaseModel):
 class MonthlyEmployeeTotals(BaseModel):
     worked_minutes: int
     overtime_minutes: int
+    plan_overtime_minutes: int = 0
+    legal_extra_work_minutes: int = 0
+    legal_overtime_minutes: int = 0
     incomplete_days: int
 
 
@@ -997,5 +1004,8 @@ class DepartmentMonthlySummaryItem(BaseModel):
     region_name: str | None = None
     worked_minutes: int
     overtime_minutes: int
+    plan_overtime_minutes: int = 0
+    legal_extra_work_minutes: int = 0
+    legal_overtime_minutes: int = 0
     employee_count: int
 

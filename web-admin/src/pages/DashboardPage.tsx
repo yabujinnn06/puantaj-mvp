@@ -226,15 +226,17 @@ export function DashboardPage() {
                 <div className="rounded-lg border border-slate-200 bg-white p-3">
                   <p className="text-xs uppercase tracking-wide text-slate-500">{monthLabel(snapshotQuery.data.current_month.year, snapshotQuery.data.current_month.month)}</p>
                   <p className="mt-2 text-xs text-slate-600">Toplam net sure: <MinuteDisplay minutes={snapshotQuery.data.current_month.worked_minutes} /></p>
-                  <p className="mt-1 text-xs text-slate-600">Fazla sure: <MinuteDisplay minutes={snapshotQuery.data.current_month.extra_work_minutes} /></p>
-                  <p className="mt-1 text-xs text-slate-600">Fazla mesai: <MinuteDisplay minutes={snapshotQuery.data.current_month.overtime_minutes} /></p>
+                  <p className="mt-1 text-xs text-slate-600">Plan ustu sure: <MinuteDisplay minutes={snapshotQuery.data.current_month.plan_overtime_minutes} /></p>
+                  <p className="mt-1 text-xs text-slate-600">Yasal fazla sure: <MinuteDisplay minutes={snapshotQuery.data.current_month.extra_work_minutes} /></p>
+                  <p className="mt-1 text-xs text-slate-600">Yasal fazla mesai: <MinuteDisplay minutes={snapshotQuery.data.current_month.overtime_minutes} /></p>
                 </div>
 
                 <div className="rounded-lg border border-slate-200 bg-white p-3">
                   <p className="text-xs uppercase tracking-wide text-slate-500">{monthLabel(snapshotQuery.data.previous_month.year, snapshotQuery.data.previous_month.month)}</p>
                   <p className="mt-2 text-xs text-slate-600">Toplam net sure: <MinuteDisplay minutes={snapshotQuery.data.previous_month.worked_minutes} /></p>
-                  <p className="mt-1 text-xs text-slate-600">Fazla sure: <MinuteDisplay minutes={snapshotQuery.data.previous_month.extra_work_minutes} /></p>
-                  <p className="mt-1 text-xs text-slate-600">Fazla mesai: <MinuteDisplay minutes={snapshotQuery.data.previous_month.overtime_minutes} /></p>
+                  <p className="mt-1 text-xs text-slate-600">Plan ustu sure: <MinuteDisplay minutes={snapshotQuery.data.previous_month.plan_overtime_minutes} /></p>
+                  <p className="mt-1 text-xs text-slate-600">Yasal fazla sure: <MinuteDisplay minutes={snapshotQuery.data.previous_month.extra_work_minutes} /></p>
+                  <p className="mt-1 text-xs text-slate-600">Yasal fazla mesai: <MinuteDisplay minutes={snapshotQuery.data.previous_month.overtime_minutes} /></p>
                 </div>
               </div>
 

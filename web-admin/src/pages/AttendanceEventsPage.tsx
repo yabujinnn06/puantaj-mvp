@@ -617,7 +617,7 @@ export function AttendanceEventsPage() {
           <ErrorBlock message={parseApiError(monthlySummaryQuery.error, 'Puantaj analiz ozeti alinamadi.').message} />
         ) : (
           <div className="mt-3 space-y-3">
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
                 <p className="text-xs text-slate-500">Net calisma</p>
                 <p className="text-sm font-semibold text-slate-900">
@@ -625,7 +625,14 @@ export function AttendanceEventsPage() {
                 </p>
               </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                <p className="text-xs text-slate-500">Fazla mesai</p>
+                <p className="text-xs text-slate-500">Plan ustu sure</p>
+                <p className="text-sm font-semibold text-slate-900">
+                  <MinuteDisplay minutes={monthlySummaryInsight.planOvertimeMinutes} />
+                </p>
+                <p className="text-xs text-slate-500">{monthlySummaryInsight.planOvertimeDayCount} gun</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                <p className="text-xs text-slate-500">Yasal fazla mesai</p>
                 <p className="text-sm font-semibold text-slate-900">
                   <MinuteDisplay minutes={monthlySummaryInsight.overtimeMinutes} />
                 </p>
@@ -654,7 +661,9 @@ export function AttendanceEventsPage() {
                     <th className="py-2">Giris</th>
                     <th className="py-2">Cikis</th>
                     <th className="py-2">Calisma</th>
-                    <th className="py-2">Fazla Mesai</th>
+                    <th className="py-2">Plan Ustu</th>
+                    <th className="py-2">Yasal Fazla Sure</th>
+                    <th className="py-2">Yasal Fazla Mesai</th>
                     <th className="py-2">Bayraklar</th>
                   </tr>
                 </thead>
@@ -667,7 +676,9 @@ export function AttendanceEventsPage() {
                       <td className="py-2">{day.in ? formatTs(day.in) : '-'}</td>
                       <td className="py-2">{day.out ? formatTs(day.out) : '-'}</td>
                       <td className="py-2"><MinuteDisplay minutes={day.worked_minutes} /></td>
-                      <td className="py-2"><MinuteDisplay minutes={day.overtime_minutes} /></td>
+                      <td className="py-2"><MinuteDisplay minutes={day.plan_overtime_minutes} /></td>
+                      <td className="py-2"><MinuteDisplay minutes={day.legal_extra_work_minutes} /></td>
+                      <td className="py-2"><MinuteDisplay minutes={day.legal_overtime_minutes} /></td>
                       <td className="py-2 text-xs text-slate-600">{day.flags.length ? day.flags.join(', ') : '-'}</td>
                     </tr>
                   ))}

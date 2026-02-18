@@ -602,9 +602,12 @@ export function EmployeeDetailPage() {
             <p className="mt-2 text-xs text-slate-500">Cihaz sayisi: {deviceCountText}</p>
           </div>
           <div>
-            <p className="text-xs text-slate-500">Bu ay fazla mesai</p>
+            <p className="text-xs text-slate-500">Bu ay yasal fazla mesai</p>
             <p className="text-lg font-semibold text-slate-900">
-              <MinuteDisplay minutes={currentMonthQuery.data?.totals.overtime_minutes ?? 0} />
+              <MinuteDisplay minutes={currentMonthQuery.data?.totals.legal_overtime_minutes ?? 0} />
+            </p>
+            <p className="text-xs text-slate-500">
+              Plan ustu: <MinuteDisplay minutes={currentMonthQuery.data?.totals.plan_overtime_minutes ?? 0} />
             </p>
             <p className="text-xs text-slate-500">
               {now.getFullYear()}-{String(now.getMonth() + 1).padStart(2, '0')}
@@ -728,7 +731,7 @@ export function EmployeeDetailPage() {
           <ErrorBlock message={parseApiError(monthlyQuery.error, 'Aylik puantaj alinamadi.').message} />
         ) : (
           <div className="mt-4 space-y-3">
-            <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+            <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-7">
               <div className="rounded-lg border border-slate-200 p-3">
                 <p className="text-xs text-slate-500">Secili ay net calisma</p>
                 <p className="text-lg font-semibold text-slate-900">
@@ -736,9 +739,22 @@ export function EmployeeDetailPage() {
                 </p>
               </div>
               <div className="rounded-lg border border-slate-200 p-3">
-                <p className="text-xs text-slate-500">Secili ay fazla mesai</p>
+                <p className="text-xs text-slate-500">Secili ay plan ustu sure</p>
                 <p className="text-lg font-semibold text-slate-900">
-                  <MinuteDisplay minutes={monthlyQuery.data?.totals.overtime_minutes ?? 0} />
+                  <MinuteDisplay minutes={monthlyQuery.data?.totals.plan_overtime_minutes ?? 0} />
+                </p>
+                <p className="text-xs text-slate-500">{monthlyInsight.planOvertimeDayCount} gun</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 p-3">
+                <p className="text-xs text-slate-500">Secili ay yasal fazla sure</p>
+                <p className="text-lg font-semibold text-slate-900">
+                  <MinuteDisplay minutes={monthlyQuery.data?.totals.legal_extra_work_minutes ?? 0} />
+                </p>
+              </div>
+              <div className="rounded-lg border border-slate-200 p-3">
+                <p className="text-xs text-slate-500">Secili ay yasal fazla mesai</p>
+                <p className="text-lg font-semibold text-slate-900">
+                  <MinuteDisplay minutes={monthlyQuery.data?.totals.legal_overtime_minutes ?? 0} />
                 </p>
                 <p className="text-xs text-slate-500">{monthlyInsight.overtimeDayCount} gun fazla mesai</p>
               </div>
@@ -779,7 +795,9 @@ export function EmployeeDetailPage() {
                     <th className="py-2">Giris Konum (lat/lon)</th>
                     <th className="py-2">Cikis Konum (lat/lon)</th>
                     <th className="py-2">Net Sure</th>
-                    <th className="py-2">Fazla Mesai</th>
+                    <th className="py-2">Plan Ustu</th>
+                    <th className="py-2">Yasal Fazla Sure</th>
+                    <th className="py-2">Yasal Fazla Mesai</th>
                     <th className="py-2">Bayraklar</th>
                   </tr>
                 </thead>
@@ -825,7 +843,13 @@ export function EmployeeDetailPage() {
                         <MinuteDisplay minutes={day.worked_minutes} />
                       </td>
                       <td className="py-2">
-                        <MinuteDisplay minutes={day.overtime_minutes} />
+                        <MinuteDisplay minutes={day.plan_overtime_minutes} />
+                      </td>
+                      <td className="py-2">
+                        <MinuteDisplay minutes={day.legal_extra_work_minutes} />
+                      </td>
+                      <td className="py-2">
+                        <MinuteDisplay minutes={day.legal_overtime_minutes} />
                       </td>
                       <td className="py-2 text-xs text-slate-600">{day.flags.length ? day.flags.join(', ') : '-'}</td>
                     </tr>

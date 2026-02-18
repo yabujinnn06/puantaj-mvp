@@ -321,6 +321,10 @@ export function EmployeeMonthlyReportPage() {
     () => days.filter((day) => getDaySuspicionReasons(day).length > 0).length,
     [days],
   )
+  const legalOvertimeDayCount = useMemo(
+    () => days.filter((day) => day.legal_overtime_minutes > 0).length,
+    [days],
+  )
 
   const conflictSummary = useMemo(() => {
     const targetFlags = ['SHIFT_WEEKLY_RULE_OVERRIDE', 'NEEDS_SHIFT_REVIEW', 'MISSING_IN', 'MISSING_OUT', 'UNDERWORKED']
@@ -615,7 +619,7 @@ export function EmployeeMonthlyReportPage() {
               Calisan: {employeeName ?? reportQuery.data.employee_id} | Donem:{' '}
               {reportQuery.data.year}-{reportQuery.data.month}
             </p>
-            <div className="mt-3 grid gap-3 sm:grid-cols-5">
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-7">
               <div className="rounded-lg border border-slate-200 p-3">
                 <p className="text-xs text-slate-500">Toplam Calisma</p>
                 <p className="text-lg font-semibold">
@@ -623,10 +627,23 @@ export function EmployeeMonthlyReportPage() {
                 </p>
               </div>
               <div className="rounded-lg border border-slate-200 p-3">
-                <p className="text-xs text-slate-500">Fazla Mesai</p>
+                <p className="text-xs text-slate-500">Plan Ustu Sure</p>
                 <p className="text-lg font-semibold">
-                  <MinuteDisplay minutes={reportQuery.data.totals.overtime_minutes} />
+                  <MinuteDisplay minutes={reportQuery.data.totals.plan_overtime_minutes} />
                 </p>
+              </div>
+              <div className="rounded-lg border border-slate-200 p-3">
+                <p className="text-xs text-slate-500">Yasal Fazla Sure</p>
+                <p className="text-lg font-semibold">
+                  <MinuteDisplay minutes={reportQuery.data.totals.legal_extra_work_minutes} />
+                </p>
+              </div>
+              <div className="rounded-lg border border-slate-200 p-3">
+                <p className="text-xs text-slate-500">Yasal Fazla Mesai</p>
+                <p className="text-lg font-semibold">
+                  <MinuteDisplay minutes={reportQuery.data.totals.legal_overtime_minutes} />
+                </p>
+                <p className="text-xs text-slate-500">{legalOvertimeDayCount} gun</p>
               </div>
               <div className="rounded-lg border border-slate-200 p-3">
                 <p className="text-xs text-slate-500">Eksik Gun</p>
@@ -746,7 +763,9 @@ export function EmployeeMonthlyReportPage() {
                       <th className="py-2">Giris</th>
                       <th className="py-2">Cikis</th>
                       <th className="py-2">Calisma</th>
-                      <th className="py-2">Fazla Mesai</th>
+                      <th className="py-2">Plan Ustu</th>
+                      <th className="py-2">Yasal Fazla Sure</th>
+                      <th className="py-2">Yasal Fazla Mesai</th>
                       <th className="py-2">Eksik Sure</th>
                       <th className="py-2">Kural Kaynagi</th>
                       <th className="py-2">Vardiya</th>
@@ -794,7 +813,13 @@ export function EmployeeMonthlyReportPage() {
                             <MinuteDisplay minutes={day.worked_minutes} />
                           </td>
                           <td className="py-2">
-                            <MinuteDisplay minutes={day.overtime_minutes} />
+                            <MinuteDisplay minutes={day.plan_overtime_minutes} />
+                          </td>
+                          <td className="py-2">
+                            <MinuteDisplay minutes={day.legal_extra_work_minutes} />
+                          </td>
+                          <td className="py-2">
+                            <MinuteDisplay minutes={day.legal_overtime_minutes} />
                           </td>
                           <td className="py-2">
                             <MinuteDisplay minutes={day.missing_minutes ?? 0} />

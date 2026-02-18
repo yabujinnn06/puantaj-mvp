@@ -85,11 +85,13 @@ export function DepartmentSummaryReportPage() {
     return summaryRows.reduce(
       (acc, item) => {
         acc.worked += item.worked_minutes
-        acc.overtime += item.overtime_minutes
+        acc.planOvertime += item.plan_overtime_minutes
+        acc.legalExtra += item.legal_extra_work_minutes
+        acc.legalOvertime += item.legal_overtime_minutes
         acc.employeeCount += item.employee_count
         return acc
       },
-      { worked: 0, overtime: 0, employeeCount: 0 },
+      { worked: 0, planOvertime: 0, legalExtra: 0, legalOvertime: 0, employeeCount: 0 },
     )
   }, [summaryRows])
 
@@ -162,7 +164,7 @@ export function DepartmentSummaryReportPage() {
     <div className="space-y-4">
       <PageHeader
         title="Departman Aylık Özeti"
-        description="Departman bazında aylık toplam çalışma ve fazla mesai değerlerini karşılaştırın."
+        description="Departman bazında aylık toplam çalışma, plan üstü süre ve yasal fazla mesai değerlerini karşılaştırın."
         action={
           <button
             type="button"
@@ -279,7 +281,7 @@ export function DepartmentSummaryReportPage() {
         <>
           <Panel>
             <h4 className="text-base font-semibold text-slate-900">Toplamlar</h4>
-            <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
               <div className="rounded-lg border border-slate-200 p-3">
                 <p className="text-xs text-slate-500">Toplam Çalışma</p>
                 <p className="text-lg font-semibold">
@@ -287,9 +289,21 @@ export function DepartmentSummaryReportPage() {
                 </p>
               </div>
               <div className="rounded-lg border border-slate-200 p-3">
-                <p className="text-xs text-slate-500">Toplam Fazla Mesai</p>
+                <p className="text-xs text-slate-500">Toplam Plan Üstü Süre</p>
                 <p className="text-lg font-semibold">
-                  <MinuteDisplay minutes={totals.overtime} />
+                  <MinuteDisplay minutes={totals.planOvertime} />
+                </p>
+              </div>
+              <div className="rounded-lg border border-slate-200 p-3">
+                <p className="text-xs text-slate-500">Toplam Yasal Fazla Süre</p>
+                <p className="text-lg font-semibold">
+                  <MinuteDisplay minutes={totals.legalExtra} />
+                </p>
+              </div>
+              <div className="rounded-lg border border-slate-200 p-3">
+                <p className="text-xs text-slate-500">Toplam Yasal Fazla Mesai</p>
+                <p className="text-lg font-semibold">
+                  <MinuteDisplay minutes={totals.legalOvertime} />
                 </p>
               </div>
               <div className="rounded-lg border border-slate-200 p-3">
@@ -312,7 +326,9 @@ export function DepartmentSummaryReportPage() {
                       <th className="py-2">Departman</th>
                       <th className="py-2">Çalışan Sayısı</th>
                       <th className="py-2">Toplam Çalışma</th>
-                      <th className="py-2">Toplam Fazla Mesai</th>
+                      <th className="py-2">Plan Üstü</th>
+                      <th className="py-2">Yasal Fazla Süre</th>
+                      <th className="py-2">Yasal Fazla Mesai</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -326,7 +342,13 @@ export function DepartmentSummaryReportPage() {
                           <MinuteDisplay minutes={item.worked_minutes} />
                         </td>
                         <td className="py-2">
-                          <MinuteDisplay minutes={item.overtime_minutes} />
+                          <MinuteDisplay minutes={item.plan_overtime_minutes} />
+                        </td>
+                        <td className="py-2">
+                          <MinuteDisplay minutes={item.legal_extra_work_minutes} />
+                        </td>
+                        <td className="py-2">
+                          <MinuteDisplay minutes={item.legal_overtime_minutes} />
                         </td>
                       </tr>
                     ))}

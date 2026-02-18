@@ -385,6 +385,7 @@ export interface DashboardEmployeeMonthMetrics {
   year: number
   month: number
   worked_minutes: number
+  plan_overtime_minutes: number
   extra_work_minutes: number
   overtime_minutes: number
   incomplete_days: number
@@ -425,6 +426,9 @@ export interface MonthlyEmployeeDay {
   out_lon: number | null
   worked_minutes: number
   overtime_minutes: number
+  plan_overtime_minutes: number
+  legal_extra_work_minutes: number
+  legal_overtime_minutes: number
   missing_minutes: number
   rule_source: 'SHIFT' | 'WEEKLY' | 'WORK_RULE'
   applied_planned_minutes: number
@@ -447,6 +451,9 @@ export interface MonthlyEmployeeWeek {
 export interface MonthlyEmployeeTotals {
   worked_minutes: number
   overtime_minutes: number
+  plan_overtime_minutes: number
+  legal_extra_work_minutes: number
+  legal_overtime_minutes: number
   incomplete_days: number
 }
 
@@ -489,6 +496,9 @@ export interface DepartmentSummaryItem {
   region_name?: string | null
   worked_minutes: number
   overtime_minutes: number
+  plan_overtime_minutes: number
+  legal_extra_work_minutes: number
+  legal_overtime_minutes: number
   employee_count: number
 }
 

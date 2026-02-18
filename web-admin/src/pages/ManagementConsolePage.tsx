@@ -214,7 +214,8 @@ export function ManagementConsolePage() {
           event,
           dayTypeLabel: monthlyDay ? getAttendanceDayType(monthlyDay).label : dayTypeFromDateKey(dayKey),
           workedMinutes: monthlyDay?.worked_minutes ?? null,
-          overtimeMinutes: monthlyDay?.overtime_minutes ?? null,
+          planOvertimeMinutes: monthlyDay?.plan_overtime_minutes ?? null,
+          legalOvertimeMinutes: monthlyDay?.legal_overtime_minutes ?? null,
         }
       }),
     [attendanceEvents, controlEmployeeIdNumber, controlMonthlyByDate],
@@ -479,14 +480,16 @@ export function ManagementConsolePage() {
                   <div className="management-console-block">
                     <p className="management-console-block-title">Bu Ay</p>
                     <p>Net Çalışma: <MinuteDisplay minutes={snapshotQuery.data.current_month.worked_minutes} /></p>
-                    <p>Fazla Süre: <MinuteDisplay minutes={snapshotQuery.data.current_month.extra_work_minutes} /></p>
-                    <p>Fazla Mesai: <MinuteDisplay minutes={snapshotQuery.data.current_month.overtime_minutes} /></p>
+                    <p>Plan Ustu Sure: <MinuteDisplay minutes={snapshotQuery.data.current_month.plan_overtime_minutes} /></p>
+                    <p>Yasal Fazla Sure: <MinuteDisplay minutes={snapshotQuery.data.current_month.extra_work_minutes} /></p>
+                    <p>Yasal Fazla Mesai: <MinuteDisplay minutes={snapshotQuery.data.current_month.overtime_minutes} /></p>
                   </div>
                   <div className="management-console-block">
                     <p className="management-console-block-title">Önceki Ay</p>
                     <p>Net Çalışma: <MinuteDisplay minutes={snapshotQuery.data.previous_month.worked_minutes} /></p>
-                    <p>Fazla Süre: <MinuteDisplay minutes={snapshotQuery.data.previous_month.extra_work_minutes} /></p>
-                    <p>Fazla Mesai: <MinuteDisplay minutes={snapshotQuery.data.previous_month.overtime_minutes} /></p>
+                    <p>Plan Ustu Sure: <MinuteDisplay minutes={snapshotQuery.data.previous_month.plan_overtime_minutes} /></p>
+                    <p>Yasal Fazla Sure: <MinuteDisplay minutes={snapshotQuery.data.previous_month.extra_work_minutes} /></p>
+                    <p>Yasal Fazla Mesai: <MinuteDisplay minutes={snapshotQuery.data.previous_month.overtime_minutes} /></p>
                   </div>
                 </div>
 
@@ -602,7 +605,7 @@ export function ManagementConsolePage() {
         <Panel className="management-console-panel">
           <h4 className="management-console-title">Canlı Puantaj Kaydı</h4>
           <p className="management-console-subtitle">
-            Son giriş-çıkış olayları ile gün tipi, günlük çalışma ve fazla mesai görünümü.
+            Son giriş-çıkış olayları ile gün tipi, günlük çalışma, plan üstü süre ve yasal fazla mesai görünümü.
           </p>
           <div className="management-console-table-wrap mt-3">
             <table className="min-w-full text-left text-sm">
@@ -614,7 +617,8 @@ export function ManagementConsolePage() {
                   <th>Tip</th>
                   <th>Konum</th>
                   <th>Günlük Çalışma</th>
-                  <th>Günlük FM</th>
+                  <th>Plan Üstü</th>
+                  <th>Yasal FM</th>
                 </tr>
               </thead>
               <tbody>
@@ -626,7 +630,8 @@ export function ManagementConsolePage() {
                     <td>{row.event.type}</td>
                     <td>{row.event.location_status}</td>
                     <td>{row.workedMinutes === null ? '-' : <MinuteDisplay minutes={row.workedMinutes} />}</td>
-                    <td>{row.overtimeMinutes === null ? '-' : <MinuteDisplay minutes={row.overtimeMinutes} />}</td>
+                    <td>{row.planOvertimeMinutes === null ? '-' : <MinuteDisplay minutes={row.planOvertimeMinutes} />}</td>
+                    <td>{row.legalOvertimeMinutes === null ? '-' : <MinuteDisplay minutes={row.legalOvertimeMinutes} />}</td>
                   </tr>
                 ))}
               </tbody>

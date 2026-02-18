@@ -1949,8 +1949,9 @@ def get_dashboard_employee_snapshot(
             year=report.year,
             month=report.month,
             worked_minutes=report.totals.worked_minutes,
-            extra_work_minutes=sum(item.extra_work_minutes for item in report.weekly_totals),
-            overtime_minutes=sum(item.overtime_minutes for item in report.weekly_totals),
+            plan_overtime_minutes=report.totals.plan_overtime_minutes,
+            extra_work_minutes=report.totals.legal_extra_work_minutes,
+            overtime_minutes=report.totals.legal_overtime_minutes,
             incomplete_days=report.totals.incomplete_days,
         )
 

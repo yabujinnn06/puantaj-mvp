@@ -10,8 +10,11 @@ export interface AttendanceDayTypeInfo {
 export interface MonthlyAttendanceInsight {
   workedMinutes: number
   overtimeMinutes: number
+  planOvertimeMinutes: number
+  legalExtraWorkMinutes: number
   workedDayCount: number
   overtimeDayCount: number
+  planOvertimeDayCount: number
   sundayWorkedDayCount: number
   weekdayWorkedDayCount: number
   specialWorkedDayCount: number
@@ -59,8 +62,11 @@ export function buildMonthlyAttendanceInsight(days: MonthlyEmployeeDay[]): Month
   const insight: MonthlyAttendanceInsight = {
     workedMinutes: 0,
     overtimeMinutes: 0,
+    planOvertimeMinutes: 0,
+    legalExtraWorkMinutes: 0,
     workedDayCount: 0,
     overtimeDayCount: 0,
+    planOvertimeDayCount: 0,
     sundayWorkedDayCount: 0,
     weekdayWorkedDayCount: 0,
     specialWorkedDayCount: 0,
@@ -70,8 +76,14 @@ export function buildMonthlyAttendanceInsight(days: MonthlyEmployeeDay[]): Month
   }
 
   for (const day of days) {
+    const planOvertime = day.plan_overtime_minutes ?? day.overtime_minutes
+    const legalExtraWork = day.legal_extra_work_minutes ?? 0
+    const legalOvertime = day.legal_overtime_minutes ?? day.overtime_minutes
+
     insight.workedMinutes += day.worked_minutes
-    insight.overtimeMinutes += day.overtime_minutes
+    insight.planOvertimeMinutes += planOvertime
+    insight.legalExtraWorkMinutes += legalExtraWork
+    insight.overtimeMinutes += legalOvertime
 
     const worked = isWorkedDay(day)
     if (worked) {
@@ -89,7 +101,11 @@ export function buildMonthlyAttendanceInsight(days: MonthlyEmployeeDay[]): Month
       }
     }
 
-    if (day.overtime_minutes > 0) {
+    if (planOvertime > 0) {
+      insight.planOvertimeDayCount += 1
+    }
+
+    if (legalOvertime > 0) {
       insight.overtimeDayCount += 1
     }
   }
