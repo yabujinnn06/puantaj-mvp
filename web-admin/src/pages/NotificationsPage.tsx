@@ -11,6 +11,7 @@ import {
   getAdminUsers,
   getDailyReportArchives,
   getEmployees,
+  getNotificationDeliveryLogs,
   getNotificationJobs,
   getNotificationSubscriptions,
   notifyDailyReportArchive,
@@ -35,6 +36,11 @@ function statusClass(status: NotificationJobStatus): string {
   if (status === 'CANCELED') return 'bg-slate-200 text-slate-700'
   if (status === 'SENDING') return 'bg-amber-100 text-amber-700'
   return 'bg-sky-100 text-sky-700'
+}
+
+function deliveryStatusClass(status: 'SENT' | 'FAILED'): string {
+  if (status === 'SENT') return 'bg-emerald-100 text-emerald-700'
+  return 'bg-rose-100 text-rose-700'
 }
 
 function downloadBlob(blob: Blob, name: string): void {
@@ -68,6 +74,7 @@ export function NotificationsPage() {
   const [archiveStartDate, setArchiveStartDate] = useState('')
   const [archiveEndDate, setArchiveEndDate] = useState('')
   const [archiveEmployeeQuery, setArchiveEmployeeQuery] = useState('')
+  const [deliverySearch, setDeliverySearch] = useState('')
 
   const employeesQuery = useQuery({ queryKey: ['employees', 'notify'], queryFn: () => getEmployees({ status: 'active' }) })
   const adminsQuery = useQuery({ queryKey: ['admin-users', 'notify'], queryFn: getAdminUsers })
@@ -76,6 +83,11 @@ export function NotificationsPage() {
     queryKey: ['notification-jobs', jobsStatus],
     queryFn: () => getNotificationJobs({ status: jobsStatus || undefined, limit: 100 }),
     refetchInterval: 10000,
+  })
+  const deliveryLogsQuery = useQuery({
+    queryKey: ['notification-delivery-logs'],
+    queryFn: () => getNotificationDeliveryLogs({ limit: 400 }),
+    refetchInterval: 15000,
   })
   const employeeSubsQuery = useQuery({
     queryKey: ['notify-subs-emp'],
@@ -110,6 +122,34 @@ export function NotificationsPage() {
     return (adminsQuery.data ?? []).filter((x) => `${x.id} ${x.username}`.toLowerCase().includes(q))
   }, [adminsQuery.data, searchAdmin])
 
+  const filteredDeliveryLogs = useMemo(() => {
+    const q = deliverySearch.trim().toLowerCase()
+    const rows = deliveryLogsQuery.data ?? []
+    if (!q) return rows
+    return rows.filter((row) => {
+      const parts = [
+        row.recipient_name ?? '',
+        String(row.recipient_id ?? ''),
+        String(row.device_id ?? ''),
+        row.ip ?? '',
+        row.status,
+        row.target,
+        row.title ?? '',
+        row.sender_admin,
+      ]
+      return parts.join(' ').toLowerCase().includes(q)
+    })
+  }, [deliveryLogsQuery.data, deliverySearch])
+
+  const deliverySentCount = useMemo(
+    () => filteredDeliveryLogs.filter((row) => row.status === 'SENT').length,
+    [filteredDeliveryLogs],
+  )
+  const deliveryFailedCount = useMemo(
+    () => filteredDeliveryLogs.filter((row) => row.status === 'FAILED').length,
+    [filteredDeliveryLogs],
+  )
+
   const inviteMutation = useMutation({
     mutationFn: createAdminDeviceInvite,
     onSuccess: (res) => {
@@ -130,6 +170,7 @@ export function NotificationsPage() {
         description: `Hedef: ${res.total_targets} / Gonderilen: ${res.sent}`,
       })
       void queryClient.invalidateQueries({ queryKey: ['notification-jobs'] })
+      void queryClient.invalidateQueries({ queryKey: ['notification-delivery-logs'] })
     },
     onError: (e) =>
       pushToast({
@@ -355,10 +396,91 @@ export function NotificationsPage() {
 
       <Panel>
         <h4 className="text-base font-semibold text-slate-900">Abonelik Ozeti</h4>
-        <div className="grid gap-2 md:grid-cols-3">
+        <div className="grid gap-2 md:grid-cols-4">
           <div className="rounded border border-slate-200 p-3 text-sm">Calisan abonelik: {(employeeSubsQuery.data ?? []).length}</div>
           <div className="rounded border border-slate-200 p-3 text-sm">Admin abonelik: {(adminSubsQuery.data ?? []).length}</div>
           <div className="rounded border border-slate-200 p-3 text-sm">Arsiv dosyasi: {(archivesQuery.data ?? []).length}</div>
+          <div className="rounded border border-slate-200 p-3 text-sm">Teslimat log satiri: {(deliveryLogsQuery.data ?? []).length}</div>
+        </div>
+      </Panel>
+
+      <Panel>
+        <h4 className="text-base font-semibold text-slate-900">Bildirim Teslimat Logu</h4>
+        <p className="mt-1 text-xs text-slate-500">
+          Kime gitti / gitmedi, isim-ID, cihaz, IP ve hata bilgisini izleyin.
+        </p>
+
+        <div className="mt-3 grid gap-2 md:grid-cols-4">
+          <div className="rounded border border-slate-200 p-3 text-sm">
+            Toplam satir: {filteredDeliveryLogs.length}
+          </div>
+          <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+            Gonderildi: {deliverySentCount}
+          </div>
+          <div className="rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+            Gonderilemedi: {deliveryFailedCount}
+          </div>
+          <button
+            type="button"
+            onClick={() => void deliveryLogsQuery.refetch()}
+            className="rounded border border-slate-300 px-3 py-2 text-sm"
+          >
+            Logu yenile
+          </button>
+        </div>
+
+        <div className="mt-3">
+          <TableSearchInput
+            value={deliverySearch}
+            onChange={setDeliverySearch}
+            placeholder="Isim, ID, cihaz, IP, baslik, durum ara..."
+          />
+        </div>
+
+        {deliveryLogsQuery.isLoading ? <LoadingBlock label="Teslimat logu yukleniyor..." /> : null}
+        {deliveryLogsQuery.isError ? <ErrorBlock message="Teslimat logu alinamadi." /> : null}
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead>
+              <tr className="text-xs uppercase text-slate-500">
+                <th className="py-2">Zaman</th>
+                <th>Durum</th>
+                <th>Hedef Tipi</th>
+                <th>Kisi</th>
+                <th>Cihaz ID</th>
+                <th>IP</th>
+                <th>Baslik</th>
+                <th>Gonderen</th>
+                <th>Hata</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredDeliveryLogs.map((row, index) => (
+                <tr key={`${row.audit_id}-${row.recipient_type}-${row.recipient_id ?? 0}-${row.device_id ?? 0}-${index}`} className="border-t border-slate-100">
+                  <td className="py-2">{dt(row.sent_at_utc)}</td>
+                  <td>
+                    <span className={`rounded px-2 py-1 text-xs font-semibold ${deliveryStatusClass(row.status)}`}>
+                      {row.status}
+                    </span>
+                  </td>
+                  <td>{row.recipient_type === 'employee' ? 'CALISAN' : 'ADMIN'}</td>
+                  <td>
+                    #{row.recipient_id ?? '-'} - {row.recipient_name ?? '-'}
+                  </td>
+                  <td>{row.device_id ?? '-'}</td>
+                  <td>{row.ip ?? '-'}</td>
+                  <td>{row.title ?? '-'}</td>
+                  <td>{row.sender_admin}</td>
+                  <td className="max-w-[280px] truncate" title={row.error ?? '-'}>
+                    {row.error ?? '-'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {!deliveryLogsQuery.isLoading && filteredDeliveryLogs.length === 0 ? (
+            <p className="mt-3 text-sm text-slate-500">Filtreye uygun teslimat kaydi bulunamadi.</p>
+          ) : null}
         </div>
       </Panel>
 

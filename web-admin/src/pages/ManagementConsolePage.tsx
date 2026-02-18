@@ -8,6 +8,7 @@ import {
   getDevices,
   getEmployeeDeviceOverview,
   getEmployees,
+  getMonthlyEmployee,
   sendManualNotification,
 } from '../api/admin'
 import { parseApiError } from '../api/error'
@@ -18,18 +19,19 @@ import { MinuteDisplay } from '../components/MinuteDisplay'
 import { PageHeader } from '../components/PageHeader'
 import { Panel } from '../components/Panel'
 import { useToast } from '../hooks/useToast'
+import { buildMonthlyAttendanceInsight, getAttendanceDayType } from '../utils/attendanceInsights'
 
 const quickCommands = [
   {
     to: '/employees',
     label: 'Çalışan Yönetimi',
-    description: 'Personel kartı, arşiv, profil güncelleme.',
+    description: 'Personel kartı, arşiv ve profil yönetimi.',
     code: 'CMD-EMP',
   },
   {
     to: '/attendance-events',
     label: 'Puantaj Kayıtları',
-    description: 'Giriş-çıkış olayları, manuel düzeltme.',
+    description: 'Giriş-çıkış olayları ve manuel düzeltme.',
     code: 'CMD-ATT',
   },
   {
@@ -41,13 +43,13 @@ const quickCommands = [
   {
     to: '/notifications',
     label: 'Bildirim Merkezi',
-    description: 'Planlı job ve push operasyonları.',
+    description: 'Toplu/tekli push ve teslimat logları.',
     code: 'CMD-NOT',
   },
   {
     to: '/reports/employee-monthly',
     label: 'Aylık Çalışan Raporu',
-    description: 'Çalışan bazlı puantaj analizi.',
+    description: 'Çalışma ve fazla mesai analizi.',
     code: 'CMD-RPT',
   },
   {
@@ -63,6 +65,20 @@ function dt(value: string | null | undefined): string {
   return new Intl.DateTimeFormat('tr-TR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value))
 }
 
+function toTurkeyDateKey(value: string): string {
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return ''
+  return parsed.toLocaleDateString('sv-SE', { timeZone: 'Europe/Istanbul' })
+}
+
+function dayTypeFromDateKey(dateKey: string): string {
+  const parsed = new Date(`${dateKey}T00:00:00Z`)
+  if (Number.isNaN(parsed.getTime())) {
+    return 'Hafta İçi'
+  }
+  return parsed.getUTCDay() === 0 ? 'Pazar' : 'Hafta İçi'
+}
+
 function todayStatusText(status: 'NOT_STARTED' | 'IN_PROGRESS' | 'FINISHED'): string {
   if (status === 'NOT_STARTED') return 'Başlamadı'
   if (status === 'IN_PROGRESS') return 'Mesai Devam Ediyor'
@@ -71,6 +87,7 @@ function todayStatusText(status: 'NOT_STARTED' | 'IN_PROGRESS' | 'FINISHED'): st
 
 export function ManagementConsolePage() {
   const { pushToast } = useToast()
+  const now = new Date()
 
   const [notifyTitle, setNotifyTitle] = useState('Yönetim Konsolu Bildirimi')
   const [notifyMessage, setNotifyMessage] = useState('')
@@ -79,6 +96,8 @@ export function ManagementConsolePage() {
   const [notifyEmployeeInput, setNotifyEmployeeInput] = useState('')
   const [notifyEmployeeTargets, setNotifyEmployeeTargets] = useState<number[]>([])
   const [controlEmployeeId, setControlEmployeeId] = useState('')
+  const [controlYear, setControlYear] = useState(String(now.getFullYear()))
+  const [controlMonth, setControlMonth] = useState(String(now.getMonth() + 1))
 
   const employeesQuery = useQuery({
     queryKey: ['employees', 'management-console'],
@@ -92,7 +111,7 @@ export function ManagementConsolePage() {
   })
   const attendanceQuery = useQuery({
     queryKey: ['attendance-events', 'management-console'],
-    queryFn: () => getAttendanceEvents({ limit: 14 }),
+    queryFn: () => getAttendanceEvents({ limit: 20 }),
     refetchInterval: 20_000,
   })
   const deviceOverviewQuery = useQuery({
@@ -104,6 +123,26 @@ export function ManagementConsolePage() {
     queryKey: ['dashboard-employee-snapshot', 'management-console', controlEmployeeId],
     queryFn: () => getDashboardEmployeeSnapshot({ employee_id: Number(controlEmployeeId) }),
     enabled: Boolean(controlEmployeeId),
+    staleTime: 15_000,
+  })
+
+  const parsedControlYear = Number(controlYear)
+  const parsedControlMonth = Number(controlMonth)
+  const controlMonthValid =
+    Number.isInteger(parsedControlYear) &&
+    Number.isInteger(parsedControlMonth) &&
+    parsedControlMonth >= 1 &&
+    parsedControlMonth <= 12
+
+  const controlMonthlyQuery = useQuery({
+    queryKey: ['management-console-control-monthly', controlEmployeeId, parsedControlYear, parsedControlMonth],
+    queryFn: () =>
+      getMonthlyEmployee({
+        employee_id: Number(controlEmployeeId),
+        year: parsedControlYear,
+        month: parsedControlMonth,
+      }),
+    enabled: Boolean(controlEmployeeId) && controlMonthValid,
     staleTime: 15_000,
   })
 
@@ -131,6 +170,11 @@ export function ManagementConsolePage() {
   const devices = devicesQuery.data ?? []
   const attendanceEvents = attendanceQuery.data ?? []
   const deviceOverview = deviceOverviewQuery.data ?? []
+  const controlMonthlyDays = controlMonthlyQuery.data?.days ?? []
+  const controlMonthlyInsight = useMemo(
+    () => buildMonthlyAttendanceInsight(controlMonthlyDays),
+    [controlMonthlyDays],
+  )
 
   const employeesById = useMemo(
     () => new Map(employees.map((employee) => [employee.id, employee])),
@@ -145,14 +189,35 @@ export function ManagementConsolePage() {
     [devices],
   )
   const verifiedLocationCount = useMemo(
-    () =>
-      attendanceEvents.filter((event) => event.location_status === 'VERIFIED_HOME').length,
+    () => attendanceEvents.filter((event) => event.location_status === 'VERIFIED_HOME').length,
     [attendanceEvents],
   )
-
   const selectedTargetEmployee = useMemo(
     () => employees.find((employee) => String(employee.id) === notifyEmployeeInput) ?? null,
     [employees, notifyEmployeeInput],
+  )
+  const controlMonthlyByDate = useMemo(
+    () => new Map(controlMonthlyDays.map((day) => [day.date, day])),
+    [controlMonthlyDays],
+  )
+  const controlEmployeeIdNumber = Number(controlEmployeeId)
+
+  const liveAttendanceRows = useMemo(
+    () =>
+      attendanceEvents.slice(0, 14).map((event) => {
+        const dayKey = toTurkeyDateKey(event.ts_utc)
+        const monthlyDay =
+          event.employee_id === controlEmployeeIdNumber && dayKey
+            ? controlMonthlyByDate.get(dayKey)
+            : undefined
+        return {
+          event,
+          dayTypeLabel: monthlyDay ? getAttendanceDayType(monthlyDay).label : dayTypeFromDateKey(dayKey),
+          workedMinutes: monthlyDay?.worked_minutes ?? null,
+          overtimeMinutes: monthlyDay?.overtime_minutes ?? null,
+        }
+      }),
+    [attendanceEvents, controlEmployeeIdNumber, controlMonthlyByDate],
   )
 
   const addNotificationTarget = () => {
@@ -260,9 +325,7 @@ export function ManagementConsolePage() {
       <div className="grid gap-4 xl:grid-cols-[1.06fr_1.35fr]">
         <Panel className="management-console-panel">
           <h4 className="management-console-title">Bildirim Terminali</h4>
-          <p className="management-console-subtitle">
-            Toplu veya tekli bildirim gönderimini aynı terminalden yürütün.
-          </p>
+          <p className="management-console-subtitle">Toplu veya tekli bildirim gönderimini aynı terminalden yürütün.</p>
 
           <form className="management-console-terminal mt-3 space-y-3" onSubmit={handleSendNotification}>
             <div className="grid gap-3 md:grid-cols-2">
@@ -320,11 +383,7 @@ export function ManagementConsolePage() {
                   helperText="Çalışan seçip listeye ekleyin."
                 />
                 <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={addNotificationTarget}
-                    className="management-console-action-button"
-                  >
+                  <button type="button" onClick={addNotificationTarget} className="management-console-action-button">
                     Hedefe Ekle
                   </button>
                   {selectedTargetEmployee ? (
@@ -351,14 +410,12 @@ export function ManagementConsolePage() {
                 </div>
               </div>
             ) : (
-              <p className="management-console-inline-note">Toplu mod: Aktif/Pasif ayrımı olmadan tüm çalışanlara gönderilir.</p>
+              <p className="management-console-inline-note">
+                Toplu mod: Aktif/Pasif ayrımı olmadan tüm çalışanlara gönderilir.
+              </p>
             )}
 
-            <button
-              type="submit"
-              disabled={sendMutation.isPending}
-              className="management-console-send-button"
-            >
+            <button type="submit" disabled={sendMutation.isPending} className="management-console-send-button">
               {sendMutation.isPending ? 'Gönderiliyor...' : 'Bildirimi Gönder'}
             </button>
           </form>
@@ -379,10 +436,35 @@ export function ManagementConsolePage() {
               helperText="Seçildiğinde puantaj ve konum panelleri otomatik güncellenir."
             />
 
+            <div className="grid grid-cols-2 gap-2">
+              <label className="text-sm">
+                <span className="management-console-field-label">Yıl</span>
+                <input
+                  type="number"
+                  value={controlYear}
+                  onChange={(event) => setControlYear(event.target.value)}
+                  className="management-console-input mt-1"
+                />
+              </label>
+              <label className="text-sm">
+                <span className="management-console-field-label">Ay</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={12}
+                  value={controlMonth}
+                  onChange={(event) => setControlMonth(event.target.value)}
+                  className="management-console-input mt-1"
+                />
+              </label>
+            </div>
+
             {!controlEmployeeId ? (
               <p className="management-console-inline-note">Çalışan seçildiğinde canlı özet burada görünür.</p>
             ) : null}
-
+            {controlEmployeeId && !controlMonthValid ? (
+              <p className="management-console-inline-note">Yıl/ay değeri geçersiz.</p>
+            ) : null}
             {controlEmployeeId && snapshotQuery.isLoading ? <LoadingBlock label="Canlı özet yükleniyor..." /> : null}
             {controlEmployeeId && snapshotQuery.isError ? <ErrorBlock message="Çalışan özeti alınamadı." /> : null}
 
@@ -408,6 +490,28 @@ export function ManagementConsolePage() {
                   </div>
                 </div>
 
+                {controlMonthlyQuery.isLoading ? <LoadingBlock label="Aylık puantaj yükleniyor..." /> : null}
+                {controlMonthlyQuery.isError ? <ErrorBlock message="Aylık puantaj alınamadı." /> : null}
+                {controlMonthlyQuery.data ? (
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    <div className="management-console-block">
+                      <p className="management-console-block-title">Çalışılan Gün</p>
+                      <p>{controlMonthlyInsight.workedDayCount} gün</p>
+                      <p>Hafta İçi: {controlMonthlyInsight.weekdayWorkedDayCount}</p>
+                    </div>
+                    <div className="management-console-block">
+                      <p className="management-console-block-title">Pazar Mesaisi</p>
+                      <p>{controlMonthlyInsight.sundayWorkedDayCount} gün</p>
+                      <p><MinuteDisplay minutes={controlMonthlyInsight.sundayWorkedMinutes} /></p>
+                    </div>
+                    <div className="management-console-block">
+                      <p className="management-console-block-title">Özel Gün Mesaisi</p>
+                      <p>{controlMonthlyInsight.specialWorkedDayCount} gün</p>
+                      <p><MinuteDisplay minutes={controlMonthlyInsight.specialWorkedMinutes} /></p>
+                    </div>
+                  </div>
+                ) : null}
+
                 <div className="grid gap-2 sm:grid-cols-2">
                   <div className="management-console-block">
                     <p className="management-console-block-title">Son Puantaj</p>
@@ -425,7 +529,9 @@ export function ManagementConsolePage() {
                     <p className="management-console-block-title">Son Konum</p>
                     {snapshotQuery.data.latest_location ? (
                       <>
-                        <p>Koordinat: {snapshotQuery.data.latest_location.lat.toFixed(6)}, {snapshotQuery.data.latest_location.lon.toFixed(6)}</p>
+                        <p>
+                          Koordinat: {snapshotQuery.data.latest_location.lat.toFixed(6)}, {snapshotQuery.data.latest_location.lon.toFixed(6)}
+                        </p>
                         <p>Doğruluk: {snapshotQuery.data.latest_location.accuracy_m ?? '-'} m</p>
                         <p>Zaman: {dt(snapshotQuery.data.latest_location.ts_utc)}</p>
                       </>
@@ -494,9 +600,9 @@ export function ManagementConsolePage() {
         </Panel>
 
         <Panel className="management-console-panel">
-          <h4 className="management-console-title">Canlı Puantaj Akışı</h4>
+          <h4 className="management-console-title">Canlı Puantaj Kaydı</h4>
           <p className="management-console-subtitle">
-            Son giriş-çıkış olayları ve konum doğrulama durumu.
+            Son giriş-çıkış olayları ile gün tipi, günlük çalışma ve fazla mesai görünümü.
           </p>
           <div className="management-console-table-wrap mt-3">
             <table className="min-w-full text-left text-sm">
@@ -504,17 +610,23 @@ export function ManagementConsolePage() {
                 <tr>
                   <th className="py-2">Zaman</th>
                   <th>Çalışan</th>
+                  <th>Gün Tipi</th>
                   <th>Tip</th>
                   <th>Konum</th>
+                  <th>Günlük Çalışma</th>
+                  <th>Günlük FM</th>
                 </tr>
               </thead>
               <tbody>
-                {attendanceEvents.slice(0, 12).map((event) => (
-                  <tr key={event.id}>
-                    <td className="py-2">{dt(event.ts_utc)}</td>
-                    <td>#{event.employee_id} - {employeesById.get(event.employee_id)?.full_name ?? 'Çalışan'}</td>
-                    <td>{event.type}</td>
-                    <td>{event.location_status}</td>
+                {liveAttendanceRows.map((row) => (
+                  <tr key={row.event.id}>
+                    <td className="py-2">{dt(row.event.ts_utc)}</td>
+                    <td>#{row.event.employee_id} - {employeesById.get(row.event.employee_id)?.full_name ?? 'Çalışan'}</td>
+                    <td>{row.dayTypeLabel}</td>
+                    <td>{row.event.type}</td>
+                    <td>{row.event.location_status}</td>
+                    <td>{row.workedMinutes === null ? '-' : <MinuteDisplay minutes={row.workedMinutes} />}</td>
+                    <td>{row.overtimeMinutes === null ? '-' : <MinuteDisplay minutes={row.overtimeMinutes} />}</td>
                   </tr>
                 ))}
               </tbody>

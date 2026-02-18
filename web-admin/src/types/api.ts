@@ -257,6 +257,22 @@ export interface NotificationJob {
   updated_at: string
 }
 
+export interface NotificationDeliveryLog {
+  audit_id: number
+  sent_at_utc: string
+  sender_admin: string
+  target: string
+  title: string | null
+  recipient_type: 'employee' | 'admin'
+  recipient_id: number | null
+  recipient_name: string | null
+  device_id: number | null
+  endpoint: string | null
+  ip: string | null
+  status: 'SENT' | 'FAILED'
+  error: string | null
+}
+
 export interface AdminPushSubscription {
   id: number
   device_id: number

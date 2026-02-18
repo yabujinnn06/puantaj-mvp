@@ -8,6 +8,7 @@ import {
   getDepartments,
   getDepartmentShifts,
   getEmployees,
+  getMonthlyEmployee,
   softDeleteAttendanceEvent,
   updateManualAttendanceEvent,
   type AttendanceEventParams,
@@ -16,6 +17,7 @@ import { parseApiError } from '../api/error'
 import { EmployeeAutocompleteField } from '../components/EmployeeAutocompleteField'
 import { ErrorBlock } from '../components/ErrorBlock'
 import { LoadingBlock } from '../components/LoadingBlock'
+import { MinuteDisplay } from '../components/MinuteDisplay'
 import { Modal } from '../components/Modal'
 import { PageHeader } from '../components/PageHeader'
 import { Panel } from '../components/Panel'
@@ -23,6 +25,7 @@ import { SuspiciousBadge } from '../components/SuspiciousBadge'
 import { SuspiciousReasonList } from '../components/SuspiciousReasonList'
 import { useToast } from '../hooks/useToast'
 import type { AttendanceEvent, AttendanceType, LocationStatus } from '../types/api'
+import { buildMonthlyAttendanceInsight, getAttendanceDayType } from '../utils/attendanceInsights'
 
 const LOCATION_OPTIONS: { value: 'ALL' | LocationStatus; label: string }[] = [
   { value: 'ALL', label: 'Tüm konum durumları' },
@@ -182,6 +185,31 @@ export function AttendanceEventsPage() {
     queryFn: () => getAuditLogs({ entity_type: 'attendance_event', limit: 50 }),
   })
 
+  const selectedSummaryEmployeeId = Number(appliedFilters.employeeId)
+  const summaryMonthDate = useMemo(() => {
+    const rawDate = appliedFilters.dateFrom || appliedFilters.dateTo
+    if (!rawDate) {
+      return new Date()
+    }
+    const parsed = new Date(`${rawDate}T00:00:00`)
+    if (Number.isNaN(parsed.getTime())) {
+      return new Date()
+    }
+    return parsed
+  }, [appliedFilters.dateFrom, appliedFilters.dateTo])
+
+  const monthlySummaryQuery = useQuery({
+    queryKey: ['attendance-events-monthly-summary', selectedSummaryEmployeeId, summaryMonthDate.getFullYear(), summaryMonthDate.getMonth() + 1],
+    queryFn: () =>
+      getMonthlyEmployee({
+        employee_id: selectedSummaryEmployeeId,
+        year: summaryMonthDate.getFullYear(),
+        month: summaryMonthDate.getMonth() + 1,
+      }),
+    enabled: Number.isInteger(selectedSummaryEmployeeId) && selectedSummaryEmployeeId > 0,
+    staleTime: 15_000,
+  })
+
   const createManualMutation = useMutation({
     mutationFn: createManualAttendanceEvent,
     onSuccess: () => {
@@ -253,6 +281,22 @@ export function AttendanceEventsPage() {
   const departments = departmentsQuery.data ?? []
   const shifts = shiftsQuery.data ?? []
   const events = eventsQuery.data ?? []
+  const monthlySummaryRows = useMemo(() => {
+    const rows = monthlySummaryQuery.data?.days ?? []
+    return rows.filter((day) => {
+      if (appliedFilters.dateFrom && day.date < appliedFilters.dateFrom) {
+        return false
+      }
+      if (appliedFilters.dateTo && day.date > appliedFilters.dateTo) {
+        return false
+      }
+      return true
+    })
+  }, [monthlySummaryQuery.data?.days, appliedFilters.dateFrom, appliedFilters.dateTo])
+  const monthlySummaryInsight = useMemo(
+    () => buildMonthlyAttendanceInsight(monthlySummaryRows),
+    [monthlySummaryRows],
+  )
 
   const employeeById = useMemo(() => new Map(employees.map((item) => [item.id, item])), [employees])
   const employeeNameById = useMemo(() => new Map(employees.map((item) => [item.id, item.full_name])), [employees])
@@ -550,6 +594,91 @@ export function AttendanceEventsPage() {
             </button>
           </div>
         </form>
+      </Panel>
+
+      <Panel>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h4 className="text-base font-semibold text-slate-900">Puantaj Analiz Ozeti</h4>
+            <p className="text-xs text-slate-500">
+              Secili calisan icin saat bazli net calisma, fazla mesai ve gun tipi kirilimlari.
+            </p>
+          </div>
+          <p className="text-xs text-slate-500">
+            Ay: {summaryMonthDate.getFullYear()}-{String(summaryMonthDate.getMonth() + 1).padStart(2, '0')}
+          </p>
+        </div>
+
+        {!selectedSummaryEmployeeId ? (
+          <p className="mt-3 text-sm text-slate-600">Analiz gormek icin filtrelerden bir calisan secin.</p>
+        ) : monthlySummaryQuery.isLoading ? (
+          <LoadingBlock />
+        ) : monthlySummaryQuery.isError ? (
+          <ErrorBlock message={parseApiError(monthlySummaryQuery.error, 'Puantaj analiz ozeti alinamadi.').message} />
+        ) : (
+          <div className="mt-3 space-y-3">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                <p className="text-xs text-slate-500">Net calisma</p>
+                <p className="text-sm font-semibold text-slate-900">
+                  <MinuteDisplay minutes={monthlySummaryInsight.workedMinutes} />
+                </p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                <p className="text-xs text-slate-500">Fazla mesai</p>
+                <p className="text-sm font-semibold text-slate-900">
+                  <MinuteDisplay minutes={monthlySummaryInsight.overtimeMinutes} />
+                </p>
+                <p className="text-xs text-slate-500">{monthlySummaryInsight.overtimeDayCount} gun</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                <p className="text-xs text-slate-500">Calisilan gun</p>
+                <p className="text-sm font-semibold text-slate-900">{monthlySummaryInsight.workedDayCount}</p>
+                <p className="text-xs text-slate-500">Hafta ici: {monthlySummaryInsight.weekdayWorkedDayCount}</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                <p className="text-xs text-slate-500">Pazar / Ozel</p>
+                <p className="text-sm font-semibold text-slate-900">
+                  {monthlySummaryInsight.sundayWorkedDayCount} / {monthlySummaryInsight.specialWorkedDayCount} gun
+                </p>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead className="text-xs uppercase text-slate-500">
+                  <tr>
+                    <th className="py-2">Tarih</th>
+                    <th className="py-2">Gun Tipi</th>
+                    <th className="py-2">Durum</th>
+                    <th className="py-2">Giris</th>
+                    <th className="py-2">Cikis</th>
+                    <th className="py-2">Calisma</th>
+                    <th className="py-2">Fazla Mesai</th>
+                    <th className="py-2">Bayraklar</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {monthlySummaryRows.map((day) => (
+                    <tr key={day.date} className="border-t border-slate-100">
+                      <td className="py-2">{day.date}</td>
+                      <td className="py-2">{getAttendanceDayType(day).label}</td>
+                      <td className="py-2">{day.status}</td>
+                      <td className="py-2">{day.in ? formatTs(day.in) : '-'}</td>
+                      <td className="py-2">{day.out ? formatTs(day.out) : '-'}</td>
+                      <td className="py-2"><MinuteDisplay minutes={day.worked_minutes} /></td>
+                      <td className="py-2"><MinuteDisplay minutes={day.overtime_minutes} /></td>
+                      <td className="py-2 text-xs text-slate-600">{day.flags.length ? day.flags.join(', ') : '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {monthlySummaryRows.length === 0 ? (
+                <p className="mt-3 text-sm text-slate-500">Secili aralikta puantaj gun kaydi bulunamadi.</p>
+              ) : null}
+            </div>
+          </div>
+        )}
       </Panel>
 
       <Panel>

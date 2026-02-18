@@ -33,6 +33,7 @@ import type {
   ManualDayOverride,
   MonthlyEmployeeResponse,
   NotificationJob,
+  NotificationDeliveryLog,
   NotificationJobStatus,
   OvertimeRoundingMode,
   Region,
@@ -232,6 +233,10 @@ export interface AuditLogParams {
 export interface NotificationJobsParams {
   status?: NotificationJobStatus
   offset?: number
+  limit?: number
+}
+
+export interface NotificationDeliveryLogsParams {
   limit?: number
 }
 
@@ -718,6 +723,13 @@ export async function getNotificationJobs(
   params: NotificationJobsParams = {},
 ): Promise<NotificationJob[]> {
   const response = await apiClient.get<NotificationJob[]>('/api/admin/notifications/jobs', { params })
+  return response.data
+}
+
+export async function getNotificationDeliveryLogs(
+  params: NotificationDeliveryLogsParams = {},
+): Promise<NotificationDeliveryLog[]> {
+  const response = await apiClient.get<NotificationDeliveryLog[]>('/api/admin/notifications/delivery-logs', { params })
   return response.data
 }
 

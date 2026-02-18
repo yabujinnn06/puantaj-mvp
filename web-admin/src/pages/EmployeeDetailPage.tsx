@@ -30,6 +30,7 @@ import { Panel } from '../components/Panel'
 import { StatusBadge } from '../components/StatusBadge'
 import { useToast } from '../hooks/useToast'
 import type { MonthlyEmployeeDay } from '../types/api'
+import { buildMonthlyAttendanceInsight, getAttendanceDayType } from '../utils/attendanceInsights'
 
 const locationSchema = z.object({
   home_lat: z.coerce.number().min(-90),
@@ -397,6 +398,7 @@ export function EmployeeDetailPage() {
   }
 
   const monthlyRows = monthlyQuery.data?.days ?? []
+  const monthlyInsight = useMemo(() => buildMonthlyAttendanceInsight(monthlyRows), [monthlyRows])
   const ipSummaryRows = detailQuery.data?.ip_summary ?? []
 
   useEffect(() => {
@@ -726,7 +728,7 @@ export function EmployeeDetailPage() {
           <ErrorBlock message={parseApiError(monthlyQuery.error, 'Aylik puantaj alinamadi.').message} />
         ) : (
           <div className="mt-4 space-y-3">
-            <div className="grid gap-3 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
               <div className="rounded-lg border border-slate-200 p-3">
                 <p className="text-xs text-slate-500">Secili ay net calisma</p>
                 <p className="text-lg font-semibold text-slate-900">
@@ -738,10 +740,30 @@ export function EmployeeDetailPage() {
                 <p className="text-lg font-semibold text-slate-900">
                   <MinuteDisplay minutes={monthlyQuery.data?.totals.overtime_minutes ?? 0} />
                 </p>
+                <p className="text-xs text-slate-500">{monthlyInsight.overtimeDayCount} gun fazla mesai</p>
               </div>
               <div className="rounded-lg border border-slate-200 p-3">
                 <p className="text-xs text-slate-500">Eksik gun</p>
                 <p className="text-lg font-semibold text-slate-900">{monthlyQuery.data?.totals.incomplete_days ?? 0}</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 p-3">
+                <p className="text-xs text-slate-500">Calisilan gun</p>
+                <p className="text-lg font-semibold text-slate-900">{monthlyInsight.workedDayCount}</p>
+                <p className="text-xs text-slate-500">Hafta ici: {monthlyInsight.weekdayWorkedDayCount} gun</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 p-3">
+                <p className="text-xs text-slate-500">Pazar mesaisi</p>
+                <p className="text-sm font-semibold text-slate-900">{monthlyInsight.sundayWorkedDayCount} gun</p>
+                <p className="text-xs text-slate-500">
+                  <MinuteDisplay minutes={monthlyInsight.sundayWorkedMinutes} />
+                </p>
+              </div>
+              <div className="rounded-lg border border-slate-200 p-3">
+                <p className="text-xs text-slate-500">Ozel gun mesaisi</p>
+                <p className="text-sm font-semibold text-slate-900">{monthlyInsight.specialWorkedDayCount} gun</p>
+                <p className="text-xs text-slate-500">
+                  <MinuteDisplay minutes={monthlyInsight.specialWorkedMinutes} />
+                </p>
               </div>
             </div>
 
@@ -751,6 +773,7 @@ export function EmployeeDetailPage() {
                   <tr>
                     <th className="py-2">Tarih</th>
                     <th className="py-2">Durum</th>
+                    <th className="py-2">Gun Tipi</th>
                     <th className="py-2">Giris</th>
                     <th className="py-2">Cikis</th>
                     <th className="py-2">Giris Konum (lat/lon)</th>
@@ -765,6 +788,7 @@ export function EmployeeDetailPage() {
                     <tr key={day.date} className="border-t border-slate-100">
                       <td className="py-2">{day.date}</td>
                       <td className="py-2">{formatDayStatus(day.status)}</td>
+                      <td className="py-2">{getAttendanceDayType(day).label}</td>
                       <td className="py-2">{formatDateTime(day.in)}</td>
                       <td className="py-2">{formatDateTime(day.out)}</td>
                       <td className="py-2">

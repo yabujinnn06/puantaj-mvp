@@ -826,6 +826,22 @@ class AdminManualNotificationSendResponse(BaseModel):
     admin_usernames: list[str] = Field(default_factory=list)
 
 
+class NotificationDeliveryLogRead(BaseModel):
+    audit_id: int
+    sent_at_utc: datetime
+    sender_admin: str
+    target: str
+    title: str | None = None
+    recipient_type: Literal["employee", "admin"]
+    recipient_id: int | None = None
+    recipient_name: str | None = None
+    device_id: int | None = None
+    endpoint: str | None = None
+    ip: str | None = None
+    status: Literal["SENT", "FAILED"]
+    error: str | None = None
+
+
 class CheckinQrPayload(BaseModel):
     site_id: str
     type: Literal["IN"]

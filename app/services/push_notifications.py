@@ -324,9 +324,14 @@ def send_push_to_subscriptions(
     failed = 0
     deactivated = 0
     failures: list[dict[str, Any]] = []
+    deliveries: list[dict[str, Any]] = []
     now_utc = _utcnow()
 
     for row in subscriptions:
+        employee_id: int | None = None
+        if row.device is not None:
+            employee_id = row.device.employee_id
+
         ok, error_text, status_code = _send_to_subscription_row(
             endpoint=row.endpoint,
             p256dh=row.p256dh,
@@ -339,6 +344,15 @@ def send_push_to_subscriptions(
         if ok:
             sent += 1
             row.last_error = None
+            deliveries.append(
+                {
+                    "subscription_id": row.id,
+                    "device_id": row.device_id,
+                    "employee_id": employee_id,
+                    "endpoint": row.endpoint,
+                    "status": "SENT",
+                }
+            )
             continue
 
         failed += 1
@@ -350,7 +364,20 @@ def send_push_to_subscriptions(
         failures.append(
             {
                 "subscription_id": row.id,
+                "device_id": row.device_id,
+                "employee_id": employee_id,
                 "endpoint": row.endpoint,
+                "status_code": status_code,
+                "error": error_text,
+            }
+        )
+        deliveries.append(
+            {
+                "subscription_id": row.id,
+                "device_id": row.device_id,
+                "employee_id": employee_id,
+                "endpoint": row.endpoint,
+                "status": "FAILED",
                 "status_code": status_code,
                 "error": error_text,
             }
@@ -363,6 +390,7 @@ def send_push_to_subscriptions(
         "failed": failed,
         "deactivated": deactivated,
         "failures": failures,
+        "deliveries": deliveries,
     }
 
 
@@ -443,6 +471,7 @@ def send_push_to_admin_subscriptions(
     failed = 0
     deactivated = 0
     failures: list[dict[str, Any]] = []
+    deliveries: list[dict[str, Any]] = []
     now_utc = _utcnow()
 
     for row in subscriptions:
@@ -458,6 +487,15 @@ def send_push_to_admin_subscriptions(
         if ok:
             sent += 1
             row.last_error = None
+            deliveries.append(
+                {
+                    "subscription_id": row.id,
+                    "admin_user_id": row.admin_user_id,
+                    "admin_username": row.admin_username,
+                    "endpoint": row.endpoint,
+                    "status": "SENT",
+                }
+            )
             continue
 
         failed += 1
@@ -475,6 +513,17 @@ def send_push_to_admin_subscriptions(
                 "error": error_text,
             }
         )
+        deliveries.append(
+            {
+                "subscription_id": row.id,
+                "admin_user_id": row.admin_user_id,
+                "admin_username": row.admin_username,
+                "endpoint": row.endpoint,
+                "status": "FAILED",
+                "status_code": status_code,
+                "error": error_text,
+            }
+        )
 
     db.commit()
     return {
@@ -483,6 +532,7 @@ def send_push_to_admin_subscriptions(
         "failed": failed,
         "deactivated": deactivated,
         "failures": failures,
+        "deliveries": deliveries,
     }
 
 

@@ -108,6 +108,7 @@ from app.schemas import (
     ManualDayOverrideUpsertRequest,
     MonthlyEmployeeResponse,
     NotificationJobRead,
+    NotificationDeliveryLogRead,
     RegionCreate,
     RegionRead,
     RegionUpdate,
@@ -199,6 +200,19 @@ def _user_agent(request: Request) -> str | None:
 
 def _normalize_query_text(value: str | None) -> str:
     return " ".join((value or "").strip().split())
+
+
+def _as_positive_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value > 0 else None
+    if isinstance(value, str):
+        normalized = value.strip()
+        if normalized.isdigit():
+            parsed = int(normalized)
+            return parsed if parsed > 0 else None
+    return None
 
 
 def _resolve_employee_by_name(db: Session, employee_name: str) -> Employee:
@@ -3584,6 +3598,331 @@ def list_admin_notification_subscriptions(
         request_id=getattr(request.state, "request_id", None),
     )
     return [_to_admin_device_push_subscription_read(row) for row in rows]
+
+
+@router.get(
+    "/api/admin/notifications/delivery-logs",
+    response_model=list[NotificationDeliveryLogRead],
+)
+def list_notification_delivery_logs(
+    request: Request,
+    limit: int = Query(default=200, ge=1, le=1000),
+    claims: dict[str, Any] = Depends(require_admin_permission("audit")),
+    db: Session = Depends(get_db),
+) -> list[NotificationDeliveryLogRead]:
+    audit_rows = list(
+        db.scalars(
+            select(AuditLog)
+            .where(AuditLog.action == "ADMIN_MANUAL_PUSH_SENT")
+            .order_by(AuditLog.id.desc())
+            .limit(limit)
+        ).all()
+    )
+
+    prepared_rows: list[dict[str, Any]] = []
+    employee_ids: set[int] = set()
+    admin_user_ids: set[int] = set()
+    device_ids: set[int] = set()
+
+    for audit_row in audit_rows:
+        details = audit_row.details if isinstance(audit_row.details, dict) else {}
+        title = details.get("title") if isinstance(details.get("title"), str) else None
+        target = str(details.get("target") or "employees")
+        sender_admin = str(audit_row.actor_id or "admin")
+
+        employee_summary = details.get("employee_summary")
+        if isinstance(employee_summary, dict):
+            deliveries = employee_summary.get("deliveries")
+            if isinstance(deliveries, list) and deliveries:
+                for item in deliveries:
+                    if not isinstance(item, dict):
+                        continue
+                    recipient_id = _as_positive_int(item.get("employee_id"))
+                    device_id = _as_positive_int(item.get("device_id"))
+                    endpoint = item.get("endpoint") if isinstance(item.get("endpoint"), str) else None
+                    status = str(item.get("status") or "FAILED").upper()
+                    if status not in {"SENT", "FAILED"}:
+                        status = "FAILED"
+                    error = item.get("error") if isinstance(item.get("error"), str) else None
+
+                    if recipient_id is not None:
+                        employee_ids.add(recipient_id)
+                    if device_id is not None:
+                        device_ids.add(device_id)
+                    prepared_rows.append(
+                        {
+                            "audit_id": audit_row.id,
+                            "sent_at_utc": audit_row.ts_utc,
+                            "sender_admin": sender_admin,
+                            "target": target,
+                            "title": title,
+                            "recipient_type": "employee",
+                            "recipient_id": recipient_id,
+                            "recipient_name_hint": None,
+                            "device_id": device_id,
+                            "endpoint": endpoint,
+                            "status": status,
+                            "error": error,
+                        }
+                    )
+            else:
+                failed_ids: set[int] = set()
+                failures = employee_summary.get("failures")
+                if isinstance(failures, list):
+                    for item in failures:
+                        if not isinstance(item, dict):
+                            continue
+                        recipient_id = _as_positive_int(item.get("employee_id"))
+                        device_id = _as_positive_int(item.get("device_id"))
+                        endpoint = item.get("endpoint") if isinstance(item.get("endpoint"), str) else None
+                        error = item.get("error") if isinstance(item.get("error"), str) else None
+                        if recipient_id is not None:
+                            employee_ids.add(recipient_id)
+                            failed_ids.add(recipient_id)
+                        if device_id is not None:
+                            device_ids.add(device_id)
+                        prepared_rows.append(
+                            {
+                                "audit_id": audit_row.id,
+                                "sent_at_utc": audit_row.ts_utc,
+                                "sender_admin": sender_admin,
+                                "target": target,
+                                "title": title,
+                                "recipient_type": "employee",
+                                "recipient_id": recipient_id,
+                                "recipient_name_hint": None,
+                                "device_id": device_id,
+                                "endpoint": endpoint,
+                                "status": "FAILED",
+                                "error": error,
+                            }
+                        )
+
+                sent_ids_raw = employee_summary.get("employee_ids")
+                if isinstance(sent_ids_raw, list):
+                    for raw_id in sent_ids_raw:
+                        recipient_id = _as_positive_int(raw_id)
+                        if recipient_id is None or recipient_id in failed_ids:
+                            continue
+                        employee_ids.add(recipient_id)
+                        prepared_rows.append(
+                            {
+                                "audit_id": audit_row.id,
+                                "sent_at_utc": audit_row.ts_utc,
+                                "sender_admin": sender_admin,
+                                "target": target,
+                                "title": title,
+                                "recipient_type": "employee",
+                                "recipient_id": recipient_id,
+                                "recipient_name_hint": None,
+                                "device_id": None,
+                                "endpoint": None,
+                                "status": "SENT",
+                                "error": None,
+                            }
+                        )
+
+        admin_summary = details.get("admin_summary")
+        if isinstance(admin_summary, dict):
+            deliveries = admin_summary.get("deliveries")
+            if isinstance(deliveries, list) and deliveries:
+                for item in deliveries:
+                    if not isinstance(item, dict):
+                        continue
+                    recipient_id = _as_positive_int(item.get("admin_user_id"))
+                    recipient_name_hint = item.get("admin_username") if isinstance(item.get("admin_username"), str) else None
+                    endpoint = item.get("endpoint") if isinstance(item.get("endpoint"), str) else None
+                    status = str(item.get("status") or "FAILED").upper()
+                    if status not in {"SENT", "FAILED"}:
+                        status = "FAILED"
+                    error = item.get("error") if isinstance(item.get("error"), str) else None
+
+                    if recipient_id is not None:
+                        admin_user_ids.add(recipient_id)
+                    prepared_rows.append(
+                        {
+                            "audit_id": audit_row.id,
+                            "sent_at_utc": audit_row.ts_utc,
+                            "sender_admin": sender_admin,
+                            "target": target,
+                            "title": title,
+                            "recipient_type": "admin",
+                            "recipient_id": recipient_id,
+                            "recipient_name_hint": recipient_name_hint,
+                            "device_id": None,
+                            "endpoint": endpoint,
+                            "status": status,
+                            "error": error,
+                        }
+                    )
+            else:
+                failed_ids: set[int] = set()
+                failures = admin_summary.get("failures")
+                if isinstance(failures, list):
+                    for item in failures:
+                        if not isinstance(item, dict):
+                            continue
+                        recipient_id = _as_positive_int(item.get("admin_user_id"))
+                        recipient_name_hint = item.get("admin_username") if isinstance(item.get("admin_username"), str) else None
+                        endpoint = item.get("endpoint") if isinstance(item.get("endpoint"), str) else None
+                        error = item.get("error") if isinstance(item.get("error"), str) else None
+                        if recipient_id is not None:
+                            admin_user_ids.add(recipient_id)
+                            failed_ids.add(recipient_id)
+                        prepared_rows.append(
+                            {
+                                "audit_id": audit_row.id,
+                                "sent_at_utc": audit_row.ts_utc,
+                                "sender_admin": sender_admin,
+                                "target": target,
+                                "title": title,
+                                "recipient_type": "admin",
+                                "recipient_id": recipient_id,
+                                "recipient_name_hint": recipient_name_hint,
+                                "device_id": None,
+                                "endpoint": endpoint,
+                                "status": "FAILED",
+                                "error": error,
+                            }
+                        )
+
+                sent_ids_raw = admin_summary.get("admin_user_ids")
+                sent_names_raw = admin_summary.get("admin_usernames")
+                sent_names = sent_names_raw if isinstance(sent_names_raw, list) else []
+                if isinstance(sent_ids_raw, list):
+                    for index, raw_id in enumerate(sent_ids_raw):
+                        recipient_id = _as_positive_int(raw_id)
+                        if recipient_id is None or recipient_id in failed_ids:
+                            continue
+                        admin_user_ids.add(recipient_id)
+                        recipient_name_hint = None
+                        if index < len(sent_names) and isinstance(sent_names[index], str):
+                            recipient_name_hint = sent_names[index]
+                        prepared_rows.append(
+                            {
+                                "audit_id": audit_row.id,
+                                "sent_at_utc": audit_row.ts_utc,
+                                "sender_admin": sender_admin,
+                                "target": target,
+                                "title": title,
+                                "recipient_type": "admin",
+                                "recipient_id": recipient_id,
+                                "recipient_name_hint": recipient_name_hint,
+                                "device_id": None,
+                                "endpoint": None,
+                                "status": "SENT",
+                                "error": None,
+                            }
+                        )
+
+    employee_name_by_id: dict[int, str] = {}
+    if employee_ids:
+        for employee in db.scalars(select(Employee).where(Employee.id.in_(employee_ids))).all():
+            employee_name_by_id[employee.id] = employee.full_name
+
+    admin_name_by_id: dict[int, str] = {}
+    if admin_user_ids:
+        for admin_user in db.scalars(select(AdminUser).where(AdminUser.id.in_(admin_user_ids))).all():
+            admin_name_by_id[admin_user.id] = admin_user.username
+
+    device_employee_map: dict[int, int] = {}
+    if device_ids:
+        for device in db.scalars(select(Device).where(Device.id.in_(device_ids))).all():
+            device_employee_map[device.id] = device.employee_id
+            if device.employee_id not in employee_name_by_id:
+                employee_ids.add(device.employee_id)
+
+    if employee_ids and len(employee_name_by_id) < len(employee_ids):
+        for employee in db.scalars(select(Employee).where(Employee.id.in_(employee_ids))).all():
+            if employee.id not in employee_name_by_id:
+                employee_name_by_id[employee.id] = employee.full_name
+
+    device_ip_by_id: dict[int, str | None] = {}
+    for device_id in device_ids:
+        latest_event = db.scalar(
+            select(AttendanceEvent)
+            .where(
+                AttendanceEvent.device_id == device_id,
+                AttendanceEvent.deleted_at.is_(None),
+            )
+            .order_by(AttendanceEvent.ts_utc.desc(), AttendanceEvent.id.desc())
+            .limit(1)
+        )
+        if latest_event is None:
+            device_ip_by_id[device_id] = None
+            continue
+        latest_event_log = db.scalar(
+            select(AuditLog)
+            .where(
+                AuditLog.entity_type == "attendance_event",
+                AuditLog.entity_id == str(latest_event.id),
+                AuditLog.action == "ATTENDANCE_EVENT_CREATED",
+                AuditLog.ip.is_not(None),
+            )
+            .order_by(AuditLog.ts_utc.desc(), AuditLog.id.desc())
+            .limit(1)
+        )
+        device_ip_by_id[device_id] = latest_event_log.ip if latest_event_log is not None else None
+
+    result_rows: list[NotificationDeliveryLogRead] = []
+    for item in prepared_rows:
+        recipient_id = _as_positive_int(item.get("recipient_id"))
+        device_id = _as_positive_int(item.get("device_id"))
+        recipient_type = str(item.get("recipient_type") or "employee")
+        recipient_name_hint = item.get("recipient_name_hint")
+        recipient_name = recipient_name_hint if isinstance(recipient_name_hint, str) else None
+
+        if recipient_type == "employee":
+            if recipient_id is None and device_id is not None:
+                recipient_id = device_employee_map.get(device_id)
+            if recipient_id is not None:
+                recipient_name = employee_name_by_id.get(recipient_id, recipient_name)
+        else:
+            if recipient_id is not None:
+                recipient_name = admin_name_by_id.get(recipient_id, recipient_name)
+
+        status = str(item.get("status") or "FAILED").upper()
+        if status not in {"SENT", "FAILED"}:
+            status = "FAILED"
+
+        result_rows.append(
+            NotificationDeliveryLogRead(
+                audit_id=int(item.get("audit_id") or 0),
+                sent_at_utc=item.get("sent_at_utc"),
+                sender_admin=str(item.get("sender_admin") or "admin"),
+                target=str(item.get("target") or "employees"),
+                title=item.get("title") if isinstance(item.get("title"), str) else None,
+                recipient_type="admin" if recipient_type == "admin" else "employee",
+                recipient_id=recipient_id,
+                recipient_name=recipient_name,
+                device_id=device_id,
+                endpoint=item.get("endpoint") if isinstance(item.get("endpoint"), str) else None,
+                ip=device_ip_by_id.get(device_id) if device_id is not None else None,
+                status=status,  # type: ignore[arg-type]
+                error=item.get("error") if isinstance(item.get("error"), str) else None,
+            )
+        )
+
+    actor_id = str(claims.get("username") or claims.get("sub") or "admin")
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=actor_id,
+        action="NOTIFICATION_DELIVERY_LOG_LIST",
+        success=True,
+        entity_type="notification",
+        entity_id=None,
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "limit": limit,
+            "audit_count": len(audit_rows),
+            "row_count": len(result_rows),
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+
+    return result_rows
 
 
 @router.get(
