@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 
 import { UI_BRANDING } from '../config/ui'
@@ -47,11 +46,6 @@ const pageTitles: Record<string, string> = {
 export function AppLayout() {
   const location = useLocation()
   const { user, logout, hasPermission } = useAuth()
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
-
-  useEffect(() => {
-    setMobileSidebarOpen(false)
-  }, [location.pathname])
 
   const visibleNavItems = navItems.filter((item) => !item.permission || hasPermission(item.permission))
 
@@ -61,35 +55,14 @@ export function AppLayout() {
 
   return (
     <div className="admin-shell min-h-screen bg-slate-100 lg:grid lg:grid-cols-[260px_1fr]">
-      <div
-        className={`fixed inset-0 z-30 bg-slate-950/45 transition-opacity lg:hidden ${
-          mobileSidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
-        }`}
-        onClick={() => setMobileSidebarOpen(false)}
-      />
-
-      <aside
-        className={`admin-sidebar fixed inset-y-0 left-0 z-40 flex w-72 max-w-[85vw] flex-col px-4 py-6 text-slate-100 shadow-panel transition-transform duration-200 lg:static lg:w-auto lg:max-w-none lg:translate-x-0 ${
-          mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
-      >
-        <div className="flex items-center justify-between px-2">
-          <h1 className="text-xl font-bold tracking-tight">Puantaj Admin</h1>
-          <button
-            type="button"
-            onClick={() => setMobileSidebarOpen(false)}
-            className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-300 lg:hidden"
-          >
-            Kapat
-          </button>
-        </div>
+      <aside className="admin-sidebar flex flex-col px-4 py-6 text-slate-100 shadow-panel">
+        <h1 className="px-2 text-xl font-bold tracking-tight">Puantaj Admin</h1>
         <p className="px-2 pt-1 text-xs text-slate-400">FastAPI Yonetim Paneli</p>
-        <nav className="mt-6 flex flex-col gap-1 overflow-y-auto pr-1">
+        <nav className="mt-6 flex flex-col gap-1">
           {visibleNavItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
-              onClick={() => setMobileSidebarOpen(false)}
               className={({ isActive }) =>
                 `rounded-lg px-3 py-2 text-sm font-medium transition ${
                   isActive
@@ -110,23 +83,14 @@ export function AppLayout() {
         ) : null}
       </aside>
 
-      <div className="flex min-h-screen flex-col lg:col-start-2">
+      <div className="flex min-h-screen flex-col">
         <header className="admin-topbar border-b border-slate-200 bg-white/90 px-4 py-4 backdrop-blur sm:px-6">
           <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setMobileSidebarOpen(true)}
-                className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700 lg:hidden"
-              >
-                Menu
-              </button>
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
-                <p className="text-xs text-slate-500">
-                  Oturum: {user?.username ?? user?.sub ?? 'admin'} / Rol: {user?.role ?? 'admin'}
-                </p>
-              </div>
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+              <p className="text-xs text-slate-500">
+                Oturum: {user?.username ?? user?.sub ?? 'admin'} / Rol: {user?.role ?? 'admin'}
+              </p>
             </div>
             <button
               type="button"
