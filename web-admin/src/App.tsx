@@ -17,6 +17,7 @@ import { EmployeeMonthlyReportPage } from './pages/EmployeeMonthlyReportPage'
 import { EmployeesPage } from './pages/EmployeesPage'
 import { LeavesPage } from './pages/LeavesPage'
 import { LoginPage } from './pages/LoginPage'
+import { ManagementConsolePage } from './pages/ManagementConsolePage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { PuantajExportPage } from './pages/PuantajExportPage'
 import { QrCodesPage } from './pages/QrCodesPage'
@@ -39,6 +40,7 @@ function App() {
       <Route element={<AuthGuard />}>
         <Route element={<AppLayout />}>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/management-console" element={<ManagementConsolePage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/regions" element={<RegionsPage />} />
           <Route path="/departments" element={<DepartmentsPage />} />
