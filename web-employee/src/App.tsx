@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo } from 'react'
+import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 
 import { BrandSignature } from './components/BrandSignature'
@@ -95,20 +95,48 @@ function NotFoundPage() {
 }
 
 export default function App() {
+  const [showBootLoader, setShowBootLoader] = useState(true)
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setShowBootLoader(false)
+    }, 1250)
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [])
+
   return (
-    <Routes>
-      <Route
-        index
-        element={
-          <EmployeeRouteGuard>
-            <HomePage />
-          </EmployeeRouteGuard>
-        }
-      />
-      <Route path="claim" element={<ClaimPage />} />
-      <Route path="recover" element={<RecoverPage />} />
-      <Route path="settings" element={<Navigate to="/" replace />} />
-      <Route path="*" element={<NotFoundPage />} />
-    </Routes>
+    <>
+      {showBootLoader ? (
+        <div className="employee-boot-loader" role="status" aria-live="polite" aria-label="Uygulama açılıyor">
+          <div className="employee-boot-loader-logo" aria-hidden="true">
+            <div className="employee-boot-loader-halo" />
+            <div className="employee-boot-loader-ring" />
+            <div className="employee-boot-loader-spark" />
+            <div className="employee-boot-loader-core">
+              <span className="employee-boot-loader-brand">YABUJIN</span>
+              <span className="employee-boot-loader-sub">EMPLOYEE CORE</span>
+            </div>
+          </div>
+          <p className="employee-boot-loader-text">Sistem hazırlanıyor...</p>
+        </div>
+      ) : null}
+
+      <Routes>
+        <Route
+          index
+          element={
+            <EmployeeRouteGuard>
+              <HomePage />
+            </EmployeeRouteGuard>
+          }
+        />
+        <Route path="claim" element={<ClaimPage />} />
+        <Route path="recover" element={<RecoverPage />} />
+        <Route path="settings" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<NotFoundPage />} />
+      </Routes>
+    </>
   )
 }

@@ -672,6 +672,114 @@ textarea:focus {
   border-top-color: var(--cr-primary);
 }
 
+.employee-boot-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.86rem;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 32%, rgba(173, 222, 242, 0.24) 0%, transparent 45%),
+    linear-gradient(180deg, rgba(6, 24, 35, 0.84) 0%, rgba(6, 31, 44, 0.74) 100%);
+  backdrop-filter: blur(6px);
+  animation: fade-in 160ms ease-out both;
+}
+
+.employee-boot-loader-logo {
+  width: 122px;
+  height: 122px;
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.employee-boot-loader-halo {
+  position: absolute;
+  inset: -14px;
+  border-radius: 999px;
+  background: radial-gradient(
+    circle,
+    rgba(179, 233, 255, 0.42) 0%,
+    rgba(75, 154, 192, 0.18) 38%,
+    rgba(22, 76, 103, 0) 78%
+  );
+  filter: blur(1px);
+}
+
+.employee-boot-loader-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: conic-gradient(
+    from 0deg,
+    rgba(170, 226, 247, 0.2),
+    rgba(174, 224, 244, 0.95),
+    rgba(35, 128, 164, 0.24),
+    rgba(170, 226, 247, 0.2)
+  );
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 12px), #000 calc(100% - 11px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 12px), #000 calc(100% - 11px));
+  box-shadow: 0 0 36px rgba(111, 191, 228, 0.56);
+  animation: employee-loader-spin 820ms linear infinite;
+}
+
+.employee-boot-loader-spark {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(233, 248, 255, 0.98), rgba(150, 227, 255, 0.82));
+  box-shadow: 0 0 16px rgba(170, 234, 255, 0.9);
+  animation: employee-loader-spark-orbit 900ms linear infinite;
+}
+
+.employee-boot-loader-core {
+  width: 72px;
+  height: 72px;
+  border-radius: 999px;
+  border: 1px solid rgba(181, 220, 237, 0.42);
+  display: grid;
+  place-items: center;
+  gap: 0.08rem;
+  padding: 0.55rem;
+  text-align: center;
+  background:
+    radial-gradient(circle at 34% 24%, rgba(190, 234, 251, 0.62), rgba(15, 79, 106, 0.9)),
+    linear-gradient(180deg, rgba(8, 43, 61, 0.92), rgba(5, 31, 45, 0.97));
+  box-shadow:
+    inset 0 0 20px rgba(191, 236, 251, 0.26),
+    0 0 28px rgba(106, 188, 225, 0.52);
+  animation: employee-loader-core-pulse 1050ms ease-in-out infinite;
+}
+
+.employee-boot-loader-brand {
+  font-size: 0.56rem;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  color: rgba(235, 249, 255, 0.98);
+  text-shadow: 0 0 10px rgba(178, 228, 247, 0.55);
+}
+
+.employee-boot-loader-sub {
+  font-size: 0.38rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: rgba(196, 232, 247, 0.92);
+}
+
+.employee-boot-loader-text {
+  margin: 0;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(212, 237, 248, 0.92);
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -816,6 +924,40 @@ textarea:focus {
   }
 }
 
+@keyframes employee-loader-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes employee-loader-spark-orbit {
+  0% {
+    transform: rotate(0deg) translateY(-56px);
+  }
+  100% {
+    transform: rotate(360deg) translateY(-56px);
+  }
+}
+
+@keyframes employee-loader-core-pulse {
+  0%,
+  100% {
+    transform: scale(0.97);
+    box-shadow:
+      inset 0 0 20px rgba(191, 236, 251, 0.26),
+      0 0 28px rgba(106, 188, 225, 0.52);
+  }
+  50% {
+    transform: scale(1.02);
+    box-shadow:
+      inset 0 0 24px rgba(206, 241, 252, 0.34),
+      0 0 36px rgba(140, 213, 244, 0.64);
+  }
+}
+
 @media (min-width: 560px) {
   .status-cta-row {
     grid-template-columns: 1fr auto;
@@ -841,6 +983,14 @@ textarea:focus {
   .phone-shell::after,
   .phone-card::after,
   .scanner-wrap::before {
+    animation: none !important;
+  }
+
+  .employee-boot-loader,
+  .employee-boot-loader-halo,
+  .employee-boot-loader-ring,
+  .employee-boot-loader-spark,
+  .employee-boot-loader-core {
     animation: none !important;
   }
 }

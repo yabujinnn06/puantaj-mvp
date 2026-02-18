@@ -107,6 +107,7 @@ export function HomePage() {
   const [pushNeedsResubscribe, setPushNeedsResubscribe] = useState(false)
   const [pushRequiresStandalone, setPushRequiresStandalone] = useState(false)
   const [pushNotice, setPushNotice] = useState<string | null>(null)
+  const [pushSecondChanceOpen, setPushSecondChanceOpen] = useState(false)
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -157,6 +158,7 @@ export function HomePage() {
         setPushRegistered(false)
         setPushNeedsResubscribe(false)
         setPushRequiresStandalone(false)
+        setPushSecondChanceOpen(false)
         return
       }
       if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
@@ -165,6 +167,7 @@ export function HomePage() {
         setPushRegistered(false)
         setPushNeedsResubscribe(false)
         setPushRequiresStandalone(false)
+        setPushSecondChanceOpen(false)
         return
       }
       setPushRuntimeSupported(true)
@@ -177,6 +180,7 @@ export function HomePage() {
           setPushRegistered(false)
           setPushNeedsResubscribe(false)
           setPushRequiresStandalone(false)
+          setPushSecondChanceOpen(false)
           return
         }
 
@@ -185,6 +189,7 @@ export function HomePage() {
         if (requiresStandalone) {
           setPushRegistered(false)
           setPushNeedsResubscribe(false)
+          setPushSecondChanceOpen(false)
           return
         }
 
@@ -205,6 +210,9 @@ export function HomePage() {
 
         const registered = Boolean(existingSubscription && Notification.permission === 'granted')
         setPushRegistered(registered)
+        if (registered) {
+          setPushSecondChanceOpen(false)
+        }
 
         if (registered && existingSubscription && attemptBackendSync) {
           await subscribeEmployeePush({
@@ -220,6 +228,7 @@ export function HomePage() {
         setPushRegistered(false)
         setPushNeedsResubscribe(false)
         setPushRequiresStandalone(false)
+        setPushSecondChanceOpen(false)
       }
     },
     [deviceFingerprint],
@@ -292,13 +301,13 @@ export function HomePage() {
     }
   }
 
-  const runPushSubscription = async () => {
+  const runPushSubscription = async (isSecondAttempt = false) => {
     if (!deviceFingerprint) {
       setErrorMessage('Cihaz bağlı değil. Davet linkine tıklayın.')
       return
     }
     if (pushRequiresStandalone) {
-      setErrorMessage('iPhone/iPad icin bildirim sadece Ana Ekran uygulamasinda calisir. Portali anasayfa ikonundan acin.')
+      setErrorMessage('iPhone/iPad için bildirim sadece Ana Ekran uygulamasında çalışır. Portalı ana ekran ikonundan açın.')
       return
     }
 
@@ -322,13 +331,23 @@ export function HomePage() {
 
     try {
       const notificationPermission =
-        Notification.permission === 'default'
+        Notification.permission === 'default' || isSecondAttempt
           ? await Notification.requestPermission()
           : Notification.permission
 
       if (notificationPermission !== 'granted') {
-        throw new Error('Bildirim izni verilmedi. Devam etmek için bildirimi açmanız zorunlu.')
+        if (!isSecondAttempt) {
+          setPushSecondChanceOpen(true)
+          setPushNotice('Bildirimler zorunlu. Devam etmek için bir kez daha izin istemeniz gerekiyor.')
+          setErrorMessage('Bildirim izni verilmedi. “Tekrar Sor (2/2)” butonu ile ikinci kez izin isteyin.')
+          return
+        }
+
+        setPushSecondChanceOpen(false)
+        throw new Error('Bildirim izni ikinci kez de verilmedi. Bildirim açılmadan sistem kullanılamaz.')
       }
+
+      setPushSecondChanceOpen(false)
 
       const config = await getEmployeePushConfig()
       if (!config.enabled || !config.vapid_public_key) {
@@ -381,6 +400,7 @@ export function HomePage() {
       setPushRegistered(true)
       setPushNeedsResubscribe(false)
       setPushNotice('Bildirimler bu cihazda etkinleştirildi.')
+      setPushSecondChanceOpen(false)
       await syncPushState(true)
       if (typeof window !== 'undefined') {
         const refreshedBefore = window.sessionStorage.getItem(PUSH_REFRESH_ONCE_STORAGE) === '1'
@@ -550,7 +570,7 @@ export function HomePage() {
 
   const pushGateMessage = useMemo(() => {
     if (pushRequiresStandalone) {
-      return 'iPhone/iPad bildirimleri Safari sekmesinde calismaz. Portali Ana Ekran uygulamasindan acip Bildirimleri Ac adimini tamamlayin.'
+      return 'iPhone/iPad bildirimleri Safari sekmesinde çalışmaz. Portalı Ana Ekran uygulamasından açıp “Bildirimleri Aç” adımını tamamlayın.'
     }
     if (!pushRuntimeSupported) {
       return 'Bu tarayıcı bildirim altyapısını desteklemiyor. Linki Chrome (Android) veya Safari (iOS) ile açın.'
@@ -562,9 +582,9 @@ export function HomePage() {
       return 'Bildirim servisi sunucuda aktif değil. İK yöneticisi ortam ayarlarını tamamlamalıdır.'
     }
     if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
-      return 'Tarayıcı bildirim iznini reddetti. Ayarlardan izin verip tekrar deneyin.'
+      return 'Tarayıcı bildirim iznini reddetti. Tarayıcı ayarlarından izin verip tekrar deneyin.'
     }
-    return 'Bu portalde devam etmek için bildirimleri açmanız zorunludur.'
+    return 'Bu portalda devam etmek için bildirimleri açmanız zorunludur.'
   }, [pushEnabled, pushNeedsResubscribe, pushRequiresStandalone, pushRuntimeSupported])
 
   return (
@@ -847,22 +867,33 @@ export function HomePage() {
           <div className="modal-backdrop" role="dialog" aria-modal="true">
             <div className="help-modal">
               <h2>Bildirim İzni Zorunlu</h2>
-              <p>{pushGateMessage}</p>
+              <p>
+                {pushSecondChanceOpen
+                  ? 'Bildirim izni ilk denemede verilmedi. Bu özellik sistemin zorunlu bir parçası. Lütfen son kez izin verin.'
+                  : pushGateMessage}
+              </p>
               <div className="stack">
                 <button
                   type="button"
                   className="btn btn-primary"
                   disabled={isPushBusy || !pushEnabled}
-                  onClick={() => void runPushSubscription()}
+                  onClick={() => void runPushSubscription(pushSecondChanceOpen)}
                 >
-                  {isPushBusy ? 'Bildirim açılıyor...' : 'Bildirimleri Aç'}
+                  {isPushBusy
+                    ? 'Bildirim açılıyor...'
+                    : pushSecondChanceOpen
+                      ? 'Tekrar Sor (2/2)'
+                      : 'Bildirimleri Aç'}
                 </button>
                 <button
                   type="button"
                   className="btn btn-soft"
-                  onClick={() => void syncPushState(true)}
+                  onClick={() => {
+                    setPushSecondChanceOpen(false)
+                    void syncPushState(true)
+                  }}
                 >
-                  Durumu Yenile
+                  {pushSecondChanceOpen ? 'Bu Kez Kapat' : 'Durumu Yenile'}
                 </button>
               </div>
             </div>
