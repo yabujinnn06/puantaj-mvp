@@ -267,11 +267,10 @@ body::after {
 }
 
 .management-console-kpi-card {
-  border-color: rgba(95, 159, 191, 0.4);
-  background:
-    linear-gradient(180deg, rgba(11, 43, 61, 0.92) 0%, rgba(8, 32, 47, 0.96) 100%),
-    radial-gradient(circle at 12% 14%, rgba(145, 208, 235, 0.22), transparent 44%);
-  color: rgba(225, 244, 252, 0.95);
+  border-color: rgba(130, 176, 198, 0.42);
+  border-left: 4px solid rgba(38, 116, 147, 0.5);
+  background: linear-gradient(180deg, rgba(250, 254, 255, 0.95), rgba(241, 249, 253, 0.95));
+  color: var(--cr-text);
 }
 
 .management-console-kpi-label {
@@ -279,7 +278,7 @@ body::after {
   font-size: 0.72rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: rgba(175, 219, 238, 0.88);
+  color: #4f7388;
 }
 
 .management-console-kpi-value {
@@ -287,7 +286,7 @@ body::after {
   font-size: 1.92rem;
   line-height: 1;
   font-weight: 800;
-  color: rgba(242, 251, 255, 0.98);
+  color: #0c3548;
 }
 
 .management-console-kpi-meta {
@@ -295,15 +294,15 @@ body::after {
   font-size: 0.72rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: rgba(178, 224, 242, 0.9);
+  color: #47697d;
 }
 
 .management-console-panel {
-  border-color: rgba(101, 166, 198, 0.38);
+  border-color: rgba(129, 173, 194, 0.4);
   background:
-    linear-gradient(180deg, rgba(12, 45, 62, 0.91) 0%, rgba(8, 31, 44, 0.97) 100%),
-    radial-gradient(circle at 85% 12%, rgba(138, 208, 239, 0.14), transparent 38%);
-  color: rgba(227, 245, 252, 0.96);
+    linear-gradient(180deg, rgba(251, 255, 255, 0.95), rgba(242, 250, 253, 0.95)),
+    radial-gradient(circle at 85% 12%, rgba(158, 215, 239, 0.16), transparent 40%);
+  color: var(--cr-text);
 }
 
 .management-console-title {
@@ -311,14 +310,14 @@ body::after {
   font-size: 1.03rem;
   font-weight: 700;
   letter-spacing: 0.04em;
-  color: rgba(234, 249, 255, 0.98);
+  color: #123f52;
 }
 
 .management-console-subtitle {
   margin: 0.3rem 0 0;
   font-size: 0.8rem;
   line-height: 1.4;
-  color: rgba(180, 224, 241, 0.88);
+  color: #4d7186;
 }
 
 .management-console-command-grid {
@@ -328,20 +327,20 @@ body::after {
 }
 
 .management-console-command-card {
-  border: 1px solid rgba(131, 196, 227, 0.38);
+  border: 1px solid rgba(130, 182, 206, 0.42);
   border-radius: 12px;
   padding: 0.74rem 0.78rem;
   background:
-    linear-gradient(180deg, rgba(17, 63, 86, 0.72), rgba(8, 38, 55, 0.86)),
-    radial-gradient(circle at 12% 14%, rgba(181, 231, 252, 0.22), transparent 43%);
-  color: inherit;
+    linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(244, 251, 254, 0.97)),
+    radial-gradient(circle at 12% 14%, rgba(181, 231, 252, 0.2), transparent 45%);
+  color: var(--cr-text);
   transition: transform 130ms ease, border-color 130ms ease, box-shadow 130ms ease;
 }
 
 .management-console-command-card:hover {
   transform: translateY(-1px);
-  border-color: rgba(171, 227, 250, 0.7);
-  box-shadow: 0 0 0 1px rgba(173, 231, 252, 0.3), 0 16px 32px -20px rgba(147, 214, 242, 0.5);
+  border-color: rgba(92, 157, 185, 0.64);
+  box-shadow: 0 0 0 1px rgba(153, 211, 238, 0.35), 0 14px 28px -20px rgba(101, 153, 177, 0.42);
 }
 
 .management-console-command-code {
@@ -349,67 +348,67 @@ body::after {
   font-family: 'Consolas', 'Courier New', monospace;
   font-size: 0.65rem;
   letter-spacing: 0.12em;
-  color: rgba(194, 233, 247, 0.84);
+  color: #4c7389;
 }
 
 .management-console-command-label {
   margin: 0.42rem 0 0;
   font-size: 0.88rem;
   font-weight: 700;
-  color: rgba(238, 250, 255, 0.98);
+  color: #113f53;
 }
 
 .management-console-command-desc {
   margin: 0.26rem 0 0;
   font-size: 0.73rem;
-  color: rgba(179, 223, 240, 0.88);
+  color: #4f7185;
 }
 
 .management-console-terminal {
-  border: 1px solid rgba(143, 205, 234, 0.34);
+  border: 1px solid rgba(131, 179, 201, 0.42);
   border-radius: 12px;
   padding: 0.88rem;
   background:
-    linear-gradient(180deg, rgba(7, 30, 44, 0.93), rgba(5, 24, 35, 0.96)),
-    radial-gradient(circle at 88% 16%, rgba(130, 201, 232, 0.16), transparent 36%);
+    linear-gradient(180deg, rgba(248, 253, 255, 0.97), rgba(239, 248, 252, 0.97)),
+    radial-gradient(circle at 88% 16%, rgba(175, 221, 241, 0.16), transparent 36%);
 }
 
 .management-console-field-label {
   font-size: 0.76rem;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: rgba(186, 229, 244, 0.88);
+  color: #45697d;
 }
 
 .management-console-input {
   width: 100%;
-  border: 1px solid rgba(131, 197, 228, 0.4);
+  border: 1px solid rgba(126, 176, 199, 0.44);
   border-radius: 10px;
   padding: 0.56rem 0.68rem;
-  color: rgba(233, 248, 255, 0.98);
-  background: rgba(6, 30, 43, 0.68);
+  color: #133e52;
+  background: rgba(255, 255, 255, 0.95);
 }
 
 .management-console-input:focus {
   outline: 0;
-  border-color: rgba(165, 230, 255, 0.75);
-  box-shadow: 0 0 0 3px rgba(89, 174, 212, 0.26);
+  border-color: rgba(88, 153, 182, 0.72);
+  box-shadow: 0 0 0 3px rgba(119, 185, 215, 0.24);
 }
 
 .management-console-action-button {
-  border: 1px solid rgba(151, 212, 240, 0.55);
+  border: 1px solid rgba(122, 175, 199, 0.5);
   border-radius: 10px;
   padding: 0.44rem 0.7rem;
   font-size: 0.74rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: rgba(232, 248, 255, 0.95);
-  background: rgba(9, 53, 74, 0.68);
+  color: #164b62;
+  background: rgba(228, 244, 251, 0.95);
 }
 
 .management-console-send-button {
-  border: 1px solid rgba(157, 217, 244, 0.55);
+  border: 1px solid rgba(81, 144, 173, 0.54);
   border-radius: 10px;
   padding: 0.66rem 0.85rem;
   font-size: 0.78rem;
@@ -426,21 +425,21 @@ body::after {
 }
 
 .management-console-chip {
-  border: 1px solid rgba(143, 208, 238, 0.5);
+  border: 1px solid rgba(125, 181, 206, 0.52);
   border-radius: 999px;
   padding: 0.34rem 0.62rem;
   font-size: 0.71rem;
-  color: rgba(229, 247, 255, 0.95);
-  background: rgba(9, 52, 72, 0.76);
+  color: #17485f;
+  background: rgba(226, 242, 250, 0.96);
 }
 
 .management-console-inline-note {
   font-size: 0.72rem;
-  color: rgba(175, 220, 238, 0.85);
+  color: #4c7085;
 }
 
 .management-console-strip {
-  border: 1px solid rgba(141, 205, 235, 0.36);
+  border: 1px solid rgba(127, 180, 202, 0.42);
   border-radius: 10px;
   padding: 0.45rem 0.62rem;
   display: flex;
@@ -448,25 +447,25 @@ body::after {
   justify-content: space-between;
   gap: 0.58rem;
   font-size: 0.78rem;
-  color: rgba(220, 243, 255, 0.96);
-  background: rgba(8, 37, 54, 0.66);
+  color: #153f53;
+  background: rgba(238, 249, 253, 0.97);
 }
 
 .management-console-strip-tag {
   font-size: 0.67rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: rgba(180, 224, 243, 0.9);
+  color: #4b6f84;
 }
 
 .management-console-block {
-  border: 1px solid rgba(143, 207, 237, 0.34);
+  border: 1px solid rgba(126, 178, 201, 0.4);
   border-radius: 10px;
   padding: 0.56rem 0.62rem;
   font-size: 0.76rem;
   line-height: 1.5;
-  color: rgba(224, 245, 255, 0.96);
-  background: rgba(7, 32, 45, 0.7);
+  color: #153f53;
+  background: rgba(247, 253, 255, 0.97);
 }
 
 .management-console-block-title {
@@ -475,33 +474,33 @@ body::after {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: rgba(180, 225, 244, 0.9);
+  color: #45687c;
 }
 
 .management-console-table-wrap {
-  border: 1px solid rgba(139, 203, 233, 0.35);
+  border: 1px solid rgba(124, 176, 199, 0.42);
   border-radius: 12px;
   overflow: auto;
-  background: rgba(6, 27, 40, 0.64);
+  background: rgba(255, 255, 255, 0.97);
 }
 
 .management-console-table-wrap th {
   font-size: 0.66rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: rgba(180, 223, 241, 0.88);
+  color: #4a6d81;
 }
 
 .management-console-table-wrap td {
-  color: rgba(226, 246, 255, 0.96);
+  color: #143e52;
 }
 
 .management-console-table-wrap tr + tr {
-  border-top: 1px solid rgba(143, 207, 236, 0.2);
+  border-top: 1px solid rgba(145, 186, 205, 0.28);
 }
 
 .management-console-link {
-  color: rgba(169, 227, 251, 0.98);
+  color: #0f5f80;
   font-weight: 700;
   text-decoration: underline;
   text-underline-offset: 2px;
