@@ -7,6 +7,7 @@ from typing import Literal
 
 from fastapi import HTTPException, status
 from openpyxl import Workbook
+from openpyxl.chart import BarChart, Reference
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
@@ -24,16 +25,22 @@ RangeSheetMode = Literal["consolidated", "employee_sheets", "department_sheets"]
 DEFAULT_DAILY_MINUTES_PLANNED = 540
 DEFAULT_BREAK_MINUTES = 60
 DEFAULT_WEEKLY_NORMAL_MINUTES = 45 * 60
+DURATION_NUMBER_FORMAT = "[h]:mm"
 
 DAILY_HEADERS = [
     "Tarih",
-    "Giri\u015f",
-    "\u00c7\u0131k\u0131\u015f",
-    "\u00c7al\u0131\u015fma S\u00fcresi (saat:dakika)",
+    "Giriş",
+    "Çıkış",
+    "Saat Aralığı",
+    "Çalışma Süresi",
     "Mola",
-    "Net S\u00fcre",
-    "Fazla S\u00fcrelerle \u00c7al\u0131\u015fma",
+    "Net Süre",
+    "Net Süre (dk)",
+    "Fazla Sürelerle Çalışma",
     "Fazla Mesai",
+    "Fazla Mesai (dk)",
+    "Gün Tipi",
+    "Çalışıldı mı",
     "Durum",
     "Bayraklar",
 ]
@@ -70,6 +77,149 @@ def _minutes_to_hhmm(minutes: int) -> str:
     hours = value // 60
     mins = value % 60
     return f"{hours:02d}:{mins:02d}"
+
+
+def _minutes_to_excel_duration(minutes: int) -> float:
+    return max(0, int(minutes)) / 1440.0
+
+
+def _is_special_day(*, day_date: date, leave_type: object, flags: list[str]) -> bool:
+    if str(leave_type or "").upper() == "PUBLIC_HOLIDAY":
+        return True
+    if day_date.weekday() == 6 and "PUBLIC_HOLIDAY" in flags:
+        return True
+    return "PUBLIC_HOLIDAY" in flags
+
+
+def _day_type_label(*, day_date: date, leave_type: object, flags: list[str]) -> str:
+    if _is_special_day(day_date=day_date, leave_type=leave_type, flags=flags):
+        return "Özel Gün"
+    if day_date.weekday() == 6:
+        return "Pazar"
+    return "Hafta İçi"
+
+
+def _was_worked_day(*, worked_minutes: int, check_in: datetime | None, check_out: datetime | None) -> bool:
+    if worked_minutes > 0:
+        return True
+    return check_in is not None or check_out is not None
+
+
+def _apply_print_layout(ws: Worksheet, *, header_row: int | None = None) -> None:
+    ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    if header_row is not None and header_row > 0:
+        ws.print_title_rows = f"{header_row}:{header_row}"
+
+
+def _build_summary_row_from_daily_facts(
+    *,
+    employee_id: int,
+    employee_name: str,
+    department_name: str,
+    rows: list[dict[str, object]],
+) -> dict[str, object]:
+    worked_minutes = sum(int(item["worked_minutes"]) for item in rows)
+    extra_work_minutes = sum(int(item["extra_work_minutes"]) for item in rows)
+    overtime_minutes = sum(int(item["overtime_minutes"]) for item in rows)
+    incomplete_days = sum(1 for item in rows if str(item["status"]).upper() == "INCOMPLETE")
+    worked_days = sum(1 for item in rows if bool(item["worked_flag"]))
+    sunday_worked_days = sum(1 for item in rows if bool(item["worked_flag"]) and item["day_type"] == "Pazar")
+    special_worked_days = sum(1 for item in rows if bool(item["worked_flag"]) and item["day_type"] == "Özel Gün")
+    sunday_worked_minutes = sum(
+        int(item["worked_minutes"])
+        for item in rows
+        if bool(item["worked_flag"]) and item["day_type"] == "Pazar"
+    )
+    special_worked_minutes = sum(
+        int(item["worked_minutes"])
+        for item in rows
+        if bool(item["worked_flag"]) and item["day_type"] == "Özel Gün"
+    )
+
+    return {
+        "employee_id": employee_id,
+        "employee_name": employee_name,
+        "department_name": department_name,
+        "worked_minutes": worked_minutes,
+        "extra_work_minutes": extra_work_minutes,
+        "overtime_minutes": overtime_minutes,
+        "incomplete_days": incomplete_days,
+        "annual_overtime_minutes": overtime_minutes,
+        "worked_days": worked_days,
+        "sunday_worked_days": sunday_worked_days,
+        "special_worked_days": special_worked_days,
+        "sunday_worked_minutes": sunday_worked_minutes,
+        "special_worked_minutes": special_worked_minutes,
+    }
+
+
+def _group_summary_rows_by_department(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    department_map: dict[str, dict[str, object]] = {}
+    member_map: dict[str, set[int]] = defaultdict(set)
+    for row in rows:
+        department_name = str(row["department_name"] or "-")
+        if department_name not in department_map:
+            department_map[department_name] = {
+                "department_name": department_name,
+                "employee_count": 0,
+                "worked_minutes": 0,
+                "extra_work_minutes": 0,
+                "overtime_minutes": 0,
+                "incomplete_days": 0,
+                "worked_days": 0,
+                "sunday_worked_days": 0,
+                "special_worked_days": 0,
+                "sunday_worked_minutes": 0,
+                "special_worked_minutes": 0,
+            }
+
+        bucket = department_map[department_name]
+        employee_id = int(row["employee_id"])
+        member_map[department_name].add(employee_id)
+        bucket["worked_minutes"] = int(bucket["worked_minutes"]) + int(row["worked_minutes"])
+        bucket["extra_work_minutes"] = int(bucket["extra_work_minutes"]) + int(row["extra_work_minutes"])
+        bucket["overtime_minutes"] = int(bucket["overtime_minutes"]) + int(row["overtime_minutes"])
+        bucket["incomplete_days"] = int(bucket["incomplete_days"]) + int(row["incomplete_days"])
+        bucket["worked_days"] = int(bucket["worked_days"]) + int(row["worked_days"])
+        bucket["sunday_worked_days"] = int(bucket["sunday_worked_days"]) + int(row["sunday_worked_days"])
+        bucket["special_worked_days"] = int(bucket["special_worked_days"]) + int(row["special_worked_days"])
+        bucket["sunday_worked_minutes"] = int(bucket["sunday_worked_minutes"]) + int(row["sunday_worked_minutes"])
+        bucket["special_worked_minutes"] = int(bucket["special_worked_minutes"]) + int(row["special_worked_minutes"])
+
+    ordered_rows = []
+    for department_name in sorted(department_map):
+        row = department_map[department_name]
+        row["employee_count"] = len(member_map[department_name])
+        ordered_rows.append(row)
+    return ordered_rows
+
+
+def _add_bar_chart(
+    ws: Worksheet,
+    *,
+    title: str,
+    data_col: int,
+    category_col: int,
+    start_row: int,
+    end_row: int,
+    anchor: str,
+) -> None:
+    if end_row < start_row:
+        return
+    chart = BarChart()
+    chart.title = title
+    chart.y_axis.title = "Dakika"
+    chart.x_axis.title = "Kategori"
+    data_ref = Reference(ws, min_col=data_col, min_row=start_row - 1, max_row=end_row)
+    category_ref = Reference(ws, min_col=category_col, min_row=start_row, max_row=end_row)
+    chart.add_data(data_ref, titles_from_data=True)
+    chart.set_categories(category_ref)
+    chart.height = 6
+    chart.width = 12
+    ws.add_chart(chart, anchor)
 
 
 def _week_start(day_value: date) -> date:
@@ -301,6 +451,30 @@ def _style_table_region(
                 overtime_cell.font = Font(bold=True, color="166534")
 
 
+def _apply_duration_formats(
+    ws: Worksheet,
+    *,
+    header_row: int,
+    data_start_row: int,
+    data_end_row: int,
+    header_names: list[str],
+) -> None:
+    if data_end_row < data_start_row:
+        return
+    header_index: dict[str, int] = {}
+    for col_idx in range(1, ws.max_column + 1):
+        value = ws.cell(row=header_row, column=col_idx).value
+        if isinstance(value, str):
+            header_index[value] = col_idx
+
+    target_columns = [header_index[name] for name in header_names if name in header_index]
+    for col_idx in target_columns:
+        for row_idx in range(data_start_row, data_end_row + 1):
+            cell = ws.cell(row=row_idx, column=col_idx)
+            if isinstance(cell.value, (int, float)):
+                cell.number_format = DURATION_NUMBER_FORMAT
+
+
 def _safe_sheet_title(title: str, fallback: str) -> str:
     cleaned = "".join(ch for ch in title if ch not in ['\\', '/', '*', '?', ':', '[', ']']).strip()
     if not cleaned:
@@ -351,6 +525,28 @@ def _append_summary_area(
     if total_legal_overtime_minutes is None:
         total_legal_overtime_minutes = sum(item.overtime_minutes for item in report.weekly_totals)
 
+    worked_days = 0
+    sunday_worked_days = 0
+    special_worked_days = 0
+    sunday_worked_minutes = 0
+    special_worked_minutes = 0
+    for day in report.days:
+        day_flags = list(day.flags)
+        day_type = _day_type_label(day_date=day.date, leave_type=day.leave_type, flags=day_flags)
+        worked_flag = _was_worked_day(
+            worked_minutes=day.worked_minutes,
+            check_in=day.check_in,
+            check_out=day.check_out,
+        )
+        if worked_flag:
+            worked_days += 1
+            if day_type == "Pazar":
+                sunday_worked_days += 1
+                sunday_worked_minutes += day.worked_minutes
+            if day_type == "Özel Gün":
+                special_worked_days += 1
+                special_worked_minutes += day.worked_minutes
+
     ws.append([])
     summary_start = ws.max_row + 1
     ws.append(["\u00d6zet", "De\u011fer"])
@@ -358,6 +554,11 @@ def _append_summary_area(
     ws.append(["Toplam Fazla S\u00fcrelerle \u00c7al\u0131\u015fma", _minutes_to_hhmm(total_extra_work_minutes)])
     ws.append(["Toplam Fazla Mesai", _minutes_to_hhmm(total_legal_overtime_minutes)])
     ws.append(["Eksik G\u00fcn", report.totals.incomplete_days])
+    ws.append(["Çalışılan Gün", worked_days])
+    ws.append(["Pazar Çalışılan Gün", sunday_worked_days])
+    ws.append(["Özel Gün Çalışılan Gün", special_worked_days])
+    ws.append(["Pazar Net Süre", _minutes_to_hhmm(sunday_worked_minutes)])
+    ws.append(["Özel Gün Net Süre", _minutes_to_hhmm(special_worked_minutes)])
     ws.append(["Y\u0131ll\u0131k Fazla Mesai Kullan\u0131m\u0131", _minutes_to_hhmm(report.annual_overtime_used_minutes)])
     _style_header(ws, summary_start)
 
@@ -409,6 +610,13 @@ def _append_employee_daily_sheet(
         check_out = _to_excel_datetime(day.check_out)
         gross_minutes = _gross_minutes(day.check_in, day.check_out)
         break_minutes = max(0, gross_minutes - day.worked_minutes)
+        day_flags = list(day.flags)
+        day_type = _day_type_label(day_date=day.date, leave_type=day.leave_type, flags=day_flags)
+        worked_flag = _was_worked_day(
+            worked_minutes=day.worked_minutes,
+            check_in=day.check_in,
+            check_out=day.check_out,
+        )
         extra_work_minutes, legal_overtime_minutes = daily_legal_breakdown.get(
             day.date,
             (0, max(0, int(day.overtime_minutes))),
@@ -418,13 +626,18 @@ def _append_employee_daily_sheet(
                 day.date,
                 check_in,
                 check_out,
-                _minutes_to_hhmm(gross_minutes),
-                _minutes_to_hhmm(break_minutes),
-                _minutes_to_hhmm(day.worked_minutes),
-                _minutes_to_hhmm(extra_work_minutes),
-                _minutes_to_hhmm(legal_overtime_minutes),
+                _time_range_label(day.check_in, day.check_out),
+                _minutes_to_excel_duration(gross_minutes),
+                _minutes_to_excel_duration(break_minutes),
+                _minutes_to_excel_duration(day.worked_minutes),
+                day.worked_minutes,
+                _minutes_to_excel_duration(extra_work_minutes),
+                _minutes_to_excel_duration(legal_overtime_minutes),
+                legal_overtime_minutes,
+                day_type,
+                "Evet" if worked_flag else "Hayır",
                 day.status,
-                ", ".join(day.flags) if day.flags else "-",
+                ", ".join(day_flags) if day_flags else "-",
             ]
         )
 
@@ -450,8 +663,22 @@ def _append_employee_daily_sheet(
             row[1].number_format = "hh:mm"
         if row[2].value is not None:
             row[2].number_format = "hh:mm"
+    _apply_duration_formats(
+        ws,
+        header_row=header_row,
+        data_start_row=data_start_row,
+        data_end_row=data_end_row,
+        header_names=[
+            "Çalışma Süresi",
+            "Mola",
+            "Net Süre",
+            "Fazla Sürelerle Çalışma",
+            "Fazla Mesai",
+        ],
+    )
 
     _auto_width(ws)
+    _apply_print_layout(ws, header_row=header_row)
 
 
 def _build_employee_export(
@@ -468,10 +695,64 @@ def _build_employee_export(
 
     department_name = employee.department.name if employee.department is not None else None
     report = calculate_employee_monthly(db, employee_id=employee_id, year=year, month=month)
-    ws = wb.active
-    ws.title = _safe_sheet_title(f"Calisan {employee.id}", "Calisan")
+    daily_legal_breakdown = _build_daily_legal_breakdown(
+        report,
+        contract_weekly_minutes=employee.contract_weekly_minutes,
+    )
+    daily_rows: list[dict[str, object]] = []
+    for day in report.days:
+        day_type = _day_type_label(
+            day_date=day.date,
+            leave_type=day.leave_type,
+            flags=list(day.flags),
+        )
+        worked_flag = _was_worked_day(
+            worked_minutes=day.worked_minutes,
+            check_in=day.check_in,
+            check_out=day.check_out,
+        )
+        daily_rows.append(
+            {
+                "date": day.date,
+                "employee_id": employee.id,
+                "employee_name": employee.full_name,
+                "department_name": department_name or "-",
+                "worked_minutes": day.worked_minutes,
+                "extra_work_minutes": daily_legal_breakdown.get(day.date, (0, day.overtime_minutes))[0],
+                "overtime_minutes": daily_legal_breakdown.get(day.date, (0, day.overtime_minutes))[1],
+                "status": day.status,
+                "day_type": day_type,
+                "worked_flag": worked_flag,
+            }
+        )
+
+    summary_rows = [
+        _build_summary_row_from_daily_facts(
+            employee_id=employee.id,
+            employee_name=employee.full_name,
+            department_name=department_name or "-",
+            rows=daily_rows,
+        )
+    ]
+
+    _build_dashboard_sheet(
+        wb.active,
+        title="Çalışan Aylık Özeti",
+        summary_rows=summary_rows,
+    )
+    _build_summary_sheet(
+        wb.create_sheet("SUMMARY_EMPLOYEE"),
+        title="Çalışan Aylık Özeti",
+        rows=summary_rows,
+    )
+    _build_department_summary_sheet(
+        wb.create_sheet("SUMMARY_DEPARTMENT"),
+        title="Çalışan Aylık Özeti",
+        rows=_group_summary_rows_by_department(summary_rows),
+    )
+
     _append_employee_daily_sheet(
-        ws,
+        wb.create_sheet(_safe_sheet_title(f"DAILY_{employee.id}", "DAILY_FACT")),
         employee_name=employee.full_name,
         department_name=department_name,
         report=report,
@@ -485,7 +766,6 @@ def _build_summary_sheet(
     title: str,
     rows: list[dict[str, object]],
 ) -> None:
-    ws.title = _safe_sheet_title(title, "Ozet")
     _merge_title(ws, 1, f"{title} - PUANTAJ OZET")
     ws.append(["Rapor \u00dcretim (UTC)", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")])
     ws.append(["Kay\u0131t Say\u0131s\u0131", len(rows)])
@@ -502,6 +782,11 @@ def _build_summary_sheet(
             "Toplam Fazla S\u00fcrelerle \u00c7al\u0131\u015fma",
             "Toplam Fazla Mesai",
             "Eksik G\u00fcn",
+            "Çalışılan Gün",
+            "Pazar Çalışılan Gün",
+            "Özel Gün Çalışılan Gün",
+            "Pazar Net Süre",
+            "Özel Gün Net Süre",
             "Y\u0131ll\u0131k Fazla Mesai Kullan\u0131m\u0131",
         ]
     )
@@ -511,6 +796,11 @@ def _build_summary_sheet(
     total_extra = 0
     total_overtime = 0
     total_incomplete = 0
+    total_worked_days = 0
+    total_sunday_days = 0
+    total_special_days = 0
+    total_sunday_minutes = 0
+    total_special_minutes = 0
     total_annual = 0
     data_start_row = header_row + 1
     for row in rows:
@@ -518,12 +808,22 @@ def _build_summary_sheet(
         extra = int(row["extra_work_minutes"])
         overtime = int(row["overtime_minutes"])
         incomplete = int(row["incomplete_days"])
+        worked_days = int(row.get("worked_days", 0))
+        sunday_days = int(row.get("sunday_worked_days", 0))
+        special_days = int(row.get("special_worked_days", 0))
+        sunday_minutes = int(row.get("sunday_worked_minutes", 0))
+        special_minutes = int(row.get("special_worked_minutes", 0))
         annual = int(row["annual_overtime_minutes"])
 
         total_worked += worked
         total_extra += extra
         total_overtime += overtime
         total_incomplete += incomplete
+        total_worked_days += worked_days
+        total_sunday_days += sunday_days
+        total_special_days += special_days
+        total_sunday_minutes += sunday_minutes
+        total_special_minutes += special_minutes
         total_annual += annual
 
         ws.append(
@@ -531,10 +831,15 @@ def _build_summary_sheet(
                 row["employee_id"],
                 row["employee_name"],
                 row["department_name"],
-                _minutes_to_hhmm(worked),
-                _minutes_to_hhmm(extra),
-                _minutes_to_hhmm(overtime),
+                _minutes_to_excel_duration(worked),
+                _minutes_to_excel_duration(extra),
+                _minutes_to_excel_duration(overtime),
                 incomplete,
+                worked_days,
+                sunday_days,
+                special_days,
+                _minutes_to_excel_duration(sunday_minutes),
+                _minutes_to_excel_duration(special_minutes),
                 _minutes_to_hhmm(annual),
             ]
         )
@@ -555,10 +860,15 @@ def _build_summary_sheet(
             "Toplam",
             "",
             "",
-            _minutes_to_hhmm(total_worked),
-            _minutes_to_hhmm(total_extra),
-            _minutes_to_hhmm(total_overtime),
+            _minutes_to_excel_duration(total_worked),
+            _minutes_to_excel_duration(total_extra),
+            _minutes_to_excel_duration(total_overtime),
             total_incomplete,
+            total_worked_days,
+            total_sunday_days,
+            total_special_days,
+            _minutes_to_excel_duration(total_sunday_minutes),
+            _minutes_to_excel_duration(total_special_minutes),
             _minutes_to_hhmm(total_annual),
         ]
     )
@@ -567,7 +877,237 @@ def _build_summary_sheet(
         cell.font = HEADER_FONT
         cell.border = THIN_BORDER
         cell.alignment = Alignment(horizontal="center", vertical="center")
+    _apply_duration_formats(
+        ws,
+        header_row=header_row,
+        data_start_row=data_start_row,
+        data_end_row=total_row,
+        header_names=[
+            "Toplam Net Süre",
+            "Toplam Fazla Sürelerle Çalışma",
+            "Toplam Fazla Mesai",
+            "Pazar Net Süre",
+            "Özel Gün Net Süre",
+        ],
+    )
     _auto_width(ws)
+    _apply_print_layout(ws, header_row=header_row)
+
+
+def _build_department_summary_sheet(
+    ws: Worksheet,
+    *,
+    title: str,
+    rows: list[dict[str, object]],
+) -> None:
+    _merge_title(ws, 1, f"{title} - DEPARTMAN KPI")
+    ws.append(["Rapor Üretim (UTC)", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")])
+    ws.append(["Departman Sayısı", len(rows)])
+    ws.append([])
+    _style_metadata_rows(ws, start_row=2, end_row=3)
+
+    header_row = ws.max_row + 1
+    ws.append(
+        [
+            "Departman",
+            "Çalışan Sayısı",
+            "Toplam Net Süre",
+            "Toplam Fazla Sürelerle Çalışma",
+            "Toplam Fazla Mesai",
+            "Eksik Gün",
+            "Pazar Çalışılan Gün",
+            "Özel Gün Çalışılan Gün",
+        ]
+    )
+    _style_header(ws, header_row)
+
+    data_start_row = header_row + 1
+    total_employee_count = 0
+    total_worked = 0
+    total_extra = 0
+    total_overtime = 0
+    total_incomplete = 0
+    total_sunday_days = 0
+    total_special_days = 0
+    for row in rows:
+        employee_count = int(row["employee_count"])
+        worked_minutes = int(row["worked_minutes"])
+        extra_work_minutes = int(row["extra_work_minutes"])
+        overtime_minutes = int(row["overtime_minutes"])
+        incomplete_days = int(row["incomplete_days"])
+        sunday_days = int(row.get("sunday_worked_days", 0))
+        special_days = int(row.get("special_worked_days", 0))
+
+        total_employee_count += employee_count
+        total_worked += worked_minutes
+        total_extra += extra_work_minutes
+        total_overtime += overtime_minutes
+        total_incomplete += incomplete_days
+        total_sunday_days += sunday_days
+        total_special_days += special_days
+
+        ws.append(
+            [
+                row["department_name"],
+                employee_count,
+                _minutes_to_excel_duration(worked_minutes),
+                _minutes_to_excel_duration(extra_work_minutes),
+                _minutes_to_excel_duration(overtime_minutes),
+                incomplete_days,
+                sunday_days,
+                special_days,
+            ]
+        )
+
+    data_end_row = ws.max_row
+    _style_table_region(
+        ws,
+        header_row=header_row,
+        data_start_row=data_start_row,
+        data_end_row=data_end_row,
+        status_col_name="",
+        flags_col_name="",
+    )
+
+    total_row = ws.max_row + 1
+    ws.append(
+        [
+            "Toplam",
+            total_employee_count,
+            _minutes_to_excel_duration(total_worked),
+            _minutes_to_excel_duration(total_extra),
+            _minutes_to_excel_duration(total_overtime),
+            total_incomplete,
+            total_sunday_days,
+            total_special_days,
+        ]
+    )
+    for cell in ws[total_row]:
+        cell.fill = HEADER_FILL
+        cell.font = HEADER_FONT
+        cell.border = THIN_BORDER
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    _apply_duration_formats(
+        ws,
+        header_row=header_row,
+        data_start_row=data_start_row,
+        data_end_row=total_row,
+        header_names=[
+            "Toplam Net Süre",
+            "Toplam Fazla Sürelerle Çalışma",
+            "Toplam Fazla Mesai",
+        ],
+    )
+    _auto_width(ws)
+    _apply_print_layout(ws, header_row=header_row)
+
+
+def _build_dashboard_sheet(
+    ws: Worksheet,
+    *,
+    title: str,
+    summary_rows: list[dict[str, object]],
+) -> None:
+    ws.title = _safe_sheet_title("DASHBOARD", "Dashboard")
+    _merge_title(ws, 1, f"{title} - YÖNETİM DASHBOARD")
+    ws.append(["Rapor Üretim (UTC)", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")])
+    ws.append([])
+    _style_metadata_rows(ws, start_row=2, end_row=2)
+
+    total_employee = len(summary_rows)
+    total_worked = sum(int(row["worked_minutes"]) for row in summary_rows)
+    total_extra = sum(int(row["extra_work_minutes"]) for row in summary_rows)
+    total_overtime = sum(int(row["overtime_minutes"]) for row in summary_rows)
+    total_incomplete = sum(int(row["incomplete_days"]) for row in summary_rows)
+
+    kpi_row = ws.max_row + 1
+    ws.append(["KPI", "Değer"])
+    _style_header(ws, kpi_row)
+    ws.append(["Toplam Çalışan", total_employee])
+    ws.append(["Toplam Net Süre", _minutes_to_hhmm(total_worked)])
+    ws.append(["Toplam Fazla Sürelerle Çalışma", _minutes_to_hhmm(total_extra)])
+    ws.append(["Toplam Fazla Mesai", _minutes_to_hhmm(total_overtime)])
+    ws.append(["Toplam Eksik Gün", total_incomplete])
+    _style_metadata_rows(ws, start_row=kpi_row + 1, end_row=ws.max_row)
+
+    ws.append([])
+    overtime_start_header = ws.max_row + 1
+    ws.append(["Top Fazla Mesai Çalışanları", "Fazla Mesai (dk)", "Fazla Mesai [h:mm]"])
+    _style_header(ws, overtime_start_header)
+    top_rows = sorted(summary_rows, key=lambda item: int(item["overtime_minutes"]), reverse=True)[:10]
+    top_data_start = ws.max_row + 1
+    for row in top_rows:
+        overtime_minutes = int(row["overtime_minutes"])
+        ws.append(
+            [
+                f"#{row['employee_id']} - {row['employee_name']}",
+                overtime_minutes,
+                _minutes_to_excel_duration(overtime_minutes),
+            ]
+        )
+    top_data_end = ws.max_row
+    _style_table_region(
+        ws,
+        header_row=overtime_start_header,
+        data_start_row=top_data_start,
+        data_end_row=top_data_end,
+        status_col_name="",
+        flags_col_name="",
+    )
+    _apply_duration_formats(
+        ws,
+        header_row=overtime_start_header,
+        data_start_row=top_data_start,
+        data_end_row=top_data_end,
+        header_names=["Fazla Mesai [h:mm]"],
+    )
+
+    ws.append([])
+    dep_header = ws.max_row + 1
+    ws.append(["Departman", "Net Süre (dk)", "Fazla Mesai (dk)"])
+    _style_header(ws, dep_header)
+    department_rows = _group_summary_rows_by_department(summary_rows)
+    dep_data_start = ws.max_row + 1
+    for row in department_rows:
+        ws.append(
+            [
+                row["department_name"],
+                int(row["worked_minutes"]),
+                int(row["overtime_minutes"]),
+            ]
+        )
+    dep_data_end = ws.max_row
+    _style_table_region(
+        ws,
+        header_row=dep_header,
+        data_start_row=dep_data_start,
+        data_end_row=dep_data_end,
+        status_col_name="",
+        flags_col_name="",
+    )
+
+    _add_bar_chart(
+        ws,
+        title="Top Fazla Mesai (dk)",
+        data_col=2,
+        category_col=1,
+        start_row=top_data_start,
+        end_row=top_data_end,
+        anchor="E4",
+    )
+    _add_bar_chart(
+        ws,
+        title="Departman Fazla Mesai (dk)",
+        data_col=3,
+        category_col=1,
+        start_row=dep_data_start,
+        end_row=dep_data_end,
+        anchor="E22",
+    )
+
+    _auto_width(ws)
+    _apply_print_layout(ws)
 
 
 def _build_department_or_all_export(
@@ -587,11 +1127,35 @@ def _build_department_or_all_export(
         employee_stmt = employee_stmt.where(Employee.department_id == department_id)
     employees = list(db.scalars(employee_stmt).all())
 
-    ws_summary = wb.active
+    ws_dashboard = wb.active
     summary_rows: list[dict[str, object]] = []
     for employee in employees:
         report = calculate_employee_monthly(db, employee_id=employee.id, year=year, month=month)
         department_name = employee.department.name if employee.department is not None else "-"
+        worked_days = 0
+        sunday_worked_days = 0
+        special_worked_days = 0
+        sunday_worked_minutes = 0
+        special_worked_minutes = 0
+        for day in report.days:
+            day_type = _day_type_label(
+                day_date=day.date,
+                leave_type=day.leave_type,
+                flags=list(day.flags),
+            )
+            worked_flag = _was_worked_day(
+                worked_minutes=day.worked_minutes,
+                check_in=day.check_in,
+                check_out=day.check_out,
+            )
+            if worked_flag:
+                worked_days += 1
+                if day_type == "Pazar":
+                    sunday_worked_days += 1
+                    sunday_worked_minutes += day.worked_minutes
+                if day_type == "Özel Gün":
+                    special_worked_days += 1
+                    special_worked_minutes += day.worked_minutes
         summary_rows.append(
             {
                 "employee_id": employee.id,
@@ -602,6 +1166,11 @@ def _build_department_or_all_export(
                 "overtime_minutes": sum(week.overtime_minutes for week in report.weekly_totals),
                 "incomplete_days": report.totals.incomplete_days,
                 "annual_overtime_minutes": report.annual_overtime_used_minutes,
+                "worked_days": worked_days,
+                "sunday_worked_days": sunday_worked_days,
+                "special_worked_days": special_worked_days,
+                "sunday_worked_minutes": sunday_worked_minutes,
+                "special_worked_minutes": special_worked_minutes,
             }
         )
         if include_daily_sheet:
@@ -616,8 +1185,14 @@ def _build_department_or_all_export(
                 contract_weekly_minutes=employee.contract_weekly_minutes,
             )
 
-    summary_title = "Departman Ozeti" if department_id is not None else "Tum Calisanlar Ozeti"
-    _build_summary_sheet(ws_summary, title=summary_title, rows=summary_rows)
+    summary_title = "Departman Özeti" if department_id is not None else "Tüm Çalışanlar Özeti"
+    _build_dashboard_sheet(ws_dashboard, title=summary_title, summary_rows=summary_rows)
+    _build_summary_sheet(wb.create_sheet("SUMMARY_EMPLOYEE"), title=summary_title, rows=summary_rows)
+    _build_department_summary_sheet(
+        wb.create_sheet("SUMMARY_DEPARTMENT"),
+        title=summary_title,
+        rows=_group_summary_rows_by_department(summary_rows),
+    )
 
 
 def _build_date_range_export(
@@ -657,8 +1232,8 @@ def _build_date_range_export(
     rows = list(db.execute(stmt).all())
 
     ws_events = wb.active
-    ws_events.title = "Ham Eventler"
-    _merge_title(ws_events, 1, "PUANTAJ HAM EVENT RAPORU")
+    ws_events.title = "RAW_EVENTS"
+    _merge_title(ws_events, 1, "PUANTAJ RAW EVENTS RAPORU")
     ws_events.append(["Tarih Aral\u0131\u011f\u0131", f"{start_date.isoformat()} - {end_date.isoformat()}"])
     ws_events.append(["Filtre - \u00c7al\u0131\u015fan ID", employee_id if employee_id is not None else "T\u00fcm\u00fc"])
     ws_events.append(["Filtre - Departman ID", department_id if department_id is not None else "T\u00fcm\u00fc"])
@@ -678,7 +1253,7 @@ def _build_date_range_export(
             "Konum Durumu",
             "Enlem",
             "Boylam",
-            "Dogruluk (m)",
+            "Doğruluk (m)",
             "Bayraklar",
         ]
     )
@@ -745,9 +1320,10 @@ def _build_date_range_export(
         if row[5].value is not None:
             row[5].number_format = "yyyy-mm-dd hh:mm"
     _auto_width(ws_events)
+    _apply_print_layout(ws_events, header_row=events_header_row)
 
-    ws_daily = wb.create_sheet("Gunluk Ozet")
-    _merge_title(ws_daily, 1, "PUANTAJ GUNLUK OZET RAPORU")
+    ws_daily = wb.create_sheet("DAILY_FACT")
+    _merge_title(ws_daily, 1, "PUANTAJ DAILY FACT RAPORU")
     ws_daily.append(["Tarih Aral\u0131\u011f\u0131", f"{start_date.isoformat()} - {end_date.isoformat()}"])
     ws_daily.append(["Filtre - \u00c7al\u0131\u015fan ID", employee_id if employee_id is not None else "T\u00fcm\u00fc"])
     ws_daily.append(["Filtre - Departman ID", department_id if department_id is not None else "T\u00fcm\u00fc"])
@@ -758,18 +1334,22 @@ def _build_date_range_export(
     ws_daily.append(
         [
             "Tarih",
-            "\u00c7al\u0131\u015fan ID",
-            "\u00c7al\u0131\u015fan Ad\u0131",
+            "Çalışan ID",
+            "Çalışan Adı",
             "Departman",
             "Vardiya",
-            "Giri\u015f",
-            "\u00c7\u0131k\u0131\u015f",
-            "Saat Aral\u0131\u011f\u0131",
-            "\u00c7al\u0131\u015fma S\u00fcresi (saat:dakika)",
+            "Giriş",
+            "Çıkış",
+            "Saat Aralığı",
+            "Çalışma Süresi",
             "Mola",
-            "Net S\u00fcre",
-            "Fazla S\u00fcrelerle \u00c7al\u0131\u015fma",
+            "Net Süre",
+            "Net Süre (dk)",
+            "Fazla Sürelerle Çalışma",
             "Fazla Mesai",
+            "Fazla Mesai (dk)",
+            "Gün Tipi",
+            "Çalışıldı mı",
             "Durum",
             "Bayraklar",
         ]
@@ -804,6 +1384,7 @@ def _build_date_range_export(
     total_worked_minutes = 0
     total_extra_work_minutes = 0
     total_overtime_minutes = 0
+    daily_fact_rows: list[dict[str, object]] = []
     for (employee_id_value, day_date), bucket in sorted(grouped.items(), key=lambda item: (item[0][1], item[0][0])):
         ins = bucket["ins"]
         outs = bucket["outs"]
@@ -826,15 +1407,27 @@ def _build_date_range_export(
         )
         monthly_day_lookup, monthly_legal_lookup = _resolve_monthly_context(employee_ref, day_date)
         monthly_day = monthly_day_lookup.get(day_date)
+        leave_type_value: object = None
         if monthly_day is not None:
             day_status = str(getattr(monthly_day, "status", day_status))
             worked_minutes = max(0, int(getattr(monthly_day, "worked_minutes", worked_minutes)))
+            leave_type_value = getattr(monthly_day, "leave_type", None)
         extra_work_minutes, overtime_minutes = monthly_legal_lookup.get(
             day_date,
             (0, max(0, int(overtime_minutes))),
         )
         gross_minutes = _gross_minutes(first_in, last_out)
         break_deducted = max(0, gross_minutes - worked_minutes)
+        day_type = _day_type_label(
+            day_date=day_date,
+            leave_type=leave_type_value,
+            flags=list(bucket["flags"]),
+        )
+        worked_flag = _was_worked_day(
+            worked_minutes=worked_minutes,
+            check_in=first_in,
+            check_out=last_out,
+        )
         total_worked_minutes += worked_minutes
         total_extra_work_minutes += extra_work_minutes
         total_overtime_minutes += overtime_minutes
@@ -854,14 +1447,32 @@ def _build_date_range_export(
                 _to_excel_datetime(first_in),
                 _to_excel_datetime(last_out),
                 _time_range_label(first_in, last_out),
-                _minutes_to_hhmm(gross_minutes),
-                _minutes_to_hhmm(break_deducted),
-                _minutes_to_hhmm(worked_minutes),
-                _minutes_to_hhmm(extra_work_minutes),
-                _minutes_to_hhmm(overtime_minutes),
+                _minutes_to_excel_duration(gross_minutes),
+                _minutes_to_excel_duration(break_deducted),
+                _minutes_to_excel_duration(worked_minutes),
+                worked_minutes,
+                _minutes_to_excel_duration(extra_work_minutes),
+                _minutes_to_excel_duration(overtime_minutes),
+                overtime_minutes,
+                day_type,
+                "Evet" if worked_flag else "Hayır",
                 day_status,
                 ", ".join(flag_names) if flag_names else "-",
             ]
+        )
+        daily_fact_rows.append(
+            {
+                "date": day_date,
+                "employee_id": employee_id_value,
+                "employee_name": str(bucket["employee_name"]),
+                "department_name": str(bucket["department_name"]),
+                "worked_minutes": worked_minutes,
+                "extra_work_minutes": extra_work_minutes,
+                "overtime_minutes": overtime_minutes,
+                "status": day_status,
+                "day_type": day_type,
+                "worked_flag": worked_flag,
+            }
         )
 
     daily_data_start = daily_header_row + 1
@@ -880,6 +1491,19 @@ def _build_date_range_export(
             row[5].number_format = "hh:mm"
         if row[6].value is not None:
             row[6].number_format = "hh:mm"
+    _apply_duration_formats(
+        ws_daily,
+        header_row=daily_header_row,
+        data_start_row=daily_data_start,
+        data_end_row=daily_data_end,
+        header_names=[
+            "Çalışma Süresi",
+            "Mola",
+            "Net Süre",
+            "Fazla Sürelerle Çalışma",
+            "Fazla Mesai",
+        ],
+    )
 
     ws_daily.append([])
     summary_start = ws_daily.max_row + 1
@@ -888,6 +1512,46 @@ def _build_date_range_export(
     ws_daily.append(["Toplam Fazla Mesai", _minutes_to_hhmm(total_overtime_minutes)])
     _style_metadata_rows(ws_daily, start_row=summary_start, end_row=ws_daily.max_row)
     _auto_width(ws_daily)
+    _apply_print_layout(ws_daily, header_row=daily_header_row)
+
+    employee_daily_map: dict[tuple[int, str, str], list[dict[str, object]]] = defaultdict(list)
+    for row in daily_fact_rows:
+        key = (
+            int(row["employee_id"]),
+            str(row["employee_name"]),
+            str(row["department_name"]),
+        )
+        employee_daily_map[key].append(row)
+
+    summary_rows = [
+        _build_summary_row_from_daily_facts(
+            employee_id=employee_id_value,
+            employee_name=employee_name,
+            department_name=department_name,
+            rows=rows_for_employee,
+        )
+        for (employee_id_value, employee_name, department_name), rows_for_employee in sorted(
+            employee_daily_map.items(),
+            key=lambda item: item[0][0],
+        )
+    ]
+
+    summary_title = "Tarih Aralığı Özeti"
+    _build_dashboard_sheet(
+        wb.create_sheet("DASHBOARD", 0),
+        title=summary_title,
+        summary_rows=summary_rows,
+    )
+    _build_summary_sheet(
+        wb.create_sheet("SUMMARY_EMPLOYEE"),
+        title=summary_title,
+        rows=summary_rows,
+    )
+    _build_department_summary_sheet(
+        wb.create_sheet("SUMMARY_DEPARTMENT"),
+        title=summary_title,
+        rows=_group_summary_rows_by_department(summary_rows),
+    )
 
 
 def build_puantaj_xlsx_bytes(
@@ -1065,6 +1729,7 @@ def _write_range_sheet_rows(
             if row[1].value is not None:
                 row[1].number_format = "hh:mm"
     _auto_width(ws)
+    _apply_print_layout(ws, header_row=header_row)
 
 
 def build_puantaj_range_xlsx_bytes(
@@ -1076,6 +1741,27 @@ def build_puantaj_range_xlsx_bytes(
     department_id: int | None = None,
     employee_id: int | None = None,
 ) -> bytes:
+    if mode not in {"consolidated", "employee_sheets", "department_sheets"}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid range export mode",
+        )
+
+    wb = Workbook()
+    _build_date_range_export(
+        db,
+        wb,
+        start_date=start_date,
+        end_date=end_date,
+        employee_id=employee_id,
+        department_id=department_id,
+    )
+
+    if mode == "consolidated":
+        stream = BytesIO()
+        wb.save(stream)
+        return stream.getvalue()
+
     rows = _fetch_date_range_rows(
         db,
         start_date=start_date,
@@ -1083,32 +1769,16 @@ def build_puantaj_range_xlsx_bytes(
         employee_id=employee_id,
         department_id=department_id,
     )
-    wb = Workbook()
 
-    if mode == "consolidated":
-        ws = wb.active
-        ws.title = "Konsolide"
-        _write_range_sheet_rows(ws, rows=rows)
-    elif mode == "employee_sheets":
+    if mode == "employee_sheets":
         grouped: dict[tuple[int, str], list[tuple[AttendanceEvent, Employee, Department | None]]] = defaultdict(list)
         for row in rows:
             event, employee, _department = row
             grouped[(event.employee_id, employee.full_name)].append(row)
 
-        if not grouped:
-            ws = wb.active
-            ws.title = "Çalışanlar"
-            _write_range_sheet_rows(ws, rows=[])
-        else:
-            first = True
-            for (emp_id, full_name), group_rows in sorted(grouped.items(), key=lambda item: item[0][0]):
-                if first:
-                    ws = wb.active
-                    first = False
-                else:
-                    ws = wb.create_sheet()
-                ws.title = _safe_sheet_title(f"{full_name} ({emp_id})", f"Emp{emp_id}")
-                _write_range_sheet_rows(ws, rows=group_rows)
+        for (emp_id, full_name), group_rows in sorted(grouped.items(), key=lambda item: item[0][0]):
+            ws = wb.create_sheet(_safe_sheet_title(f"EMP_{emp_id}_{full_name}", f"Emp{emp_id}"))
+            _write_range_sheet_rows(ws, rows=group_rows)
     elif mode == "department_sheets":
         grouped: dict[str, list[tuple[AttendanceEvent, Employee, Department | None]]] = defaultdict(list)
         for row in rows:
@@ -1116,25 +1786,9 @@ def build_puantaj_range_xlsx_bytes(
             key = department.name if department is not None else "Atanmamış"
             grouped[key].append(row)
 
-        if not grouped:
-            ws = wb.active
-            ws.title = "Departmanlar"
-            _write_range_sheet_rows(ws, rows=[])
-        else:
-            first = True
-            for dep_name, group_rows in sorted(grouped.items(), key=lambda item: item[0].lower()):
-                if first:
-                    ws = wb.active
-                    first = False
-                else:
-                    ws = wb.create_sheet()
-                ws.title = _safe_sheet_title(dep_name, "Departman")
-                _write_range_sheet_rows(ws, rows=group_rows)
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Invalid range export mode",
-        )
+        for dep_name, group_rows in sorted(grouped.items(), key=lambda item: item[0].lower()):
+            ws = wb.create_sheet(_safe_sheet_title(f"DEP_{dep_name}", "Departman"))
+            _write_range_sheet_rows(ws, rows=group_rows)
 
     stream = BytesIO()
     wb.save(stream)
