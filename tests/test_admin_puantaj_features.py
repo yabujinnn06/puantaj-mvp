@@ -268,6 +268,84 @@ class AdminPuantajFeatureTests(unittest.TestCase):
         self.assertGreater(first_sheet.max_row, 1)
         self.assertGreater(first_sheet.max_column, 1)
 
+    def test_xlsx_export_formats_dashboard_and_duration_columns(self) -> None:
+        employee = Employee(id=1, full_name="Test User", department_id=None, is_active=True)
+        fake_db = _FakeExportDB(employee)
+        app.dependency_overrides[get_db] = _override_get_db(fake_db)
+        app.dependency_overrides[require_admin] = lambda: _super_admin_claims()
+
+        fake_report = MonthlyEmployeeResponse(
+            employee_id=1,
+            year=2026,
+            month=2,
+            days=[
+                MonthlyEmployeeDay(
+                    date=date(2026, 2, 12),
+                    status="OK",
+                    check_in=datetime(2026, 2, 12, 10, 47, tzinfo=timezone.utc),
+                    check_out=datetime(2026, 2, 12, 16, 42, tzinfo=timezone.utc),
+                    worked_minutes=355,
+                    overtime_minutes=175,
+                    flags=[],
+                )
+            ],
+            totals=MonthlyEmployeeTotals(
+                worked_minutes=355,
+                overtime_minutes=175,
+                incomplete_days=0,
+            ),
+            worked_minutes_net=355,
+            weekly_totals=[],
+            annual_overtime_used_minutes=0,
+            annual_overtime_remaining_minutes=16200,
+            annual_overtime_cap_exceeded=False,
+            labor_profile=None,
+        )
+
+        client = TestClient(app)
+        with patch("app.services.exports.calculate_employee_monthly", return_value=fake_report):
+            response = client.get(
+                "/api/admin/exports/puantaj.xlsx?mode=employee&employee_id=1&year=2026&month=2"
+            )
+
+        self.assertEqual(response.status_code, 200)
+        wb = load_workbook(BytesIO(response.content))
+
+        dashboard = wb["DASHBOARD"]
+        self.assertEqual(dashboard["B5"].number_format, "0")
+        self.assertEqual(dashboard["B10"].number_format, "0")
+        for cell_ref in ("B6", "B7", "B8", "B9"):
+            self.assertEqual(dashboard[cell_ref].number_format, "[h]:mm")
+
+        overtime_header_row = None
+        for row_idx in range(1, dashboard.max_row + 1):
+            if dashboard.cell(row=row_idx, column=4).value == "Yasal Fazla Mesai [h:mm]":
+                overtime_header_row = row_idx
+                break
+        self.assertIsNotNone(overtime_header_row)
+        self.assertEqual(dashboard.cell(row=overtime_header_row + 1, column=4).number_format, "[h]:mm")
+
+        column_a_values = [dashboard.cell(row=row_idx, column=1).value for row_idx in range(1, dashboard.max_row + 1)]
+        self.assertNotIn("Çalışan/Sayfa", column_a_values)
+
+        daily_sheet = wb["DAILY_1"]
+        day_row = None
+        target_date = date(2026, 2, 12)
+        for row_idx in range(1, daily_sheet.max_row + 1):
+            value = daily_sheet.cell(row=row_idx, column=1).value
+            if isinstance(value, datetime) and value.date() == target_date:
+                day_row = row_idx
+                break
+            if isinstance(value, date) and value == target_date:
+                day_row = row_idx
+                break
+        self.assertIsNotNone(day_row)
+
+        for col_idx in (5, 6, 7, 9, 11, 12):
+            self.assertEqual(daily_sheet.cell(row=day_row, column=col_idx).number_format, "[h]:mm")
+        for col_idx in (8, 10, 13):
+            self.assertNotEqual(daily_sheet.cell(row=day_row, column=col_idx).number_format, "[h]:mm")
+
     def test_new_employee_monthly_export_endpoint_returns_valid_xlsx(self) -> None:
         employee = Employee(id=1, full_name="Test User", department_id=None, is_active=True)
         fake_db = _FakeExportDB(employee)

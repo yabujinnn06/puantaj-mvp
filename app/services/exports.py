@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
+from numbers import Number
 from typing import Literal
 
 from fastapi import HTTPException, status
@@ -24,25 +25,24 @@ RangeSheetMode = Literal["consolidated", "employee_sheets", "department_sheets"]
 
 DEFAULT_DAILY_MINUTES_PLANNED = 540
 DEFAULT_BREAK_MINUTES = 60
-DEFAULT_WEEKLY_NORMAL_MINUTES = 45 * 60
 DURATION_NUMBER_FORMAT = "[h]:mm"
 
 DAILY_HEADERS = [
     "Tarih",
-    "Giriş",
-    "Çıkış",
-    "Saat Aralığı",
-    "Çalışma Süresi",
+    "GiriÅŸ",
+    "Ã‡Ä±kÄ±ÅŸ",
+    "Saat AralÄ±ÄŸÄ±",
+    "Ã‡alÄ±ÅŸma SÃ¼resi",
     "Mola",
-    "Net Süre",
-    "Net Süre (dk)",
-    "Plan Üstü Süre",
-    "Plan Üstü Süre (dk)",
-    "Fazla Sürelerle Çalışma",
+    "Net SÃ¼re",
+    "Net SÃ¼re (dk)",
+    "Plan ÃœstÃ¼ SÃ¼re",
+    "Plan ÃœstÃ¼ SÃ¼re (dk)",
+    "Fazla SÃ¼relerle Ã‡alÄ±ÅŸma",
     "Yasal Fazla Mesai",
     "Yasal Fazla Mesai (dk)",
-    "Gün Tipi",
-    "Çalışıldı mı",
+    "GÃ¼n Tipi",
+    "Ã‡alÄ±ÅŸÄ±ldÄ± mÄ±",
     "Durum",
     "Bayraklar",
 ]
@@ -95,10 +95,10 @@ def _is_special_day(*, day_date: date, leave_type: object, flags: list[str]) -> 
 
 def _day_type_label(*, day_date: date, leave_type: object, flags: list[str]) -> str:
     if _is_special_day(day_date=day_date, leave_type=leave_type, flags=flags):
-        return "Özel Gün"
+        return "Ã–zel GÃ¼n"
     if day_date.weekday() == 6:
         return "Pazar"
-    return "Hafta İçi"
+    return "Hafta Ä°Ã§i"
 
 
 def _was_worked_day(*, worked_minutes: int, check_in: datetime | None, check_out: datetime | None) -> bool:
@@ -130,7 +130,7 @@ def _build_summary_row_from_daily_facts(
     incomplete_days = sum(1 for item in rows if str(item["status"]).upper() == "INCOMPLETE")
     worked_days = sum(1 for item in rows if bool(item["worked_flag"]))
     sunday_worked_days = sum(1 for item in rows if bool(item["worked_flag"]) and item["day_type"] == "Pazar")
-    special_worked_days = sum(1 for item in rows if bool(item["worked_flag"]) and item["day_type"] == "Özel Gün")
+    special_worked_days = sum(1 for item in rows if bool(item["worked_flag"]) and item["day_type"] == "Ã–zel GÃ¼n")
     sunday_worked_minutes = sum(
         int(item["worked_minutes"])
         for item in rows
@@ -139,7 +139,7 @@ def _build_summary_row_from_daily_facts(
     special_worked_minutes = sum(
         int(item["worked_minutes"])
         for item in rows
-        if bool(item["worked_flag"]) and item["day_type"] == "Özel Gün"
+        if bool(item["worked_flag"]) and item["day_type"] == "Ã–zel GÃ¼n"
     )
 
     return {
@@ -238,12 +238,25 @@ def _auto_width(ws: Worksheet) -> None:
         ws.column_dimensions[col_letter].width = min(max_len + 2, 45)
 
 
-def _merge_title(ws: Worksheet, row: int, text: str) -> None:
-    max_col = max(ws.max_column, 10)
+def _append_spacer_row(ws: Worksheet) -> None:
+    # `ws.append([])` does not always advance `max_row`; write a blank string cell for stable row indexing.
+    ws.append([""])
+
+
+def _merge_title(ws: Worksheet, row: int, text: str, *, end_col: int | None = None) -> None:
+    max_col = max(1, int(end_col) if end_col is not None else ws.max_column)
     ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=max_col)
     cell = ws.cell(row=row, column=1, value=text)
     cell.font = TITLE_FONT
     cell.alignment = Alignment(horizontal="left", vertical="center")
+
+
+def _finalize_visual_scope(ws: Worksheet, *, used_max_col: int) -> None:
+    ws.sheet_view.showGridLines = False
+    max_excel_col = 16384  # XFD
+    if used_max_col < max_excel_col:
+        start_letter = get_column_letter(used_max_col + 1)
+        ws.column_dimensions.group(start_letter, "XFD", hidden=True)
 
 
 def _style_metadata_rows(ws: Worksheet, *, start_row: int, end_row: int) -> None:
@@ -360,11 +373,24 @@ def _apply_duration_formats(
         if isinstance(value, str):
             header_index[value] = col_idx
 
-    target_columns = [header_index[name] for name in header_names if name in header_index]
-    for col_idx in target_columns:
+    target_columns = {header_index[name] for name in header_names if name in header_index}
+    for header_name, col_idx in header_index.items():
+        if header_name.endswith("(dk)"):
+            continue
+        if "[h:mm]" in header_name or "SÃ¼re" in header_name or "Mesai" in header_name:
+            target_columns.add(col_idx)
+    for col_idx in sorted(target_columns):
         for row_idx in range(data_start_row, data_end_row + 1):
             cell = ws.cell(row=row_idx, column=col_idx)
-            if isinstance(cell.value, (int, float)):
+            if isinstance(cell.value, Number):
+                cell.number_format = DURATION_NUMBER_FORMAT
+            elif isinstance(cell.value, str):
+                normalized = cell.value.strip().replace(",", ".")
+                try:
+                    parsed = float(normalized)
+                except ValueError:
+                    continue
+                cell.value = parsed
                 cell.number_format = DURATION_NUMBER_FORMAT
 
 
@@ -444,11 +470,11 @@ def _append_summary_area(
             if day_type == "Pazar":
                 sunday_worked_days += 1
                 sunday_worked_minutes += day.worked_minutes
-            if day_type == "Özel Gün":
+            if day_type == "Ã–zel GÃ¼n":
                 special_worked_days += 1
                 special_worked_minutes += day.worked_minutes
 
-    ws.append([])
+    _append_spacer_row(ws)
     summary_start = ws.max_row + 1
     ws.append(["\u00d6zet", "De\u011fer"])
     ws.append(["Toplam Net S\u00fcre", _minutes_to_hhmm(report.totals.worked_minutes)])
@@ -456,11 +482,11 @@ def _append_summary_area(
     ws.append(["Toplam Fazla S\u00fcrelerle \u00c7al\u0131\u015fma", _minutes_to_hhmm(total_extra_work_minutes)])
     ws.append(["Toplam Yasal Fazla Mesai", _minutes_to_hhmm(total_legal_overtime_minutes)])
     ws.append(["Eksik G\u00fcn", report.totals.incomplete_days])
-    ws.append(["Çalışılan Gün", worked_days])
-    ws.append(["Pazar Çalışılan Gün", sunday_worked_days])
-    ws.append(["Özel Gün Çalışılan Gün", special_worked_days])
-    ws.append(["Pazar Net Süre", _minutes_to_hhmm(sunday_worked_minutes)])
-    ws.append(["Özel Gün Net Süre", _minutes_to_hhmm(special_worked_minutes)])
+    ws.append(["Ã‡alÄ±ÅŸÄ±lan GÃ¼n", worked_days])
+    ws.append(["Pazar Ã‡alÄ±ÅŸÄ±lan GÃ¼n", sunday_worked_days])
+    ws.append(["Ã–zel GÃ¼n Ã‡alÄ±ÅŸÄ±lan GÃ¼n", special_worked_days])
+    ws.append(["Pazar Net SÃ¼re", _minutes_to_hhmm(sunday_worked_minutes)])
+    ws.append(["Ã–zel GÃ¼n Net SÃ¼re", _minutes_to_hhmm(special_worked_minutes)])
     ws.append(["Y\u0131ll\u0131k Fazla Mesai Kullan\u0131m\u0131", _minutes_to_hhmm(report.annual_overtime_used_minutes)])
     _style_header(ws, summary_start)
 
@@ -487,12 +513,12 @@ def _append_employee_daily_sheet(
     report: MonthlyEmployeeResponse,
     contract_weekly_minutes: int | None = None,
 ) -> None:
-    _merge_title(ws, 1, "PUANTAJ AYLIK RAPORU")
+    _merge_title(ws, 1, "PUANTAJ AYLIK RAPORU", end_col=len(DAILY_HEADERS))
     ws.append(["\u00c7al\u0131\u015fan", employee_name])
     ws.append(["Departman", department_name or "-"])
     ws.append(["D\u00f6nem", f"{report.year}-{report.month:02d}"])
     ws.append(["Rapor \u00dcretim (UTC)", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")])
-    ws.append([])
+    _append_spacer_row(ws)
     _style_metadata_rows(ws, start_row=2, end_row=5)
 
     header_row = ws.max_row + 1
@@ -543,7 +569,7 @@ def _append_employee_daily_sheet(
                 _minutes_to_excel_duration(legal_overtime_minutes),
                 legal_overtime_minutes,
                 day_type,
-                "Evet" if worked_flag else "Hayır",
+                "Evet" if worked_flag else "HayÄ±r",
                 day.status,
                 ", ".join(day_flags) if day_flags else "-",
             ]
@@ -577,16 +603,17 @@ def _append_employee_daily_sheet(
         data_start_row=data_start_row,
         data_end_row=data_end_row,
         header_names=[
-            "Çalışma Süresi",
+            "Ã‡alÄ±ÅŸma SÃ¼resi",
             "Mola",
-            "Net Süre",
-            "Plan Üstü Süre",
-            "Fazla Sürelerle Çalışma",
+            "Net SÃ¼re",
+            "Plan ÃœstÃ¼ SÃ¼re",
+            "Fazla SÃ¼relerle Ã‡alÄ±ÅŸma",
             "Yasal Fazla Mesai",
         ],
     )
 
     _auto_width(ws)
+    _finalize_visual_scope(ws, used_max_col=len(DAILY_HEADERS))
     _apply_print_layout(ws, header_row=header_row)
 
 
@@ -663,18 +690,18 @@ def _build_employee_export(
 
     _build_dashboard_sheet(
         wb.active,
-        title="Çalışan Aylık Özeti",
+        title="Ã‡alÄ±ÅŸan AylÄ±k Ã–zeti",
         summary_rows=summary_rows,
         employee_sheet_map={employee.id: ws_daily.title},
     )
     _build_summary_sheet(
         wb.create_sheet("SUMMARY_EMPLOYEE"),
-        title="Çalışan Aylık Özeti",
+        title="Ã‡alÄ±ÅŸan AylÄ±k Ã–zeti",
         rows=summary_rows,
     )
     _build_department_summary_sheet(
         wb.create_sheet("SUMMARY_DEPARTMENT"),
-        title="Çalışan Aylık Özeti",
+        title="Ã‡alÄ±ÅŸan AylÄ±k Ã–zeti",
         rows=_group_summary_rows_by_department(summary_rows),
     )
 
@@ -685,10 +712,10 @@ def _build_summary_sheet(
     title: str,
     rows: list[dict[str, object]],
 ) -> None:
-    _merge_title(ws, 1, f"{title} - PUANTAJ OZET")
+    _merge_title(ws, 1, f"{title} - PUANTAJ OZET", end_col=14)
     ws.append(["Rapor \u00dcretim (UTC)", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")])
     ws.append(["Kay\u0131t Say\u0131s\u0131", len(rows)])
-    ws.append([])
+    _append_spacer_row(ws)
     _style_metadata_rows(ws, start_row=2, end_row=3)
 
     header_row = ws.max_row + 1
@@ -702,11 +729,11 @@ def _build_summary_sheet(
             "Toplam Fazla S\u00fcrelerle \u00c7al\u0131\u015fma",
             "Toplam Yasal Fazla Mesai",
             "Eksik G\u00fcn",
-            "Çalışılan Gün",
-            "Pazar Çalışılan Gün",
-            "Özel Gün Çalışılan Gün",
-            "Pazar Net Süre",
-            "Özel Gün Net Süre",
+            "Ã‡alÄ±ÅŸÄ±lan GÃ¼n",
+            "Pazar Ã‡alÄ±ÅŸÄ±lan GÃ¼n",
+            "Ã–zel GÃ¼n Ã‡alÄ±ÅŸÄ±lan GÃ¼n",
+            "Pazar Net SÃ¼re",
+            "Ã–zel GÃ¼n Net SÃ¼re",
             "Y\u0131ll\u0131k Fazla Mesai Kullan\u0131m\u0131",
         ]
     )
@@ -808,15 +835,16 @@ def _build_summary_sheet(
         data_start_row=data_start_row,
         data_end_row=total_row,
         header_names=[
-            "Toplam Net Süre",
-            "Toplam Plan Üstü Süre",
-            "Toplam Fazla Sürelerle Çalışma",
+            "Toplam Net SÃ¼re",
+            "Toplam Plan ÃœstÃ¼ SÃ¼re",
+            "Toplam Fazla SÃ¼relerle Ã‡alÄ±ÅŸma",
             "Toplam Yasal Fazla Mesai",
-            "Pazar Net Süre",
-            "Özel Gün Net Süre",
+            "Pazar Net SÃ¼re",
+            "Ã–zel GÃ¼n Net SÃ¼re",
         ],
     )
     _auto_width(ws)
+    _finalize_visual_scope(ws, used_max_col=14)
     _apply_print_layout(ws, header_row=header_row)
 
 
@@ -826,24 +854,24 @@ def _build_department_summary_sheet(
     title: str,
     rows: list[dict[str, object]],
 ) -> None:
-    _merge_title(ws, 1, f"{title} - DEPARTMAN KPI")
-    ws.append(["Rapor Üretim (UTC)", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")])
-    ws.append(["Departman Sayısı", len(rows)])
-    ws.append([])
+    _merge_title(ws, 1, f"{title} - DEPARTMAN KPI", end_col=9)
+    ws.append(["Rapor Ãœretim (UTC)", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")])
+    ws.append(["Departman SayÄ±sÄ±", len(rows)])
+    _append_spacer_row(ws)
     _style_metadata_rows(ws, start_row=2, end_row=3)
 
     header_row = ws.max_row + 1
     ws.append(
         [
             "Departman",
-            "Çalışan Sayısı",
-            "Toplam Net Süre",
-            "Toplam Plan Üstü Süre",
-            "Toplam Fazla Sürelerle Çalışma",
+            "Ã‡alÄ±ÅŸan SayÄ±sÄ±",
+            "Toplam Net SÃ¼re",
+            "Toplam Plan ÃœstÃ¼ SÃ¼re",
+            "Toplam Fazla SÃ¼relerle Ã‡alÄ±ÅŸma",
             "Toplam Yasal Fazla Mesai",
-            "Eksik Gün",
-            "Pazar Çalışılan Gün",
-            "Özel Gün Çalışılan Gün",
+            "Eksik GÃ¼n",
+            "Pazar Ã‡alÄ±ÅŸÄ±lan GÃ¼n",
+            "Ã–zel GÃ¼n Ã‡alÄ±ÅŸÄ±lan GÃ¼n",
         ]
     )
     _style_header(ws, header_row)
@@ -926,13 +954,14 @@ def _build_department_summary_sheet(
         data_start_row=data_start_row,
         data_end_row=total_row,
         header_names=[
-            "Toplam Net Süre",
-            "Toplam Plan Üstü Süre",
-            "Toplam Fazla Sürelerle Çalışma",
+            "Toplam Net SÃ¼re",
+            "Toplam Plan ÃœstÃ¼ SÃ¼re",
+            "Toplam Fazla SÃ¼relerle Ã‡alÄ±ÅŸma",
             "Toplam Yasal Fazla Mesai",
         ],
     )
     _auto_width(ws)
+    _finalize_visual_scope(ws, used_max_col=9)
     _apply_print_layout(ws, header_row=header_row)
 
 
@@ -944,9 +973,9 @@ def _build_dashboard_sheet(
     employee_sheet_map: dict[int, str] | None = None,
 ) -> None:
     ws.title = _safe_sheet_title("DASHBOARD", "Dashboard")
-    _merge_title(ws, 1, f"{title} - YÖNETİM DASHBOARD")
-    ws.append(["Rapor Üretim (UTC)", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")])
-    ws.append([])
+    _merge_title(ws, 1, f"{title} - YÃ–NETÄ°M DASHBOARD", end_col=4)
+    ws.append(["Rapor Ãœretim (UTC)", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")])
+    _append_spacer_row(ws)
     _style_metadata_rows(ws, start_row=2, end_row=2)
 
     total_employee = len(summary_rows)
@@ -959,48 +988,56 @@ def _build_dashboard_sheet(
     kpi_row = ws.max_row + 1
     ws.append(["KPI", "Değer"])
     _style_header(ws, kpi_row)
-    ws.append(["Toplam Çalışan", total_employee])
-    ws.append(["Toplam Net Süre", _minutes_to_hhmm(total_worked)])
-    ws.append(["Toplam Plan Üstü Süre", _minutes_to_hhmm(total_plan_overtime)])
-    ws.append(["Toplam Fazla Sürelerle Çalışma", _minutes_to_hhmm(total_extra)])
-    ws.append(["Toplam Yasal Fazla Mesai", _minutes_to_hhmm(total_overtime)])
-    ws.append(["Toplam Eksik Gün", total_incomplete])
+    kpi_rows = [
+        ("Toplam Çalışan", total_employee, False),
+        ("Toplam Net Süre", _minutes_to_excel_duration(total_worked), True),
+        ("Toplam Plan Üstü Süre", _minutes_to_excel_duration(total_plan_overtime), True),
+        ("Toplam Fazla Sürelerle Çalışma", _minutes_to_excel_duration(total_extra), True),
+        ("Toplam Yasal Fazla Mesai", _minutes_to_excel_duration(total_overtime), True),
+        ("Toplam Eksik Gün", total_incomplete, False),
+    ]
+    for label, value, _ in kpi_rows:
+        ws.append([label, value])
     _style_metadata_rows(ws, start_row=kpi_row + 1, end_row=ws.max_row)
+    for offset, (_, _, is_duration) in enumerate(kpi_rows, start=1):
+        value_cell = ws.cell(row=kpi_row + offset, column=2)
+        value_cell.number_format = DURATION_NUMBER_FORMAT if is_duration else "0"
 
-    ws.append([])
-    overtime_start_header = ws.max_row + 1
-    ws.append(["Top Yasal Fazla Mesai Çalışanları", "Yasal Fazla Mesai (dk)", "Yasal Fazla Mesai [h:mm]"])
-    _style_header(ws, overtime_start_header)
-    top_rows = sorted(summary_rows, key=lambda item: int(item["overtime_minutes"]), reverse=True)[:10]
-    top_data_start = ws.max_row + 1
-    for row in top_rows:
+    _append_spacer_row(ws)
+    overtime_header_row = ws.max_row + 1
+    ws.append(["SÄ±ra", "Ã‡alÄ±ÅŸan Navigasyon", "Yasal Fazla Mesai (dk)", "Yasal Fazla Mesai [h:mm]"])
+    _style_header(ws, overtime_header_row)
+    top_rows = sorted(summary_rows, key=lambda item: int(item["overtime_minutes"]), reverse=True)
+    overtime_data_start = ws.max_row + 1
+    for idx, row in enumerate(top_rows, start=1):
         overtime_minutes = int(row["overtime_minutes"])
         ws.append(
             [
+                idx,
                 f"#{row['employee_id']} - {row['employee_name']}",
                 overtime_minutes,
                 _minutes_to_excel_duration(overtime_minutes),
             ]
         )
-    top_data_end = ws.max_row
+    overtime_data_end = ws.max_row
     _style_table_region(
         ws,
-        header_row=overtime_start_header,
-        data_start_row=top_data_start,
-        data_end_row=top_data_end,
+        header_row=overtime_header_row,
+        data_start_row=overtime_data_start,
+        data_end_row=overtime_data_end,
         status_col_name="",
         flags_col_name="",
     )
     _apply_duration_formats(
         ws,
-        header_row=overtime_start_header,
-        data_start_row=top_data_start,
-        data_end_row=top_data_end,
+        header_row=overtime_header_row,
+        data_start_row=overtime_data_start,
+        data_end_row=overtime_data_end,
         header_names=["Yasal Fazla Mesai [h:mm]"],
     )
     if employee_sheet_map:
-        for row_idx in range(top_data_start, top_data_end + 1):
-            name_cell = ws.cell(row=row_idx, column=1)
+        for row_idx in range(overtime_data_start, overtime_data_end + 1):
+            name_cell = ws.cell(row=row_idx, column=2)
             value = str(name_cell.value or "")
             if not value.startswith("#") or " - " not in value:
                 continue
@@ -1011,9 +1048,9 @@ def _build_dashboard_sheet(
             if employee_sheet_title:
                 _set_internal_sheet_link(name_cell, employee_sheet_title)
 
-    ws.append([])
+    _append_spacer_row(ws)
     dep_header = ws.max_row + 1
-    ws.append(["Departman", "Net Süre (dk)", "Plan Üstü Süre (dk)", "Yasal Fazla Mesai (dk)"])
+    ws.append(["Departman", "Net SÃ¼re (dk)", "Plan ÃœstÃ¼ SÃ¼re (dk)", "Yasal Fazla Mesai (dk)"])
     _style_header(ws, dep_header)
     department_rows = _group_summary_rows_by_department(summary_rows)
     dep_data_start = ws.max_row + 1
@@ -1036,36 +1073,8 @@ def _build_dashboard_sheet(
         flags_col_name="",
     )
 
-    if employee_sheet_map:
-        ws.append([])
-        nav_header = ws.max_row + 1
-        ws.append(["Çalışan", "Sayfa"])
-        _style_header(ws, nav_header)
-        nav_data_start = ws.max_row + 1
-        for row in sorted(summary_rows, key=lambda item: int(item["employee_id"])):
-            employee_id = int(row["employee_id"])
-            employee_name = str(row["employee_name"])
-            sheet_title = employee_sheet_map.get(employee_id)
-            ws.append(
-                [
-                    f"#{employee_id} - {employee_name}",
-                    sheet_title or "-",
-                ]
-            )
-            if sheet_title:
-                _set_internal_sheet_link(ws.cell(row=ws.max_row, column=1), sheet_title)
-                _set_internal_sheet_link(ws.cell(row=ws.max_row, column=2), sheet_title)
-        nav_data_end = ws.max_row
-        _style_table_region(
-            ws,
-            header_row=nav_header,
-            data_start_row=nav_data_start,
-            data_end_row=nav_data_end,
-            status_col_name="",
-            flags_col_name="",
-        )
-
     _auto_width(ws)
+    _finalize_visual_scope(ws, used_max_col=4)
     _apply_print_layout(ws)
 
 
@@ -1113,7 +1122,7 @@ def _build_department_or_all_export(
                 if day_type == "Pazar":
                     sunday_worked_days += 1
                     sunday_worked_minutes += day.worked_minutes
-                if day_type == "Özel Gün":
+                if day_type == "Ã–zel GÃ¼n":
                     special_worked_days += 1
                     special_worked_minutes += day.worked_minutes
         summary_rows.append(
@@ -1147,7 +1156,7 @@ def _build_department_or_all_export(
                 contract_weekly_minutes=employee.contract_weekly_minutes,
             )
 
-    summary_title = "Departman Özeti" if department_id is not None else "Tüm Çalışanlar Özeti"
+    summary_title = "Departman Ã–zeti" if department_id is not None else "TÃ¼m Ã‡alÄ±ÅŸanlar Ã–zeti"
     _build_dashboard_sheet(
         ws_dashboard,
         title=summary_title,
@@ -1200,7 +1209,7 @@ def _build_date_range_export(
 
     ws_events = wb.active
     ws_events.title = "RAW_EVENTS"
-    _merge_title(ws_events, 1, "PUANTAJ RAW EVENTS RAPORU")
+    _merge_title(ws_events, 1, "PUANTAJ RAW EVENTS RAPORU", end_col=11)
     ws_events.append(["Tarih Aral\u0131\u011f\u0131", f"{start_date.isoformat()} - {end_date.isoformat()}"])
     ws_events.append(["Filtre - \u00c7al\u0131\u015fan ID", employee_id if employee_id is not None else "T\u00fcm\u00fc"])
     ws_events.append(["Filtre - Departman ID", department_id if department_id is not None else "T\u00fcm\u00fc"])
@@ -1220,7 +1229,7 @@ def _build_date_range_export(
             "Konum Durumu",
             "Enlem",
             "Boylam",
-            "Doğruluk (m)",
+            "DoÄŸruluk (m)",
             "Bayraklar",
         ]
     )
@@ -1287,10 +1296,11 @@ def _build_date_range_export(
         if row[5].value is not None:
             row[5].number_format = "yyyy-mm-dd hh:mm"
     _auto_width(ws_events)
+    _finalize_visual_scope(ws_events, used_max_col=11)
     _apply_print_layout(ws_events, header_row=events_header_row)
 
     ws_daily = wb.create_sheet("DAILY_FACT")
-    _merge_title(ws_daily, 1, "PUANTAJ DAILY FACT RAPORU")
+    _merge_title(ws_daily, 1, "PUANTAJ DAILY FACT RAPORU", end_col=21)
     ws_daily.append(["Tarih Aral\u0131\u011f\u0131", f"{start_date.isoformat()} - {end_date.isoformat()}"])
     ws_daily.append(["Filtre - \u00c7al\u0131\u015fan ID", employee_id if employee_id is not None else "T\u00fcm\u00fc"])
     ws_daily.append(["Filtre - Departman ID", department_id if department_id is not None else "T\u00fcm\u00fc"])
@@ -1301,24 +1311,24 @@ def _build_date_range_export(
     ws_daily.append(
         [
             "Tarih",
-            "Çalışan ID",
-            "Çalışan Adı",
+            "Ã‡alÄ±ÅŸan ID",
+            "Ã‡alÄ±ÅŸan AdÄ±",
             "Departman",
             "Vardiya",
-            "Giriş",
-            "Çıkış",
-            "Saat Aralığı",
-            "Çalışma Süresi",
+            "GiriÅŸ",
+            "Ã‡Ä±kÄ±ÅŸ",
+            "Saat AralÄ±ÄŸÄ±",
+            "Ã‡alÄ±ÅŸma SÃ¼resi",
             "Mola",
-            "Net Süre",
-            "Net Süre (dk)",
-            "Plan Üstü Süre",
-            "Plan Üstü Süre (dk)",
-            "Fazla Sürelerle Çalışma",
+            "Net SÃ¼re",
+            "Net SÃ¼re (dk)",
+            "Plan ÃœstÃ¼ SÃ¼re",
+            "Plan ÃœstÃ¼ SÃ¼re (dk)",
+            "Fazla SÃ¼relerle Ã‡alÄ±ÅŸma",
             "Yasal Fazla Mesai",
             "Yasal Fazla Mesai (dk)",
-            "Gün Tipi",
-            "Çalışıldı mı",
+            "GÃ¼n Tipi",
+            "Ã‡alÄ±ÅŸÄ±ldÄ± mÄ±",
             "Durum",
             "Bayraklar",
         ]
@@ -1439,7 +1449,7 @@ def _build_date_range_export(
                 _minutes_to_excel_duration(legal_overtime_minutes),
                 legal_overtime_minutes,
                 day_type,
-                "Evet" if worked_flag else "Hayır",
+                "Evet" if worked_flag else "HayÄ±r",
                 day_status,
                 ", ".join(flag_names) if flag_names else "-",
             ]
@@ -1482,11 +1492,11 @@ def _build_date_range_export(
         data_start_row=daily_data_start,
         data_end_row=daily_data_end,
         header_names=[
-            "Çalışma Süresi",
+            "Ã‡alÄ±ÅŸma SÃ¼resi",
             "Mola",
-            "Net Süre",
-            "Plan Üstü Süre",
-            "Fazla Sürelerle Çalışma",
+            "Net SÃ¼re",
+            "Plan ÃœstÃ¼ SÃ¼re",
+            "Fazla SÃ¼relerle Ã‡alÄ±ÅŸma",
             "Yasal Fazla Mesai",
         ],
     )
@@ -1499,6 +1509,7 @@ def _build_date_range_export(
     ws_daily.append(["Toplam Yasal Fazla Mesai", _minutes_to_hhmm(total_overtime_minutes)])
     _style_metadata_rows(ws_daily, start_row=summary_start, end_row=ws_daily.max_row)
     _auto_width(ws_daily)
+    _finalize_visual_scope(ws_daily, used_max_col=21)
     _apply_print_layout(ws_daily, header_row=daily_header_row)
 
     employee_daily_map: dict[tuple[int, str, str], list[dict[str, object]]] = defaultdict(list)
@@ -1523,7 +1534,7 @@ def _build_date_range_export(
         )
     ]
 
-    summary_title = "Tarih Aralığı Özeti"
+    summary_title = "Tarih AralÄ±ÄŸÄ± Ã–zeti"
     _build_dashboard_sheet(
         wb.create_sheet("DASHBOARD", 0),
         title=summary_title,
@@ -1655,10 +1666,10 @@ def _write_range_sheet_rows(
     *,
     rows: list[tuple[AttendanceEvent, Employee, Department | None]],
 ) -> None:
-    _merge_title(ws, 1, "PUANTAJ TARIH ARALIGI RAPORU")
-    ws.append(["Kayıt Sayısı", len(rows)])
-    ws.append(["Rapor Üretim (UTC)", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")])
-    ws.append([])
+    _merge_title(ws, 1, "PUANTAJ TARIH ARALIGI RAPORU", end_col=11)
+    ws.append(["KayÄ±t SayÄ±sÄ±", len(rows)])
+    ws.append(["Rapor Ãœretim (UTC)", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")])
+    _append_spacer_row(ws)
     _style_metadata_rows(ws, start_row=2, end_row=3)
 
     header_row = ws.max_row + 1
@@ -1666,14 +1677,14 @@ def _write_range_sheet_rows(
         [
             "Tarih",
             "Saat (UTC)",
-            "Çalışan ID",
-            "Çalışan Adı",
+            "Ã‡alÄ±ÅŸan ID",
+            "Ã‡alÄ±ÅŸan AdÄ±",
             "Departman",
             "Tip",
             "Konum Durumu",
             "Enlem",
             "Boylam",
-            "Doğruluk (m)",
+            "DoÄŸruluk (m)",
             "Bayraklar",
         ]
     )
@@ -1716,6 +1727,7 @@ def _write_range_sheet_rows(
             if row[1].value is not None:
                 row[1].number_format = "hh:mm"
     _auto_width(ws)
+    _finalize_visual_scope(ws, used_max_col=11)
     _apply_print_layout(ws, header_row=header_row)
 
 
@@ -1773,7 +1785,7 @@ def build_puantaj_range_xlsx_bytes(
             ws_dashboard = wb["DASHBOARD"]
             ws_dashboard.append([])
             nav_header = ws_dashboard.max_row + 1
-            ws_dashboard.append(["Çalışan", "Sayfa"])
+            ws_dashboard.append(["Ã‡alÄ±ÅŸan", "Sayfa"])
             _style_header(ws_dashboard, nav_header)
             nav_data_start = ws_dashboard.max_row + 1
             for emp_id, full_name, sheet_title in dashboard_links:
@@ -1795,7 +1807,7 @@ def build_puantaj_range_xlsx_bytes(
         grouped: dict[str, list[tuple[AttendanceEvent, Employee, Department | None]]] = defaultdict(list)
         for row in rows:
             _event, _employee, department = row
-            key = department.name if department is not None else "Atanmamış"
+            key = department.name if department is not None else "AtanmamÄ±ÅŸ"
             grouped[key].append(row)
 
         for dep_name, group_rows in sorted(grouped.items(), key=lambda item: item[0].lower()):
