@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { startRegistration } from '@simplewebauthn/browser'
 
 import {
   checkout,
@@ -13,7 +12,6 @@ import {
   verifyPasskeyRegistration,
 } from '../api/attendance'
 import { BrandSignature } from '../components/BrandSignature'
-import { QrScanner } from '../components/QrScanner'
 import type { AttendanceActionResponse, EmployeeStatusResponse } from '../types/api'
 import {
   flagLabel,
@@ -27,6 +25,9 @@ import { getCurrentLocation } from '../utils/location'
 type TodayStatus = EmployeeStatusResponse['today_status']
 const PUSH_VAPID_KEY_STORAGE = 'pf_push_vapid_public_key'
 const PUSH_REFRESH_ONCE_STORAGE = 'pf_push_refresh_once'
+const QrScanner = lazy(() =>
+  import('../components/QrScanner').then((module) => ({ default: module.QrScanner })),
+)
 
 interface LastAction {
   codeValue?: string
@@ -374,6 +375,7 @@ export function HomePage() {
       const optionsData = await getPasskeyRegisterOptions({
         device_fingerprint: deviceFingerprint,
       })
+      const { startRegistration } = await import('@simplewebauthn/browser')
       const credential = await startRegistration({
         optionsJSON: optionsData.options as unknown as Parameters<typeof startRegistration>[0]['optionsJSON'],
       })
@@ -700,7 +702,7 @@ export function HomePage() {
 
   return (
     <main className="phone-shell">
-      <section className="phone-card">
+      <section className="phone-card employee-home-card">
         <div className="card-topbar">
           <div>
             <p className="chip">Çalışan Portalı</p>
@@ -711,167 +713,182 @@ export function HomePage() {
           </Link>
         </div>
 
-        <div className="employee-hero">
-          <div className="employee-hero-copy">
-            <p className="employee-hero-kicker">Günlük Çalışma Ekranı</p>
-            <h2 className="employee-hero-title">{todayStatusLabel(todayStatus)}</h2>
-            <p className="employee-hero-subtitle">{todayStatusHint(todayStatus)}</p>
-          </div>
-          <span className={`employee-hero-indicator ${todayStatusClass}`}>Canlı</span>
-        </div>
+        <div className="employee-workbench">
+          <section className="employee-command-surface">
+            <div className="employee-hero">
+              <div className="employee-hero-copy">
+                <p className="employee-hero-kicker">Günlük Çalışma Ekranı</p>
+                <h2 className="employee-hero-title">{todayStatusLabel(todayStatus)}</h2>
+                <p className="employee-hero-subtitle">{todayStatusHint(todayStatus)}</p>
+              </div>
+              <span className={`employee-hero-indicator ${todayStatusClass}`}>Canlı</span>
+            </div>
 
-        <div className="status-grid">
-          <article className="status-card">
-            <p className="small-title">Bugünkü Durum</p>
-            <span className={`status-pill ${todayStatusClass}`}>{todayStatusLabel(todayStatus)}</span>
-          </article>
+            <div className="status-grid">
+              <article className="status-card">
+                <p className="small-title">Bugünkü Durum</p>
+                <span className={`status-pill ${todayStatusClass}`}>{todayStatusLabel(todayStatus)}</span>
+              </article>
 
-          <article className="status-card">
-            <p className="small-title">Passkey Durumu</p>
-            <span className={`status-pill ${passkeyRegistered ? 'state-ok' : 'state-warn'}`}>
-              {passkeyRegistered ? 'Kurulu' : 'Kurulu Değil'}
-            </span>
-          </article>
+              <article className="status-card">
+                <p className="small-title">Passkey Durumu</p>
+                <span className={`status-pill ${passkeyRegistered ? 'state-ok' : 'state-warn'}`}>
+                  {passkeyRegistered ? 'Kurulu' : 'Kurulu Değil'}
+                </span>
+              </article>
 
-          <article className="status-card">
-            <p className="small-title">Bildirim Durumu</p>
-            <span
-              className={`status-pill ${
-                pushRegistered ? 'state-ok' : pushEnabled && pushRuntimeSupported ? 'state-warn' : 'state-err'
-              }`}
-            >
-              {pushRegistered
-                ? 'Açık'
-                : !pushRuntimeSupported
-                  ? 'Destek Yok'
-                  : pushEnabled
-                    ? 'Kapalı'
-                    : 'Servis Kapalı'}
-            </span>
-          </article>
-        </div>
+              <article className="status-card">
+                <p className="small-title">Bildirim Durumu</p>
+                <span
+                  className={`status-pill ${
+                    pushRegistered ? 'state-ok' : pushEnabled && pushRuntimeSupported ? 'state-warn' : 'state-err'
+                  }`}
+                >
+                  {pushRegistered
+                    ? 'Açık'
+                    : !pushRuntimeSupported
+                      ? 'Destek Yok'
+                      : pushEnabled
+                        ? 'Kapalı'
+                        : 'Servis Kapalı'}
+                </span>
+              </article>
+            </div>
 
-        {hasOpenShift ? (
-          <div className="notice-box notice-box-warning">
-            <p>
-              <span className="banner-icon" aria-hidden="true">
-                !
-              </span>
-              Açık vardiya var, çıkış kaydı bekleniyor.
-            </p>
-            {openShiftCheckinTime ? <p className="small-text">Son giriş: {formatTs(openShiftCheckinTime)}</p> : null}
-          </div>
-        ) : null}
+            {hasOpenShift ? (
+              <div className="notice-box notice-box-warning">
+                <p>
+                  <span className="banner-icon" aria-hidden="true">
+                    !
+                  </span>
+                  Açık vardiya var, çıkış kaydı bekleniyor.
+                </p>
+                {openShiftCheckinTime ? <p className="small-text">Son giriş: {formatTs(openShiftCheckinTime)}</p> : null}
+              </div>
+            ) : null}
 
-        <div className="status-cta-row">
-          {!passkeyRegistered ? (
-            <button
-              type="button"
-              className="btn btn-soft"
-              disabled={!deviceFingerprint || isPasskeyBusy || isSubmitting}
-              onClick={() => void runPasskeyRegistration()}
-            >
-              {isPasskeyBusy ? 'Passkey kuruluyor...' : 'Passkey Kur'}
-            </button>
-          ) : null}
+            <div className="status-cta-row status-cta-row-compact">
+              {!passkeyRegistered ? (
+                <button
+                  type="button"
+                  className="btn btn-soft"
+                  disabled={!deviceFingerprint || isPasskeyBusy || isSubmitting}
+                  onClick={() => void runPasskeyRegistration()}
+                >
+                  {isPasskeyBusy ? 'Passkey kuruluyor...' : 'Passkey Kur'}
+                </button>
+              ) : null}
 
-          <button type="button" className="btn btn-ghost" onClick={() => setIsHelpOpen(true)}>
-            Nasıl çalışır?
-          </button>
+              <button type="button" className="btn btn-ghost" onClick={() => setIsHelpOpen(true)}>
+                Nasıl çalışır?
+              </button>
 
-          <button
-            type="button"
-            className="btn btn-soft"
-            disabled={
-              !deviceFingerprint ||
-              isPushBusy ||
-              isSubmitting ||
-              pushRegistered ||
-              !pushEnabled ||
-              !pushRuntimeSupported ||
-              pushRequiresStandalone
-            }
-            onClick={() => void runPushSubscription()}
-          >
-            {isPushBusy
-              ? 'Bildirim açılıyor...'
-              : pushRegistered
-                ? 'Bildirimler Açık'
-                : pushRequiresStandalone
-                  ? 'Ana Ekrandan Aç'
-                  : 'Bildirimleri Aç'}
-          </button>
-        </div>
-
-        {deviceFingerprint ? (
-          <div className="device-box">
-            <p className="muted small-text">Cihaz Parmak İzi: {deviceFingerprint}</p>
-          </div>
-        ) : (
-          <div className="warn-box">
-            <p>Cihaz bağlı değil. Davet linkine tıklayın.</p>
-            <Link className="inline-link" to="/claim">
-              /claim ekranına git
-            </Link>
-            <p className="muted small-text mt-2">Daha once kurulum yaptiysan passkey ile kurtarma kullan.</p>
-            <Link className="inline-link" to="/recover">
-              /recover ekranına git
-            </Link>
-          </div>
-        )}
-
-        <section className="action-panel">
-          <p className="small-title">Hızlı İşlemler</p>
-          <div className="stack">
-            <button
-              type="button"
-              className="btn btn-primary btn-lg"
-              disabled={!canQrScan}
-              onClick={() => {
-                if (!canQrScan) {
-                  setErrorMessage(pushGateRequired ? 'Önce bildirimleri açmanız gerekir.' : todayStatusHint(todayStatus))
-                  return
+              <button
+                type="button"
+                className="btn btn-soft"
+                disabled={
+                  !deviceFingerprint ||
+                  isPushBusy ||
+                  isSubmitting ||
+                  pushRegistered ||
+                  !pushEnabled ||
+                  !pushRuntimeSupported ||
+                  pushRequiresStandalone
                 }
-                setScannerError(null)
-                setScannerActive(true)
-              }}
-            >
-              {isSubmitting && pendingAction === 'checkin' ? (
-                <>
-                  <span className="inline-spinner" aria-hidden="true" />
-                  İşlem yapılıyor...
-                </>
-              ) : (
-                'QR ile İşlem Başlat'
-              )}
-            </button>
+                onClick={() => void runPushSubscription()}
+              >
+                {isPushBusy
+                  ? 'Bildirim açılıyor...'
+                  : pushRegistered
+                    ? 'Bildirimler Açık'
+                    : pushRequiresStandalone
+                      ? 'Ana Ekrandan Aç'
+                      : 'Bildirimleri Aç'}
+              </button>
+            </div>
+          </section>
 
-            <button
-              type="button"
-              className="btn btn-outline btn-lg"
-              disabled={!canCheckout}
-              onClick={() => {
-                setScannerActive(false)
-                void runCheckout()
-              }}
-            >
-              {isSubmitting && pendingAction === 'checkout' ? (
-                <>
-                  <span className="inline-spinner inline-spinner-dark" aria-hidden="true" />
-                  İşlem yapılıyor...
-                </>
-              ) : (
-                'Mesaiyi Güvenli Bitir'
-              )}
-            </button>
-          </div>
+          <section className="employee-action-surface">
+            <section className="action-panel">
+              <div className="action-panel-head">
+                <p className="small-title">Komut Merkezi</p>
+                <span className="action-panel-kicker">Hızlı İşlemler</span>
+              </div>
+              <div className="stack">
+                <button
+                  type="button"
+                  className="btn btn-primary btn-lg"
+                  disabled={!canQrScan}
+                  onClick={() => {
+                    if (!canQrScan) {
+                      setErrorMessage(pushGateRequired ? 'Önce bildirimleri açmanız gerekir.' : todayStatusHint(todayStatus))
+                      return
+                    }
+                    setScannerError(null)
+                    setScannerActive(true)
+                  }}
+                >
+                  {isSubmitting && pendingAction === 'checkin' ? (
+                    <>
+                      <span className="inline-spinner" aria-hidden="true" />
+                      İşlem yapılıyor...
+                    </>
+                  ) : (
+                    'QR ile İşlem Başlat'
+                  )}
+                </button>
 
-          <p className="muted small-text employee-flow-hint">
-            {pushGateRequired
-              ? 'Devam etmek için önce bildirim adımını tamamlayın.'
-              : 'QR ile işlem başlatabilir veya açık vardiyayı güvenli şekilde kapatabilirsiniz.'}
-          </p>
-        </section>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-lg"
+                  disabled={!canCheckout}
+                  onClick={() => {
+                    setScannerActive(false)
+                    void runCheckout()
+                  }}
+                >
+                  {isSubmitting && pendingAction === 'checkout' ? (
+                    <>
+                      <span className="inline-spinner inline-spinner-dark" aria-hidden="true" />
+                      İşlem yapılıyor...
+                    </>
+                  ) : (
+                    'Mesaiyi Güvenli Bitir'
+                  )}
+                </button>
+              </div>
+
+              <ol className="action-flow">
+                <li>QR okutun ve işlemi başlatın.</li>
+                <li>Mesai sonunda güvenli bitiş yapın.</li>
+                <li>Durum kartlarından anlık takibi doğrulayın.</li>
+              </ol>
+
+              <p className="muted small-text employee-flow-hint">
+                {pushGateRequired
+                  ? 'Devam etmek için önce bildirim adımını tamamlayın.'
+                  : 'QR ile işlem başlatabilir veya açık vardiyayı güvenli şekilde kapatabilirsiniz.'}
+              </p>
+            </section>
+
+            {deviceFingerprint ? (
+              <div className="device-box">
+                <p className="muted small-text">Cihaz Parmak İzi: {deviceFingerprint}</p>
+              </div>
+            ) : (
+              <div className="warn-box">
+                <p>Cihaz bağlı değil. Davet linkine tıklayın.</p>
+                <Link className="inline-link" to="/claim">
+                  /claim ekranına git
+                </Link>
+                <p className="muted small-text mt-2">Daha once kurulum yaptiysan passkey ile kurtarma kullan.</p>
+                <Link className="inline-link" to="/recover">
+                  /recover ekranına git
+                </Link>
+              </div>
+            )}
+          </section>
+        </div>
 
         {shouldShowEveningReminder ? (
           <div className="notice-box notice-box-warning">
@@ -908,14 +925,16 @@ export function HomePage() {
               <p className="scanner-subtitle">
                 Kod algılandığı anda puantaj işlemi otomatik başlatılır.
               </p>
-              <QrScanner
-                active={scannerActive}
-                onDetected={(raw) => {
-                  setScannerActive(false)
-                  void runQrScan(raw)
-                }}
-                onError={(message) => setScannerError(message)}
-              />
+              <Suspense fallback={<div className="scanner-overlay scanner-loading">Kamera modülü yükleniyor...</div>}>
+                <QrScanner
+                  active={scannerActive}
+                  onDetected={(raw) => {
+                    setScannerActive(false)
+                    void runQrScan(raw)
+                  }}
+                  onError={(message) => setScannerError(message)}
+                />
+              </Suspense>
               <div className="scanner-modal-actions">
                 <button type="button" className="btn btn-soft" onClick={() => setScannerActive(false)}>
                   Kamerayı Kapat
