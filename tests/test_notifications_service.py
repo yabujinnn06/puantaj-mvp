@@ -4,8 +4,21 @@ import unittest
 from datetime import date, datetime, time, timezone
 from unittest.mock import patch
 
-from app.models import AttendanceEvent, AttendanceType, DepartmentShift, Employee, LocationStatus, ManualDayOverride, WorkRule
-from app.services.notifications import get_employees_with_open_shift
+from app.models import (
+    AttendanceEvent,
+    AttendanceType,
+    DepartmentShift,
+    Employee,
+    LocationStatus,
+    ManualDayOverride,
+    NotificationJob,
+    WorkRule,
+)
+from app.services.notifications import (
+    JOB_TYPE_ADMIN_ESCALATION_MISSED_CHECKOUT,
+    _build_message_for_job,
+    get_employees_with_open_shift,
+)
 
 
 class _ScalarRows:
@@ -160,6 +173,49 @@ class NotificationServiceTests(unittest.TestCase):
             )
 
         self.assertEqual(results, [])
+
+    def test_admin_escalation_message_is_detailed(self) -> None:
+        employee = Employee(id=7, full_name="Hüseyincan Orman", department_id=10, shift_id=100, is_active=True)
+        job = NotificationJob(
+            id=44,
+            employee_id=7,
+            admin_user_id=None,
+            job_type=JOB_TYPE_ADMIN_ESCALATION_MISSED_CHECKOUT,
+            payload={
+                "employee_id": "7",
+                "employee_full_name": "Hüseyincan Orman",
+                "department_name": "ARGE",
+                "shift_date": "2026-02-12",
+                "shift_name": "Öğlen",
+                "shift_window_local": "10:00-18:00",
+                "first_checkin_local": "2026-02-12 10:42",
+                "first_checkin_utc": "2026-02-12T07:42:00+00:00",
+                "planned_checkout_time": "18:00",
+                "grace_deadline_utc": "2026-02-12T15:05:00+00:00",
+                "escalation_deadline_utc": "2026-02-12T15:35:00+00:00",
+                "checkin_outside_shift": "true",
+            },
+            scheduled_at_utc=datetime(2026, 2, 12, 15, 35, tzinfo=timezone.utc),
+            status="PENDING",
+            attempts=0,
+            idempotency_key="ADMIN_ESCALATION_MISSED_CHECKOUT:7:2026-02-12",
+        )
+        fake_db = _FakeNotificationDB(
+            employees=[],
+            scalar_values=[],
+            get_map={(Employee, 7): employee},
+        )
+
+        with patch("app.services.notifications._admin_notification_emails", return_value=["admin@example.com"]):
+            message = _build_message_for_job(fake_db, job)
+
+        self.assertEqual(message.recipients, ["admin@example.com"])
+        self.assertIn("Çalışan: #7 - Hüseyincan Orman", message.body)
+        self.assertIn("Departman: ARGE", message.body)
+        self.assertIn("Vardiya: Öğlen (10:00-18:00)", message.body)
+        self.assertIn("Vardiya dışı giriş: Evet", message.body)
+        self.assertIn("Giriş (yerel): 2026-02-12 10:42", message.body)
+        self.assertIn("Çıkış (yerel): KAYIT YOK", message.body)
 
 
 if __name__ == "__main__":

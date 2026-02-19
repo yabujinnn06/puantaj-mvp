@@ -52,6 +52,11 @@ class OpenShiftNotificationRecord:
     shift_end_local: time
     grace_deadline_utc: datetime
     escalation_deadline_utc: datetime
+    employee_full_name: str = "-"
+    department_name: str | None = None
+    shift_name: str | None = None
+    shift_start_local: time | None = None
+    checkin_outside_shift: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,6 +148,29 @@ def _resolve_shift_end_local_dt(
 
     first_in_local = _normalize_ts(first_in_ts_utc).astimezone(tz)
     return first_in_local + timedelta(minutes=max(0, planned_minutes))
+
+
+def _is_checkin_outside_shift(
+    *,
+    first_checkin_ts_utc: datetime,
+    shift: DepartmentShift | None,
+) -> bool | None:
+    if shift is None:
+        return None
+
+    checkin_local = _normalize_ts(first_checkin_ts_utc).astimezone(_attendance_timezone())
+    checkin_minutes = checkin_local.hour * 60 + checkin_local.minute
+    shift_start_minutes = shift.start_time_local.hour * 60 + shift.start_time_local.minute
+    shift_end_minutes = shift.end_time_local.hour * 60 + shift.end_time_local.minute
+
+    if shift_end_minutes > shift_start_minutes:
+        in_shift_window = shift_start_minutes <= checkin_minutes <= shift_end_minutes
+    elif shift_end_minutes < shift_start_minutes:
+        in_shift_window = checkin_minutes >= shift_start_minutes or checkin_minutes <= shift_end_minutes
+    else:
+        in_shift_window = True
+
+    return not in_shift_window
 
 
 def get_employees_with_open_shift(
@@ -249,6 +277,15 @@ def get_employees_with_open_shift(
         escalation_deadline_utc = grace_deadline_utc + timedelta(
             minutes=DEFAULT_ESCALATION_DELAY_MINUTES
         )
+        department_name: str | None = None
+        if employee.department_id is not None:
+            department = session.get(Department, employee.department_id)
+            if department is not None and department.name:
+                department_name = department.name
+        checkin_outside_shift = _is_checkin_outside_shift(
+            first_checkin_ts_utc=first_in.ts_utc,
+            shift=shift,
+        )
 
         records.append(
             OpenShiftNotificationRecord(
@@ -258,6 +295,11 @@ def get_employees_with_open_shift(
                 shift_end_local=shift_end_local_dt.timetz().replace(tzinfo=None),
                 grace_deadline_utc=grace_deadline_utc,
                 escalation_deadline_utc=escalation_deadline_utc,
+                employee_full_name=(employee.full_name or "-"),
+                department_name=department_name,
+                shift_name=(shift.name if shift is not None else None),
+                shift_start_local=(shift.start_time_local if shift is not None else None),
+                checkin_outside_shift=checkin_outside_shift,
             )
         )
 
@@ -285,6 +327,13 @@ def _build_notification_payload(
     grace_deadline_utc: datetime,
     escalation_deadline_utc: datetime,
     overtime_alert_at_utc: datetime | None = None,
+    employee_id: int | None = None,
+    employee_full_name: str | None = None,
+    department_name: str | None = None,
+    shift_name: str | None = None,
+    shift_start_local: time | None = None,
+    first_checkin_ts_utc: datetime | None = None,
+    checkin_outside_shift: bool | None = None,
 ) -> dict[str, str]:
     payload: dict[str, str] = {
         "shift_date": local_day.isoformat(),
@@ -292,6 +341,28 @@ def _build_notification_payload(
         "grace_deadline_utc": grace_deadline_utc.isoformat(),
         "escalation_deadline_utc": escalation_deadline_utc.isoformat(),
     }
+    if employee_id is not None:
+        payload["employee_id"] = str(employee_id)
+    if employee_full_name:
+        payload["employee_full_name"] = employee_full_name
+    if department_name:
+        payload["department_name"] = department_name
+    if shift_name:
+        payload["shift_name"] = shift_name
+    if shift_start_local is not None:
+        payload["shift_start_time"] = shift_start_local.isoformat(timespec="minutes")
+        payload["shift_window_local"] = (
+            f"{shift_start_local.isoformat(timespec='minutes')}"
+            f"-{shift_end_local.isoformat(timespec='minutes')}"
+        )
+    if first_checkin_ts_utc is not None:
+        first_checkin_utc = _normalize_ts(first_checkin_ts_utc)
+        payload["first_checkin_utc"] = first_checkin_utc.isoformat()
+        payload["first_checkin_local"] = first_checkin_utc.astimezone(_attendance_timezone()).strftime(
+            "%Y-%m-%d %H:%M"
+        )
+    if checkin_outside_shift is not None:
+        payload["checkin_outside_shift"] = "true" if checkin_outside_shift else "false"
     if overtime_alert_at_utc is not None:
         payload["overtime_alert_at_utc"] = overtime_alert_at_utc.isoformat()
     return payload
@@ -390,12 +461,94 @@ def _employee_notification_emails(session: Session, *, job: NotificationJob) -> 
     return sorted(values)
 
 
+def _payload_bool(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "evet"}:
+            return True
+        if normalized in {"false", "0", "no", "hayir", "hayır"}:
+            return False
+    return None
+
+
+def _payload_local_day(value: Any) -> date | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    try:
+        return date.fromisoformat(normalized[:10])
+    except ValueError:
+        return None
+
+
 def _build_message_for_job(session: Session, job: NotificationJob) -> NotificationMessage:
     payload = job.payload or {}
     shift_date = str(payload.get("shift_date", "-"))
     planned_checkout_time = str(payload.get("planned_checkout_time", "-"))
     grace_deadline = str(payload.get("grace_deadline_utc", "-"))
     escalation_deadline = str(payload.get("escalation_deadline_utc", "-"))
+    employee = session.get(Employee, job.employee_id) if job.employee_id is not None else None
+    employee_name = str(payload.get("employee_full_name") or (employee.full_name if employee is not None else "-"))
+    employee_id_text = str(payload.get("employee_id") or (job.employee_id if job.employee_id is not None else "-"))
+    employee_display = f"#{employee_id_text} - {employee_name}"
+    department_name = str(
+        payload.get("department_name")
+        or (
+            employee.department.name
+            if employee is not None and employee.department is not None and employee.department.name
+            else "-"
+        )
+    )
+    shift_name = str(payload.get("shift_name", "-"))
+    shift_window_local = str(payload.get("shift_window_local", "-"))
+    shift_line = shift_name if shift_window_local == "-" else f"{shift_name} ({shift_window_local})"
+    first_checkin_local = str(payload.get("first_checkin_local", "-"))
+    first_checkin_utc = str(payload.get("first_checkin_utc", "-"))
+    checkout_local = "KAYIT YOK"
+    local_day = _payload_local_day(payload.get("shift_date"))
+    if local_day is not None and job.employee_id is not None:
+        tz = _attendance_timezone()
+        day_reference_utc = datetime.combine(local_day, time(12, 0), tzinfo=tz).astimezone(timezone.utc)
+        day_start_utc, day_end_utc = _local_day_bounds_utc(day_reference_utc)
+        first_in = session.scalar(
+            select(AttendanceEvent)
+            .where(
+                AttendanceEvent.employee_id == job.employee_id,
+                AttendanceEvent.type == AttendanceType.IN,
+                AttendanceEvent.ts_utc >= day_start_utc,
+                AttendanceEvent.ts_utc < day_end_utc,
+                AttendanceEvent.deleted_at.is_(None),
+            )
+            .order_by(AttendanceEvent.ts_utc.asc(), AttendanceEvent.id.asc())
+        )
+        if first_in is not None:
+            first_in_utc = _normalize_ts(first_in.ts_utc)
+            first_checkin_local = first_in_utc.astimezone(tz).strftime("%Y-%m-%d %H:%M")
+            first_checkin_utc = first_in_utc.isoformat()
+
+        last_out = session.scalar(
+            select(AttendanceEvent)
+            .where(
+                AttendanceEvent.employee_id == job.employee_id,
+                AttendanceEvent.type == AttendanceType.OUT,
+                AttendanceEvent.ts_utc >= day_start_utc,
+                AttendanceEvent.ts_utc < day_end_utc,
+                AttendanceEvent.deleted_at.is_(None),
+            )
+            .order_by(AttendanceEvent.ts_utc.desc(), AttendanceEvent.id.desc())
+        )
+        if last_out is not None:
+            checkout_local = _normalize_ts(last_out.ts_utc).astimezone(tz).strftime("%Y-%m-%d %H:%M")
+    checkin_outside_shift = _payload_bool(payload.get("checkin_outside_shift"))
+    checkin_outside_shift_text = (
+        "Evet"
+        if checkin_outside_shift is True
+        else ("Hayır" if checkin_outside_shift is False else "Bilinmiyor")
+    )
 
     if job.job_type == JOB_TYPE_EMPLOYEE_MISSED_CHECKOUT:
         recipients = _employee_notification_emails(session, job=job)
@@ -403,7 +556,10 @@ def _build_message_for_job(session: Session, job: NotificationJob) -> Notificati
             recipients=recipients,
             subject="Puantaj Uyarısı: Çıkış Kaydı Eksik",
             body=(
-                f"Çalışan #{job.employee_id} için {shift_date} vardiyasında çıkış kaydı eksik görünüyor.\n"
+                f"Çalışan: {employee_display}\n"
+                f"Vardiya günü: {shift_date}\n"
+                f"Giriş (yerel): {first_checkin_local}\n"
+                f"Çıkış (yerel): {checkout_local}\n"
                 f"Planlı çıkış saati: {planned_checkout_time}\n"
                 f"Grace deadline (UTC): {grace_deadline}\n"
                 f"Lütfen mesai çıkış kaydınızı tamamlayın."
@@ -416,11 +572,18 @@ def _build_message_for_job(session: Session, job: NotificationJob) -> Notificati
             recipients=recipients,
             subject="Puantaj Eskalasyon: Çıkış Eksikliği Devam Ediyor",
             body=(
-                f"Çalışan #{job.employee_id} için {shift_date} günü çıkış kaydı hâlâ eksik.\n"
+                f"Çalışan: {employee_display}\n"
+                f"Departman: {department_name}\n"
+                f"Vardiya: {shift_line}\n"
+                f"Vardiya günü: {shift_date}\n"
+                f"Vardiya dışı giriş: {checkin_outside_shift_text}\n"
+                f"Giriş (yerel): {first_checkin_local}\n"
+                f"Giriş (UTC): {first_checkin_utc}\n"
+                f"Çıkış (yerel): {checkout_local}\n"
                 f"Planlı çıkış saati: {planned_checkout_time}\n"
                 f"Grace deadline (UTC): {grace_deadline}\n"
                 f"Eskalasyon deadline (UTC): {escalation_deadline}\n"
-                f"Lütfen manuel kontrol yapın."
+                "Aksiyon: Çalışanı kontrol edin ve gerekirse manuel çıkış kaydı oluşturun."
             ),
         )
 
@@ -482,7 +645,27 @@ def _send_push_for_job(
             },
         )
 
-    if job.job_type in {JOB_TYPE_ADMIN_ESCALATION_MISSED_CHECKOUT, JOB_TYPE_ADMIN_DAILY_REPORT_READY}:
+    if job.job_type == JOB_TYPE_ADMIN_ESCALATION_MISSED_CHECKOUT:
+        payload = job.payload or {}
+        return send_push_to_admins(
+            session,
+            admin_user_ids=None,
+            title=message.subject,
+            body=message.body,
+            data={
+                "job_id": job.id,
+                "job_type": job.job_type,
+                "employee_id": job.employee_id,
+                "employee_full_name": payload.get("employee_full_name"),
+                "department_name": payload.get("department_name"),
+                "shift_date": payload.get("shift_date"),
+                "first_checkin_local": payload.get("first_checkin_local"),
+                "planned_checkout_time": payload.get("planned_checkout_time"),
+                "url": "/admin-panel/notifications",
+            },
+        )
+
+    if job.job_type == JOB_TYPE_ADMIN_DAILY_REPORT_READY:
         payload = job.payload or {}
         archive_id = payload.get("archive_id")
         return send_push_to_admins(
@@ -562,6 +745,13 @@ def schedule_missed_checkout_notifications(
             grace_deadline_utc=record.grace_deadline_utc,
             escalation_deadline_utc=record.escalation_deadline_utc,
             overtime_alert_at_utc=overtime_alert_at_utc,
+            employee_id=record.employee_id,
+            employee_full_name=record.employee_full_name,
+            department_name=record.department_name,
+            shift_name=record.shift_name,
+            shift_start_local=record.shift_start_local,
+            first_checkin_ts_utc=record.first_checkin_ts_utc,
+            checkin_outside_shift=record.checkin_outside_shift,
         )
 
         if reference_utc >= record.grace_deadline_utc:
