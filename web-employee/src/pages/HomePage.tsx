@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { startRegistration } from '@simplewebauthn/browser'
 
@@ -83,9 +83,57 @@ function isStandaloneDisplayMode(): boolean {
   return Boolean(window.matchMedia('(display-mode: standalone)').matches || nav.standalone)
 }
 
+function isSecurePushContext(): boolean {
+  if (typeof window === 'undefined') {
+    return false
+  }
+  return Boolean(window.isSecureContext)
+}
+
+function playQrSuccessTone() {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  type WindowWithWebkitAudioContext = Window & {
+    webkitAudioContext?: typeof AudioContext
+  }
+  const AudioContextCtor =
+    window.AudioContext || (window as WindowWithWebkitAudioContext).webkitAudioContext
+  if (!AudioContextCtor) {
+    return
+  }
+
+  try {
+    const audioContext = new AudioContextCtor()
+    const oscillator = audioContext.createOscillator()
+    const gainNode = audioContext.createGain()
+
+    oscillator.type = 'sine'
+    oscillator.frequency.setValueAtTime(680, audioContext.currentTime)
+    oscillator.frequency.exponentialRampToValueAtTime(1280, audioContext.currentTime + 0.18)
+
+    gainNode.gain.setValueAtTime(0.0001, audioContext.currentTime)
+    gainNode.gain.exponentialRampToValueAtTime(0.15, audioContext.currentTime + 0.02)
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.26)
+
+    oscillator.connect(gainNode)
+    gainNode.connect(audioContext.destination)
+
+    oscillator.start(audioContext.currentTime)
+    oscillator.stop(audioContext.currentTime + 0.26)
+    oscillator.onended = () => {
+      void audioContext.close()
+    }
+  } catch {
+    // Sessiz fallback: ses desteği yoksa işlem normal devam eder.
+  }
+}
+
 export function HomePage() {
   const [deviceFingerprint] = useState(() => getStoredDeviceFingerprint())
   const [scannerActive, setScannerActive] = useState(false)
+  const [scanSuccessFxOpen, setScanSuccessFxOpen] = useState(false)
   const [scannerError, setScannerError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [pendingAction, setPendingAction] = useState<'checkin' | 'checkout' | null>(null)
@@ -108,6 +156,33 @@ export function HomePage() {
   const [pushRequiresStandalone, setPushRequiresStandalone] = useState(false)
   const [pushNotice, setPushNotice] = useState<string | null>(null)
   const [pushSecondChanceOpen, setPushSecondChanceOpen] = useState(false)
+  const scanSuccessFxTimerRef = useRef<number | null>(null)
+
+  const clearScanSuccessFxTimer = useCallback(() => {
+    if (scanSuccessFxTimerRef.current !== null) {
+      window.clearTimeout(scanSuccessFxTimerRef.current)
+      scanSuccessFxTimerRef.current = null
+    }
+  }, [])
+
+  const triggerScanSuccessFx = useCallback(() => {
+    clearScanSuccessFxTimer()
+    setScanSuccessFxOpen(true)
+    playQrSuccessTone()
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      navigator.vibrate?.([30, 20, 45])
+    }
+    scanSuccessFxTimerRef.current = window.setTimeout(() => {
+      setScanSuccessFxOpen(false)
+      scanSuccessFxTimerRef.current = null
+    }, 1500)
+  }, [clearScanSuccessFxTimer])
+
+  useEffect(() => {
+    return () => {
+      clearScanSuccessFxTimer()
+    }
+  }, [clearScanSuccessFxTimer])
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -161,7 +236,7 @@ export function HomePage() {
         setPushSecondChanceOpen(false)
         return
       }
-      if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+      if (typeof window === 'undefined') {
         setPushRuntimeSupported(false)
         setPushEnabled(false)
         setPushRegistered(false)
@@ -170,7 +245,10 @@ export function HomePage() {
         setPushSecondChanceOpen(false)
         return
       }
-      setPushRuntimeSupported(true)
+
+      const runtimeSupported =
+        isSecurePushContext() && 'serviceWorker' in navigator && 'PushManager' in window
+      setPushRuntimeSupported(runtimeSupported)
 
       try {
         const config = await getEmployeePushConfig()
@@ -186,7 +264,7 @@ export function HomePage() {
 
         const requiresStandalone = isIosFamilyDevice() && !isStandaloneDisplayMode()
         setPushRequiresStandalone(requiresStandalone)
-        if (requiresStandalone) {
+        if (requiresStandalone || !runtimeSupported) {
           setPushRegistered(false)
           setPushNeedsResubscribe(false)
           setPushSecondChanceOpen(false)
@@ -238,6 +316,21 @@ export function HomePage() {
     void syncPushState(true)
   }, [syncPushState])
 
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return
+    }
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        void syncPushState(true)
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [syncPushState])
+
   const hasOpenShift = useMemo(() => {
     if (!deviceFingerprint) {
       return false
@@ -252,7 +345,7 @@ export function HomePage() {
   const passkeyRegistered = Boolean(statusSnapshot?.passkey_registered)
 
   const pushGateRequired =
-    Boolean(deviceFingerprint) && pushRuntimeSupported && pushEnabled && !pushRegistered
+    Boolean(deviceFingerprint) && pushEnabled && !pushRegistered
   const canQrScan = Boolean(deviceFingerprint) && !isSubmitting && !pushGateRequired
   const canCheckout = Boolean(deviceFingerprint) && !isSubmitting && hasOpenShift && !pushGateRequired
 
@@ -316,10 +409,15 @@ export function HomePage() {
       return
     }
     if (!pushRuntimeSupported) {
-      setErrorMessage('Bu tarayıcı bildirim altyapısını desteklemiyor. Linki Chrome/Safari ile açın.')
+      setErrorMessage('Bu tarayıcı bildirim altyapısını desteklemiyor veya güvenli bağlantı (HTTPS) yok.')
       return
     }
-    if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+    if (
+      typeof window === 'undefined' ||
+      !isSecurePushContext() ||
+      !('serviceWorker' in navigator) ||
+      !('PushManager' in window)
+    ) {
       setErrorMessage('Bu tarayıcı bildirim aboneliğini desteklemiyor.')
       return
     }
@@ -387,14 +485,20 @@ export function HomePage() {
         const errorPart = subscribeResult.test_push_error?.trim()
           ? ` ${subscribeResult.test_push_error.trim()}`
           : ''
-        throw new Error(`Sunucu push testi basarisiz${statusPart}.${errorPart}`.trim())
+        throw new Error(`Sunucu push testi başarısız${statusPart}.${errorPart}`.trim())
       }
 
-      // Lokal doğrulama bildirimi (sunucu push testini beklemeden izin/abonelik kontrolü)
-      await registration.showNotification('Puantaj Bildirimleri Açıldı', {
-        body: 'Bildirim kanalı aktif. Artık sistem uyarılarını alacaksınız.',
-        icon: '/employee/icons/icon-192.svg',
-      })
+      // iOS dahil bazı tarayıcılarda showNotification istemci tarafında hata verebilir.
+      // Bu adımı non-fatal tutuyoruz; asıl doğrulama sunucu push testidir.
+      try {
+        await registration.showNotification('Puantaj Bildirimleri Açıldı', {
+          body: 'Bildirim kanalı aktif. Artık sistem uyarılarını alacaksınız.',
+          icon: '/employee/icons/icon-192.png',
+          badge: '/employee/icons/icon-192.png',
+        })
+      } catch {
+        // no-op
+      }
 
       window.localStorage.setItem(PUSH_VAPID_KEY_STORAGE, config.vapid_public_key)
       setPushRegistered(true)
@@ -477,6 +581,7 @@ export function HomePage() {
         last_location_status: response.location_status,
         last_flags: response.flags,
       }))
+      triggerScanSuccessFx()
     } catch (error) {
       const parsed = parseApiError(error, 'QR işlemi tamamlanamadı.')
       setErrorMessage(parsed.message)
@@ -570,13 +675,13 @@ export function HomePage() {
 
   const pushGateMessage = useMemo(() => {
     if (pushRequiresStandalone) {
-      return 'iPhone/iPad bildirimleri Safari sekmesinde çalışmaz. Portalı Ana Ekran uygulamasından açıp “Bildirimleri Aç” adımını tamamlayın.'
+      return 'iPhone/iPad bildirimleri Safari sekmesinde çalışmaz. Portalı Ana Ekran uygulamasından açıp "Bildirimleri Aç" adımını tamamlayın.'
     }
     if (!pushRuntimeSupported) {
-      return 'Bu tarayıcı bildirim altyapısını desteklemiyor. Linki Chrome (Android) veya Safari (iOS) ile açın.'
+      return 'Bu tarayıcı bildirim altyapısını desteklemiyor veya bağlantı güvenli değil. Linki HTTPS altında Safari (iOS) veya Chrome (Android) ile açın.'
     }
     if (pushNeedsResubscribe) {
-      return 'Bildirim anahtarı güncellendi. Devam etmek için “Bildirimleri Aç” ile aboneliği yenileyin.'
+      return 'Bildirim anahtarı güncellendi. Devam etmek için "Bildirimleri Aç" ile aboneliği yenileyin.'
     }
     if (!pushEnabled) {
       return 'Bildirim servisi sunucuda aktif değil. İK yöneticisi ortam ayarlarını tamamlamalıdır.'
@@ -586,6 +691,12 @@ export function HomePage() {
     }
     return 'Bu portalda devam etmek için bildirimleri açmanız zorunludur.'
   }, [pushEnabled, pushNeedsResubscribe, pushRequiresStandalone, pushRuntimeSupported])
+
+  const todayStatusClass = useMemo(() => {
+    if (todayStatus === 'FINISHED') return 'state-ok'
+    if (todayStatus === 'IN_PROGRESS') return 'state-warn'
+    return 'state-err'
+  }, [todayStatus])
 
   return (
     <main className="phone-shell">
@@ -600,33 +711,44 @@ export function HomePage() {
           </Link>
         </div>
 
-        <div className="status-row">
-          <p className="small-title">Bugünkü durum</p>
-          <span
-            className={`status-pill ${
-              todayStatus === 'FINISHED' ? 'state-ok' : todayStatus === 'IN_PROGRESS' ? 'state-warn' : 'state-err'
-            }`}
-          >
-            {todayStatusLabel(todayStatus)}
-          </span>
+        <div className="employee-hero">
+          <div className="employee-hero-copy">
+            <p className="employee-hero-kicker">Günlük Çalışma Ekranı</p>
+            <h2 className="employee-hero-title">{todayStatusLabel(todayStatus)}</h2>
+            <p className="employee-hero-subtitle">{todayStatusHint(todayStatus)}</p>
+          </div>
+          <span className={`employee-hero-indicator ${todayStatusClass}`}>Canlı</span>
         </div>
 
-        <div className="status-row">
-          <p className="small-title">Passkey durumu</p>
-          <span className={`status-pill ${passkeyRegistered ? 'state-ok' : 'state-warn'}`}>
-            {passkeyRegistered ? 'Kurulu' : 'Kurulu Değil'}
-          </span>
-        </div>
+        <div className="status-grid">
+          <article className="status-card">
+            <p className="small-title">Bugünkü Durum</p>
+            <span className={`status-pill ${todayStatusClass}`}>{todayStatusLabel(todayStatus)}</span>
+          </article>
 
-        <div className="status-row">
-          <p className="small-title">Bildirim durumu</p>
-          <span
-            className={`status-pill ${
-              pushRegistered ? 'state-ok' : pushEnabled && pushRuntimeSupported ? 'state-warn' : 'state-err'
-            }`}
-          >
-            {pushRegistered ? 'Açık' : !pushRuntimeSupported ? 'Destek Yok' : pushEnabled ? 'Kapalı' : 'Servis Kapalı'}
-          </span>
+          <article className="status-card">
+            <p className="small-title">Passkey Durumu</p>
+            <span className={`status-pill ${passkeyRegistered ? 'state-ok' : 'state-warn'}`}>
+              {passkeyRegistered ? 'Kurulu' : 'Kurulu Değil'}
+            </span>
+          </article>
+
+          <article className="status-card">
+            <p className="small-title">Bildirim Durumu</p>
+            <span
+              className={`status-pill ${
+                pushRegistered ? 'state-ok' : pushEnabled && pushRuntimeSupported ? 'state-warn' : 'state-err'
+              }`}
+            >
+              {pushRegistered
+                ? 'Açık'
+                : !pushRuntimeSupported
+                  ? 'Destek Yok'
+                  : pushEnabled
+                    ? 'Kapalı'
+                    : 'Servis Kapalı'}
+            </span>
+          </article>
         </div>
 
         {hasOpenShift ? (
@@ -660,10 +782,24 @@ export function HomePage() {
           <button
             type="button"
             className="btn btn-soft"
-            disabled={!deviceFingerprint || isPushBusy || isSubmitting || pushRegistered || !pushEnabled}
+            disabled={
+              !deviceFingerprint ||
+              isPushBusy ||
+              isSubmitting ||
+              pushRegistered ||
+              !pushEnabled ||
+              !pushRuntimeSupported ||
+              pushRequiresStandalone
+            }
             onClick={() => void runPushSubscription()}
           >
-            {isPushBusy ? 'Bildirim açılıyor...' : pushRegistered ? 'Bildirimler Açık' : 'Bildirimleri Aç'}
+            {isPushBusy
+              ? 'Bildirim açılıyor...'
+              : pushRegistered
+                ? 'Bildirimler Açık'
+                : pushRequiresStandalone
+                  ? 'Ana Ekrandan Aç'
+                  : 'Bildirimleri Aç'}
           </button>
         </div>
 
@@ -684,51 +820,58 @@ export function HomePage() {
           </div>
         )}
 
-        <div className="stack">
-          <button
-            type="button"
-            className="btn btn-primary btn-lg"
-            disabled={!canQrScan}
-            onClick={() => {
-              if (!canQrScan) {
-                setErrorMessage(pushGateRequired ? 'Önce bildirimleri açmanız gerekir.' : todayStatusHint(todayStatus))
-                return
-              }
-              setScannerError(null)
-              setScannerActive(true)
-            }}
-          >
-            {isSubmitting && pendingAction === 'checkin' ? (
-              <>
-                <span className="inline-spinner" aria-hidden="true" />
-                İşlem yapılıyor...
-              </>
-            ) : (
-              'QR ile Giriş/Çıkış'
-            )}
-          </button>
+        <section className="action-panel">
+          <p className="small-title">Hızlı İşlemler</p>
+          <div className="stack">
+            <button
+              type="button"
+              className="btn btn-primary btn-lg"
+              disabled={!canQrScan}
+              onClick={() => {
+                if (!canQrScan) {
+                  setErrorMessage(pushGateRequired ? 'Önce bildirimleri açmanız gerekir.' : todayStatusHint(todayStatus))
+                  return
+                }
+                setScannerError(null)
+                setScannerActive(true)
+              }}
+            >
+              {isSubmitting && pendingAction === 'checkin' ? (
+                <>
+                  <span className="inline-spinner" aria-hidden="true" />
+                  İşlem yapılıyor...
+                </>
+              ) : (
+                'QR ile İşlem Başlat'
+              )}
+            </button>
 
-          <button
-            type="button"
-            className="btn btn-outline btn-lg"
-            disabled={!canCheckout}
-            onClick={() => {
-              setScannerActive(false)
-              void runCheckout()
-            }}
-          >
-            {isSubmitting && pendingAction === 'checkout' ? (
-              <>
-                <span className="inline-spinner inline-spinner-dark" aria-hidden="true" />
-                İşlem yapılıyor...
-              </>
-            ) : (
-              'Mesaiyi Bitir'
-            )}
-          </button>
-        </div>
+            <button
+              type="button"
+              className="btn btn-outline btn-lg"
+              disabled={!canCheckout}
+              onClick={() => {
+                setScannerActive(false)
+                void runCheckout()
+              }}
+            >
+              {isSubmitting && pendingAction === 'checkout' ? (
+                <>
+                  <span className="inline-spinner inline-spinner-dark" aria-hidden="true" />
+                  İşlem yapılıyor...
+                </>
+              ) : (
+                'Mesaiyi Güvenli Bitir'
+              )}
+            </button>
+          </div>
 
-        <p className="muted small-text">{todayStatusHint(todayStatus)}</p>
+          <p className="muted small-text employee-flow-hint">
+            {pushGateRequired
+              ? 'Devam etmek için önce bildirim adımını tamamlayın.'
+              : 'QR ile işlem başlatabilir veya açık vardiyayı güvenli şekilde kapatabilirsiniz.'}
+          </p>
+        </section>
 
         {shouldShowEveningReminder ? (
           <div className="notice-box notice-box-warning">
@@ -742,19 +885,57 @@ export function HomePage() {
         ) : null}
 
         {scannerActive ? (
-          <div className="scanner-card">
-            <p className="scanner-title">QR okutmak için kodu kameraya tutun</p>
-            <QrScanner
-              active={scannerActive}
-              onDetected={(raw) => {
-                setScannerActive(false)
-                void runQrScan(raw)
-              }}
-              onError={(message) => setScannerError(message)}
-            />
-            <button type="button" className="btn btn-soft" onClick={() => setScannerActive(false)}>
-              Kamerayı Kapat
-            </button>
+          <div
+            className="modal-backdrop scanner-modal-backdrop"
+            role="dialog"
+            aria-modal="true"
+            aria-label="QR tarama penceresi"
+            onClick={() => setScannerActive(false)}
+          >
+            <section className="scanner-modal" onClick={(event) => event.stopPropagation()}>
+              <div className="scanner-modal-head">
+                <p className="scanner-modal-kicker">Hızlı QR Tarama</p>
+                <button
+                  type="button"
+                  className="scanner-modal-close"
+                  aria-label="QR tarama penceresini kapat"
+                  onClick={() => setScannerActive(false)}
+                >
+                  ×
+                </button>
+              </div>
+              <p className="scanner-title">QR kodu kameraya tutun</p>
+              <p className="scanner-subtitle">
+                Kod algılandığı anda puantaj işlemi otomatik başlatılır.
+              </p>
+              <QrScanner
+                active={scannerActive}
+                onDetected={(raw) => {
+                  setScannerActive(false)
+                  void runQrScan(raw)
+                }}
+                onError={(message) => setScannerError(message)}
+              />
+              <div className="scanner-modal-actions">
+                <button type="button" className="btn btn-soft" onClick={() => setScannerActive(false)}>
+                  Kamerayı Kapat
+                </button>
+              </div>
+            </section>
+          </div>
+        ) : null}
+
+        {scanSuccessFxOpen ? (
+          <div className="scan-success-overlay" role="status" aria-live="polite" aria-label="QR onaylandı">
+            <div className="scan-success-logo" aria-hidden="true">
+              <div className="scan-success-halo" />
+              <div className="scan-success-ring" />
+              <div className="scan-success-spark" />
+              <div className="scan-success-core">
+                <span className="scan-success-brand">YABUJIN</span>
+                <span className="scan-success-sub">ONAYLANDI</span>
+              </div>
+            </div>
           </div>
         ) : null}
 
@@ -855,7 +1036,7 @@ export function HomePage() {
           <div className="modal-backdrop" role="dialog" aria-modal="true">
             <div className="help-modal">
               <h2>Mesai Bitiş Bilgilendirmesi</h2>
-              <p>Gün içinde girişten sonra çıkışı mutlaka “Mesaiyi Bitir” ile tamamlayın.</p>
+              <p>Gün içinde girişten sonra çıkışı mutlaka "Mesaiyi Bitir" ile tamamlayın.</p>
               <button type="button" className="btn btn-primary" onClick={() => setIsHelpOpen(false)}>
                 Anladım
               </button>
@@ -876,7 +1057,7 @@ export function HomePage() {
                 <button
                   type="button"
                   className="btn btn-primary"
-                  disabled={isPushBusy || !pushEnabled}
+                  disabled={isPushBusy || !pushEnabled || !pushRuntimeSupported || pushRequiresStandalone}
                   onClick={() => void runPushSubscription(pushSecondChanceOpen)}
                 >
                   {isPushBusy

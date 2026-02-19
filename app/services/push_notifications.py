@@ -16,7 +16,7 @@ from app.models import (
     DevicePushSubscription,
     Employee,
 )
-from app.settings import get_settings, is_push_enabled
+from app.settings import get_public_base_url, get_settings, is_push_enabled
 
 
 def _utcnow() -> datetime:
@@ -27,12 +27,15 @@ def _resolve_vapid_subject(raw_subject: str | None) -> str:
     """Return a valid VAPID subject claim (`mailto:` or `https:`)."""
     subject = (raw_subject or "").strip()
     if not subject:
-        return "mailto:admin@example.com"
+        public_base = (get_public_base_url() or "").strip()
+        if public_base.startswith("https://"):
+            return public_base
+        return "mailto:admin@localhost"
     if subject.startswith("mailto:") or subject.startswith("https://"):
         return subject
     if "@" in subject:
         return f"mailto:{subject}"
-    return "mailto:admin@example.com"
+    return "mailto:admin@localhost"
 
 
 def get_push_public_config() -> dict[str, Any]:
@@ -300,7 +303,9 @@ def _send_to_subscription_row(
             data=json.dumps(payload),
             vapid_private_key=settings.push_vapid_private_key,
             vapid_claims={"sub": vapid_subject},
-            ttl=60,
+            content_encoding="aes128gcm",
+            headers={"Urgency": "high"},
+            ttl=3600,
         )
         return True, None, None
     except WebPushException as exc:

@@ -59,8 +59,8 @@ self.addEventListener('push', (event) => {
   const payload = parsePushPayload(event)
   const options: NotificationOptions = {
     body: payload.body,
-    icon: '/employee/icons/icon-192.svg',
-    badge: '/employee/icons/icon-192.svg',
+    icon: '/employee/icons/icon-192.png',
+    badge: '/employee/icons/icon-192.png',
     data: payload.data,
     requireInteraction: false,
   }

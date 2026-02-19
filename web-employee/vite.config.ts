@@ -12,7 +12,13 @@ export default defineConfig({
       strategies: 'injectManifest',
       srcDir: 'src',
       filename: 'sw.ts',
-      includeAssets: ['icons/icon-192.svg', 'icons/icon-512.svg'],
+      includeAssets: [
+        'icons/icon-192.svg',
+        'icons/icon-512.svg',
+        'icons/icon-192.png',
+        'icons/icon-512.png',
+        'icons/apple-touch-icon.png',
+      ],
       manifest: {
         id: '/employee/',
         name: 'Puantaj Çalışan Portalı',
@@ -25,6 +31,18 @@ export default defineConfig({
         start_url: '/employee/',
         lang: 'tr',
         icons: [
+          {
+            src: 'icons/icon-192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'any',
+          },
+          {
+            src: 'icons/icon-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any maskable',
+          },
           {
             src: 'icons/icon-192.svg',
             sizes: '192x192',

@@ -110,16 +110,18 @@ export default function App() {
     <>
       {showBootLoader ? (
         <div className="employee-boot-loader" role="status" aria-live="polite" aria-label="Uygulama açılıyor">
-          <div className="employee-boot-loader-logo" aria-hidden="true">
-            <div className="employee-boot-loader-halo" />
-            <div className="employee-boot-loader-ring" />
-            <div className="employee-boot-loader-spark" />
-            <div className="employee-boot-loader-core">
-              <span className="employee-boot-loader-brand">YABUJIN</span>
-              <span className="employee-boot-loader-sub">EMPLOYEE CORE</span>
+          <div className="employee-boot-loader-center">
+            <div className="employee-boot-loader-logo" aria-hidden="true">
+              <div className="employee-boot-loader-halo" />
+              <div className="employee-boot-loader-ring" />
+              <div className="employee-boot-loader-spark" />
+              <div className="employee-boot-loader-core">
+                <span className="employee-boot-loader-brand">YABUJIN</span>
+                <span className="employee-boot-loader-sub">EMPLOYEE CORE</span>
+              </div>
             </div>
+            <p className="employee-boot-loader-text">Sistem hazırlanıyor...</p>
           </div>
-          <p className="employee-boot-loader-text">Sistem hazırlanıyor...</p>
         </div>
       ) : null}
 
