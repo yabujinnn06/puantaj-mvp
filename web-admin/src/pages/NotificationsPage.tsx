@@ -24,7 +24,7 @@ import { PageHeader } from '../components/PageHeader'
 import { Panel } from '../components/Panel'
 import { TableSearchInput } from '../components/TableSearchInput'
 import { useToast } from '../hooks/useToast'
-import type { AdminDeviceInviteCreateResponse, NotificationJobStatus } from '../types/api'
+import type { AdminDeviceInviteCreateResponse, NotificationDeliveryLog, NotificationJobStatus } from '../types/api'
 
 function dt(value: string): string {
   return new Intl.DateTimeFormat('tr-TR', { dateStyle: 'short', timeStyle: 'medium' }).format(new Date(value))
@@ -43,6 +43,13 @@ function deliveryStatusClass(status: 'SENT' | 'FAILED'): string {
   return 'bg-rose-100 text-rose-700'
 }
 
+function deliveryTargetLabel(value: string): string {
+  if (value === 'admins') return 'ADMIN'
+  if (value === 'employees') return 'CALISAN'
+  if (value === 'both') return 'HER IKISI'
+  return value.toUpperCase()
+}
+
 function downloadBlob(blob: Blob, name: string): void {
   const url = window.URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -53,6 +60,9 @@ function downloadBlob(blob: Blob, name: string): void {
   a.remove()
   window.URL.revokeObjectURL(url)
 }
+
+const JOBS_PAGE_SIZE = 25
+const ARCHIVE_PAGE_SIZE = 50
 
 export function NotificationsPage() {
   const queryClient = useQueryClient()
@@ -65,6 +75,7 @@ export function NotificationsPage() {
   const [target, setTarget] = useState<'employees' | 'admins' | 'both'>('employees')
   const [expiresIn, setExpiresIn] = useState(60)
   const [jobsStatus, setJobsStatus] = useState<'' | NotificationJobStatus>('')
+  const [jobsPage, setJobsPage] = useState(1)
   const [searchEmployee, setSearchEmployee] = useState('')
   const [searchAdmin, setSearchAdmin] = useState('')
   const [selectedEmployees, setSelectedEmployees] = useState<number[]>([])
@@ -74,7 +85,9 @@ export function NotificationsPage() {
   const [archiveStartDate, setArchiveStartDate] = useState('')
   const [archiveEndDate, setArchiveEndDate] = useState('')
   const [archiveEmployeeQuery, setArchiveEmployeeQuery] = useState('')
+  const [archivePage, setArchivePage] = useState(1)
   const [deliverySearch, setDeliverySearch] = useState('')
+  const [selectedDeliveryAuditId, setSelectedDeliveryAuditId] = useState<number | null>(null)
 
   const employeesQuery = useQuery({ queryKey: ['employees', 'notify'], queryFn: () => getEmployees({ status: 'active' }) })
   const adminsQuery = useQuery({ queryKey: ['admin-users', 'notify'], queryFn: getAdminUsers })
@@ -149,6 +162,32 @@ export function NotificationsPage() {
     () => filteredDeliveryLogs.filter((row) => row.status === 'FAILED').length,
     [filteredDeliveryLogs],
   )
+  const selectedDeliveryLog = useMemo<NotificationDeliveryLog | null>(
+    () => filteredDeliveryLogs.find((row) => row.audit_id === selectedDeliveryAuditId) ?? null,
+    [filteredDeliveryLogs, selectedDeliveryAuditId],
+  )
+  const jobsRows = jobsQuery.data ?? []
+  const jobsTotalPages = useMemo(
+    () => Math.max(1, Math.ceil(jobsRows.length / JOBS_PAGE_SIZE)),
+    [jobsRows.length],
+  )
+  const pagedJobs = useMemo(() => {
+    const startIndex = (jobsPage - 1) * JOBS_PAGE_SIZE
+    return jobsRows.slice(startIndex, startIndex + JOBS_PAGE_SIZE)
+  }, [jobsPage, jobsRows])
+  const jobsRangeStart = jobsRows.length === 0 ? 0 : (jobsPage - 1) * JOBS_PAGE_SIZE + 1
+  const jobsRangeEnd = Math.min(jobsPage * JOBS_PAGE_SIZE, jobsRows.length)
+  const archiveRows = archivesQuery.data ?? []
+  const archiveTotalPages = useMemo(
+    () => Math.max(1, Math.ceil(archiveRows.length / ARCHIVE_PAGE_SIZE)),
+    [archiveRows.length],
+  )
+  const pagedArchives = useMemo(() => {
+    const startIndex = (archivePage - 1) * ARCHIVE_PAGE_SIZE
+    return archiveRows.slice(startIndex, startIndex + ARCHIVE_PAGE_SIZE)
+  }, [archivePage, archiveRows])
+  const archiveRangeStart = archiveRows.length === 0 ? 0 : (archivePage - 1) * ARCHIVE_PAGE_SIZE + 1
+  const archiveRangeEnd = Math.min(archivePage * ARCHIVE_PAGE_SIZE, archiveRows.length)
 
   const inviteMutation = useMutation({
     mutationFn: createAdminDeviceInvite,
@@ -233,6 +272,40 @@ export function NotificationsPage() {
     searchParams,
     setSearchParams,
   ])
+
+  useEffect(() => {
+    setJobsPage(1)
+  }, [jobsStatus])
+
+  useEffect(() => {
+    setJobsPage((prev) => {
+      if (prev < 1) return 1
+      if (prev > jobsTotalPages) return jobsTotalPages
+      return prev
+    })
+  }, [jobsTotalPages])
+
+  useEffect(() => {
+    setArchivePage(1)
+  }, [archiveStartDate, archiveEndDate, archiveEmployeeQuery])
+
+  useEffect(() => {
+    if (filteredDeliveryLogs.length === 0) {
+      setSelectedDeliveryAuditId(null)
+      return
+    }
+    if (selectedDeliveryAuditId === null || !filteredDeliveryLogs.some((row) => row.audit_id === selectedDeliveryAuditId)) {
+      setSelectedDeliveryAuditId(filteredDeliveryLogs[0].audit_id)
+    }
+  }, [filteredDeliveryLogs, selectedDeliveryAuditId])
+
+  useEffect(() => {
+    setArchivePage((prev) => {
+      if (prev < 1) return 1
+      if (prev > archiveTotalPages) return archiveTotalPages
+      return prev
+    })
+  }, [archiveTotalPages])
 
   return (
     <div className="space-y-4">
@@ -360,25 +433,57 @@ export function NotificationsPage() {
         </div>
         {jobsQuery.isLoading ? <LoadingBlock label="Yukleniyor..." /> : null}
         {jobsQuery.isError ? <ErrorBlock message="Job listesi alinamadi." /> : null}
-        <div className="overflow-x-auto">
+        {!jobsQuery.isLoading && !jobsQuery.isError ? (
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            <span>
+              Gosterilen satir: {jobsRangeStart}-{jobsRangeEnd} / {jobsRows.length}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setJobsPage((prev) => Math.max(1, prev - 1))}
+                disabled={jobsPage <= 1}
+                className="rounded border border-slate-300 px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Onceki
+              </button>
+              <span>
+                Sayfa {jobsPage} / {jobsTotalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setJobsPage((prev) => Math.min(jobsTotalPages, prev + 1))}
+                disabled={jobsPage >= jobsTotalPages}
+                className="rounded border border-slate-300 px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Sonraki
+              </button>
+            </div>
+          </div>
+        ) : null}
+        <div className="mt-2 max-h-[420px] overflow-auto rounded-lg border border-slate-200">
           <table className="min-w-full text-left text-sm">
-            <thead>
+            <thead className="sticky top-0 bg-white">
               <tr className="text-xs uppercase text-slate-500">
-                <th className="py-2">ID</th>
-                <th>Tur</th>
-                <th>Durum</th>
-                <th>Planlanan</th>
-                <th>Islem</th>
+                <th className="px-2 py-2">Sira</th>
+                <th className="px-2 py-2">ID</th>
+                <th className="px-2 py-2">Tur</th>
+                <th className="px-2 py-2">Durum</th>
+                <th className="px-2 py-2">Planlanan</th>
+                <th className="px-2 py-2">Islem</th>
               </tr>
             </thead>
             <tbody>
-              {(jobsQuery.data ?? []).map((job) => (
+              {pagedJobs.map((job, index) => (
                 <tr key={job.id} className="border-t border-slate-100">
-                  <td className="py-2">{job.id}</td>
-                  <td>{job.job_type}</td>
-                  <td><span className={`rounded px-2 py-1 text-xs ${statusClass(job.status)}`}>{job.status}</span></td>
-                  <td>{dt(job.scheduled_at_utc)}</td>
-                  <td>
+                  <td className="px-2 py-2 text-slate-500">{jobsRangeStart + index}</td>
+                  <td className="px-2 py-2">{job.id}</td>
+                  <td className="px-2 py-2">{job.job_type}</td>
+                  <td className="px-2 py-2">
+                    <span className={`rounded px-2 py-1 text-xs ${statusClass(job.status)}`}>{job.status}</span>
+                  </td>
+                  <td className="px-2 py-2">{dt(job.scheduled_at_utc)}</td>
+                  <td className="px-2 py-2">
                     {job.status === 'PENDING' || job.status === 'SENDING' ? (
                       <button type="button" className="rounded border border-rose-300 px-2 py-1 text-xs text-rose-700" onClick={() => cancelMutation.mutate(job.id)}>
                         Iptal
@@ -392,6 +497,9 @@ export function NotificationsPage() {
             </tbody>
           </table>
         </div>
+        {!jobsQuery.isLoading && !jobsQuery.isError && jobsRows.length === 0 ? (
+          <p className="mt-3 text-sm text-slate-500">Filtreye uygun bildirim isi bulunamadi.</p>
+        ) : null}
       </Panel>
 
       <Panel>
@@ -439,49 +547,130 @@ export function NotificationsPage() {
 
         {deliveryLogsQuery.isLoading ? <LoadingBlock label="Teslimat logu yukleniyor..." /> : null}
         {deliveryLogsQuery.isError ? <ErrorBlock message="Teslimat logu alinamadi." /> : null}
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-sm">
-            <thead>
-              <tr className="text-xs uppercase text-slate-500">
-                <th className="py-2">Zaman</th>
-                <th>Durum</th>
-                <th>Hedef Tipi</th>
-                <th>Kisi</th>
-                <th>Cihaz ID</th>
-                <th>IP</th>
-                <th>Baslik</th>
-                <th>Gonderen</th>
-                <th>Hata</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredDeliveryLogs.map((row, index) => (
-                <tr key={`${row.audit_id}-${row.recipient_type}-${row.recipient_id ?? 0}-${row.device_id ?? 0}-${index}`} className="border-t border-slate-100">
-                  <td className="py-2">{dt(row.sent_at_utc)}</td>
-                  <td>
-                    <span className={`rounded px-2 py-1 text-xs font-semibold ${deliveryStatusClass(row.status)}`}>
-                      {row.status}
-                    </span>
-                  </td>
-                  <td>{row.recipient_type === 'employee' ? 'CALISAN' : 'ADMIN'}</td>
-                  <td>
-                    #{row.recipient_id ?? '-'} - {row.recipient_name ?? '-'}
-                  </td>
-                  <td>{row.device_id ?? '-'}</td>
-                  <td>{row.ip ?? '-'}</td>
-                  <td>{row.title ?? '-'}</td>
-                  <td>{row.sender_admin}</td>
-                  <td className="max-w-[280px] truncate" title={row.error ?? '-'}>
-                    {row.error ?? '-'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {!deliveryLogsQuery.isLoading && filteredDeliveryLogs.length === 0 ? (
-            <p className="mt-3 text-sm text-slate-500">Filtreye uygun teslimat kaydi bulunamadi.</p>
-          ) : null}
-        </div>
+        {!deliveryLogsQuery.isLoading && !deliveryLogsQuery.isError ? (
+          <div className="mt-3 grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <section className="overflow-hidden rounded-xl border border-slate-900 bg-[#09131d] text-slate-200 shadow-inner">
+              <div className="flex items-center justify-between border-b border-slate-700 bg-slate-900/70 px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <span className="h-2.5 w-2.5 rounded-full bg-rose-400" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-amber-300" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
+                  <span className="ml-2 text-xs font-semibold text-slate-300">delivery-terminal</span>
+                </div>
+                <span className="text-[11px] text-slate-400">{filteredDeliveryLogs.length} kayit</span>
+              </div>
+
+              <div className="max-h-[520px] overflow-auto">
+                <table className="min-w-full table-fixed text-left text-xs">
+                  <thead className="sticky top-0 bg-slate-900/95 text-[11px] uppercase text-slate-400">
+                    <tr>
+                      <th className="w-36 px-2 py-2">Zaman</th>
+                      <th className="w-24 px-2 py-2">Durum</th>
+                      <th className="w-24 px-2 py-2">Hedef</th>
+                      <th className="w-56 px-2 py-2">Kisi</th>
+                      <th className="w-20 px-2 py-2">Cihaz</th>
+                      <th className="w-36 px-2 py-2">IP</th>
+                      <th className="w-48 px-2 py-2">Baslik</th>
+                      <th className="w-64 px-2 py-2">Hata</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredDeliveryLogs.map((row, index) => {
+                      const isSelected = row.audit_id === selectedDeliveryAuditId
+                      return (
+                        <tr
+                          key={`${row.audit_id}-${row.recipient_type}-${row.recipient_id ?? 0}-${row.device_id ?? 0}-${index}`}
+                          onClick={() => setSelectedDeliveryAuditId(row.audit_id)}
+                          className={`cursor-pointer border-t border-slate-800 ${
+                            isSelected ? 'bg-cyan-900/35' : 'hover:bg-slate-800/55'
+                          }`}
+                        >
+                          <td className="px-2 py-2 text-slate-300">{dt(row.sent_at_utc)}</td>
+                          <td className="px-2 py-2">
+                            <span className={`rounded px-2 py-0.5 text-[11px] font-semibold ${deliveryStatusClass(row.status)}`}>
+                              {row.status}
+                            </span>
+                          </td>
+                          <td className="px-2 py-2 text-slate-300">{deliveryTargetLabel(row.target)}</td>
+                          <td className="px-2 py-2 text-slate-300 truncate" title={`#${row.recipient_id ?? '-'} - ${row.recipient_name ?? '-'}`}>
+                            #{row.recipient_id ?? '-'} - {row.recipient_name ?? '-'}
+                          </td>
+                          <td className="px-2 py-2 text-slate-300">{row.device_id ?? '-'}</td>
+                          <td className="px-2 py-2 text-slate-300 truncate" title={row.ip ?? '-'}>
+                            {row.ip ?? '-'}
+                          </td>
+                          <td className="px-2 py-2 text-slate-300 truncate" title={row.title ?? '-'}>
+                            {row.title ?? '-'}
+                          </td>
+                          <td className="px-2 py-2 text-slate-300 truncate" title={row.error ?? '-'}>
+                            {row.error ?? '-'}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+                {filteredDeliveryLogs.length === 0 ? (
+                  <p className="px-3 py-3 text-sm text-amber-300">Filtreye uygun teslimat kaydi bulunamadi.</p>
+                ) : null}
+              </div>
+            </section>
+
+            <aside className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <h5 className="text-sm font-semibold text-slate-900">Secili teslimat detayi</h5>
+              {selectedDeliveryLog === null ? (
+                <p className="mt-3 text-sm text-slate-600">Listeden bir kayit secin.</p>
+              ) : (
+                <div className="mt-3 space-y-3">
+                  <div className="rounded-lg border border-slate-200 bg-white p-2 text-sm text-slate-700">
+                    <p>
+                      <span className="font-semibold">Zaman:</span> {dt(selectedDeliveryLog.sent_at_utc)}
+                    </p>
+                    <p>
+                      <span className="font-semibold">Durum:</span> {selectedDeliveryLog.status}
+                    </p>
+                    <p>
+                      <span className="font-semibold">Hedef tipi:</span>{' '}
+                      {selectedDeliveryLog.recipient_type === 'employee' ? 'CALISAN' : 'ADMIN'}
+                    </p>
+                    <p>
+                      <span className="font-semibold">Hedef:</span> {deliveryTargetLabel(selectedDeliveryLog.target)}
+                    </p>
+                    <p>
+                      <span className="font-semibold">Kisi:</span> #{selectedDeliveryLog.recipient_id ?? '-'} -{' '}
+                      {selectedDeliveryLog.recipient_name ?? '-'}
+                    </p>
+                    <p>
+                      <span className="font-semibold">Cihaz:</span> {selectedDeliveryLog.device_id ?? '-'}
+                    </p>
+                    <p>
+                      <span className="font-semibold">IP:</span> {selectedDeliveryLog.ip ?? '-'}
+                    </p>
+                    <p className="break-words">
+                      <span className="font-semibold">Baslik:</span> {selectedDeliveryLog.title ?? '-'}
+                    </p>
+                    <p>
+                      <span className="font-semibold">Gonderen:</span> {selectedDeliveryLog.sender_admin}
+                    </p>
+                    <p className="break-all">
+                      <span className="font-semibold">Endpoint:</span> {selectedDeliveryLog.endpoint ?? '-'}
+                    </p>
+                    <p className="break-all">
+                      <span className="font-semibold">Hata:</span> {selectedDeliveryLog.error ?? '-'}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="mb-1 text-xs font-semibold text-slate-600">JSON detay</p>
+                    <pre className="max-h-64 overflow-auto rounded-lg bg-slate-900 p-2 text-[11px] text-slate-100">
+                      {JSON.stringify(selectedDeliveryLog, null, 2)}
+                    </pre>
+                  </div>
+                </div>
+              )}
+            </aside>
+          </div>
+        ) : null}
       </Panel>
 
       <Panel>
@@ -527,27 +716,58 @@ export function NotificationsPage() {
 
         {archivesQuery.isLoading ? <LoadingBlock label="Arsiv yukleniyor..." /> : null}
         {archivesQuery.isError ? <ErrorBlock message="Arsiv listesi alinamadi." /> : null}
-        <div className="overflow-x-auto">
+        {!archivesQuery.isLoading && !archivesQuery.isError ? (
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            <span>
+              Gosterilen satir: {archiveRangeStart}-{archiveRangeEnd} / {archiveRows.length}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setArchivePage((prev) => Math.max(1, prev - 1))}
+                disabled={archivePage <= 1}
+                className="rounded border border-slate-300 px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Onceki
+              </button>
+              <span>
+                Sayfa {archivePage} / {archiveTotalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setArchivePage((prev) => Math.min(archiveTotalPages, prev + 1))}
+                disabled={archivePage >= archiveTotalPages}
+                className="rounded border border-slate-300 px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Sonraki
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="mt-2 max-h-[520px] overflow-auto rounded-lg border border-slate-200">
           <table className="min-w-full text-left text-sm">
-            <thead>
+            <thead className="sticky top-0 bg-white">
               <tr className="text-xs uppercase text-slate-500">
-                <th className="py-2">ID</th>
-                <th>Tarih</th>
-                <th>Dosya</th>
-                <th>Calisan</th>
-                <th>Boyut</th>
-                <th>Islem</th>
+                <th className="px-2 py-2">Sira</th>
+                <th className="px-2 py-2">ID</th>
+                <th className="px-2 py-2">Tarih</th>
+                <th className="px-2 py-2">Dosya</th>
+                <th className="px-2 py-2">Calisan</th>
+                <th className="px-2 py-2">Boyut</th>
+                <th className="px-2 py-2">Islem</th>
               </tr>
             </thead>
             <tbody>
-              {(archivesQuery.data ?? []).map((item) => (
+              {pagedArchives.map((item, index) => (
                 <tr key={item.id} className="border-t border-slate-100">
-                  <td className="py-2">{item.id}</td>
-                  <td>{item.report_date}</td>
-                  <td>{item.file_name}</td>
-                  <td>{item.employee_count}</td>
-                  <td>{(item.file_size_bytes / 1024).toFixed(1)} KB</td>
-                  <td>
+                  <td className="px-2 py-2 text-slate-500">{archiveRangeStart + index}</td>
+                  <td className="px-2 py-2">{item.id}</td>
+                  <td className="px-2 py-2">{item.report_date}</td>
+                  <td className="px-2 py-2">{item.file_name}</td>
+                  <td className="px-2 py-2">{item.employee_count}</td>
+                  <td className="px-2 py-2">{(item.file_size_bytes / 1024).toFixed(1)} KB</td>
+                  <td className="px-2 py-2">
                     <div className="flex gap-1">
                       <button type="button" className="rounded border border-brand-300 px-2 py-1 text-xs text-brand-700" onClick={() => downloadMutation.mutate(item.id)}>
                         Excel indir
@@ -567,6 +787,9 @@ export function NotificationsPage() {
             </tbody>
           </table>
         </div>
+        {!archivesQuery.isLoading && !archivesQuery.isError && archiveRows.length === 0 ? (
+          <p className="mt-3 text-sm text-slate-500">Filtreye uygun arsiv kaydi bulunamadi.</p>
+        ) : null}
       </Panel>
     </div>
   )
