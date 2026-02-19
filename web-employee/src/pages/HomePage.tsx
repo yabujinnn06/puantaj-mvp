@@ -24,7 +24,9 @@ import { getCurrentLocation } from '../utils/location'
 
 type TodayStatus = EmployeeStatusResponse['today_status']
 const PUSH_VAPID_KEY_STORAGE = 'pf_push_vapid_public_key'
-const PUSH_REFRESH_ONCE_STORAGE = 'pf_push_refresh_once'
+const PUSH_TEST_RETRYABLE_STATUS_CODES = new Set([404, 410])
+const INSTALL_BANNER_DISMISS_UNTIL_STORAGE = 'pf_install_banner_dismiss_until'
+const INSTALL_BANNER_DISMISS_MS = 1000 * 60 * 60 * 8
 const QrScanner = lazy(() =>
   import('../components/QrScanner').then((module) => ({ default: module.QrScanner })),
 )
@@ -32,6 +34,11 @@ const QrScanner = lazy(() =>
 interface LastAction {
   codeValue?: string
   response: AttendanceActionResponse
+}
+
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>
 }
 
 function eventTypeLabel(eventType: 'IN' | 'OUT'): string {
@@ -89,6 +96,42 @@ function isSecurePushContext(): boolean {
     return false
   }
   return Boolean(window.isSecureContext)
+}
+
+function isPushTestRetryable(statusCode: number | null | undefined): boolean {
+  if (typeof statusCode !== 'number') {
+    return false
+  }
+  return PUSH_TEST_RETRYABLE_STATUS_CODES.has(statusCode)
+}
+
+function formatPushTestFailureMessage(
+  statusCode: number | null | undefined,
+  rawError: string | null | undefined,
+): string {
+  if (statusCode === 410 || statusCode === 404) {
+    return 'Bildirim aboneliği süresi dolmuş. Abonelik otomatik yenilenirken hata oluştu, lütfen tekrar deneyin.'
+  }
+  const statusPart = typeof statusCode === 'number' ? ` (status ${statusCode})` : ''
+  const errorPart = rawError?.trim() ? ` ${rawError.trim()}` : ''
+  return `Sunucu push testi başarısız${statusPart}.${errorPart}`.trim()
+}
+
+function getInstallBannerDismissUntil(): number {
+  if (typeof window === 'undefined') {
+    return 0
+  }
+  const raw = window.localStorage.getItem(INSTALL_BANNER_DISMISS_UNTIL_STORAGE)
+  if (!raw) {
+    return 0
+  }
+  const value = Number(raw)
+  return Number.isFinite(value) ? value : 0
+}
+
+function isInstallBannerDismissed(): boolean {
+  const dismissUntil = getInstallBannerDismissUntil()
+  return dismissUntil > Date.now()
 }
 
 function playQrSuccessTone() {
@@ -157,6 +200,11 @@ export function HomePage() {
   const [pushRequiresStandalone, setPushRequiresStandalone] = useState(false)
   const [pushNotice, setPushNotice] = useState<string | null>(null)
   const [pushSecondChanceOpen, setPushSecondChanceOpen] = useState(false)
+  const [isStandaloneApp, setIsStandaloneApp] = useState(() => isStandaloneDisplayMode())
+  const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null)
+  const [installBannerVisible, setInstallBannerVisible] = useState(false)
+  const [isInstallPromptBusy, setIsInstallPromptBusy] = useState(false)
+  const [installNotice, setInstallNotice] = useState<string | null>(null)
   const scanSuccessFxTimerRef = useRef<number | null>(null)
 
   const clearScanSuccessFxTimer = useCallback(() => {
@@ -189,10 +237,59 @@ export function HomePage() {
     if (typeof window === 'undefined') {
       return
     }
-    if (window.sessionStorage.getItem(PUSH_REFRESH_ONCE_STORAGE) === '1') {
-      window.sessionStorage.removeItem(PUSH_REFRESH_ONCE_STORAGE)
+
+    const handleDisplayModeChange = () => {
+      setIsStandaloneApp(isStandaloneDisplayMode())
+    }
+    const handleBeforeInstallPrompt = (event: Event) => {
+      const promptEvent = event as BeforeInstallPromptEvent
+      promptEvent.preventDefault()
+      setInstallPromptEvent(promptEvent)
+      if (!isInstallBannerDismissed() && !isStandaloneDisplayMode()) {
+        setInstallBannerVisible(true)
+      }
+    }
+    const handleAppInstalled = () => {
+      setInstallPromptEvent(null)
+      setInstallBannerVisible(false)
+      setInstallNotice('Uygulama ana ekrana eklendi.')
+      setIsStandaloneApp(true)
+    }
+
+    const displayModeMedia = window.matchMedia('(display-mode: standalone)')
+    handleDisplayModeChange()
+
+    if (typeof displayModeMedia.addEventListener === 'function') {
+      displayModeMedia.addEventListener('change', handleDisplayModeChange)
+    } else {
+      displayModeMedia.addListener(handleDisplayModeChange)
+    }
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt as EventListener)
+    window.addEventListener('appinstalled', handleAppInstalled)
+
+    return () => {
+      if (typeof displayModeMedia.removeEventListener === 'function') {
+        displayModeMedia.removeEventListener('change', handleDisplayModeChange)
+      } else {
+        displayModeMedia.removeListener(handleDisplayModeChange)
+      }
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt as EventListener)
+      window.removeEventListener('appinstalled', handleAppInstalled)
     }
   }, [])
+
+  useEffect(() => {
+    if (isStandaloneApp) {
+      setInstallBannerVisible(false)
+      return
+    }
+    if (isInstallBannerDismissed()) {
+      return
+    }
+    if (installPromptEvent || isIosFamilyDevice()) {
+      setInstallBannerVisible(true)
+    }
+  }, [installPromptEvent, isStandaloneApp])
 
   useEffect(() => {
     if (!deviceFingerprint) {
@@ -287,6 +384,10 @@ export function HomePage() {
           return
         }
 
+        if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+          setPushSecondChanceOpen(false)
+        }
+
         const registered = Boolean(existingSubscription && Notification.permission === 'granted')
         setPushRegistered(registered)
         if (registered) {
@@ -355,6 +456,58 @@ export function HomePage() {
     if (currentHour < 17 || currentHour > 22) return false
     return hasOpenShift
   }, [currentHour, hasOpenShift])
+
+  const dismissInstallBanner = useCallback(() => {
+    setInstallBannerVisible(false)
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(
+        INSTALL_BANNER_DISMISS_UNTIL_STORAGE,
+        String(Date.now() + INSTALL_BANNER_DISMISS_MS),
+      )
+    }
+  }, [])
+
+  const runInstallPrompt = useCallback(async () => {
+    setInstallNotice(null)
+
+    if (isIosFamilyDevice() && !installPromptEvent) {
+      setInstallNotice('Kurulum için Safari paylaş menüsünden "Ana Ekrana Ekle" adımını kullanın.')
+      return
+    }
+    if (!installPromptEvent) {
+      setInstallNotice('Bu tarayıcı otomatik kurulum penceresi sunmuyor.')
+      return
+    }
+
+    setIsInstallPromptBusy(true)
+    try {
+      await installPromptEvent.prompt()
+      const choice = await installPromptEvent.userChoice
+      if (choice.outcome === 'accepted') {
+        setInstallBannerVisible(false)
+      }
+    } catch {
+      setInstallNotice('Kurulum penceresi açılamadı. Tarayıcı menüsünden Ana Ekrana Ekle deneyin.')
+    } finally {
+      setInstallPromptEvent(null)
+      setIsInstallPromptBusy(false)
+    }
+  }, [installPromptEvent])
+
+  const installBannerEligible = useMemo(() => {
+    if (isStandaloneApp) {
+      return false
+    }
+    return Boolean(installPromptEvent) || isIosFamilyDevice()
+  }, [installPromptEvent, isStandaloneApp])
+
+  const showInstallBanner = installBannerVisible && installBannerEligible
+  const installPrimaryLabel =
+    isIosFamilyDevice() && !installPromptEvent ? 'Ana Ekrana Ekle' : 'Uygulamayı Yükle'
+  const installBannerHint =
+    isIosFamilyDevice() && !installPromptEvent
+      ? 'Safari Paylaş menüsünden Ana Ekrana Ekle adımıyla hızlı kurulum yapabilirsiniz.'
+      : 'Uygulamayı ana ekrana ekleyerek daha stabil ve hızlı kullanın.'
 
   const runPasskeyRegistration = async () => {
     if (!deviceFingerprint) {
@@ -453,41 +606,63 @@ export function HomePage() {
       if (!config.enabled || !config.vapid_public_key) {
         throw new Error('Bildirim servisi şu anda aktif değil.')
       }
+      const vapidPublicKey = config.vapid_public_key
 
       const registration = await navigator.serviceWorker.ready
       const savedVapidKey =
         typeof window !== 'undefined' ? window.localStorage.getItem(PUSH_VAPID_KEY_STORAGE) : null
       let subscription = await registration.pushManager.getSubscription()
-      if (subscription && savedVapidKey && savedVapidKey !== config.vapid_public_key) {
-        try {
-          await subscription.unsubscribe()
-        } catch {
-          // Eski abonelik kaldırılamasa bile yeniden subscribe denemesi yapacağız.
+      const ensureSubscription = async (forceRefresh: boolean): Promise<PushSubscription> => {
+        let currentSubscription = subscription
+        const hasVapidMismatch =
+          Boolean(currentSubscription) &&
+          Boolean(savedVapidKey) &&
+          savedVapidKey !== vapidPublicKey
+
+        if (currentSubscription && (forceRefresh || hasVapidMismatch)) {
+          try {
+            await currentSubscription.unsubscribe()
+          } catch {
+            // Abonelik zaten kopuk olabilir; yeni abonelik ile devam ediyoruz.
+          }
+          currentSubscription = null
         }
-        subscription = null
+
+        if (!currentSubscription) {
+          currentSubscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey:
+              urlBase64ToUint8Array(vapidPublicKey) as unknown as BufferSource,
+          })
+        }
+
+        subscription = currentSubscription
+        return currentSubscription
       }
-      if (!subscription) {
-        subscription = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey:
-            urlBase64ToUint8Array(config.vapid_public_key) as unknown as BufferSource,
+
+      let ensuredSubscription = await ensureSubscription(false)
+      let subscribeResult = await subscribeEmployeePush({
+        device_fingerprint: deviceFingerprint,
+        subscription: ensuredSubscription.toJSON() as Record<string, unknown>,
+        send_test: true,
+      })
+
+      if (subscribeResult.test_push_ok === false && isPushTestRetryable(subscribeResult.test_push_status_code)) {
+        ensuredSubscription = await ensureSubscription(true)
+        subscribeResult = await subscribeEmployeePush({
+          device_fingerprint: deviceFingerprint,
+          subscription: ensuredSubscription.toJSON() as Record<string, unknown>,
+          send_test: true,
         })
       }
 
-      const subscribeResult = await subscribeEmployeePush({
-        device_fingerprint: deviceFingerprint,
-        subscription: subscription.toJSON() as Record<string, unknown>,
-        send_test: true,
-      })
       if (subscribeResult.test_push_ok === false) {
-        const statusPart =
-          typeof subscribeResult.test_push_status_code === 'number'
-            ? ` (status ${subscribeResult.test_push_status_code})`
-            : ''
-        const errorPart = subscribeResult.test_push_error?.trim()
-          ? ` ${subscribeResult.test_push_error.trim()}`
-          : ''
-        throw new Error(`Sunucu push testi başarısız${statusPart}.${errorPart}`.trim())
+        throw new Error(
+          formatPushTestFailureMessage(
+            subscribeResult.test_push_status_code,
+            subscribeResult.test_push_error,
+          ),
+        )
       }
 
       // iOS dahil bazı tarayıcılarda showNotification istemci tarafında hata verebilir.
@@ -502,22 +677,12 @@ export function HomePage() {
         // no-op
       }
 
-      window.localStorage.setItem(PUSH_VAPID_KEY_STORAGE, config.vapid_public_key)
+      window.localStorage.setItem(PUSH_VAPID_KEY_STORAGE, vapidPublicKey)
       setPushRegistered(true)
       setPushNeedsResubscribe(false)
       setPushNotice('Bildirimler bu cihazda etkinleştirildi.')
       setPushSecondChanceOpen(false)
       await syncPushState(true)
-      if (typeof window !== 'undefined') {
-        const refreshedBefore = window.sessionStorage.getItem(PUSH_REFRESH_ONCE_STORAGE) === '1'
-        if (!refreshedBefore) {
-          window.sessionStorage.setItem(PUSH_REFRESH_ONCE_STORAGE, '1')
-          window.setTimeout(() => {
-            window.location.reload()
-          }, 250)
-          return
-        }
-      }
     } catch (error) {
       const parsed = parseApiError(error, 'Bildirim aboneliği oluşturulamadı.')
       setErrorMessage(parsed.message)
@@ -712,6 +877,29 @@ export function HomePage() {
             Kurtarma
           </Link>
         </div>
+
+        {showInstallBanner ? (
+          <section className="install-banner" role="region" aria-label="Uygulama kurulumu">
+            <div className="install-banner-copy">
+              <p className="install-banner-kicker">YABUJIN APP</p>
+              <p className="install-banner-title">Ana ekrana ekleyip uygulama gibi kullanın</p>
+              <p className="install-banner-subtitle">{installBannerHint}</p>
+            </div>
+            <div className="install-banner-actions">
+              <button
+                type="button"
+                className="btn btn-primary install-banner-btn"
+                disabled={isInstallPromptBusy}
+                onClick={() => void runInstallPrompt()}
+              >
+                {isInstallPromptBusy ? 'Açılıyor...' : installPrimaryLabel}
+              </button>
+              <button type="button" className="btn btn-ghost install-banner-dismiss" onClick={dismissInstallBanner}>
+                Daha Sonra
+              </button>
+            </div>
+          </section>
+        ) : null}
 
         <div className="employee-workbench">
           <section className="employee-command-surface">
@@ -967,6 +1155,12 @@ export function HomePage() {
         {pushNotice ? (
           <div className="notice-box notice-box-success mt-3">
             <p>{pushNotice}</p>
+          </div>
+        ) : null}
+
+        {installNotice ? (
+          <div className="notice-box notice-box-warning mt-3">
+            <p>{installNotice}</p>
           </div>
         ) : null}
 

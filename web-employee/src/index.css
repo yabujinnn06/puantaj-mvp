@@ -143,6 +143,63 @@ body::after {
   max-width: 560px;
 }
 
+.install-banner {
+  margin-top: 12px;
+  border: 1px solid rgba(91, 158, 188, 0.48);
+  border-radius: 14px;
+  padding: 10px 12px;
+  display: grid;
+  gap: 10px;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(124, 209, 255, 0.22), transparent 55%),
+    linear-gradient(145deg, rgba(230, 247, 255, 0.86), rgba(246, 252, 255, 0.96));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    0 14px 22px -24px rgba(10, 56, 77, 0.68);
+}
+
+.install-banner-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.install-banner-kicker {
+  margin: 0;
+  font-size: 0.64rem;
+  letter-spacing: 0.1em;
+  font-weight: 900;
+  color: #136482;
+}
+
+.install-banner-title {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: #123849;
+}
+
+.install-banner-subtitle {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #2e5568;
+}
+
+.install-banner-actions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.install-banner-btn {
+  min-height: 2.2rem;
+}
+
+.install-banner-dismiss {
+  min-height: 2.2rem;
+  padding-inline: 0.8rem;
+}
+
 .phone-card::before {
   content: '';
   position: absolute;
@@ -1349,6 +1406,10 @@ textarea:focus {
   }
 
   .status-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .install-banner-actions {
     grid-template-columns: 1fr;
   }
 }
