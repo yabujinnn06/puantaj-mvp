@@ -76,6 +76,27 @@ class _FakeExportDB:
         return
 
 
+class _FakeAllExportDB:
+    def __init__(self, employees: list[Employee]):
+        self._employees = employees
+        self.audit_rows: list[object] = []
+
+    def scalars(self, _statement):  # type: ignore[no-untyped-def]
+        return _ScalarRows(self._employees)
+
+    def scalar(self, _statement):  # type: ignore[no-untyped-def]
+        return None
+
+    def add(self, obj: object) -> None:
+        self.audit_rows.append(obj)
+
+    def commit(self) -> None:
+        return
+
+    def rollback(self) -> None:
+        return
+
+
 class _FakeMonthlyDB:
     def __init__(self, scalar_values, scalars_values):
         self._scalar_values = list(scalar_values)
@@ -345,6 +366,71 @@ class AdminPuantajFeatureTests(unittest.TestCase):
             self.assertEqual(daily_sheet.cell(row=day_row, column=col_idx).number_format, "[h]:mm")
         for col_idx in (8, 10, 13):
             self.assertNotEqual(daily_sheet.cell(row=day_row, column=col_idx).number_format, "[h]:mm")
+
+    def test_xlsx_export_all_mode_uses_clean_turkish_labels(self) -> None:
+        department = Department(id=1, name="ARGE")
+        employee_1 = Employee(id=1, full_name="Hüseyincan Orman", department_id=1, is_active=True)
+        employee_2 = Employee(id=2, full_name="Birtan Başkaya", department_id=1, is_active=True)
+        employee_1.department = department
+        employee_2.department = department
+
+        fake_db = _FakeAllExportDB([employee_1, employee_2])
+        app.dependency_overrides[get_db] = _override_get_db(fake_db)
+        app.dependency_overrides[require_admin] = lambda: _super_admin_claims()
+
+        fake_report = MonthlyEmployeeResponse(
+            employee_id=1,
+            year=2026,
+            month=2,
+            days=[
+                MonthlyEmployeeDay(
+                    date=date(2026, 2, 12),
+                    status="OK",
+                    check_in=datetime(2026, 2, 12, 10, 47, tzinfo=timezone.utc),
+                    check_out=datetime(2026, 2, 12, 16, 42, tzinfo=timezone.utc),
+                    worked_minutes=355,
+                    overtime_minutes=175,
+                    flags=[],
+                )
+            ],
+            totals=MonthlyEmployeeTotals(
+                worked_minutes=355,
+                overtime_minutes=175,
+                incomplete_days=0,
+            ),
+            worked_minutes_net=355,
+            weekly_totals=[],
+            annual_overtime_used_minutes=0,
+            annual_overtime_remaining_minutes=16200,
+            annual_overtime_cap_exceeded=False,
+            labor_profile=None,
+        )
+
+        client = TestClient(app)
+        with patch("app.services.exports.calculate_employee_monthly", return_value=fake_report):
+            response = client.get("/api/admin/exports/puantaj.xlsx?mode=all&year=2026&month=2")
+
+        self.assertEqual(response.status_code, 200)
+        wb = load_workbook(BytesIO(response.content))
+        dashboard = wb["DASHBOARD"]
+
+        self.assertEqual(dashboard["A1"].value, "Tüm Çalışanlar Özeti - YÖNETİM DASHBOARD")
+        self.assertEqual(dashboard["A2"].value, "Rapor Üretim (UTC)")
+        self.assertEqual(dashboard["A12"].value, "Sıra")
+        self.assertEqual(dashboard["B12"].value, "Çalışan Navigasyon")
+
+        daily_sheet = wb["Hüseyincan Orman (1)"]
+        self.assertEqual(daily_sheet["E7"].value, "Çalışma Süresi")
+        self.assertEqual(daily_sheet["N7"].value, "Gün Tipi")
+        self.assertEqual(daily_sheet["O7"].value, "Çalışıldı mı")
+
+        mojibake_markers = ("Ã", "Â", "Ä", "Å")
+        for sheet in wb.worksheets:
+            for row in sheet.iter_rows(min_row=1, max_row=min(sheet.max_row, 40), values_only=True):
+                for value in row:
+                    if not isinstance(value, str):
+                        continue
+                    self.assertFalse(any(marker in value for marker in mojibake_markers))
 
     def test_new_employee_monthly_export_endpoint_returns_valid_xlsx(self) -> None:
         employee = Employee(id=1, full_name="Test User", department_id=None, is_active=True)
