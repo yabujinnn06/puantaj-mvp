@@ -174,7 +174,7 @@ function playQrSuccessTone() {
     oscillator.frequency.exponentialRampToValueAtTime(1280, audioContext.currentTime + 0.18)
 
     gainNode.gain.setValueAtTime(0.0001, audioContext.currentTime)
-    gainNode.gain.exponentialRampToValueAtTime(0.15, audioContext.currentTime + 0.02)
+    gainNode.gain.exponentialRampToValueAtTime(0.24, audioContext.currentTime + 0.02)
     gainNode.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.26)
 
     oscillator.connect(gainNode)
@@ -265,7 +265,7 @@ export function HomePage() {
     scanSuccessFxTimerRef.current = window.setTimeout(() => {
       setScanSuccessFxOpen(false)
       scanSuccessFxTimerRef.current = null
-    }, 1500)
+    }, 1000)
   }, [clearScanSuccessFxTimer])
 
   useEffect(() => {
@@ -960,6 +960,7 @@ export function HomePage() {
         last_location_status: response.location_status,
         last_flags: response.flags,
       }))
+      triggerScanSuccessFx()
     } catch (error) {
       const parsed = parseApiError(error, 'Mesai bitiş kaydı oluşturulamadı.')
       handleDeviceNotClaimed(parsed)
