@@ -1534,6 +1534,12 @@ textarea:focus {
   }
 }
 
+@media (max-width: 979px) {
+  .employee-action-surface {
+    order: -1;
+  }
+}
+
 @media (max-width: 520px) {
   .employee-hero {
     flex-direction: column;
