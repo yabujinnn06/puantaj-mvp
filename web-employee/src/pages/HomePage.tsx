@@ -27,6 +27,7 @@ const PUSH_VAPID_KEY_STORAGE = 'pf_push_vapid_public_key'
 const PUSH_TEST_RETRYABLE_STATUS_CODES = new Set([404, 410])
 const INSTALL_BANNER_DISMISS_UNTIL_STORAGE = 'pf_install_banner_dismiss_until'
 const INSTALL_BANNER_DISMISS_MS = 1000 * 60 * 60 * 8
+const IOS_INSTALL_ONBOARDING_SEEN_STORAGE = 'pf_ios_install_onboarding_seen'
 const QrScanner = lazy(() =>
   import('../components/QrScanner').then((module) => ({ default: module.QrScanner })),
 )
@@ -134,6 +135,20 @@ function isInstallBannerDismissed(): boolean {
   return dismissUntil > Date.now()
 }
 
+function hasSeenIosInstallOnboarding(): boolean {
+  if (typeof window === 'undefined') {
+    return true
+  }
+  return window.localStorage.getItem(IOS_INSTALL_ONBOARDING_SEEN_STORAGE) === '1'
+}
+
+function markIosInstallOnboardingSeen(): void {
+  if (typeof window === 'undefined') {
+    return
+  }
+  window.localStorage.setItem(IOS_INSTALL_ONBOARDING_SEEN_STORAGE, '1')
+}
+
 function playQrSuccessTone() {
   if (typeof window === 'undefined') {
     return
@@ -200,11 +215,16 @@ export function HomePage() {
   const [pushRequiresStandalone, setPushRequiresStandalone] = useState(false)
   const [pushNotice, setPushNotice] = useState<string | null>(null)
   const [pushSecondChanceOpen, setPushSecondChanceOpen] = useState(false)
+  const [pushGateDismissed, setPushGateDismissed] = useState(false)
   const [isStandaloneApp, setIsStandaloneApp] = useState(() => isStandaloneDisplayMode())
   const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null)
   const [installBannerVisible, setInstallBannerVisible] = useState(false)
   const [isInstallPromptBusy, setIsInstallPromptBusy] = useState(false)
   const [installNotice, setInstallNotice] = useState<string | null>(null)
+  const [iosInstallOnboardingOpen, setIosInstallOnboardingOpen] = useState(false)
+  const [iosInstallOnboardingDismissed, setIosInstallOnboardingDismissed] = useState(() =>
+    hasSeenIosInstallOnboarding(),
+  )
   const scanSuccessFxTimerRef = useRef<number | null>(null)
 
   const clearScanSuccessFxTimer = useCallback(() => {
@@ -252,6 +272,9 @@ export function HomePage() {
     const handleAppInstalled = () => {
       setInstallPromptEvent(null)
       setInstallBannerVisible(false)
+      setIosInstallOnboardingOpen(false)
+      setIosInstallOnboardingDismissed(true)
+      markIosInstallOnboardingSeen()
       setInstallNotice('Uygulama ana ekrana eklendi.')
       setIsStandaloneApp(true)
     }
@@ -281,6 +304,9 @@ export function HomePage() {
   useEffect(() => {
     if (isStandaloneApp) {
       setInstallBannerVisible(false)
+      setIosInstallOnboardingOpen(false)
+      setIosInstallOnboardingDismissed(true)
+      markIosInstallOnboardingSeen()
       return
     }
     if (isInstallBannerDismissed()) {
@@ -290,6 +316,16 @@ export function HomePage() {
       setInstallBannerVisible(true)
     }
   }, [installPromptEvent, isStandaloneApp])
+
+  useEffect(() => {
+    if (!isIosFamilyDevice() || isStandaloneApp) {
+      setIosInstallOnboardingOpen(false)
+      return
+    }
+    if (!iosInstallOnboardingDismissed) {
+      setIosInstallOnboardingOpen(true)
+    }
+  }, [iosInstallOnboardingDismissed, isStandaloneApp])
 
   useEffect(() => {
     if (!deviceFingerprint) {
@@ -433,6 +469,13 @@ export function HomePage() {
     }
   }, [syncPushState])
 
+  useEffect(() => {
+    const gateRequired = Boolean(deviceFingerprint) && pushEnabled && !pushRegistered
+    if (!gateRequired || isStandaloneApp) {
+      setPushGateDismissed(false)
+    }
+  }, [deviceFingerprint, isStandaloneApp, pushEnabled, pushRegistered])
+
   const hasOpenShift = useMemo(() => {
     if (!deviceFingerprint) {
       return false
@@ -448,6 +491,10 @@ export function HomePage() {
 
   const pushGateRequired =
     Boolean(deviceFingerprint) && pushEnabled && !pushRegistered
+  const pushGateCanBeDismissedForInstall =
+    pushGateRequired && pushRequiresStandalone && !isStandaloneApp
+  const showPushGateModal =
+    pushGateRequired && (!pushGateCanBeDismissedForInstall || !pushGateDismissed)
   const canQrScan = Boolean(deviceFingerprint) && !isSubmitting && !pushGateRequired
   const canCheckout = Boolean(deviceFingerprint) && !isSubmitting && hasOpenShift && !pushGateRequired
 
@@ -465,6 +512,18 @@ export function HomePage() {
         String(Date.now() + INSTALL_BANNER_DISMISS_MS),
       )
     }
+  }, [])
+
+  const dismissIosInstallOnboarding = useCallback(() => {
+    setIosInstallOnboardingOpen(false)
+    setIosInstallOnboardingDismissed(true)
+    markIosInstallOnboardingSeen()
+  }, [])
+
+  const openIosInstallOnboarding = useCallback(() => {
+    setInstallNotice(null)
+    setPushGateDismissed(true)
+    setIosInstallOnboardingOpen(true)
   }, [])
 
   const runInstallPrompt = useCallback(async () => {
@@ -502,6 +561,20 @@ export function HomePage() {
   }, [installPromptEvent, isStandaloneApp])
 
   const showInstallBanner = installBannerVisible && installBannerEligible
+  const showIosInstallOnboarding =
+    iosInstallOnboardingOpen &&
+    isIosFamilyDevice() &&
+    !isStandaloneApp &&
+    !scannerActive &&
+    !isHelpOpen &&
+    !showPushGateModal
+  const showIosInstallDock =
+    isIosFamilyDevice() &&
+    !isStandaloneApp &&
+    iosInstallOnboardingDismissed &&
+    !iosInstallOnboardingOpen &&
+    !scannerActive &&
+    !isHelpOpen
   const installPrimaryLabel =
     isIosFamilyDevice() && !installPromptEvent ? 'Ana Ekrana Ekle' : 'Uygulamayı Yükle'
   const installBannerHint =
@@ -901,6 +974,18 @@ export function HomePage() {
           </section>
         ) : null}
 
+        {showIosInstallDock ? (
+          <div className="ios-install-dock" role="region" aria-label="Ana ekrana ekleme kisayolu">
+            <div>
+              <p className="ios-install-dock-title">Ana Ekrana Ekle</p>
+              <p className="ios-install-dock-subtitle">Uygulama gibi kullanmak icin kurulumu tamamlayin.</p>
+            </div>
+            <button type="button" className="btn btn-soft ios-install-dock-btn" onClick={openIosInstallOnboarding}>
+              Ana Ekrana Ekle
+            </button>
+          </div>
+        ) : null}
+
         <div className="employee-workbench">
           <section className="employee-command-surface">
             <div className="employee-hero">
@@ -980,17 +1065,22 @@ export function HomePage() {
                   isSubmitting ||
                   pushRegistered ||
                   !pushEnabled ||
-                  !pushRuntimeSupported ||
-                  pushRequiresStandalone
+                  !pushRuntimeSupported
                 }
-                onClick={() => void runPushSubscription()}
+                onClick={() => {
+                  if (pushRequiresStandalone) {
+                    openIosInstallOnboarding()
+                    return
+                  }
+                  void runPushSubscription()
+                }}
               >
                 {isPushBusy
                   ? 'Bildirim açılıyor...'
                   : pushRegistered
                     ? 'Bildirimler Açık'
                     : pushRequiresStandalone
-                      ? 'Ana Ekrandan Aç'
+                      ? 'Ana Ekrana Ekle'
                       : 'Bildirimleri Aç'}
               </button>
             </div>
@@ -1245,6 +1335,34 @@ export function HomePage() {
           </section>
         ) : null}
 
+        {showIosInstallOnboarding ? (
+          <div className="modal-backdrop install-onboarding-backdrop" role="dialog" aria-modal="true">
+            <div className="help-modal install-onboarding-modal">
+              <p className="install-onboarding-kicker">IPHONE KURULUM</p>
+              <h2>Ana Ekrana Ekle</h2>
+              <p>Bu portali uygulama gibi kullanmak icin bir kez Ana Ekrana ekleyin.</p>
+              <ol className="install-onboarding-list">
+                <li>Safari altindaki Paylas ikonuna dokunun.</li>
+                <li>Ana Ekrana Ekle secenegini secin.</li>
+                <li>YABUJIN kisayolunu acip devam edin.</li>
+              </ol>
+              <div className="stack">
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={isInstallPromptBusy}
+                  onClick={() => void runInstallPrompt()}
+                >
+                  {isInstallPromptBusy ? 'Aciliyor...' : 'Ana Ekrana Ekle'}
+                </button>
+                <button type="button" className="btn btn-soft" onClick={dismissIosInstallOnboarding}>
+                  Anladim
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         {isHelpOpen ? (
           <div className="modal-backdrop" role="dialog" aria-modal="true">
             <div className="help-modal">
@@ -1257,7 +1375,7 @@ export function HomePage() {
           </div>
         ) : null}
 
-        {pushGateRequired ? (
+        {showPushGateModal ? (
           <div className="modal-backdrop" role="dialog" aria-modal="true">
             <div className="help-modal">
               <h2>Bildirim İzni Zorunlu</h2>
@@ -1270,11 +1388,19 @@ export function HomePage() {
                 <button
                   type="button"
                   className="btn btn-primary"
-                  disabled={isPushBusy || !pushEnabled || !pushRuntimeSupported || pushRequiresStandalone}
-                  onClick={() => void runPushSubscription(pushSecondChanceOpen)}
+                  disabled={isPushBusy || !pushEnabled || !pushRuntimeSupported}
+                  onClick={() => {
+                    if (pushRequiresStandalone) {
+                      openIosInstallOnboarding()
+                      return
+                    }
+                    void runPushSubscription(pushSecondChanceOpen)
+                  }}
                 >
                   {isPushBusy
                     ? 'Bildirim açılıyor...'
+                    : pushRequiresStandalone
+                      ? 'Ana Ekrana Ekle'
                     : pushSecondChanceOpen
                       ? 'Tekrar Sor (2/2)'
                       : 'Bildirimleri Aç'}
@@ -1289,6 +1415,18 @@ export function HomePage() {
                 >
                   {pushSecondChanceOpen ? 'Bu Kez Kapat' : 'Durumu Yenile'}
                 </button>
+                {pushGateCanBeDismissedForInstall ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => {
+                      setPushSecondChanceOpen(false)
+                      setPushGateDismissed(true)
+                    }}
+                  >
+                    Simdilik Kapat
+                  </button>
+                ) : null}
               </div>
             </div>
           </div>

@@ -200,6 +200,69 @@ body::after {
   padding-inline: 0.8rem;
 }
 
+.ios-install-dock {
+  margin-top: 10px;
+  border: 1px solid rgba(104, 170, 198, 0.46);
+  border-radius: 12px;
+  background: rgba(244, 252, 255, 0.9);
+  padding: 8px 10px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.ios-install-dock-title {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: #165474;
+}
+
+.ios-install-dock-subtitle {
+  margin: 2px 0 0;
+  font-size: 0.72rem;
+  color: #3f6276;
+}
+
+.ios-install-dock-btn {
+  min-height: 2rem;
+  white-space: nowrap;
+}
+
+.install-onboarding-backdrop {
+  z-index: 38;
+  align-items: flex-end;
+  padding: 1rem;
+  background: linear-gradient(180deg, rgba(9, 28, 39, 0.3), rgba(9, 28, 39, 0.62));
+}
+
+.install-onboarding-modal {
+  width: min(100%, 420px);
+  border-color: rgba(88, 160, 194, 0.58);
+  background:
+    radial-gradient(circle at 90% -20%, rgba(155, 231, 255, 0.36), transparent 46%),
+    linear-gradient(180deg, rgba(251, 254, 255, 0.98), rgba(241, 250, 255, 0.95));
+  box-shadow: 0 30px 42px -30px rgba(4, 27, 41, 0.85);
+}
+
+.install-onboarding-kicker {
+  margin: 0 0 0.25rem;
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  font-weight: 900;
+  color: #1a6687;
+}
+
+.install-onboarding-list {
+  margin: 0 0 1rem;
+  padding-left: 1rem;
+  color: #254a5d;
+  font-size: 0.85rem;
+  display: grid;
+  gap: 0.36rem;
+}
+
 .phone-card::before {
   content: '';
   position: absolute;
@@ -1410,6 +1473,10 @@ textarea:focus {
   }
 
   .install-banner-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .ios-install-dock {
     grid-template-columns: 1fr;
   }
 }
