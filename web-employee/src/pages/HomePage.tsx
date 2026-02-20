@@ -1040,18 +1040,42 @@ export function HomePage() {
               </div>
             ) : null}
 
-            <div className="status-cta-row status-cta-row-compact">
-              {!passkeyRegistered ? (
-                <button
-                  type="button"
-                  className="btn btn-soft"
-                  disabled={!deviceFingerprint || isPasskeyBusy || isSubmitting}
-                  onClick={() => void runPasskeyRegistration()}
-                >
-                  {isPasskeyBusy ? 'Passkey kuruluyor...' : 'Passkey Kur'}
-                </button>
-              ) : null}
+            {!passkeyRegistered ? (
+              <section className="passkey-brief passkey-brief-setup" aria-live="polite">
+                <p className="passkey-brief-kicker">GÜVENLİK ADIMI</p>
+                <h3 className="passkey-brief-title">Passkey kurulumunu tamamlayın</h3>
+                <p className="passkey-brief-text">
+                  Cihaz verisi silinse bile hesabınızı geri yükleyip QR ile mesaiye kesintisiz devam edebilirsiniz.
+                </p>
+                <ul className="passkey-brief-list">
+                  <li>Tarayıcı verisi silinirse hesabınızı geri kazanırsınız.</li>
+                  <li>Şifre ezberlemeden biyometrik doğrulama kullanırsınız.</li>
+                  <li>Yeni cihazda kurtarma süresi ciddi şekilde kısalır.</li>
+                </ul>
+                <div className="passkey-brief-actions">
+                  <button
+                    type="button"
+                    className="btn btn-primary passkey-brief-btn"
+                    disabled={!deviceFingerprint || isPasskeyBusy || isSubmitting}
+                    onClick={() => void runPasskeyRegistration()}
+                  >
+                    {isPasskeyBusy ? 'Passkey kuruluyor...' : 'Passkey Kur'}
+                  </button>
+                  <Link className="inline-link passkey-brief-link" to="/recover">
+                    Kurtarma ekranını gör
+                  </Link>
+                </div>
+              </section>
+            ) : (
+              <section className="passkey-brief passkey-brief-ready">
+                <p className="passkey-brief-kicker">PASSKEY AKTİF</p>
+                <p className="passkey-brief-text">
+                  Cihaz verisi silinirse <strong>/recover</strong> ekranı ile kimliğini geri yükleyebilirsin.
+                </p>
+              </section>
+            )}
 
+            <div className="status-cta-row status-cta-row-compact">
               <button type="button" className="btn btn-ghost" onClick={() => setIsHelpOpen(true)}>
                 Nasıl çalışır?
               </button>

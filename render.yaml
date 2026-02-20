@@ -39,7 +39,7 @@ services:
       - key: CORS_ALLOW_ORIGINS
         sync: false
       - key: PASSKEY_MODE
-        value: "off"
+        value: "optional"
       - key: WEBAUTHN_RP_ID
         sync: false
       - key: WEBAUTHN_RP_NAME
