@@ -716,6 +716,147 @@ textarea:focus {
   gap: 12px;
 }
 
+.employee-shell {
+  padding-inline: clamp(10px, 1.8vw, 22px);
+  padding-bottom: 94px;
+}
+
+.employee-layout {
+  width: 100%;
+  max-width: 1320px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.promo-rail {
+  display: none;
+  border: 1px solid rgba(120, 177, 205, 0.42);
+  border-radius: 16px;
+  padding: 12px;
+  position: sticky;
+  top: 14px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(145, 217, 252, 0.28), transparent 52%),
+    linear-gradient(168deg, rgba(246, 253, 255, 0.98), rgba(232, 246, 253, 0.94));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    0 18px 24px -24px rgba(8, 39, 56, 0.78);
+  gap: 0.6rem;
+}
+
+.promo-rail::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.48);
+}
+
+.promo-rail-left {
+  background:
+    radial-gradient(circle at -12% -2%, rgba(113, 220, 244, 0.24), transparent 50%),
+    linear-gradient(162deg, rgba(241, 251, 255, 0.99), rgba(229, 242, 250, 0.95));
+}
+
+.promo-rail-right {
+  background:
+    radial-gradient(circle at 100% 112%, rgba(112, 198, 224, 0.26), transparent 56%),
+    linear-gradient(162deg, rgba(241, 251, 255, 0.99), rgba(229, 242, 250, 0.95));
+}
+
+.promo-rail-kicker {
+  margin: 0;
+  font-size: 0.64rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  color: #1a5f81;
+}
+
+.promo-rail-title {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.2;
+  color: #11364a;
+}
+
+.promo-rail-text {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: #30596f;
+}
+
+.promo-rail-list {
+  margin: 0;
+  padding-left: 1rem;
+  display: grid;
+  gap: 0.26rem;
+  font-size: 0.75rem;
+  color: #2c566c;
+}
+
+.promo-rail-badges {
+  display: grid;
+  gap: 0.42rem;
+}
+
+.promo-rail-badge {
+  display: inline-flex;
+  width: fit-content;
+  border-radius: 999px;
+  padding: 0.2rem 0.58rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  border: 1px solid rgba(30, 101, 135, 0.16);
+}
+
+.promo-rail-btn {
+  width: 100%;
+  min-height: 2.5rem;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.promo-rail-note {
+  margin: 0;
+  font-size: 0.7rem;
+  line-height: 1.34;
+  color: #386174;
+}
+
+.promo-mobile-dock {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 30;
+  border: 1px solid rgba(96, 168, 202, 0.5);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 8% 0, rgba(148, 223, 255, 0.2), transparent 45%),
+    linear-gradient(160deg, rgba(246, 253, 255, 0.97), rgba(229, 245, 254, 0.96));
+  box-shadow: 0 16px 30px -24px rgba(7, 35, 49, 0.92);
+  padding: 10px 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.promo-mobile-text {
+  margin: 0;
+  font-size: 0.76rem;
+  color: #2b5267;
+  line-height: 1.36;
+}
+
+.promo-mobile-btn {
+  width: 100%;
+  min-height: 2.35rem;
+}
+
 .employee-command-surface,
 .employee-action-surface {
   border: 1px solid rgba(133, 172, 193, 0.3);
@@ -1534,9 +1675,35 @@ textarea:focus {
   }
 }
 
+@media (min-width: 1200px) {
+  .employee-shell {
+    padding-bottom: 18px;
+  }
+
+  .employee-layout {
+    grid-template-columns: minmax(220px, 250px) minmax(0, 860px) minmax(220px, 250px);
+    gap: 14px;
+    justify-content: center;
+  }
+
+  .promo-rail {
+    display: grid;
+  }
+
+  .promo-mobile-dock {
+    display: none;
+  }
+}
+
 @media (max-width: 979px) {
   .employee-action-surface {
     order: -1;
+  }
+}
+
+@media (max-width: 1199px) {
+  .promo-mobile-dock {
+    display: grid;
   }
 }
 
@@ -1555,6 +1722,17 @@ textarea:focus {
 
   .ios-install-dock {
     grid-template-columns: 1fr;
+  }
+
+  .promo-mobile-dock {
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    padding: 9px 10px;
+  }
+
+  .promo-mobile-text {
+    font-size: 0.72rem;
   }
 }
 

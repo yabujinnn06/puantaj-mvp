@@ -44,6 +44,17 @@ function writeDeviceFingerprintCookie(value: string): void {
   document.cookie = `${DEVICE_FINGERPRINT_KEY}=${encodeURIComponent(value)};path=/;max-age=${DEVICE_FINGERPRINT_COOKIE_MAX_AGE_SECONDS};samesite=lax${secure}`
 }
 
+function clearDeviceFingerprintCookie(): void {
+  if (typeof document === 'undefined') {
+    return
+  }
+  const secure =
+    typeof window !== 'undefined' && window.location.protocol === 'https:'
+      ? ';secure'
+      : ''
+  document.cookie = `${DEVICE_FINGERPRINT_KEY}=;path=/;max-age=0;samesite=lax${secure}`
+}
+
 function fallbackUuidV4(): string {
   const tpl = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'
   return tpl.replace(/[xy]/g, (char) => {
@@ -93,6 +104,13 @@ export function getOrCreateDeviceFingerprint(): string {
 export function setStoredDeviceFingerprint(value: string): void {
   localStorage.setItem(DEVICE_FINGERPRINT_KEY, value)
   writeDeviceFingerprintCookie(value)
+}
+
+export function clearStoredDeviceFingerprint(): void {
+  localStorage.removeItem(DEVICE_FINGERPRINT_KEY)
+  localStorage.removeItem(LEGACY_DEVICE_FINGERPRINT_KEY)
+  localStorage.removeItem(DEVICE_BINDING_KEY)
+  clearDeviceFingerprintCookie()
 }
 
 export function getDeviceBinding(): DeviceBinding | null {

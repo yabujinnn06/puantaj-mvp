@@ -92,7 +92,11 @@ def _resolve_active_device(db: Session, device_fingerprint: str) -> Device:
         )
     )
     if device is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Active device not found")
+        raise ApiError(
+            status_code=404,
+            code="DEVICE_NOT_CLAIMED",
+            message="Device must be claimed first.",
+        )
 
     employee = device.employee
     if employee is None:
