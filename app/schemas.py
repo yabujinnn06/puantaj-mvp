@@ -242,7 +242,7 @@ class EmployeeDeviceOverviewRead(BaseModel):
 class DeviceInviteCreateRequest(BaseModel):
     employee_id: int | None = Field(default=None, ge=1)
     employee_name: str | None = Field(default=None, min_length=2, max_length=255)
-    expires_in_minutes: int = Field(ge=1)
+    expires_in_minutes: int = Field(ge=1, le=60 * 24)
 
     @model_validator(mode="after")
     def _validate_target(self) -> "DeviceInviteCreateRequest":
@@ -800,7 +800,7 @@ class AdminDevicePushSubscriptionRead(BaseModel):
 
 
 class AdminDeviceInviteCreateRequest(BaseModel):
-    expires_in_minutes: int = Field(default=60, ge=1, le=60 * 24 * 30)
+    expires_in_minutes: int = Field(default=60, ge=1, le=60 * 24)
 
 
 class AdminDeviceInviteCreateResponse(BaseModel):

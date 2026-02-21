@@ -322,6 +322,11 @@ class DeviceInvite(Base):
     token: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     is_used: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=5, server_default=text("5"))
+    bound_ip: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    bound_user_agent_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -921,6 +926,11 @@ class AdminDeviceInvite(Base):
     token: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     is_used: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=5, server_default=text("5"))
+    bound_ip: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    bound_user_agent_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_by_admin_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("admin_users.id", ondelete="SET NULL"),
         nullable=True,

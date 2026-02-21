@@ -1,5 +1,6 @@
 import secrets
 from datetime import date, datetime, time, timedelta, timezone
+import hashlib
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
@@ -200,6 +201,13 @@ def _client_ip(request: Request) -> str | None:
 
 def _user_agent(request: Request) -> str | None:
     return request.headers.get("user-agent")
+
+
+def _user_agent_hash(request: Request) -> str | None:
+    value = (_user_agent(request) or "").strip()
+    if not value:
+        return None
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def _normalize_query_text(value: str | None) -> str:
@@ -1737,12 +1745,21 @@ def create_device_invite(
         raise HTTPException(status_code=409, detail="Inactive employee cannot receive invites")
 
     now_utc = datetime.now(timezone.utc)
+    max_ttl_minutes = max(1, int(settings.device_invite_max_ttl_minutes or 1))
+    if payload.expires_in_minutes > max_ttl_minutes:
+        raise ApiError(
+            status_code=422,
+            code="INVITE_TTL_TOO_LONG",
+            message=f"Invite ttl cannot exceed {max_ttl_minutes} minutes.",
+        )
+    max_attempts = max(1, int(settings.device_invite_max_attempts or 1))
     token = secrets.token_urlsafe(32)
     invite = DeviceInvite(
         employee_id=employee.id,
         token=token,
         expires_at=now_utc + timedelta(minutes=payload.expires_in_minutes),
         is_used=False,
+        max_attempts=max_attempts,
     )
     db.add(invite)
     try:
@@ -1766,6 +1783,8 @@ def create_device_invite(
             "employee_id": employee.id,
             "employee_name": employee.full_name,
             "selected_by": selected_by,
+            "expires_in_minutes": payload.expires_in_minutes,
+            "max_attempts": max_attempts,
         },
         request_id=getattr(request.state, "request_id", None),
     )
@@ -4184,6 +4203,14 @@ def create_admin_device_invite(
     now_utc = datetime.now(timezone.utc)
     actor_id = str(claims.get("username") or claims.get("sub") or settings.admin_user)
     admin_user_id = claims.get("admin_user_id") if isinstance(claims.get("admin_user_id"), int) else None
+    max_ttl_minutes = max(1, int(settings.admin_device_invite_max_ttl_minutes or 1))
+    if payload.expires_in_minutes > max_ttl_minutes:
+        raise ApiError(
+            status_code=422,
+            code="INVITE_TTL_TOO_LONG",
+            message=f"Invite ttl cannot exceed {max_ttl_minutes} minutes.",
+        )
+    max_attempts = max(1, int(settings.admin_device_invite_max_attempts or 1))
 
     token = secrets.token_urlsafe(32)
     expires_at = now_utc + timedelta(minutes=payload.expires_in_minutes)
@@ -4192,6 +4219,7 @@ def create_admin_device_invite(
         token=token,
         expires_at=expires_at,
         is_used=False,
+        max_attempts=max_attempts,
         created_by_admin_user_id=admin_user_id,
         created_by_username=actor_id,
     )
@@ -4213,6 +4241,7 @@ def create_admin_device_invite(
         details={
             "expires_at": expires_at.isoformat(),
             "expires_in_minutes": payload.expires_in_minutes,
+            "max_attempts": max_attempts,
         },
         request_id=getattr(request.state, "request_id", None),
     )
@@ -4236,6 +4265,9 @@ def claim_admin_device_push(
     now_utc = datetime.now(timezone.utc)
     actor_id = str(claims.get("username") or claims.get("sub") or settings.admin_user)
     admin_user_id = claims.get("admin_user_id") if isinstance(claims.get("admin_user_id"), int) else None
+    client_ip = _client_ip(request)
+    user_agent = _user_agent(request)
+    user_agent_hash = _user_agent_hash(request)
     request.state.actor = "admin"
     request.state.actor_id = actor_id
 
@@ -4246,13 +4278,62 @@ def claim_admin_device_push(
         raise ApiError(status_code=409, code="INVITE_ALREADY_USED", message="Admin device invite already used.")
     if invite.expires_at < now_utc:
         raise ApiError(status_code=410, code="INVITE_EXPIRED", message="Admin device invite expired.")
+    max_attempts = max(1, int(invite.max_attempts or 0))
+    if int(invite.attempt_count or 0) >= max_attempts:
+        raise ApiError(
+            status_code=429,
+            code="INVITE_ATTEMPTS_EXCEEDED",
+            message="Admin invite attempt limit exceeded. Create a new invite link.",
+        )
+    if invite.bound_ip is None and client_ip:
+        invite.bound_ip = client_ip
+    if invite.bound_user_agent_hash is None and user_agent_hash:
+        invite.bound_user_agent_hash = user_agent_hash
+    ip_mismatch = bool(invite.bound_ip and client_ip and invite.bound_ip != client_ip)
+    ua_mismatch = bool(
+        invite.bound_user_agent_hash
+        and user_agent_hash
+        and invite.bound_user_agent_hash != user_agent_hash
+    )
+    if ip_mismatch or ua_mismatch:
+        invite.attempt_count = int(invite.attempt_count or 0) + 1
+        invite.last_attempt_at = now_utc
+        db.commit()
+        log_audit(
+            db,
+            actor_type=AuditActorType.ADMIN,
+            actor_id=actor_id,
+            action="ADMIN_DEVICE_CLAIM_BLOCKED",
+            success=False,
+            entity_type="admin_device_invite",
+            entity_id=str(invite.id),
+            ip=client_ip,
+            user_agent=user_agent,
+            details={
+                "reason": "INVITE_CONTEXT_MISMATCH",
+                "ip_mismatch": ip_mismatch,
+                "ua_mismatch": ua_mismatch,
+                "attempt_count": invite.attempt_count,
+                "max_attempts": max_attempts,
+            },
+            request_id=getattr(request.state, "request_id", None),
+        )
+        raise ApiError(
+            status_code=403,
+            code="INVITE_CONTEXT_MISMATCH",
+            message="Invite link must be used from the same device/browser context.",
+        )
+    invite.attempt_count = int(invite.attempt_count or 0) + 1
+    invite.last_attempt_at = now_utc
+    db.commit()
+    db.refresh(invite)
 
     subscription = upsert_admin_push_subscription(
         db,
         admin_user_id=admin_user_id,
         admin_username=actor_id,
         subscription=payload.subscription,
-        user_agent=_user_agent(request),
+        user_agent=user_agent,
     )
 
     invite.is_used = True
@@ -4269,12 +4350,14 @@ def claim_admin_device_push(
         success=True,
         entity_type="admin_push_subscription",
         entity_id=str(subscription.id),
-        ip=_client_ip(request),
-        user_agent=_user_agent(request),
+        ip=client_ip,
+        user_agent=user_agent,
         details={
             "invite_id": invite.id,
             "admin_user_id": admin_user_id,
             "admin_username": actor_id,
+            "invite_attempt_count": invite.attempt_count,
+            "invite_max_attempts": max_attempts,
         },
         request_id=getattr(request.state, "request_id", None),
     )

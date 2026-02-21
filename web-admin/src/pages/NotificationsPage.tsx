@@ -422,7 +422,7 @@ export function NotificationsPage() {
             <input
               type="number"
               min={1}
-              max={43200}
+              max={1440}
               value={expiresIn}
               onChange={(e) => setExpiresIn(Number(e.target.value || 60))}
               className="mt-1 w-40 rounded border border-slate-300 px-3 py-2"

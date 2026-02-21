@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import hashlib
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
@@ -84,6 +85,13 @@ def _client_ip(request: Request) -> str | None:
 
 def _user_agent(request: Request) -> str | None:
     return request.headers.get("user-agent")
+
+
+def _user_agent_hash(request: Request) -> str | None:
+    value = (_user_agent(request) or "").strip()
+    if not value:
+        return None
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def _is_secure_request(request: Request) -> bool:
@@ -354,6 +362,9 @@ def claim_device(
     db: Session = Depends(get_db),
 ) -> DeviceClaimResponse:
     request.state.actor = "employee"
+    client_ip = _client_ip(request)
+    user_agent = _user_agent(request)
+    user_agent_hash = _user_agent_hash(request)
     invite = db.scalar(select(DeviceInvite).where(DeviceInvite.token == payload.token))
     if invite is None:
         raise HTTPException(status_code=404, detail="Invite token not found")
@@ -364,6 +375,55 @@ def claim_device(
     now_utc = datetime.now(timezone.utc)
     if invite.expires_at < now_utc:
         raise HTTPException(status_code=400, detail="Invite token expired")
+    max_attempts = max(1, int(invite.max_attempts or 0))
+    if int(invite.attempt_count or 0) >= max_attempts:
+        raise ApiError(
+            status_code=429,
+            code="INVITE_ATTEMPTS_EXCEEDED",
+            message="Invite attempt limit exceeded. Create a new invite link.",
+        )
+    if invite.bound_ip is None and client_ip:
+        invite.bound_ip = client_ip
+    if invite.bound_user_agent_hash is None and user_agent_hash:
+        invite.bound_user_agent_hash = user_agent_hash
+    ip_mismatch = bool(invite.bound_ip and client_ip and invite.bound_ip != client_ip)
+    ua_mismatch = bool(
+        invite.bound_user_agent_hash
+        and user_agent_hash
+        and invite.bound_user_agent_hash != user_agent_hash
+    )
+    if ip_mismatch or ua_mismatch:
+        invite.attempt_count = int(invite.attempt_count or 0) + 1
+        invite.last_attempt_at = now_utc
+        db.commit()
+        log_audit(
+            db,
+            actor_type=AuditActorType.SYSTEM,
+            actor_id=str(invite.employee_id),
+            action="DEVICE_CLAIM_BLOCKED",
+            success=False,
+            entity_type="device_invite",
+            entity_id=str(invite.id),
+            ip=client_ip,
+            user_agent=user_agent,
+            details={
+                "reason": "INVITE_CONTEXT_MISMATCH",
+                "ip_mismatch": ip_mismatch,
+                "ua_mismatch": ua_mismatch,
+                "attempt_count": invite.attempt_count,
+                "max_attempts": max_attempts,
+            },
+            request_id=getattr(request.state, "request_id", None),
+        )
+        raise ApiError(
+            status_code=403,
+            code="INVITE_CONTEXT_MISMATCH",
+            message="Invite link must be used from the same device/browser context.",
+        )
+    invite.attempt_count = int(invite.attempt_count or 0) + 1
+    invite.last_attempt_at = now_utc
+    db.commit()
+    db.refresh(invite)
 
     invite_employee = invite.employee
     if invite_employee is None:
@@ -441,13 +501,15 @@ def claim_device(
         success=True,
         entity_type="device",
         entity_id=str(device.id),
-        ip=_client_ip(request),
-        user_agent=_user_agent(request),
+        ip=client_ip,
+        user_agent=user_agent,
         details={
             "device_fingerprint": payload.device_fingerprint,
             "deactivated_device_ids": deactivated_device_ids,
             "transferred_from_employee_id": transferred_from_employee_id,
             "archived_device_id": archived_device_id,
+            "invite_attempt_count": invite.attempt_count,
+            "invite_max_attempts": max_attempts,
         },
         request_id=getattr(request.state, "request_id", None),
     )

@@ -21,7 +21,7 @@ import { Panel } from '../components/Panel'
 
 const inviteSchema = z.object({
   employee_id: z.coerce.number().int().positive(),
-  expires_in_minutes: z.coerce.number().int().positive().max(43200),
+  expires_in_minutes: z.coerce.number().int().positive().max(1440),
 })
 
 function dt(value: string | null | undefined): string {

@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     recovery_code_count: int = 8
     recovery_code_expiry_days: int = 365
     recovery_admin_vault_key: str | None = None
+    device_invite_max_attempts: int = 5
+    admin_device_invite_max_attempts: int = 5
+    device_invite_max_ttl_minutes: int = 60 * 24
+    admin_device_invite_max_ttl_minutes: int = 60 * 24
 
     model_config = SettingsConfigDict(
         env_file=".env",
