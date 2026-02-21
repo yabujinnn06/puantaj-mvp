@@ -1,7 +1,18 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import QRCode from 'qrcode'
 
-import { createAdminUser, deleteAdminUser, getAdminUsers, updateAdminUser } from '../api/admin'
+import {
+  confirmAdminUserMfaSetup,
+  createAdminUser,
+  deleteAdminUser,
+  getAdminUserMfaStatus,
+  getAdminUsers,
+  regenerateAdminUserMfaRecoveryCodes,
+  resetAdminUserMfa,
+  startAdminUserMfaSetup,
+  updateAdminUser,
+} from '../api/admin'
 import { parseApiError } from '../api/error'
 import { ErrorBlock } from '../components/ErrorBlock'
 import { LoadingBlock } from '../components/LoadingBlock'
@@ -10,7 +21,7 @@ import { PageHeader } from '../components/PageHeader'
 import { Panel } from '../components/Panel'
 import { useAuth } from '../hooks/useAuth'
 import { useToast } from '../hooks/useToast'
-import type { AdminPermissions, AdminUser } from '../types/api'
+import type { AdminPermissions, AdminUser, AdminUserMfaSetupStartResponse } from '../types/api'
 
 type PermissionKey =
   | 'regions'
@@ -161,7 +172,7 @@ function buildCreateFormState(): CreateFormState {
 export function AdminUsersPage() {
   const queryClient = useQueryClient()
   const { pushToast } = useToast()
-  const { hasPermission, isSuperAdmin } = useAuth()
+  const { hasPermission, isSuperAdmin, user: authUser } = useAuth()
   const canRead = hasPermission('admin_users')
   const canWrite = hasPermission('admin_users', 'write')
 
@@ -173,11 +184,24 @@ export function AdminUsersPage() {
   const [editIsActive, setEditIsActive] = useState(true)
   const [editIsSuperAdmin, setEditIsSuperAdmin] = useState(false)
   const [editPermissions, setEditPermissions] = useState<AdminPermissions>(buildEmptyPermissions())
+  const [mfaUser, setMfaUser] = useState<AdminUser | null>(null)
+  const [mfaSetupDraft, setMfaSetupDraft] = useState<AdminUserMfaSetupStartResponse | null>(null)
+  const [mfaSetupCode, setMfaSetupCode] = useState('')
+  const [criticalActionPassword, setCriticalActionPassword] = useState('')
+  const [mfaQrDataUrl, setMfaQrDataUrl] = useState<string | null>(null)
+  const [latestRecoveryCodes, setLatestRecoveryCodes] = useState<string[]>([])
+  const [latestRecoveryExpiresAt, setLatestRecoveryExpiresAt] = useState<string | null>(null)
 
   const usersQuery = useQuery({
     queryKey: ['admin-users'],
     queryFn: getAdminUsers,
     enabled: canRead,
+  })
+
+  const mfaStatusQuery = useQuery({
+    queryKey: ['admin-user-mfa-status', mfaUser?.id],
+    queryFn: () => getAdminUserMfaStatus(mfaUser!.id),
+    enabled: Boolean(mfaUser),
   })
 
   const createMutation = useMutation({
@@ -244,10 +268,135 @@ export function AdminUsersPage() {
     },
   })
 
+  const startMfaSetupMutation = useMutation({
+    mutationFn: (adminUserId: number) => startAdminUserMfaSetup(adminUserId),
+    onSuccess: (payload) => {
+      setMfaSetupDraft(payload)
+      setMfaSetupCode('')
+      setLatestRecoveryCodes([])
+      setLatestRecoveryExpiresAt(null)
+      void mfaStatusQuery.refetch()
+      pushToast({
+        variant: 'success',
+        title: 'MFA kurulumu baslatildi',
+        description: 'QR kodu taratip 6 haneli kodu onaylayin.',
+      })
+    },
+    onError: (error) => {
+      const parsed = parseApiError(error, 'MFA kurulumu baslatilamadi.')
+      pushToast({
+        variant: 'error',
+        title: 'MFA kurulum hatasi',
+        description: parsed.message,
+      })
+    },
+  })
+
+  const confirmMfaSetupMutation = useMutation({
+    mutationFn: ({ adminUserId, code }: { adminUserId: number; code: string }) =>
+      confirmAdminUserMfaSetup(adminUserId, { code }),
+    onSuccess: (payload) => {
+      setLatestRecoveryCodes(payload.recovery_codes)
+      setLatestRecoveryExpiresAt(payload.recovery_code_expires_at)
+      setMfaSetupDraft(null)
+      setMfaSetupCode('')
+      void queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+      void mfaStatusQuery.refetch()
+      pushToast({
+        variant: 'success',
+        title: 'MFA aktif edildi',
+        description: 'Recovery kodlari olusturuldu.',
+      })
+    },
+    onError: (error) => {
+      const parsed = parseApiError(error, 'MFA kodu dogrulanamadi.')
+      pushToast({
+        variant: 'error',
+        title: 'MFA onay hatasi',
+        description: parsed.message,
+      })
+    },
+  })
+
+  const regenerateMfaCodesMutation = useMutation({
+    mutationFn: ({ adminUserId, currentPassword }: { adminUserId: number; currentPassword: string }) =>
+      regenerateAdminUserMfaRecoveryCodes(adminUserId, { current_password: currentPassword }),
+    onSuccess: (payload) => {
+      setLatestRecoveryCodes(payload.recovery_codes)
+      setLatestRecoveryExpiresAt(payload.recovery_code_expires_at)
+      setCriticalActionPassword('')
+      void mfaStatusQuery.refetch()
+      pushToast({
+        variant: 'success',
+        title: 'Recovery kodlari yenilendi',
+        description: 'Eski kodlar pasif edildi.',
+      })
+    },
+    onError: (error) => {
+      const parsed = parseApiError(error, 'Recovery kodlari yenilenemedi.')
+      pushToast({
+        variant: 'error',
+        title: 'Yenileme hatasi',
+        description: parsed.message,
+      })
+    },
+  })
+
+  const resetMfaMutation = useMutation({
+    mutationFn: ({ adminUserId, currentPassword }: { adminUserId: number; currentPassword: string }) =>
+      resetAdminUserMfa(adminUserId, { current_password: currentPassword }),
+    onSuccess: () => {
+      setMfaSetupDraft(null)
+      setMfaSetupCode('')
+      setMfaQrDataUrl(null)
+      setLatestRecoveryCodes([])
+      setLatestRecoveryExpiresAt(null)
+      setCriticalActionPassword('')
+      void queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+      void mfaStatusQuery.refetch()
+      pushToast({
+        variant: 'success',
+        title: 'MFA sifirlandi',
+        description: 'Kullanici tekrar MFA kurabilir.',
+      })
+    },
+    onError: (error) => {
+      const parsed = parseApiError(error, 'MFA sifirlanamadi.')
+      pushToast({
+        variant: 'error',
+        title: 'Sifirlama hatasi',
+        description: parsed.message,
+      })
+    },
+  })
+
+  useEffect(() => {
+    if (!mfaSetupDraft?.otpauth_uri) {
+      setMfaQrDataUrl(null)
+      return
+    }
+    let cancelled = false
+    void QRCode.toDataURL(mfaSetupDraft.otpauth_uri, { margin: 1, width: 220 })
+      .then((dataUrl) => {
+        if (!cancelled) {
+          setMfaQrDataUrl(dataUrl)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setMfaQrDataUrl(null)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [mfaSetupDraft])
+
   const sortedUsers = useMemo(() => {
     const rows = usersQuery.data ?? []
     return [...rows].sort((left, right) => left.username.localeCompare(right.username))
   }, [usersQuery.data])
+  const mfaStatus = mfaStatusQuery.data
 
   if (!canRead) {
     return <ErrorBlock message="Bu alani goruntuleme yetkiniz yok." />
@@ -302,6 +451,26 @@ export function AdminUsersPage() {
     setEditPermissions(normalizePermissions(user.permissions))
   }
 
+  const openMfaModal = (user: AdminUser) => {
+    setMfaUser(user)
+    setMfaSetupDraft(null)
+    setMfaSetupCode('')
+    setCriticalActionPassword('')
+    setMfaQrDataUrl(null)
+    setLatestRecoveryCodes([])
+    setLatestRecoveryExpiresAt(null)
+  }
+
+  const closeMfaModal = () => {
+    setMfaUser(null)
+    setMfaSetupDraft(null)
+    setMfaSetupCode('')
+    setCriticalActionPassword('')
+    setMfaQrDataUrl(null)
+    setLatestRecoveryCodes([])
+    setLatestRecoveryExpiresAt(null)
+  }
+
   const submitUpdate = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!editingUser || !canWrite) {
@@ -325,6 +494,17 @@ export function AdminUsersPage() {
         is_super_admin: editIsSuperAdmin,
         permissions: editIsSuperAdmin ? buildEmptyPermissions() : editPermissions,
       },
+    })
+  }
+
+  const submitConfirmMfa = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!mfaUser || !mfaSetupCode.trim()) {
+      return
+    }
+    confirmMfaSetupMutation.mutate({
+      adminUserId: mfaUser.id,
+      code: mfaSetupCode.trim(),
     })
   }
 
@@ -435,6 +615,7 @@ export function AdminUsersPage() {
                 <th className="py-2">Ad Soyad</th>
                 <th className="py-2">Durum</th>
                 <th className="py-2">Rol</th>
+                <th className="py-2">MFA</th>
                 <th className="py-2">Islem</th>
               </tr>
             </thead>
@@ -457,7 +638,28 @@ export function AdminUsersPage() {
                   </td>
                   <td className="py-2">{user.is_super_admin ? 'Super Admin' : 'Yetkili Admin'}</td>
                   <td className="py-2">
+                    <span
+                      className={`rounded-full px-2 py-1 text-xs font-semibold ${
+                        user.mfa_enabled
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : user.mfa_secret_configured
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-slate-100 text-slate-700'
+                      }`}
+                    >
+                      {user.mfa_enabled ? 'Aktif' : user.mfa_secret_configured ? 'Kurulum Bekliyor' : 'Kapali'}
+                    </span>
+                  </td>
+                  <td className="py-2">
                     <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={!(isSuperAdmin || (authUser?.admin_user_id ?? 0) === user.id)}
+                        onClick={() => openMfaModal(user)}
+                        className="rounded-lg border border-brand-200 px-3 py-1 text-xs font-medium text-brand-700 hover:bg-brand-50 disabled:opacity-50"
+                      >
+                        MFA
+                      </button>
                       <button
                         type="button"
                         disabled={!canWrite || !isSuperAdmin}
@@ -590,6 +792,151 @@ export function AdminUsersPage() {
               </button>
             </div>
           </form>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={Boolean(mfaUser)}
+        title={mfaUser ? `MFA Yonetimi: ${mfaUser.username}` : 'MFA Yonetimi'}
+        onClose={closeMfaModal}
+      >
+        {mfaUser ? (
+          <div className="space-y-4">
+            {mfaStatusQuery.isLoading ? (
+              <p className="text-sm text-slate-500">MFA durumu yukleniyor...</p>
+            ) : null}
+            {mfaStatus ? (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
+                <p>
+                  Durum:{' '}
+                  <strong>{mfaStatus.mfa_enabled ? 'MFA aktif' : mfaStatus.has_secret ? 'Kurulum bekliyor' : 'Kapali'}</strong>
+                </p>
+                <p>Aktif recovery kodu: {mfaStatus.recovery_code_active_count}</p>
+                <p>
+                  Son guncelleme:{' '}
+                  {mfaStatus.updated_at ? new Date(mfaStatus.updated_at).toLocaleString('tr-TR') : '-'}
+                </p>
+                <p>
+                  Kod son gecerlilik:{' '}
+                  {mfaStatus.recovery_code_expires_at
+                    ? new Date(mfaStatus.recovery_code_expires_at).toLocaleDateString('tr-TR')
+                    : '-'}
+                </p>
+              </div>
+            ) : null}
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={startMfaSetupMutation.isPending}
+                onClick={() => startMfaSetupMutation.mutate(mfaUser.id)}
+                className="rounded-lg border border-brand-300 px-3 py-2 text-xs font-semibold text-brand-700 hover:bg-brand-50 disabled:opacity-60"
+              >
+                {startMfaSetupMutation.isPending ? 'Baslatiliyor...' : 'Kurulumu Baslat / Yenile'}
+              </button>
+            </div>
+
+            {mfaSetupDraft ? (
+              <form onSubmit={submitConfirmMfa} className="space-y-3 rounded-lg border border-brand-100 bg-brand-50/40 px-3 py-3">
+                <p className="text-sm font-medium text-brand-900">1) Authenticator ile QR kodu tarat</p>
+                {mfaQrDataUrl ? (
+                  <img src={mfaQrDataUrl} alt="MFA QR" className="h-44 w-44 rounded-lg border border-brand-200 bg-white p-2" />
+                ) : (
+                  <p className="text-xs text-slate-600">QR olusturulamadi. Asagidaki anahtari manuel girin.</p>
+                )}
+                <p className="text-xs text-slate-700">Secret: <code>{mfaSetupDraft.secret_key}</code></p>
+                <p className="text-xs text-slate-600 break-all">{mfaSetupDraft.otpauth_uri}</p>
+                <label className="block text-sm text-slate-700">
+                  2) Uretilen 6 haneli kod
+                  <input
+                    value={mfaSetupCode}
+                    onChange={(event) => setMfaSetupCode(event.target.value)}
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                    placeholder="123456"
+                  />
+                </label>
+                <button
+                  type="submit"
+                  disabled={confirmMfaSetupMutation.isPending || !mfaSetupCode.trim()}
+                  className="rounded-lg bg-brand-600 px-3 py-2 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
+                >
+                  {confirmMfaSetupMutation.isPending ? 'Onaylaniyor...' : 'MFA Kurulumunu Onayla'}
+                </button>
+              </form>
+            ) : null}
+
+            <div className="space-y-2 rounded-lg border border-slate-200 px-3 py-3">
+              <p className="text-sm font-medium text-slate-800">Kritik Islemler (Sizin sifreniz gerekli)</p>
+              <label className="block text-sm text-slate-700">
+                Mevcut sifreniz
+                <input
+                  type="password"
+                  value={criticalActionPassword}
+                  onChange={(event) => setCriticalActionPassword(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                  placeholder="Sizin admin sifreniz"
+                />
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={
+                    regenerateMfaCodesMutation.isPending ||
+                    !criticalActionPassword.trim() ||
+                    !Boolean(mfaStatus?.mfa_enabled)
+                  }
+                  onClick={() => {
+                    if (!criticalActionPassword.trim()) {
+                      return
+                    }
+                    regenerateMfaCodesMutation.mutate({
+                      adminUserId: mfaUser.id,
+                      currentPassword: criticalActionPassword,
+                    })
+                  }}
+                  className="rounded-lg border border-emerald-300 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-60"
+                >
+                  {regenerateMfaCodesMutation.isPending ? 'Yenileniyor...' : 'Recovery Kodlarini Yenile'}
+                </button>
+                <button
+                  type="button"
+                  disabled={resetMfaMutation.isPending || !criticalActionPassword.trim()}
+                  onClick={() => {
+                    const confirmed = window.confirm(`${mfaUser.username} icin MFA sifirlansin mi?`)
+                    if (!confirmed || !criticalActionPassword.trim()) {
+                      return
+                    }
+                    resetMfaMutation.mutate({
+                      adminUserId: mfaUser.id,
+                      currentPassword: criticalActionPassword,
+                    })
+                  }}
+                  className="rounded-lg border border-rose-300 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+                >
+                  {resetMfaMutation.isPending ? 'Sifirlaniyor...' : 'MFA Sifirla'}
+                </button>
+              </div>
+            </div>
+
+            {latestRecoveryCodes.length > 0 ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+                <p className="font-semibold">Recovery kodlari (tek seferlik gosterim)</p>
+                <p className="mt-1 text-xs">
+                  Gecerlilik:{' '}
+                  {latestRecoveryExpiresAt ? new Date(latestRecoveryExpiresAt).toLocaleDateString('tr-TR') : '-'}
+                </p>
+                <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                  {latestRecoveryCodes.map((code) => (
+                    <code key={code} className="rounded bg-white px-2 py-1 text-slate-900">
+                      {code}
+                    </code>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
         ) : null}
       </Modal>
     </div>

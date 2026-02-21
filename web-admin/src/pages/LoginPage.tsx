@@ -10,6 +10,7 @@ const loginSchema = z.object({
   username: z.string().min(1, 'Kullanici adi gerekli.'),
   password: z.string().min(1, 'Sifre gerekli.'),
   mfaCode: z.string().optional(),
+  mfaRecoveryCode: z.string().optional(),
 })
 
 function getErrorTitle(error: ParsedApiError): string {
@@ -23,6 +24,10 @@ function getErrorTitle(error: ParsedApiError): string {
 
   if (error.code === 'INVALID_MFA_CODE') {
     return 'MFA kodu gecersiz'
+  }
+
+  if (error.code === 'MFA_SETUP_REQUIRED') {
+    return 'MFA kurulumu gerekli'
   }
 
   if (error.code === 'TOO_MANY_ATTEMPTS') {
@@ -44,6 +49,7 @@ export function LoginPage() {
   const [username, setUsername] = useState('admin')
   const [password, setPassword] = useState('')
   const [mfaCode, setMfaCode] = useState('')
+  const [mfaRecoveryCode, setMfaRecoveryCode] = useState('')
   const [error, setError] = useState<ParsedApiError | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -57,7 +63,7 @@ export function LoginPage() {
     event.preventDefault()
     setError(null)
 
-    const parsed = loginSchema.safeParse({ username, password, mfaCode })
+    const parsed = loginSchema.safeParse({ username, password, mfaCode, mfaRecoveryCode })
     if (!parsed.success) {
       setError({ message: parsed.error.issues[0]?.message ?? 'Form alanlarini kontrol et.' })
       return
@@ -65,7 +71,12 @@ export function LoginPage() {
 
     setIsSubmitting(true)
     try {
-      await login(parsed.data.username, parsed.data.password, parsed.data.mfaCode)
+      await login(
+        parsed.data.username,
+        parsed.data.password,
+        parsed.data.mfaCode,
+        parsed.data.mfaRecoveryCode,
+      )
       navigate(target, { replace: true })
     } catch (submitError) {
       setError(parseApiError(submitError, 'Giris basarisiz.'))
@@ -109,6 +120,18 @@ export function LoginPage() {
               value={mfaCode}
               onChange={(event) => setMfaCode(event.target.value)}
               placeholder="6 haneli kod"
+            />
+          </label>
+
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium text-slate-700">
+              Recovery Kodu (MFA yoksa)
+            </span>
+            <input
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-brand-200 focus:border-brand-500 focus:ring"
+              value={mfaRecoveryCode}
+              onChange={(event) => setMfaRecoveryCode(event.target.value)}
+              placeholder="Ornek: ABCDE-FGHIJ"
             />
           </label>
 

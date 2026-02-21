@@ -9,7 +9,12 @@ interface AuthContextValue {
   isAuthenticated: boolean
   isBootstrapping: boolean
   isSuperAdmin: boolean
-  login: (username: string, password: string, mfaCode?: string) => Promise<void>
+  login: (
+    username: string,
+    password: string,
+    mfaCode?: string,
+    mfaRecoveryCode?: string,
+  ) => Promise<void>
   logout: () => Promise<void>
   refreshSession: () => Promise<boolean>
   hasPermission: (permission: string, mode?: 'read' | 'write') => boolean
@@ -84,8 +89,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const login = useCallback(async (username: string, password: string, mfaCode?: string) => {
-    const auth = await loginAdmin({ username, password, mfa_code: mfaCode?.trim() || undefined })
+  const login = useCallback(async (username: string, password: string, mfaCode?: string, mfaRecoveryCode?: string) => {
+    const auth = await loginAdmin({
+      username,
+      password,
+      mfa_code: mfaCode?.trim() || undefined,
+      mfa_recovery_code: mfaRecoveryCode?.trim() || undefined,
+    })
     setAuthTokens(auth.access_token, auth.refresh_token)
     const profile = await getAdminMe()
     setUser(profile)

@@ -16,6 +16,9 @@ const codeMessageMap: Record<string, string> = {
   INTERNAL_ERROR: 'Sunucu hatasi olustu. Lutfen tekrar deneyin.',
   MFA_REQUIRED: 'MFA kodu zorunlu. Authenticator kodunu girin.',
   INVALID_MFA_CODE: 'MFA kodu gecersiz. Tekrar deneyin.',
+  MFA_SETUP_REQUIRED: 'Bu hesap icin MFA kurulumu tamamlanmamis.',
+  MFA_SETUP_NOT_STARTED: 'Once MFA kurulumunu baslatin.',
+  MFA_NOT_ENABLED: 'Bu hesapta MFA aktif degil.',
   ARCHIVE_DECRYPT_FAILED: 'Arsiv dosyasi acilamadi. Sunucu anahtarini kontrol edin.',
 }
 

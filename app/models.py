@@ -834,6 +834,14 @@ class AdminUser(Base):
         default=dict,
         server_default=text("'{}'::jsonb"),
     )
+    mfa_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
+    mfa_secret_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mfa_secret_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -848,6 +856,10 @@ class AdminUser(Base):
 
     refresh_tokens: Mapped[list[AdminRefreshToken]] = relationship(back_populates="admin_user")
     push_subscriptions: Mapped[list[AdminPushSubscription]] = relationship(back_populates="admin_user")
+    mfa_recovery_codes: Mapped[list[AdminMfaRecoveryCode]] = relationship(
+        back_populates="admin_user",
+        cascade="all, delete-orphan",
+    )
     created_device_invites: Mapped[list[AdminDeviceInvite]] = relationship(
         back_populates="created_by_admin_user",
         foreign_keys="AdminDeviceInvite.created_by_admin_user_id",
@@ -856,6 +868,33 @@ class AdminUser(Base):
         back_populates="used_by_admin_user",
         foreign_keys="AdminDeviceInvite.used_by_admin_user_id",
     )
+
+
+class AdminMfaRecoveryCode(Base):
+    __tablename__ = "admin_mfa_recovery_codes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    admin_user_id: Mapped[int] = mapped_column(
+        ForeignKey("admin_users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    code_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    admin_user: Mapped[AdminUser] = relationship(back_populates="mfa_recovery_codes")
 
 
 class AdminRefreshToken(Base):

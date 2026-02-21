@@ -351,6 +351,7 @@ class AdminLoginRequest(BaseModel):
     username: str
     password: str
     mfa_code: str | None = Field(default=None, max_length=10)
+    mfa_recovery_code: str | None = Field(default=None, max_length=64)
 
 
 class AdminRefreshRequest(BaseModel):
@@ -401,11 +402,53 @@ class AdminUserRead(BaseModel):
     full_name: str | None
     is_active: bool
     is_super_admin: bool
+    mfa_enabled: bool = False
+    mfa_secret_configured: bool = False
     permissions: dict[str, AdminPermissionValue] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AdminUserMfaStatusResponse(BaseModel):
+    admin_user_id: int
+    username: str
+    mfa_enabled: bool
+    has_secret: bool
+    recovery_code_active_count: int
+    recovery_code_total_count: int
+    recovery_code_expires_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class AdminUserMfaSetupStartResponse(BaseModel):
+    admin_user_id: int
+    username: str
+    issuer: str
+    secret_key: str
+    otpauth_uri: str
+
+
+class AdminUserMfaSetupConfirmRequest(BaseModel):
+    code: str = Field(min_length=6, max_length=10)
+
+
+class AdminUserMfaSetupConfirmResponse(BaseModel):
+    ok: bool
+    mfa_enabled: bool
+    recovery_codes: list[str] = Field(default_factory=list)
+    recovery_code_expires_at: datetime
+
+
+class AdminUserMfaRecoveryRegenerateRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+
+
+class AdminUserMfaRecoveryRegenerateResponse(BaseModel):
+    ok: bool
+    recovery_codes: list[str] = Field(default_factory=list)
+    recovery_code_expires_at: datetime
 
 
 class AdminMeResponse(BaseModel):

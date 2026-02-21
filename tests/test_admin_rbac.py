@@ -10,6 +10,7 @@ from app.db import get_db
 from app.main import app
 from app.models import AdminUser, Employee
 from app.security import hash_password, require_admin, verify_password
+from app.services.admin_mfa import _hotp, _normalize_totp_secret
 
 
 def _override_get_db(fake_db):
@@ -135,6 +136,48 @@ class AdminRbacTests(unittest.TestCase):
         payload = response.json()
         self.assertIn("access_token", payload)
         self.assertEqual(payload.get("token_type"), "bearer")
+
+    def test_login_requires_and_accepts_per_user_mfa_code(self) -> None:
+        secret_key = "JBSWY3DPEHPK3PXP"
+        secret_bytes = _normalize_totp_secret(secret_key)
+        self.assertIsNotNone(secret_bytes)
+        now_utc = datetime.now(timezone.utc)
+        counter = int(now_utc.timestamp()) // 30
+        valid_code = _hotp(secret_bytes, counter, digits=6)  # type: ignore[arg-type]
+
+        admin_user = AdminUser(
+            id=11,
+            username="ik_mfa_user",
+            password_hash=hash_password("StrongPass123!"),
+            full_name="IK MFA",
+            is_active=True,
+            is_super_admin=False,
+            permissions={"reports": {"read": True, "write": False}},
+            mfa_enabled=True,
+            mfa_secret_enc=secret_key,
+        )
+        fake_db = _FakeLoginDB(admin_user)
+        app.dependency_overrides[get_db] = _override_get_db(fake_db)
+        client = TestClient(app)
+
+        missing_mfa_response = client.post(
+            "/api/admin/auth/login",
+            json={"username": "ik_mfa_user", "password": "StrongPass123!"},
+        )
+        self.assertEqual(missing_mfa_response.status_code, 401)
+        self.assertEqual(missing_mfa_response.json()["error"]["code"], "MFA_REQUIRED")
+
+        success_response = client.post(
+            "/api/admin/auth/login",
+            json={
+                "username": "ik_mfa_user",
+                "password": "StrongPass123!",
+                "mfa_code": valid_code,
+            },
+        )
+        self.assertEqual(success_response.status_code, 200)
+        payload = success_response.json()
+        self.assertIn("access_token", payload)
 
     def test_write_permission_required_for_employee_status_update(self) -> None:
         employee = Employee(id=7, full_name="ReadOnly", department_id=None, is_active=True)

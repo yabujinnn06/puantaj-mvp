@@ -14,6 +14,10 @@ import type {
   AdminPermissions,
   AdminPushSubscription,
   AdminUser,
+  AdminUserMfaRecoveryRegenerateResponse,
+  AdminUserMfaSetupConfirmResponse,
+  AdminUserMfaSetupStartResponse,
+  AdminUserMfaStatus,
   AuditLog,
   AttendanceEvent,
   AttendanceType,
@@ -56,6 +60,7 @@ export interface LoginPayload {
   username: string
   password: string
   mfa_code?: string
+  mfa_recovery_code?: string
 }
 
 export interface RefreshPayload {
@@ -82,6 +87,14 @@ export interface AdminUserUpdatePayload {
   is_active?: boolean
   is_super_admin?: boolean
   permissions?: AdminPermissions
+}
+
+export interface AdminUserMfaConfirmPayload {
+  code: string
+}
+
+export interface AdminUserMfaCriticalActionPayload {
+  current_password: string
 }
 
 export interface CreateDepartmentPayload {
@@ -490,6 +503,48 @@ export async function updateAdminUser(
 
 export async function deleteAdminUser(adminUserId: number): Promise<void> {
   await apiClient.delete(`/api/admin/admin-users/${adminUserId}`)
+}
+
+export async function getAdminUserMfaStatus(adminUserId: number): Promise<AdminUserMfaStatus> {
+  const response = await apiClient.get<AdminUserMfaStatus>(`/api/admin/admin-users/${adminUserId}/mfa`)
+  return response.data
+}
+
+export async function startAdminUserMfaSetup(adminUserId: number): Promise<AdminUserMfaSetupStartResponse> {
+  const response = await apiClient.post<AdminUserMfaSetupStartResponse>(
+    `/api/admin/admin-users/${adminUserId}/mfa/setup/start`,
+  )
+  return response.data
+}
+
+export async function confirmAdminUserMfaSetup(
+  adminUserId: number,
+  payload: AdminUserMfaConfirmPayload,
+): Promise<AdminUserMfaSetupConfirmResponse> {
+  const response = await apiClient.post<AdminUserMfaSetupConfirmResponse>(
+    `/api/admin/admin-users/${adminUserId}/mfa/setup/confirm`,
+    payload,
+  )
+  return response.data
+}
+
+export async function regenerateAdminUserMfaRecoveryCodes(
+  adminUserId: number,
+  payload: AdminUserMfaCriticalActionPayload,
+): Promise<AdminUserMfaRecoveryRegenerateResponse> {
+  const response = await apiClient.post<AdminUserMfaRecoveryRegenerateResponse>(
+    `/api/admin/admin-users/${adminUserId}/mfa/recovery-codes/regenerate`,
+    payload,
+  )
+  return response.data
+}
+
+export async function resetAdminUserMfa(
+  adminUserId: number,
+  payload: AdminUserMfaCriticalActionPayload,
+): Promise<{ ok: boolean }> {
+  const response = await apiClient.post<{ ok: boolean }>(`/api/admin/admin-users/${adminUserId}/mfa/reset`, payload)
+  return response.data
 }
 
 export async function getDepartments(): Promise<Department[]> {

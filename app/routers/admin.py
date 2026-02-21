@@ -56,6 +56,12 @@ from app.schemas import (
     AdminMeResponse,
     AdminRefreshRequest,
     AdminUserCreateRequest,
+    AdminUserMfaRecoveryRegenerateRequest,
+    AdminUserMfaRecoveryRegenerateResponse,
+    AdminUserMfaSetupConfirmRequest,
+    AdminUserMfaSetupConfirmResponse,
+    AdminUserMfaSetupStartResponse,
+    AdminUserMfaStatusResponse,
     AdminUserRead,
     AdminUserUpdateRequest,
     AdminDevicePushSubscriptionRead,
@@ -166,7 +172,17 @@ from app.services.push_notifications import (
     send_push_to_employees,
     upsert_admin_push_subscription,
 )
-from app.services.admin_mfa import is_admin_mfa_enabled, verify_admin_totp_code
+from app.services.admin_mfa import (
+    consume_admin_user_recovery_code,
+    get_admin_user_mfa_status,
+    is_admin_mfa_enabled,
+    is_admin_user_mfa_enabled,
+    issue_admin_user_recovery_codes,
+    reset_admin_user_mfa,
+    start_admin_user_mfa_setup,
+    verify_admin_totp_code,
+    verify_admin_user_totp_code,
+)
 from app.services.recovery_codes import get_admin_recovery_snapshot
 from app.services.schedule_plans import plan_applies_to_employee
 from app.services.notifications import decrypt_archive_file_data
@@ -357,6 +373,8 @@ def _to_admin_user_read(admin_user: AdminUser) -> AdminUserRead:
         full_name=admin_user.full_name,
         is_active=admin_user.is_active,
         is_super_admin=admin_user.is_super_admin,
+        mfa_enabled=bool(admin_user.mfa_enabled),
+        mfa_secret_configured=bool((admin_user.mfa_secret_enc or "").strip()),
         permissions=normalize_permissions(admin_user.permissions),
         created_at=admin_user.created_at,
         updated_at=admin_user.updated_at,
@@ -417,6 +435,19 @@ def _assert_super_admin(claims: dict[str, Any]) -> None:
             code="FORBIDDEN",
             message="Super admin permission is required.",
         )
+
+
+def _assert_can_manage_admin_mfa(claims: dict[str, Any], *, target_admin_user_id: int) -> None:
+    if _is_super_admin(claims):
+        return
+    actor_admin_user_id = _as_positive_int(claims.get("admin_user_id"))
+    if actor_admin_user_id is not None and actor_admin_user_id == target_admin_user_id:
+        return
+    raise ApiError(
+        status_code=403,
+        code="FORBIDDEN",
+        message="Insufficient permissions.",
+    )
 
 
 def _verify_current_admin_password(
@@ -552,13 +583,20 @@ def admin_login(
             raise
 
     identity: dict[str, Any] | None = None
+    matched_admin_user: AdminUser | None = None
+    is_env_admin = False
 
     if verify_admin_credentials(username, payload.password):
         identity = _build_env_admin_identity(username)
+        is_env_admin = True
     else:
-        admin_user = db.scalar(select(AdminUser).where(AdminUser.username == username))
-        if admin_user is not None and admin_user.is_active and verify_password(payload.password, admin_user.password_hash):
-            identity = _build_admin_user_identity(admin_user)
+        matched_admin_user = db.scalar(select(AdminUser).where(AdminUser.username == username))
+        if (
+            matched_admin_user is not None
+            and matched_admin_user.is_active
+            and verify_password(payload.password, matched_admin_user.password_hash)
+        ):
+            identity = _build_admin_user_identity(matched_admin_user)
 
     if identity is None:
         if ip:
@@ -580,8 +618,75 @@ def admin_login(
             message="Invalid credentials.",
         )
 
-    if is_admin_mfa_enabled():
-        raw_mfa_code = (payload.mfa_code or "").strip()
+    raw_mfa_code = (payload.mfa_code or "").strip()
+    raw_recovery_code = (payload.mfa_recovery_code or "").strip()
+
+    if matched_admin_user is not None and is_admin_user_mfa_enabled(matched_admin_user):
+        if not raw_mfa_code and not raw_recovery_code:
+            if ip:
+                register_login_failure(ip)
+            log_audit(
+                db,
+                actor_type=AuditActorType.SYSTEM,
+                actor_id=username,
+                action="ADMIN_LOGIN_FAIL",
+                success=False,
+                ip=ip,
+                user_agent=user_agent,
+                details={"reason": "MFA_REQUIRED"},
+                request_id=request_id,
+            )
+            raise ApiError(
+                status_code=401,
+                code="MFA_REQUIRED",
+                message="MFA code or recovery code is required.",
+            )
+
+        mfa_ok = False
+        used_recovery = False
+        if raw_mfa_code:
+            mfa_ok = verify_admin_user_totp_code(matched_admin_user, raw_mfa_code)
+        if not mfa_ok and raw_recovery_code:
+            mfa_ok = consume_admin_user_recovery_code(
+                db,
+                admin_user=matched_admin_user,
+                recovery_code=raw_recovery_code,
+            )
+            used_recovery = mfa_ok
+        if not mfa_ok:
+            if ip:
+                register_login_failure(ip)
+            log_audit(
+                db,
+                actor_type=AuditActorType.SYSTEM,
+                actor_id=username,
+                action="ADMIN_LOGIN_FAIL",
+                success=False,
+                ip=ip,
+                user_agent=user_agent,
+                details={"reason": "INVALID_MFA_CODE"},
+                request_id=request_id,
+            )
+            raise ApiError(
+                status_code=401,
+                code="INVALID_MFA_CODE",
+                message="MFA code is invalid.",
+            )
+
+        if used_recovery:
+            log_audit(
+                db,
+                actor_type=AuditActorType.SYSTEM,
+                actor_id=username,
+                action="ADMIN_MFA_RECOVERY_CODE_USED",
+                success=True,
+                ip=ip,
+                user_agent=user_agent,
+                details={"admin_user_id": matched_admin_user.id},
+                request_id=request_id,
+            )
+
+    elif is_env_admin and is_admin_mfa_enabled():
         if not raw_mfa_code:
             if ip:
                 register_login_failure(ip)
@@ -668,7 +773,8 @@ def admin_login(
         details={
             "access_jti": access_claims["jti"],
             "refresh_jti": refresh_claims["jti"] if refresh_claims else None,
-            "mfa_enabled": is_admin_mfa_enabled(),
+            "mfa_legacy_enabled": is_admin_mfa_enabled(),
+            "mfa_user_enabled": bool(matched_admin_user and is_admin_user_mfa_enabled(matched_admin_user)),
         },
         request_id=request_id,
     )
@@ -1025,6 +1131,223 @@ def delete_admin_user(
         details={"username": deleted_username},
         request_id=getattr(request.state, "request_id", None),
     )
+
+
+@router.get(
+    "/api/admin/admin-users/{admin_user_id}/mfa",
+    response_model=AdminUserMfaStatusResponse,
+)
+def get_admin_user_mfa(
+    admin_user_id: int,
+    claims: dict[str, Any] = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> AdminUserMfaStatusResponse:
+    _assert_can_manage_admin_mfa(claims, target_admin_user_id=admin_user_id)
+    admin_user = db.get(AdminUser, admin_user_id)
+    if admin_user is None:
+        raise HTTPException(status_code=404, detail="Admin user not found")
+    if admin_user.username == settings.admin_user:
+        raise HTTPException(status_code=409, detail="Reserved admin MFA is env-managed")
+    return AdminUserMfaStatusResponse(**get_admin_user_mfa_status(db, admin_user=admin_user))
+
+
+@router.post(
+    "/api/admin/admin-users/{admin_user_id}/mfa/setup/start",
+    response_model=AdminUserMfaSetupStartResponse,
+)
+def start_admin_user_mfa(
+    admin_user_id: int,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> AdminUserMfaSetupStartResponse:
+    _assert_can_manage_admin_mfa(claims, target_admin_user_id=admin_user_id)
+    admin_user = db.get(AdminUser, admin_user_id)
+    if admin_user is None:
+        raise HTTPException(status_code=404, detail="Admin user not found")
+    if admin_user.username == settings.admin_user:
+        raise HTTPException(status_code=409, detail="Reserved admin MFA is env-managed")
+    if not admin_user.is_active:
+        raise HTTPException(status_code=409, detail="Inactive admin user cannot setup MFA")
+
+    setup_payload = start_admin_user_mfa_setup(db, admin_user=admin_user)
+    db.commit()
+    db.refresh(admin_user)
+
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=str(claims.get("username") or claims.get("sub") or "admin"),
+        action="ADMIN_USER_MFA_SETUP_STARTED",
+        success=True,
+        entity_type="admin_user",
+        entity_id=str(admin_user.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "username": admin_user.username,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return AdminUserMfaSetupStartResponse(
+        admin_user_id=admin_user.id,
+        username=admin_user.username,
+        issuer=setup_payload["issuer"],
+        secret_key=setup_payload["secret_key"],
+        otpauth_uri=setup_payload["otpauth_uri"],
+    )
+
+
+@router.post(
+    "/api/admin/admin-users/{admin_user_id}/mfa/setup/confirm",
+    response_model=AdminUserMfaSetupConfirmResponse,
+)
+def confirm_admin_user_mfa(
+    admin_user_id: int,
+    payload: AdminUserMfaSetupConfirmRequest,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> AdminUserMfaSetupConfirmResponse:
+    _assert_can_manage_admin_mfa(claims, target_admin_user_id=admin_user_id)
+    admin_user = db.get(AdminUser, admin_user_id)
+    if admin_user is None:
+        raise HTTPException(status_code=404, detail="Admin user not found")
+    if admin_user.username == settings.admin_user:
+        raise HTTPException(status_code=409, detail="Reserved admin MFA is env-managed")
+    if not (admin_user.mfa_secret_enc or "").strip():
+        raise ApiError(
+            status_code=409,
+            code="MFA_SETUP_NOT_STARTED",
+            message="MFA setup is not started.",
+        )
+    if not verify_admin_user_totp_code(admin_user, payload.code):
+        raise ApiError(
+            status_code=401,
+            code="INVALID_MFA_CODE",
+            message="MFA code is invalid.",
+        )
+
+    admin_user.mfa_enabled = True
+    recovery_codes, recovery_expires_at = issue_admin_user_recovery_codes(db, admin_user=admin_user)
+    db.commit()
+    db.refresh(admin_user)
+
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=str(claims.get("username") or claims.get("sub") or "admin"),
+        action="ADMIN_USER_MFA_ENABLED",
+        success=True,
+        entity_type="admin_user",
+        entity_id=str(admin_user.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "username": admin_user.username,
+            "recovery_code_count": len(recovery_codes),
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return AdminUserMfaSetupConfirmResponse(
+        ok=True,
+        mfa_enabled=True,
+        recovery_codes=recovery_codes,
+        recovery_code_expires_at=recovery_expires_at,
+    )
+
+
+@router.post(
+    "/api/admin/admin-users/{admin_user_id}/mfa/recovery-codes/regenerate",
+    response_model=AdminUserMfaRecoveryRegenerateResponse,
+)
+def regenerate_admin_user_mfa_recovery_codes(
+    admin_user_id: int,
+    payload: AdminUserMfaRecoveryRegenerateRequest,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> AdminUserMfaRecoveryRegenerateResponse:
+    _assert_can_manage_admin_mfa(claims, target_admin_user_id=admin_user_id)
+    _verify_current_admin_password(db, claims=claims, password=payload.current_password)
+    admin_user = db.get(AdminUser, admin_user_id)
+    if admin_user is None:
+        raise HTTPException(status_code=404, detail="Admin user not found")
+    if admin_user.username == settings.admin_user:
+        raise HTTPException(status_code=409, detail="Reserved admin MFA is env-managed")
+    if not is_admin_user_mfa_enabled(admin_user):
+        raise ApiError(
+            status_code=409,
+            code="MFA_NOT_ENABLED",
+            message="MFA is not enabled for this user.",
+        )
+
+    recovery_codes, recovery_expires_at = issue_admin_user_recovery_codes(db, admin_user=admin_user)
+    db.commit()
+    db.refresh(admin_user)
+
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=str(claims.get("username") or claims.get("sub") or "admin"),
+        action="ADMIN_USER_MFA_RECOVERY_REGENERATED",
+        success=True,
+        entity_type="admin_user",
+        entity_id=str(admin_user.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "username": admin_user.username,
+            "recovery_code_count": len(recovery_codes),
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return AdminUserMfaRecoveryRegenerateResponse(
+        ok=True,
+        recovery_codes=recovery_codes,
+        recovery_code_expires_at=recovery_expires_at,
+    )
+
+
+@router.post(
+    "/api/admin/admin-users/{admin_user_id}/mfa/reset",
+    response_model=SoftDeleteResponse,
+)
+def reset_admin_user_mfa_endpoint(
+    admin_user_id: int,
+    payload: AdminUserMfaRecoveryRegenerateRequest,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> SoftDeleteResponse:
+    _assert_can_manage_admin_mfa(claims, target_admin_user_id=admin_user_id)
+    _verify_current_admin_password(db, claims=claims, password=payload.current_password)
+    admin_user = db.get(AdminUser, admin_user_id)
+    if admin_user is None:
+        raise HTTPException(status_code=404, detail="Admin user not found")
+    if admin_user.username == settings.admin_user:
+        raise HTTPException(status_code=409, detail="Reserved admin MFA is env-managed")
+
+    reset_admin_user_mfa(db, admin_user=admin_user)
+    db.commit()
+    db.refresh(admin_user)
+
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=str(claims.get("username") or claims.get("sub") or "admin"),
+        action="ADMIN_USER_MFA_RESET",
+        success=True,
+        entity_type="admin_user",
+        entity_id=str(admin_user.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "username": admin_user.username,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return SoftDeleteResponse(ok=True)
 
 
 @router.post(

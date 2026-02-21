@@ -574,9 +574,43 @@ export interface AdminUser {
   full_name: string | null
   is_active: boolean
   is_super_admin: boolean
+  mfa_enabled: boolean
+  mfa_secret_configured: boolean
   permissions: AdminPermissions
   created_at: string
   updated_at: string
+}
+
+export interface AdminUserMfaStatus {
+  admin_user_id: number
+  username: string
+  mfa_enabled: boolean
+  has_secret: boolean
+  recovery_code_active_count: number
+  recovery_code_total_count: number
+  recovery_code_expires_at: string | null
+  updated_at: string | null
+}
+
+export interface AdminUserMfaSetupStartResponse {
+  admin_user_id: number
+  username: string
+  issuer: string
+  secret_key: string
+  otpauth_uri: string
+}
+
+export interface AdminUserMfaSetupConfirmResponse {
+  ok: boolean
+  mfa_enabled: boolean
+  recovery_codes: string[]
+  recovery_code_expires_at: string
+}
+
+export interface AdminUserMfaRecoveryRegenerateResponse {
+  ok: boolean
+  recovery_codes: string[]
+  recovery_code_expires_at: string
 }
 
 export interface AdminMeResponse {
