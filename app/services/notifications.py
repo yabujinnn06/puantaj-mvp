@@ -69,7 +69,7 @@ class NotificationMessage:
 class NotificationChannel:
     configured: bool = False
 
-    def send(self, message: NotificationMessage) -> None:
+    def send(self, message: NotificationMessage) -> dict[str, Any]:
         raise NotImplementedError
 
 
@@ -83,7 +83,7 @@ class EmailChannel(NotificationChannel):
         self.smtp_use_tls = (os.getenv("SMTP_USE_TLS") or "true").strip().lower() not in {"0", "false", "no"}
         self.configured = bool(self.smtp_host and self.smtp_from)
 
-    def send(self, message: NotificationMessage) -> None:
+    def send(self, message: NotificationMessage) -> dict[str, Any]:
         recipients = [item.strip() for item in message.recipients if item and item.strip()]
         if not recipients:
             logger.info(
@@ -92,7 +92,11 @@ class EmailChannel(NotificationChannel):
                     "subject": message.subject,
                 },
             )
-            return
+            return {
+                "mode": "skipped_no_recipients",
+                "sent": 0,
+                "recipients": [],
+            }
 
         if not self.configured:
             logger.info(
@@ -103,7 +107,11 @@ class EmailChannel(NotificationChannel):
                     "body": message.body,
                 },
             )
-            return
+            return {
+                "mode": "not_configured",
+                "sent": 0,
+                "recipients": recipients,
+            }
 
         email_message = EmailMessage()
         email_message["From"] = self.smtp_from
@@ -117,6 +125,26 @@ class EmailChannel(NotificationChannel):
             if self.smtp_user:
                 smtp_client.login(self.smtp_user, self.smtp_pass)
             smtp_client.send_message(email_message)
+        return {
+            "mode": "sent",
+            "sent": len(recipients),
+            "recipients": recipients,
+        }
+
+    def config_status(self) -> dict[str, Any]:
+        missing_fields: list[str] = []
+        if not self.smtp_host:
+            missing_fields.append("SMTP_HOST")
+        if not self.smtp_from:
+            missing_fields.append("SMTP_FROM")
+        return {
+            "configured": self.configured,
+            "smtp_host_set": bool(self.smtp_host),
+            "smtp_from_set": bool(self.smtp_from),
+            "smtp_user_set": bool(self.smtp_user),
+            "smtp_use_tls": bool(self.smtp_use_tls),
+            "missing_fields": missing_fields,
+        }
 
 
 def _parse_shift_id_from_flags(flags: dict[str, Any] | None) -> int | None:
@@ -687,10 +715,19 @@ def _send_push_for_job(
     return {"total_targets": 0, "sent": 0, "failed": 0, "deactivated": 0, "failures": []}
 
 
-def _mark_job_sent(session: Session, *, job_id: int) -> NotificationJob | None:
+def _mark_job_sent(
+    session: Session,
+    *,
+    job_id: int,
+    delivery_details: dict[str, Any] | None = None,
+) -> NotificationJob | None:
     job = session.get(NotificationJob, job_id)
     if job is None:
         return None
+    if delivery_details:
+        payload = job.payload if isinstance(job.payload, dict) else {}
+        payload["delivery"] = delivery_details
+        job.payload = payload
     job.status = "SENT"
     job.last_error = None
     session.commit()
@@ -938,6 +975,116 @@ def _ensure_daily_report_notification_job(
     return None, "unchanged"
 
 
+def _as_int(value: Any, default: int = 0) -> int:
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        raw = value.strip()
+        if raw.isdigit():
+            return int(raw)
+    return default
+
+
+def get_notification_channel_health() -> dict[str, Any]:
+    email_channel = EmailChannel()
+    settings = get_settings()
+    push_enabled = bool(
+        (settings.push_vapid_public_key or "").strip()
+        and (settings.push_vapid_private_key or "").strip()
+    )
+    return {
+        "push_enabled": push_enabled,
+        "email": email_channel.config_status(),
+    }
+
+
+def get_daily_report_job_health(
+    now_utc: datetime | None = None,
+    db: Session | None = None,
+) -> dict[str, Any]:
+    if db is None:
+        with SessionLocal() as managed_db:
+            return get_daily_report_job_health(now_utc=now_utc, db=managed_db)
+
+    session = db
+    reference_utc = _normalize_ts(now_utc or datetime.now(timezone.utc))
+    local_now = reference_utc.astimezone(_attendance_timezone())
+    report_date = local_now.date() - timedelta(days=1)
+    idempotency_key = f"{JOB_TYPE_ADMIN_DAILY_REPORT_READY}:{report_date.isoformat()}"
+    try:
+        job = session.scalar(
+            select(NotificationJob).where(NotificationJob.idempotency_key == idempotency_key)
+        )
+    except Exception as exc:
+        return {
+            "report_date": report_date.isoformat(),
+            "idempotency_key": idempotency_key,
+            "job_exists": False,
+            "status": None,
+            "scheduled_at_utc": None,
+            "attempts": 0,
+            "last_error": str(exc)[:500],
+            "push_total_targets": 0,
+            "push_sent": 0,
+            "push_failed": 0,
+            "email_sent": 0,
+            "alarms": ["DAILY_REPORT_HEALTH_QUERY_FAILED"],
+        }
+
+    alarms: list[str] = []
+    if job is None:
+        if local_now.time() >= time(0, 15):
+            alarms.append("DAILY_REPORT_JOB_MISSING")
+        return {
+            "report_date": report_date.isoformat(),
+            "idempotency_key": idempotency_key,
+            "job_exists": False,
+            "status": None,
+            "scheduled_at_utc": None,
+            "attempts": 0,
+            "last_error": None,
+            "push_total_targets": 0,
+            "push_sent": 0,
+            "push_failed": 0,
+            "email_sent": 0,
+            "alarms": alarms,
+        }
+
+    payload = job.payload if isinstance(job.payload, dict) else {}
+    delivery = payload.get("delivery") if isinstance(payload.get("delivery"), dict) else {}
+    push_total_targets = _as_int(delivery.get("push_total_targets"), 0)
+    push_sent = _as_int(delivery.get("push_sent"), 0)
+    push_failed = _as_int(delivery.get("push_failed"), 0)
+    email_sent = _as_int(delivery.get("email_sent"), 0)
+
+    if job.status == "FAILED":
+        alarms.append("DAILY_REPORT_JOB_FAILED")
+    if local_now.time() >= time(0, 30) and job.status in {"PENDING", "SENDING"}:
+        alarms.append("DAILY_REPORT_JOB_STUCK")
+    if job.status == "SENT" and push_sent <= 0 and email_sent <= 0:
+        alarms.append("DAILY_REPORT_DELIVERY_EMPTY")
+    if push_total_targets <= 0 and email_sent <= 0 and local_now.time() >= time(0, 30):
+        alarms.append("DAILY_REPORT_TARGET_ZERO")
+
+    return {
+        "report_date": report_date.isoformat(),
+        "idempotency_key": idempotency_key,
+        "job_exists": True,
+        "job_id": job.id,
+        "status": job.status,
+        "scheduled_at_utc": job.scheduled_at_utc.isoformat() if job.scheduled_at_utc else None,
+        "attempts": int(job.attempts or 0),
+        "last_error": job.last_error,
+        "push_total_targets": push_total_targets,
+        "push_sent": push_sent,
+        "push_failed": push_failed,
+        "email_sent": email_sent,
+        "alarms": alarms,
+    }
+
+
 def schedule_daily_admin_report_archive_notifications(
     now_utc: datetime,
     db: Session | None = None,
@@ -1100,9 +1247,40 @@ def send_pending_notifications(
             if current_job is None:
                 continue
             message = _build_message_for_job(session, current_job)
-            email_channel.send(message)
             push_summary = _send_push_for_job(session, job=current_job, message=message)
-            sent_job = _mark_job_sent(session, job_id=current_job.id)
+            push_total_targets = int(push_summary.get("total_targets", 0))
+            push_sent = int(push_summary.get("sent", 0))
+            push_failed = int(push_summary.get("failed", 0))
+            push_deactivated = int(push_summary.get("deactivated", 0))
+
+            email_result: dict[str, Any] = {
+                "mode": "not_attempted",
+                "sent": 0,
+                "recipients": [],
+            }
+            if push_sent <= 0:
+                email_result = email_channel.send(message)
+
+            email_sent = _as_int(email_result.get("sent"), 0)
+            delivery_ok = push_sent > 0 or email_sent > 0
+            if not delivery_ok:
+                raise RuntimeError(
+                    "Notification delivery failed on all channels "
+                    f"(push_targets={push_total_targets}, push_sent={push_sent}, email_mode={email_result.get('mode')})"
+                )
+
+            sent_job = _mark_job_sent(
+                session,
+                job_id=current_job.id,
+                delivery_details={
+                    "push_total_targets": push_total_targets,
+                    "push_sent": push_sent,
+                    "push_failed": push_failed,
+                    "push_deactivated": push_deactivated,
+                    "email_mode": str(email_result.get("mode") or "unknown"),
+                    "email_sent": email_sent,
+                },
+            )
             if sent_job is not None:
                 processed.append(sent_job)
                 log_audit(
@@ -1118,8 +1296,12 @@ def send_pending_notifications(
                         "employee_id": sent_job.employee_id,
                         "attempts": sent_job.attempts,
                         "idempotency_key": sent_job.idempotency_key,
-                        "push_sent": push_summary.get("sent"),
-                        "push_failed": push_summary.get("failed"),
+                        "push_total_targets": push_total_targets,
+                        "push_sent": push_sent,
+                        "push_failed": push_failed,
+                        "push_deactivated": push_deactivated,
+                        "email_mode": email_result.get("mode"),
+                        "email_sent": email_sent,
                     },
                 )
         except Exception as exc:

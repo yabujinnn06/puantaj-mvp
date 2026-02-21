@@ -19,6 +19,8 @@ from app.logging_utils import setup_json_logging
 from app.routers import admin, attendance
 from app.settings import get_cors_origins, get_settings
 from app.services.notifications import (
+    get_daily_report_job_health,
+    get_notification_channel_health,
     schedule_daily_admin_report_archive_notifications,
     schedule_missed_checkout_notifications,
     send_pending_notifications,
@@ -182,25 +184,52 @@ def _default_schema_guard_result() -> SchemaGuardResult:
 
 async def _notification_worker_loop(stop_event: asyncio.Event) -> None:
     interval_seconds = max(15, int(settings.notification_worker_interval_seconds))
+    last_daily_alarm_signature: str | None = None
     while not stop_event.is_set():
         created_jobs_count = 0
         processed_jobs_count = 0
+        daily_report_health: dict[str, Any] | None = None
         try:
             now_utc = datetime.now(timezone.utc)
             created_jobs = await asyncio.to_thread(schedule_missed_checkout_notifications, now_utc)
             daily_jobs = await asyncio.to_thread(schedule_daily_admin_report_archive_notifications, now_utc)
             processed_jobs = await asyncio.to_thread(send_pending_notifications, 100, now_utc=now_utc)
+            daily_report_health = await asyncio.to_thread(get_daily_report_job_health, now_utc)
             created_jobs_count = len(created_jobs) + len(daily_jobs)
             processed_jobs_count = len(processed_jobs)
         except Exception:
             notification_worker_logger.exception("notification_worker_tick_failed")
         else:
+            alarms = (
+                daily_report_health.get("alarms", [])
+                if isinstance(daily_report_health, dict)
+                else []
+            )
+            alarm_signature = (
+                "|".join(str(item) for item in alarms)
+                if isinstance(alarms, list) and alarms
+                else None
+            )
+            if alarm_signature is not None and alarm_signature != last_daily_alarm_signature:
+                notification_worker_logger.error(
+                    "notification_daily_report_alarm",
+                    extra=daily_report_health if isinstance(daily_report_health, dict) else {},
+                )
+                last_daily_alarm_signature = alarm_signature
+            elif alarm_signature is None and last_daily_alarm_signature is not None:
+                notification_worker_logger.info(
+                    "notification_daily_report_alarm_cleared",
+                    extra=daily_report_health if isinstance(daily_report_health, dict) else {},
+                )
+                last_daily_alarm_signature = None
+
             if created_jobs_count or processed_jobs_count:
                 notification_worker_logger.info(
                     "notification_worker_tick",
                     extra={
                         "created_jobs": created_jobs_count,
                         "processed_jobs": processed_jobs_count,
+                        "daily_report_health": daily_report_health or {},
                     },
                 )
 
@@ -241,9 +270,20 @@ async def start_notification_worker() -> None:
     task = asyncio.create_task(_notification_worker_loop(stop_event))
     app.state.notification_worker_stop_event = stop_event
     app.state.notification_worker_task = task
+    notification_channel_health = await asyncio.to_thread(get_notification_channel_health)
+    email_status = notification_channel_health.get("email", {}) if isinstance(notification_channel_health, dict) else {}
+    missing_fields = email_status.get("missing_fields", []) if isinstance(email_status, dict) else []
+    if isinstance(missing_fields, list) and missing_fields:
+        notification_worker_logger.warning(
+            "notification_email_channel_not_configured",
+            extra={"missing_fields": missing_fields},
+        )
     notification_worker_logger.info(
         "notification_worker_started",
-        extra={"interval_seconds": max(15, int(settings.notification_worker_interval_seconds))},
+        extra={
+            "interval_seconds": max(15, int(settings.notification_worker_interval_seconds)),
+            "channel_health": notification_channel_health,
+        },
     )
 
 
@@ -264,10 +304,14 @@ async def stop_notification_worker() -> None:
 @app.get("/health")
 def health() -> dict[str, Any]:
     schema_guard_result: SchemaGuardResult = getattr(app.state, "schema_guard_result", _default_schema_guard_result())
+    notification_channel_health = get_notification_channel_health()
+    daily_report_job_health = get_daily_report_job_health()
     return {
         "status": "ok",
         "ui_build_version": read_ui_build_version(),
         "schema_guard": schema_guard_result.to_dict(),
+        "notification_channels": notification_channel_health,
+        "daily_report_job_health": daily_report_job_health,
     }
 
 

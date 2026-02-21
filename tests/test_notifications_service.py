@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import date, datetime, time, timezone
+import os
 from unittest.mock import patch
 
 from app.models import (
@@ -18,6 +19,8 @@ from app.services.notifications import (
     JOB_TYPE_ADMIN_ESCALATION_MISSED_CHECKOUT,
     _ensure_daily_report_notification_job,
     _build_message_for_job,
+    get_daily_report_job_health,
+    get_notification_channel_health,
     get_employees_with_open_shift,
 )
 
@@ -58,6 +61,14 @@ class _FakeDailyReportJobSession:
 
     def add(self, job):  # type: ignore[no-untyped-def]
         self.added.append(job)
+
+
+class _FakeDailyReportHealthSession:
+    def __init__(self, *, job: NotificationJob | None):
+        self._job = job
+
+    def scalar(self, _statement):  # type: ignore[no-untyped-def]
+        return self._job
 
 
 class NotificationServiceTests(unittest.TestCase):
@@ -284,6 +295,58 @@ class NotificationServiceTests(unittest.TestCase):
         self.assertEqual(existing_job.scheduled_at_utc, scheduled_at)
         self.assertEqual(existing_job.payload.get("archive_id"), 99)
         self.assertEqual(existing_job.payload.get("file_name"), "puantaj-gunluk-2026-02-19.xlsx")
+
+    def test_daily_report_health_alarm_when_job_missing_after_window(self) -> None:
+        fake_session = _FakeDailyReportHealthSession(job=None)
+        with patch("app.services.notifications._attendance_timezone", return_value=timezone.utc):
+            result = get_daily_report_job_health(
+                now_utc=datetime(2026, 2, 21, 0, 20, tzinfo=timezone.utc),
+                db=fake_session,  # type: ignore[arg-type]
+            )
+
+        self.assertFalse(result["job_exists"])
+        self.assertIn("DAILY_REPORT_JOB_MISSING", result["alarms"])
+
+    def test_daily_report_health_alarm_for_empty_delivery(self) -> None:
+        job = NotificationJob(
+            id=101,
+            employee_id=None,
+            admin_user_id=None,
+            job_type="ADMIN_DAILY_REPORT_READY",
+            payload={
+                "report_date": "2026-02-20",
+                "archive_id": 55,
+                "delivery": {
+                    "push_total_targets": 0,
+                    "push_sent": 0,
+                    "push_failed": 0,
+                    "email_sent": 0,
+                },
+            },
+            scheduled_at_utc=datetime(2026, 2, 21, 0, 0, tzinfo=timezone.utc),
+            status="SENT",
+            attempts=1,
+            idempotency_key="ADMIN_DAILY_REPORT_READY:2026-02-20",
+        )
+        fake_session = _FakeDailyReportHealthSession(job=job)
+        with patch("app.services.notifications._attendance_timezone", return_value=timezone.utc):
+            result = get_daily_report_job_health(
+                now_utc=datetime(2026, 2, 21, 0, 35, tzinfo=timezone.utc),
+                db=fake_session,  # type: ignore[arg-type]
+            )
+
+        self.assertTrue(result["job_exists"])
+        self.assertIn("DAILY_REPORT_DELIVERY_EMPTY", result["alarms"])
+        self.assertIn("DAILY_REPORT_TARGET_ZERO", result["alarms"])
+
+    def test_notification_channel_health_reports_missing_smtp_fields(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            result = get_notification_channel_health()
+
+        email = result["email"]
+        self.assertFalse(email["configured"])
+        self.assertIn("SMTP_HOST", email["missing_fields"])
+        self.assertIn("SMTP_FROM", email["missing_fields"])
 
 
 if __name__ == "__main__":
