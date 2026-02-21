@@ -651,8 +651,8 @@ export function AttendanceEventsPage() {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-left text-sm">
+            <div className="max-h-[44vh] overflow-auto overscroll-contain">
+              <table className="min-w-[1100px] text-left text-sm">
                 <thead className="text-xs uppercase text-slate-500">
                   <tr>
                     <th className="py-2">Tarih</th>
@@ -708,8 +708,8 @@ export function AttendanceEventsPage() {
         {eventsQuery.isError ? <ErrorBlock message={parseApiError(eventsQuery.error, 'Yoklama kayıtları alınamadı.').message} /> : null}
 
         {!eventsQuery.isLoading && !eventsQuery.isError ? (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
+          <div className="max-h-[66vh] overflow-auto overscroll-contain">
+            <table className="min-w-[1320px] text-left text-sm">
               <thead className="text-xs uppercase text-slate-500">
                 <tr>
                   <th className="py-2">ID</th>
@@ -786,8 +786,8 @@ export function AttendanceEventsPage() {
         {auditLogsQuery.isLoading ? <LoadingBlock /> : null}
         {auditLogsQuery.isError ? <ErrorBlock message={parseApiError(auditLogsQuery.error, 'Audit loglar alınamadı.').message} /> : null}
         {!auditLogsQuery.isLoading && !auditLogsQuery.isError ? (
-          <div className="mt-3 overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
+          <div className="mt-3 max-h-[40vh] overflow-auto overscroll-contain">
+            <table className="min-w-[980px] text-left text-sm">
               <thead className="text-xs uppercase text-slate-500">
                 <tr>
                   <th className="py-2">Zaman</th>

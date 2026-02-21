@@ -580,14 +580,14 @@ export function QrCodesPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="mx-auto w-full max-w-[1320px] space-y-4">
       <PageHeader
         title="QR Kod Yonetimi"
         description="Konuma bagli giris/cikis icin QR kod ve QR nokta yonetimi. Sirayla nokta olustur, kod olustur, nokta ata, sonra indir."
       />
 
-      <Panel>
-        <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
+      <Panel className="min-w-0">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(260px,0.95fr)]">
           <div>
             <h4 className="text-base font-semibold text-slate-900">Nasil Calisir?</h4>
             <ol className="mt-2 space-y-1 text-sm text-slate-700">
@@ -600,7 +600,7 @@ export function QrCodesPage() {
               Onemli: Noktasi olmayan QR kod okutulamaz. Pasif nokta ya da pasif QR kod da kullanilamaz.
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-2 text-sm">
+          <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
               <p className="text-xs text-slate-500">Toplam Kod</p>
               <p className="text-lg font-semibold text-slate-900">{summary.codeCount}</p>
@@ -620,8 +620,8 @@ export function QrCodesPage() {
         </div>
       </Panel>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Panel>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <Panel className="min-w-0">
           <h4 className="text-base font-semibold text-slate-900">
             {editingCodeId === null ? '2) QR Kod Olustur' : `2) QR Kod Duzenle (#${editingCodeId})`}
           </h4>
@@ -641,7 +641,7 @@ export function QrCodesPage() {
 
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Anlamli Format Yardimcisi</p>
-              <div className="mt-2 grid gap-2 md:grid-cols-4">
+              <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                 <input
                   value={codeTemplate.regionCode}
                   onChange={(event) =>
@@ -751,7 +751,7 @@ export function QrCodesPage() {
           </form>
         </Panel>
 
-        <Panel>
+        <Panel className="min-w-0">
           <h4 className="text-base font-semibold text-slate-900">QR Kod Listesi</h4>
           <p className="mt-1 text-xs text-slate-500">
             Detay ve nokta atama islemleri icin bir QR kod secin.
@@ -759,8 +759,8 @@ export function QrCodesPage() {
           <div className="mt-3">
             <TableSearchInput value={codeSearch} onChange={setCodeSearch} placeholder="Kod adi / degeri / ID ara" />
           </div>
-          <div className="mt-3 max-h-80 overflow-auto rounded-lg border border-slate-200">
-            <table className="min-w-full text-left text-sm">
+          <div className="mt-3 max-h-80 overflow-auto overscroll-contain rounded-lg border border-slate-200">
+            <table className="min-w-[980px] text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase text-slate-500">
                 <tr>
                   <th className="px-3 py-2">ID</th>
@@ -786,7 +786,7 @@ export function QrCodesPage() {
                       >
                         {code.name || '-'}
                       </button>
-                      <div className="text-xs text-slate-500">{code.code_value}</div>
+                      <div className="max-w-[340px] break-all text-xs text-slate-500">{code.code_value}</div>
                     </td>
                     <td className="px-3 py-2">{formatCodeType(code.code_type)}</td>
                     <td className="px-3 py-2">
@@ -834,8 +834,8 @@ export function QrCodesPage() {
         </Panel>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Panel>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <Panel className="min-w-0">
           <h4 className="text-base font-semibold text-slate-900">
             {selectedCode ? `3) QR Kod Detay (#${selectedCode.id})` : '3) QR Kod Detay'}
           </h4>
@@ -946,7 +946,7 @@ export function QrCodesPage() {
           )}
         </Panel>
 
-        <Panel>
+        <Panel className="min-w-0">
           <h4 className="text-base font-semibold text-slate-900">4) Nokta Ata (Coklu Secim)</h4>
           <p className="mt-1 text-xs text-slate-500">
             Arama ile nokta secip tek islemde birden fazla noktayi QR koda baglayabilirsiniz.
@@ -956,7 +956,7 @@ export function QrCodesPage() {
             <TableSearchInput value={assignSearch} onChange={setAssignSearch} placeholder="Nokta adi / ID ara" />
           </div>
 
-          <div className="mt-3 max-h-56 overflow-auto rounded-lg border border-slate-200 p-2">
+          <div className="mt-3 max-h-56 overflow-auto overscroll-contain rounded-lg border border-slate-200 p-2">
             {assignablePoints.length === 0 ? (
               <p className="px-2 py-1 text-sm text-slate-600">Aktif nokta bulunamadi.</p>
             ) : (
@@ -994,8 +994,8 @@ export function QrCodesPage() {
         </Panel>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Panel>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <Panel className="min-w-0">
           <h4 className="text-base font-semibold text-slate-900">
             {editingPointId === null ? '1) QR Nokta Olustur' : `1) QR Nokta Duzenle (#${editingPointId})`}
           </h4>
@@ -1096,13 +1096,13 @@ export function QrCodesPage() {
           </form>
         </Panel>
 
-        <Panel>
+        <Panel className="min-w-0">
           <h4 className="text-base font-semibold text-slate-900">5) QR Nokta Listesi</h4>
           <div className="mt-3">
             <TableSearchInput value={pointSearch} onChange={setPointSearch} placeholder="Nokta adi / ID ara" />
           </div>
-          <div className="mt-3 max-h-96 overflow-auto rounded-lg border border-slate-200">
-            <table className="min-w-full text-left text-sm">
+          <div className="mt-3 max-h-96 overflow-auto overscroll-contain rounded-lg border border-slate-200">
+            <table className="min-w-[920px] text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase text-slate-500">
                 <tr>
                   <th className="px-3 py-2">ID</th>
