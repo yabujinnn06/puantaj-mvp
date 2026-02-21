@@ -166,8 +166,10 @@ from app.services.push_notifications import (
     send_push_to_employees,
     upsert_admin_push_subscription,
 )
+from app.services.admin_mfa import is_admin_mfa_enabled, verify_admin_totp_code
 from app.services.recovery_codes import get_admin_recovery_snapshot
 from app.services.schedule_plans import plan_applies_to_employee
+from app.services.notifications import decrypt_archive_file_data
 
 router = APIRouter(tags=["admin"])
 settings = get_settings()
@@ -578,6 +580,47 @@ def admin_login(
             message="Invalid credentials.",
         )
 
+    if is_admin_mfa_enabled():
+        raw_mfa_code = (payload.mfa_code or "").strip()
+        if not raw_mfa_code:
+            if ip:
+                register_login_failure(ip)
+            log_audit(
+                db,
+                actor_type=AuditActorType.SYSTEM,
+                actor_id=username,
+                action="ADMIN_LOGIN_FAIL",
+                success=False,
+                ip=ip,
+                user_agent=user_agent,
+                details={"reason": "MFA_REQUIRED"},
+                request_id=request_id,
+            )
+            raise ApiError(
+                status_code=401,
+                code="MFA_REQUIRED",
+                message="MFA code is required.",
+            )
+        if not verify_admin_totp_code(raw_mfa_code):
+            if ip:
+                register_login_failure(ip)
+            log_audit(
+                db,
+                actor_type=AuditActorType.SYSTEM,
+                actor_id=username,
+                action="ADMIN_LOGIN_FAIL",
+                success=False,
+                ip=ip,
+                user_agent=user_agent,
+                details={"reason": "INVALID_MFA_CODE"},
+                request_id=request_id,
+            )
+            raise ApiError(
+                status_code=401,
+                code="INVALID_MFA_CODE",
+                message="MFA code is invalid.",
+            )
+
     if ip:
         register_login_success(ip)
 
@@ -625,6 +668,7 @@ def admin_login(
         details={
             "access_jti": access_claims["jti"],
             "refresh_jti": refresh_claims["jti"] if refresh_claims else None,
+            "mfa_enabled": is_admin_mfa_enabled(),
         },
         request_id=request_id,
     )
@@ -3733,6 +3777,50 @@ def admin_push_self_check(
         actor_admin_user_id=actor_admin_user_id,
     )
     latest_claim = max(actor_rows, key=lambda row: row.last_seen_at, default=None)
+    now_utc = datetime.now(timezone.utc)
+    stale_cutoff = now_utc - timedelta(hours=24)
+    active_claims_healthy = 0
+    active_claims_with_error = 0
+    active_claims_stale = 0
+    for row in actor_rows:
+        has_error = bool((row.last_error or "").strip())
+        is_stale = row.last_seen_at < stale_cutoff
+        if has_error:
+            active_claims_with_error += 1
+        if is_stale:
+            active_claims_stale += 1
+        if (not has_error) and (not is_stale):
+            active_claims_healthy += 1
+
+    latest_self_test = db.scalar(
+        select(AuditLog)
+        .where(
+            AuditLog.action == "ADMIN_PUSH_SELF_TEST",
+            AuditLog.actor_id == actor_username,
+        )
+        .order_by(AuditLog.ts_utc.desc(), AuditLog.id.desc())
+        .limit(1)
+    )
+    latest_self_test_details = (
+        latest_self_test.details
+        if latest_self_test is not None and isinstance(latest_self_test.details, dict)
+        else {}
+    )
+    last_self_test_total_targets = (
+        _as_int(latest_self_test_details.get("total_targets"), 0)
+        if latest_self_test is not None
+        else None
+    )
+    last_self_test_sent = (
+        _as_int(latest_self_test_details.get("sent"), 0)
+        if latest_self_test is not None
+        else None
+    )
+    last_self_test_failed = (
+        _as_int(latest_self_test_details.get("failed"), 0)
+        if latest_self_test is not None
+        else None
+    )
     push_enabled = bool(get_push_public_config().get("enabled"))
     ready_for_receive = push_enabled and len(actor_rows) > 0
     response = AdminPushSelfCheckResponse(
@@ -3743,8 +3831,20 @@ def admin_push_self_check(
         active_claims_for_actor=len(actor_rows),
         active_claims_for_actor_by_id=by_id,
         active_claims_for_actor_by_username=by_username,
+        active_claims_healthy=active_claims_healthy,
+        active_claims_with_error=active_claims_with_error,
+        active_claims_stale=active_claims_stale,
         latest_claim_seen_at=(latest_claim.last_seen_at if latest_claim is not None else None),
         latest_claim_error=(latest_claim.last_error if latest_claim is not None else None),
+        last_self_test_at=(latest_self_test.ts_utc if latest_self_test is not None else None),
+        last_self_test_total_targets=last_self_test_total_targets,
+        last_self_test_sent=last_self_test_sent,
+        last_self_test_failed=last_self_test_failed,
+        last_self_test_success=(
+            bool(latest_self_test.success)
+            if latest_self_test is not None
+            else None
+        ),
         ready_for_receive=ready_for_receive,
         has_other_active_subscriptions=len(rows) > len(actor_rows),
     )
@@ -3766,6 +3866,14 @@ def admin_push_self_check(
             "active_claims_for_actor": len(actor_rows),
             "active_claims_for_actor_by_id": by_id,
             "active_claims_for_actor_by_username": by_username,
+            "active_claims_healthy": active_claims_healthy,
+            "active_claims_with_error": active_claims_with_error,
+            "active_claims_stale": active_claims_stale,
+            "last_self_test_at": latest_self_test.ts_utc.isoformat() if latest_self_test is not None else None,
+            "last_self_test_total_targets": last_self_test_total_targets,
+            "last_self_test_sent": last_self_test_sent,
+            "last_self_test_failed": last_self_test_failed,
+            "last_self_test_success": bool(latest_self_test.success) if latest_self_test is not None else None,
             "ready_for_receive": ready_for_receive,
             "has_other_active_subscriptions": len(rows) > len(actor_rows),
         },
@@ -4466,6 +4574,14 @@ def download_daily_report_archive(
     archive = db.get(AdminDailyReportArchive, archive_id)
     if archive is None:
         raise HTTPException(status_code=404, detail="Daily report archive not found")
+    try:
+        archive_bytes = decrypt_archive_file_data(archive.file_data)
+    except RuntimeError as exc:
+        raise ApiError(
+            status_code=500,
+            code="ARCHIVE_DECRYPT_FAILED",
+            message="Archive file cannot be decrypted.",
+        ) from exc
     log_audit(
         db,
         actor_type=AuditActorType.ADMIN,
@@ -4484,7 +4600,7 @@ def download_daily_report_archive(
         request_id=getattr(request.state, "request_id", None),
     )
     return Response(
-        content=archive.file_data,
+        content=archive_bytes,
         media_type=XLSX_MEDIA_TYPE,
         headers={"Content-Disposition": f'attachment; filename="{archive.file_name}"'},
     )
@@ -4569,6 +4685,14 @@ def password_download_daily_report_archive(
     archive = db.get(AdminDailyReportArchive, archive_id)
     if archive is None:
         raise HTTPException(status_code=404, detail="Daily report archive not found")
+    try:
+        archive_bytes = decrypt_archive_file_data(archive.file_data)
+    except RuntimeError as exc:
+        raise ApiError(
+            status_code=500,
+            code="ARCHIVE_DECRYPT_FAILED",
+            message="Archive file cannot be decrypted.",
+        ) from exc
 
     actor_id = str(identity.get("username") or identity.get("sub") or username)
     request.state.actor = "admin"
@@ -4592,7 +4716,7 @@ def password_download_daily_report_archive(
     )
 
     return Response(
-        content=archive.file_data,
+        content=archive_bytes,
         media_type=XLSX_MEDIA_TYPE,
         headers={"Content-Disposition": f'attachment; filename="{archive.file_name}"'},
     )

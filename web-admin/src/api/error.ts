@@ -9,11 +9,14 @@ export interface ParsedApiError {
 }
 
 const codeMessageMap: Record<string, string> = {
-  INVALID_CREDENTIALS: 'Kullanıcı adi veya Şifre hatali.',
+  INVALID_CREDENTIALS: 'Kullanici adi veya sifre hatali.',
   TOO_MANY_ATTEMPTS: 'Cok fazla deneme yaptiniz. Lutfen daha sonra tekrar deneyin.',
-  INVALID_TOKEN: 'Oturum gecersiz veya suresi dolmus. Lutfen tekrar giriş yapin.',
-  FORBIDDEN: 'Bu islem için yetkiniz yok.',
+  INVALID_TOKEN: 'Oturum gecersiz veya suresi dolmus. Lutfen tekrar giris yapin.',
+  FORBIDDEN: 'Bu islem icin yetkiniz yok.',
   INTERNAL_ERROR: 'Sunucu hatasi olustu. Lutfen tekrar deneyin.',
+  MFA_REQUIRED: 'MFA kodu zorunlu. Authenticator kodunu girin.',
+  INVALID_MFA_CODE: 'MFA kodu gecersiz. Tekrar deneyin.',
+  ARCHIVE_DECRYPT_FAILED: 'Arsiv dosyasi acilamadi. Sunucu anahtarini kontrol edin.',
 }
 
 export function parseApiError(error: unknown, fallback: string): ParsedApiError {

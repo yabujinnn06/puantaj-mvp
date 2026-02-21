@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
+import hashlib
 import logging
 import os
 import smtplib
@@ -32,6 +34,12 @@ from app.services.push_notifications import send_push_to_admins, send_push_to_em
 from app.services.schedule_plans import resolve_effective_plan_for_employee_day
 from app.settings import get_public_base_url, get_settings
 
+try:
+    from cryptography.fernet import Fernet, InvalidToken
+except Exception:  # pragma: no cover - optional runtime guard
+    Fernet = None  # type: ignore[assignment]
+    InvalidToken = Exception  # type: ignore[assignment]
+
 DEFAULT_DAILY_MINUTES_PLANNED = 540
 DEFAULT_GRACE_MINUTES = 5
 DEFAULT_ESCALATION_DELAY_MINUTES = 30
@@ -42,6 +50,48 @@ JOB_TYPE_EMPLOYEE_OVERTIME_9H = "EMPLOYEE_OVERTIME_9H"
 JOB_TYPE_ADMIN_DAILY_REPORT_READY = "ADMIN_DAILY_REPORT_READY"
 
 logger = logging.getLogger("app.notifications")
+
+ARCHIVE_DATA_ENC_PREFIX = b"ENCV1:"
+
+
+def _archive_file_cipher() -> Fernet | None:
+    if Fernet is None:
+        return None
+    settings = get_settings()
+    material = (
+        (settings.archive_file_encryption_key or "").strip()
+        or (settings.recovery_admin_vault_key or "").strip()
+        or (settings.jwt_secret or "").strip()
+        or "dev-archive-vault-key"
+    )
+    derived = base64.urlsafe_b64encode(hashlib.sha256(material.encode("utf-8")).digest())
+    return Fernet(derived)
+
+
+def encrypt_archive_file_data(raw_file_data: bytes) -> bytes:
+    if not raw_file_data:
+        return raw_file_data
+    if raw_file_data.startswith(ARCHIVE_DATA_ENC_PREFIX):
+        return raw_file_data
+    cipher = _archive_file_cipher()
+    if cipher is None:
+        return raw_file_data
+    return ARCHIVE_DATA_ENC_PREFIX + cipher.encrypt(raw_file_data)
+
+
+def decrypt_archive_file_data(stored_file_data: bytes) -> bytes:
+    if not stored_file_data:
+        return stored_file_data
+    if not stored_file_data.startswith(ARCHIVE_DATA_ENC_PREFIX):
+        return stored_file_data
+    cipher = _archive_file_cipher()
+    if cipher is None:
+        raise RuntimeError("archive_cipher_unavailable")
+    payload = stored_file_data[len(ARCHIVE_DATA_ENC_PREFIX) :]
+    try:
+        return cipher.decrypt(payload)
+    except InvalidToken as exc:
+        raise RuntimeError("archive_decrypt_failed") from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -929,6 +979,31 @@ def _cleanup_expired_daily_report_archives(
     return len(stale_archives)
 
 
+def _cleanup_archive_overflow(
+    session: Session,
+) -> int:
+    max_rows = max(0, int(get_settings().daily_report_archive_max_rows or 0))
+    if max_rows <= 0:
+        return 0
+
+    overflow_rows = list(
+        session.scalars(
+            select(AdminDailyReportArchive)
+            .order_by(
+                AdminDailyReportArchive.report_date.desc(),
+                AdminDailyReportArchive.id.desc(),
+            )
+            .offset(max_rows)
+        ).all()
+    )
+    if not overflow_rows:
+        return 0
+
+    for archive in overflow_rows:
+        session.delete(archive)
+    return len(overflow_rows)
+
+
 def _ensure_daily_report_notification_job(
     session: Session,
     *,
@@ -1098,10 +1173,12 @@ def schedule_daily_admin_report_archive_notifications(
     tz = _attendance_timezone()
     local_now = reference_utc.astimezone(tz)
     report_date = local_now.date() - timedelta(days=1)
-    deleted_archive_count = _cleanup_expired_daily_report_archives(
+    deleted_archive_count_by_expiry = _cleanup_expired_daily_report_archives(
         session,
         local_now_date=local_now.date(),
     )
+    deleted_archive_count_by_limit = 0
+    deleted_archive_count = deleted_archive_count_by_expiry
 
     archive = session.scalar(
         select(AdminDailyReportArchive).where(
@@ -1120,6 +1197,7 @@ def schedule_daily_admin_report_archive_notifications(
             start_date=report_date,
             end_date=report_date,
         )
+        stored_archive_bytes = encrypt_archive_file_data(archive_bytes)
         employee_count, employee_ids_index, employee_names_index = _build_archive_employee_index(
             session,
             report_date=report_date,
@@ -1132,7 +1210,7 @@ def schedule_daily_admin_report_archive_notifications(
             department_id=None,
             region_id=None,
             file_name=file_name,
-            file_data=archive_bytes,
+            file_data=stored_archive_bytes,
             file_size_bytes=len(archive_bytes),
             employee_count=employee_count,
             employee_ids_index=employee_ids_index,
@@ -1150,6 +1228,8 @@ def schedule_daily_admin_report_archive_notifications(
         file_name=archive.file_name,
         scheduled_at_utc=reference_utc,
     )
+    deleted_archive_count_by_limit = _cleanup_archive_overflow(session)
+    deleted_archive_count = deleted_archive_count_by_expiry + deleted_archive_count_by_limit
 
     if archive_created or ensured_job is not None or deleted_archive_count > 0:
         session.commit()
@@ -1203,7 +1283,10 @@ def schedule_daily_admin_report_archive_notifications(
             entity_id=None,
             details={
                 "deleted_count": deleted_archive_count,
+                "deleted_by_expiry": deleted_archive_count_by_expiry,
+                "deleted_by_limit": deleted_archive_count_by_limit,
                 "retention_days": max(0, int(get_settings().daily_report_archive_retention_days)),
+                "max_rows": max(0, int(get_settings().daily_report_archive_max_rows)),
             },
         )
 

@@ -330,8 +330,16 @@ export interface AdminPushSelfCheckResponse {
   active_claims_for_actor: number
   active_claims_for_actor_by_id: number
   active_claims_for_actor_by_username: number
+  active_claims_healthy: number
+  active_claims_with_error: number
+  active_claims_stale: number
   latest_claim_seen_at: string | null
   latest_claim_error: string | null
+  last_self_test_at: string | null
+  last_self_test_total_targets: number | null
+  last_self_test_sent: number | null
+  last_self_test_failed: number | null
+  last_self_test_success: boolean | null
   ready_for_receive: boolean
   has_other_active_subscriptions: boolean
 }

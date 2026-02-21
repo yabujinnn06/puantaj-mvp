@@ -38,6 +38,15 @@ class Settings(BaseSettings):
     admin_device_invite_max_attempts: int = 5
     device_invite_max_ttl_minutes: int = 60 * 24
     admin_device_invite_max_ttl_minutes: int = 60 * 24
+    admin_mfa_required: bool = False
+    admin_mfa_totp_secret: str | None = None
+    admin_mfa_step_seconds: int = 30
+    admin_mfa_window_steps: int = 1
+    security_headers_enabled: bool = True
+    security_csp_report_only: bool = False
+    security_hsts_max_age_seconds: int = 31536000
+    archive_file_encryption_key: str | None = None
+    daily_report_archive_max_rows: int = 365
 
     model_config = SettingsConfigDict(
         env_file=".env",

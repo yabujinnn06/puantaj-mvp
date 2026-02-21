@@ -350,6 +350,7 @@ class RecoveryCodeRecoverResponse(BaseModel):
 class AdminLoginRequest(BaseModel):
     username: str
     password: str
+    mfa_code: str | None = Field(default=None, max_length=10)
 
 
 class AdminRefreshRequest(BaseModel):
@@ -828,8 +829,16 @@ class AdminPushSelfCheckResponse(BaseModel):
     active_claims_for_actor: int
     active_claims_for_actor_by_id: int
     active_claims_for_actor_by_username: int
+    active_claims_healthy: int = 0
+    active_claims_with_error: int = 0
+    active_claims_stale: int = 0
     latest_claim_seen_at: datetime | None = None
     latest_claim_error: str | None = None
+    last_self_test_at: datetime | None = None
+    last_self_test_total_targets: int | None = None
+    last_self_test_sent: int | None = None
+    last_self_test_failed: int | None = None
+    last_self_test_success: bool | None = None
     ready_for_receive: bool
     has_other_active_subscriptions: bool
 

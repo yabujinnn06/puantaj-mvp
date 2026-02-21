@@ -55,6 +55,7 @@ export interface ArchivePasswordDownloadResult {
 export interface LoginPayload {
   username: string
   password: string
+  mfa_code?: string
 }
 
 export interface RefreshPayload {

@@ -274,6 +274,14 @@ export function AdminUsersPage() {
       })
       return
     }
+    if (createForm.password.length < 8) {
+      pushToast({
+        variant: 'error',
+        title: 'Kayit basarisiz',
+        description: 'Sifre alani en az 8 karakter olmali.',
+      })
+      return
+    }
     createMutation.mutate({
       username: createForm.username.trim(),
       full_name: createForm.full_name.trim() || null,
@@ -297,6 +305,14 @@ export function AdminUsersPage() {
   const submitUpdate = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!editingUser || !canWrite) {
+      return
+    }
+    if (editPassword.trim() && editPassword.trim().length < 8) {
+      pushToast({
+        variant: 'error',
+        title: 'Guncelleme basarisiz',
+        description: 'Yeni sifre en az 8 karakter olmali.',
+      })
       return
     }
     updateMutation.mutate({
@@ -358,6 +374,7 @@ export function AdminUsersPage() {
                 value={createForm.password}
                 onChange={(event) => setCreateForm((prev) => ({ ...prev, password: event.target.value }))}
                 disabled={!canWrite || !isSuperAdmin}
+                minLength={8}
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
                 placeholder="En az 8 karakter"
               />
@@ -513,6 +530,7 @@ export function AdminUsersPage() {
                   value={editPassword}
                   onChange={(event) => setEditPassword(event.target.value)}
                   disabled={!canWrite || !isSuperAdmin}
+                  minLength={8}
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
                   placeholder="Opsiyonel"
                 />

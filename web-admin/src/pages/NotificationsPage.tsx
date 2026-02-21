@@ -648,13 +648,23 @@ export function NotificationsPage() {
             <strong>{(adminSelfCheckQuery.data?.push_enabled ?? pushConfigQuery.data?.enabled) ? 'Aktif' : 'Pasif'}</strong>
           </div>
         </div>
-        <div className="mt-2 grid gap-2 md:grid-cols-3">
+        <div className="mt-2 grid gap-2 md:grid-cols-4">
           <div className="rounded border border-slate-200 p-3 text-sm">
             Toplam aktif admin claim: <strong>{adminSelfCheckQuery.data?.active_total_subscriptions ?? activeAdminSubscriptionCount}</strong>
           </div>
           <div className="rounded border border-slate-200 p-3 text-sm">
             Son claim gorulme:{' '}
             <strong>{adminSelfCheckQuery.data?.latest_claim_seen_at ? dt(adminSelfCheckQuery.data.latest_claim_seen_at) : '-'}</strong>
+          </div>
+          <div className="rounded border border-slate-200 p-3 text-sm">
+            Claim saglik:{' '}
+            <strong>
+              saglikli {adminSelfCheckQuery.data?.active_claims_healthy ?? 0}
+              {' / '}
+              hatali {adminSelfCheckQuery.data?.active_claims_with_error ?? 0}
+              {' / '}
+              stale {adminSelfCheckQuery.data?.active_claims_stale ?? 0}
+            </strong>
           </div>
           <div className="flex items-end">
             <button
@@ -666,6 +676,30 @@ export function NotificationsPage() {
               {selfTestMutation.isPending ? 'Self-test gonderiliyor...' : 'Kendime test bildirimi gonder'}
             </button>
           </div>
+        </div>
+        <div className="mt-2 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+          Son self-test:{' '}
+          <strong>
+            {adminSelfCheckQuery.data?.last_self_test_at ? dt(adminSelfCheckQuery.data.last_self_test_at) : '-'}
+          </strong>
+          {' | '}
+          Durum:{' '}
+          <strong>
+            {adminSelfCheckQuery.data?.last_self_test_success === null
+              ? '-'
+              : adminSelfCheckQuery.data?.last_self_test_success
+                ? 'BASARILI'
+                : 'HATALI'}
+          </strong>
+          {' | '}
+          Hedef:{' '}
+          <strong>{adminSelfCheckQuery.data?.last_self_test_total_targets ?? '-'}</strong>
+          {' | '}
+          Gonderilen:{' '}
+          <strong>{adminSelfCheckQuery.data?.last_self_test_sent ?? '-'}</strong>
+          {' | '}
+          Hata:{' '}
+          <strong>{adminSelfCheckQuery.data?.last_self_test_failed ?? '-'}</strong>
         </div>
         {adminSelfCheckQuery.isError ? (
           <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">

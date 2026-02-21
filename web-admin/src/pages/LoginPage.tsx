@@ -7,24 +7,33 @@ import { UI_BRANDING } from '../config/ui'
 import { useAuth } from '../hooks/useAuth'
 
 const loginSchema = z.object({
-  username: z.string().min(1, 'Kullanıcı adı gerekli.'),
-  password: z.string().min(1, 'Şifre gerekli.'),
+  username: z.string().min(1, 'Kullanici adi gerekli.'),
+  password: z.string().min(1, 'Sifre gerekli.'),
+  mfaCode: z.string().optional(),
 })
 
 function getErrorTitle(error: ParsedApiError): string {
   if (error.code === 'INVALID_CREDENTIALS') {
-    return 'Giriş bilgileri hatalı'
+    return 'Giris bilgileri hatali'
+  }
+
+  if (error.code === 'MFA_REQUIRED') {
+    return 'MFA kodu gerekli'
+  }
+
+  if (error.code === 'INVALID_MFA_CODE') {
+    return 'MFA kodu gecersiz'
   }
 
   if (error.code === 'TOO_MANY_ATTEMPTS') {
-    return 'Çok fazla deneme'
+    return 'Cok fazla deneme'
   }
 
   if (error.code === 'INTERNAL_ERROR') {
-    return 'Sunucu hatası'
+    return 'Sunucu hatasi'
   }
 
-  return 'Giriş başarısız'
+  return 'Giris basarisiz'
 }
 
 export function LoginPage() {
@@ -34,6 +43,7 @@ export function LoginPage() {
 
   const [username, setUsername] = useState('admin')
   const [password, setPassword] = useState('')
+  const [mfaCode, setMfaCode] = useState('')
   const [error, setError] = useState<ParsedApiError | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -47,18 +57,18 @@ export function LoginPage() {
     event.preventDefault()
     setError(null)
 
-    const parsed = loginSchema.safeParse({ username, password })
+    const parsed = loginSchema.safeParse({ username, password, mfaCode })
     if (!parsed.success) {
-      setError({ message: parsed.error.issues[0]?.message ?? 'Form alanlarını kontrol et.' })
+      setError({ message: parsed.error.issues[0]?.message ?? 'Form alanlarini kontrol et.' })
       return
     }
 
     setIsSubmitting(true)
     try {
-      await login(parsed.data.username, parsed.data.password)
+      await login(parsed.data.username, parsed.data.password, parsed.data.mfaCode)
       navigate(target, { replace: true })
     } catch (submitError) {
-      setError(parseApiError(submitError, 'Giriş başarısız.'))
+      setError(parseApiError(submitError, 'Giris basarisiz.'))
     } finally {
       setIsSubmitting(false)
     }
@@ -67,12 +77,12 @@ export function LoginPage() {
   return (
     <div className="admin-auth-screen flex min-h-screen items-center justify-center px-4">
       <div className="admin-auth-card w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-panel">
-        <h1 className="text-2xl font-bold text-slate-900">Admin Giriş</h1>
-        <p className="mt-2 text-sm text-slate-600">Puantaj yönetim paneline giriş yap.</p>
+        <h1 className="text-2xl font-bold text-slate-900">Admin Giris</h1>
+        <p className="mt-2 text-sm text-slate-600">Puantaj yonetim paneline giris yap.</p>
 
         <form onSubmit={onSubmit} className="mt-6 space-y-4">
           <label className="block">
-            <span className="mb-1 block text-sm font-medium text-slate-700">Kullanıcı Adı</span>
+            <span className="mb-1 block text-sm font-medium text-slate-700">Kullanici Adi</span>
             <input
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-brand-200 focus:border-brand-500 focus:ring"
               value={username}
@@ -81,12 +91,24 @@ export function LoginPage() {
           </label>
 
           <label className="block">
-            <span className="mb-1 block text-sm font-medium text-slate-700">Şifre</span>
+            <span className="mb-1 block text-sm font-medium text-slate-700">Sifre</span>
             <input
               type="password"
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-brand-200 focus:border-brand-500 focus:ring"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
+            />
+          </label>
+
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium text-slate-700">MFA Kodu (gerekliyse)</span>
+            <input
+              inputMode="numeric"
+              pattern="[0-9]*"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-brand-200 focus:border-brand-500 focus:ring"
+              value={mfaCode}
+              onChange={(event) => setMfaCode(event.target.value)}
+              placeholder="6 haneli kod"
             />
           </label>
 
@@ -108,10 +130,10 @@ export function LoginPage() {
             {isSubmitting ? (
               <>
                 <span className="inline-spinner" aria-hidden="true" />
-                Giriş yapılıyor...
+                Giris yapiliyor...
               </>
             ) : (
-              'Giriş Yap'
+              'Giris Yap'
             )}
           </button>
         </form>

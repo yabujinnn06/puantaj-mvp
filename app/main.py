@@ -69,6 +69,99 @@ def read_ui_build_version() -> str:
     return value or "unknown"
 
 
+def _is_https_request(request: Request) -> bool:
+    forwarded_proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip().lower()
+    if forwarded_proto:
+        return forwarded_proto == "https"
+    return request.url.scheme.lower() == "https"
+
+
+def _ensure_cookie_attr(cookie_value: str, attr: str) -> str:
+    if attr.lower() in cookie_value.lower():
+        return cookie_value
+    return f"{cookie_value}; {attr}"
+
+
+def _harden_set_cookie_headers(response: JSONResponse | Any, *, is_https: bool) -> None:
+    if not hasattr(response, "headers"):
+        return
+    set_cookie_values = response.headers.getlist("set-cookie")
+    if not set_cookie_values:
+        return
+
+    del response.headers["set-cookie"]
+    for raw_cookie in set_cookie_values:
+        cookie = raw_cookie
+        cookie_name = raw_cookie.split("=", 1)[0].strip().lower()
+        sensitive_cookie = any(
+            key in cookie_name
+            for key in ("session", "token", "auth", "refresh", "jwt")
+        )
+
+        if sensitive_cookie:
+            cookie = _ensure_cookie_attr(cookie, "HttpOnly")
+            if is_https:
+                cookie = _ensure_cookie_attr(cookie, "Secure")
+            cookie = _ensure_cookie_attr(cookie, "SameSite=Strict")
+        elif "samesite=" not in cookie.lower():
+            cookie = _ensure_cookie_attr(cookie, "SameSite=Lax")
+
+        response.headers.append("set-cookie", cookie)
+
+
+def _build_csp_header_value() -> str:
+    return "; ".join(
+        (
+            "default-src 'self'",
+            "base-uri 'self'",
+            "frame-ancestors 'none'",
+            "object-src 'none'",
+            "form-action 'self'",
+            "script-src 'self'",
+            "style-src 'self' 'unsafe-inline'",
+            "img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org",
+            "connect-src 'self' https://nominatim.openstreetmap.org https://*.tile.openstreetmap.org",
+            "font-src 'self' data:",
+            "worker-src 'self' blob:",
+            "manifest-src 'self'",
+        )
+    )
+
+
+def _apply_security_headers(request: Request, response: JSONResponse | Any) -> None:
+    if not get_settings().security_headers_enabled:
+        return
+
+    is_https = _is_https_request(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "geolocation=(self), microphone=(), camera=(), payment=()")
+    response.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
+    response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+
+    content_type = (response.headers.get("content-type") or "").lower()
+    is_html_response = "text/html" in content_type
+    is_docs_path = request.url.path.startswith("/docs") or request.url.path.startswith("/redoc")
+    if is_html_response and not is_docs_path:
+        csp_header_name = (
+            "Content-Security-Policy-Report-Only"
+            if get_settings().security_csp_report_only
+            else "Content-Security-Policy"
+        )
+        response.headers.setdefault(csp_header_name, _build_csp_header_value())
+
+    if is_https:
+        hsts_seconds = max(0, int(get_settings().security_hsts_max_age_seconds or 0))
+        if hsts_seconds > 0:
+            response.headers.setdefault(
+                "Strict-Transport-Security",
+                f"max-age={hsts_seconds}; includeSubDomains",
+            )
+
+    _harden_set_cookie_headers(response, is_https=is_https)
+
+
 app = FastAPI(title=settings.app_name, version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
@@ -77,6 +170,44 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _validation_field_label(loc: tuple[Any, ...] | list[Any]) -> str:
+    parts = [str(item) for item in loc if str(item) not in {"body", "query", "path", "header", "cookie"}]
+    if not parts:
+        return "istek"
+    return ".".join(parts)
+
+
+def _format_validation_error_message(exc: RequestValidationError) -> str:
+    errors = exc.errors()
+    if not errors:
+        return "Gecersiz istek."
+
+    first = errors[0]
+    loc = first.get("loc")
+    error_type = str(first.get("type") or "")
+    message = str(first.get("msg") or "Gecersiz deger.")
+    ctx = first.get("ctx")
+    context = ctx if isinstance(ctx, dict) else {}
+    field_label = _validation_field_label(loc if isinstance(loc, (list, tuple)) else [])
+
+    if error_type == "string_too_short":
+        min_length = context.get("min_length")
+        if isinstance(min_length, int):
+            return f"{field_label} alani en az {min_length} karakter olmali."
+    if error_type == "string_too_long":
+        max_length = context.get("max_length")
+        if isinstance(max_length, int):
+            return f"{field_label} alani en fazla {max_length} karakter olabilir."
+    if error_type in {"missing", "value_error.missing"}:
+        return f"{field_label} alani zorunludur."
+    if error_type in {"int_parsing", "float_parsing"}:
+        return f"{field_label} alani sayisal bir deger olmali."
+    if error_type == "bool_parsing":
+        return f"{field_label} alani true/false degeri olmali."
+
+    return f"{field_label}: {message}"
 
 
 @app.middleware("http")
@@ -92,6 +223,7 @@ async def request_middleware(request: Request, call_next):
         response = await call_next(request)
         status_code = response.status_code
         response.headers["X-Request-Id"] = request_id
+        _apply_security_headers(request, response)
         return response
     finally:
         latency_ms = round((time.perf_counter() - start) * 1000, 2)
@@ -147,7 +279,7 @@ async def handle_validation_error(request: Request, exc: RequestValidationError)
         request,
         status_code=422,
         code="VALIDATION_ERROR",
-        message=str(exc.errors()),
+        message=_format_validation_error_message(exc),
     )
 
 
