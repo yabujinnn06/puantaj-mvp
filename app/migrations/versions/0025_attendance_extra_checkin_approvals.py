@@ -1,6 +1,6 @@
 """Add attendance extra check-in approval workflow table
 
-Revision ID: 0025_attendance_extra_checkin_approvals
+Revision ID: 0025_extra_checkin_approval
 Revises: 0024_admin_user_mfa_per_user
 Create Date: 2026-02-22 13:20:00
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = "0025_attendance_extra_checkin_approvals"
+revision: str = "0025_extra_checkin_approval"
 down_revision: Union[str, None] = "0024_admin_user_mfa_per_user"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
