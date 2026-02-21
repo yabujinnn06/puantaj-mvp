@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import logging
 import time
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
@@ -22,6 +23,8 @@ from app.services.notifications import (
     schedule_missed_checkout_notifications,
     send_pending_notifications,
 )
+from app.services.schema_guard import SchemaGuardResult, verify_runtime_schema
+from app.db import engine
 
 setup_json_logging()
 logger = logging.getLogger("app.request")
@@ -168,6 +171,15 @@ app.include_router(attendance.router)
 app.include_router(admin.router)
 
 
+def _default_schema_guard_result() -> SchemaGuardResult:
+    return SchemaGuardResult(
+        ok=False,
+        checked_at_utc=datetime.now(timezone.utc),
+        issues=["SCHEMA_GUARD_NOT_RUN"],
+        warnings=[],
+    )
+
+
 async def _notification_worker_loop(stop_event: asyncio.Event) -> None:
     interval_seconds = max(15, int(settings.notification_worker_interval_seconds))
     while not stop_event.is_set():
@@ -196,6 +208,26 @@ async def _notification_worker_loop(stop_event: asyncio.Event) -> None:
             await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
         except asyncio.TimeoutError:
             continue
+
+
+@app.on_event("startup")
+async def run_schema_guard() -> None:
+    result = await asyncio.to_thread(verify_runtime_schema, engine)
+    app.state.schema_guard_result = result
+    if result.ok:
+        notification_worker_logger.info(
+            "schema_guard_ok",
+            extra=result.to_dict(),
+        )
+        return
+
+    notification_worker_logger.error(
+        "schema_guard_failed",
+        extra=result.to_dict(),
+    )
+    if settings.schema_guard_strict:
+        joined_issues = "; ".join(result.issues)
+        raise RuntimeError(f"Runtime schema guard failed: {joined_issues}")
 
 
 @app.on_event("startup")
@@ -230,10 +262,12 @@ async def stop_notification_worker() -> None:
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
+def health() -> dict[str, Any]:
+    schema_guard_result: SchemaGuardResult = getattr(app.state, "schema_guard_result", _default_schema_guard_result())
     return {
         "status": "ok",
         "ui_build_version": read_ui_build_version(),
+        "schema_guard": schema_guard_result.to_dict(),
     }
 
 

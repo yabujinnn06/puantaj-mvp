@@ -4636,10 +4636,48 @@ def send_manual_notification(
             },
         )
 
-    total_targets = int(employee_summary.get("total_targets", 0)) + int(admin_summary.get("total_targets", 0))
-    sent_total = int(employee_summary.get("sent", 0)) + int(admin_summary.get("sent", 0))
-    failed_total = int(employee_summary.get("failed", 0)) + int(admin_summary.get("failed", 0))
-    deactivated_total = int(employee_summary.get("deactivated", 0)) + int(admin_summary.get("deactivated", 0))
+    employee_total_targets = int(employee_summary.get("total_targets", 0))
+    employee_sent = int(employee_summary.get("sent", 0))
+    employee_failed = int(employee_summary.get("failed", 0))
+    employee_deactivated = int(employee_summary.get("deactivated", 0))
+
+    admin_total_targets = int(admin_summary.get("total_targets", 0))
+    admin_sent = int(admin_summary.get("sent", 0))
+    admin_failed = int(admin_summary.get("failed", 0))
+    admin_deactivated = int(admin_summary.get("deactivated", 0))
+    admin_target_requested = payload.target in {"admins", "both"}
+    admin_target_missing = admin_target_requested and admin_total_targets <= 0
+
+    total_targets = employee_total_targets + admin_total_targets
+    sent_total = employee_sent + admin_sent
+    failed_total = employee_failed + admin_failed
+    deactivated_total = employee_deactivated + admin_deactivated
+
+    if payload.target == "admins" and admin_target_missing:
+        log_audit(
+            db,
+            actor_type=AuditActorType.ADMIN,
+            actor_id=actor_id,
+            action="ADMIN_MANUAL_PUSH_BLOCKED",
+            success=False,
+            entity_type="notification",
+            entity_id=None,
+            ip=_client_ip(request),
+            user_agent=_user_agent(request),
+            details={
+                "target": payload.target,
+                "employee_ids": employee_ids,
+                "admin_user_ids": admin_user_ids,
+                "title": payload.title,
+                "reason": "NO_ACTIVE_ADMIN_PUSH_SUBSCRIPTION",
+            },
+            request_id=getattr(request.state, "request_id", None),
+        )
+        raise ApiError(
+            status_code=409,
+            code="ADMIN_PUSH_SUBSCRIPTION_REQUIRED",
+            message="No active admin push subscription found. Claim an admin device first.",
+        )
 
     log_audit(
         db,
@@ -4660,6 +4698,15 @@ def send_manual_notification(
             "sent": sent_total,
             "failed": failed_total,
             "deactivated": deactivated_total,
+            "employee_total_targets": employee_total_targets,
+            "employee_sent": employee_sent,
+            "employee_failed": employee_failed,
+            "employee_deactivated": employee_deactivated,
+            "admin_total_targets": admin_total_targets,
+            "admin_sent": admin_sent,
+            "admin_failed": admin_failed,
+            "admin_deactivated": admin_deactivated,
+            "admin_target_missing": admin_target_missing,
             "employee_summary": employee_summary,
             "admin_summary": admin_summary,
         },
@@ -4675,6 +4722,15 @@ def send_manual_notification(
         employee_ids=list(employee_summary.get("employee_ids", [])),
         admin_user_ids=list(admin_summary.get("admin_user_ids", [])),
         admin_usernames=list(admin_summary.get("admin_usernames", [])),
+        employee_total_targets=employee_total_targets,
+        employee_sent=employee_sent,
+        employee_failed=employee_failed,
+        employee_deactivated=employee_deactivated,
+        admin_total_targets=admin_total_targets,
+        admin_sent=admin_sent,
+        admin_failed=admin_failed,
+        admin_deactivated=admin_deactivated,
+        admin_target_missing=admin_target_missing,
     )
 
 

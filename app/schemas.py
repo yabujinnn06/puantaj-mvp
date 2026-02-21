@@ -850,6 +850,15 @@ class AdminManualNotificationSendResponse(BaseModel):
     employee_ids: list[int] = Field(default_factory=list)
     admin_user_ids: list[int] = Field(default_factory=list)
     admin_usernames: list[str] = Field(default_factory=list)
+    employee_total_targets: int = 0
+    employee_sent: int = 0
+    employee_failed: int = 0
+    employee_deactivated: int = 0
+    admin_total_targets: int = 0
+    admin_sent: int = 0
+    admin_failed: int = 0
+    admin_deactivated: int = 0
+    admin_target_missing: bool = False
 
 
 class NotificationDeliveryLogRead(BaseModel):

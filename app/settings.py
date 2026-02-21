@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     notification_worker_enabled: bool = True
     notification_worker_interval_seconds: int = 60
     daily_report_archive_retention_days: int = 180
+    schema_guard_strict: bool = True
 
     model_config = SettingsConfigDict(
         env_file=".env",

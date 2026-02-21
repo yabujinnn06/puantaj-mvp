@@ -262,6 +262,7 @@ export function NotificationsPage() {
   const sendMutation = useMutation({
     mutationFn: sendManualNotification,
     onSuccess: (res, payload) => {
+      const adminTargetRequested = payload.target === 'admins' || payload.target === 'both'
       if (res.total_targets <= 0) {
         pushToast({
           variant: 'error',
@@ -280,7 +281,7 @@ export function NotificationsPage() {
           title: 'Bildirim gonderildi',
           description: `Hedef: ${res.total_targets} / Gonderilen: ${res.sent}`,
         })
-        if ((payload.target === 'admins' || payload.target === 'both') && !currentAdminHasActiveClaim) {
+        if (adminTargetRequested && !currentAdminHasActiveClaim) {
           pushToast({
             variant: 'error',
             title: 'Bu hesapta claim eksik',
@@ -288,8 +289,16 @@ export function NotificationsPage() {
           })
         }
       }
+      if (adminTargetRequested && res.admin_target_missing) {
+        pushToast({
+          variant: 'error',
+          title: 'Admin hedefi 0',
+          description: 'Calisan bildirimi gitmis olabilir ama admin hedefinde aktif abonelik yok. Admin claim zorunlu.',
+        })
+      }
       void queryClient.invalidateQueries({ queryKey: ['notification-jobs'] })
       void queryClient.invalidateQueries({ queryKey: ['notification-delivery-logs'] })
+      void queryClient.invalidateQueries({ queryKey: ['admin-push-self-check'] })
     },
     onError: (e) =>
       pushToast({

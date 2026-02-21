@@ -372,6 +372,15 @@ export interface AdminManualNotificationSendResponse {
   employee_ids: number[]
   admin_user_ids: number[]
   admin_usernames: string[]
+  employee_total_targets: number
+  employee_sent: number
+  employee_failed: number
+  employee_deactivated: number
+  admin_total_targets: number
+  admin_sent: number
+  admin_failed: number
+  admin_deactivated: number
+  admin_target_missing: boolean
 }
 
 export interface ManualDayOverride {
