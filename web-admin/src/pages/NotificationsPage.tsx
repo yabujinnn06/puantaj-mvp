@@ -23,6 +23,7 @@ import { LoadingBlock } from '../components/LoadingBlock'
 import { PageHeader } from '../components/PageHeader'
 import { Panel } from '../components/Panel'
 import { TableSearchInput } from '../components/TableSearchInput'
+import { useAuth } from '../hooks/useAuth'
 import { useToast } from '../hooks/useToast'
 import type { AdminDeviceInviteCreateResponse, NotificationDeliveryLog, NotificationJobStatus } from '../types/api'
 
@@ -67,6 +68,7 @@ const ARCHIVE_PAGE_SIZE = 50
 export function NotificationsPage() {
   const queryClient = useQueryClient()
   const { pushToast } = useToast()
+  const { user } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
 
   const [title, setTitle] = useState('Puantaj Bildirimi')
@@ -190,6 +192,16 @@ export function NotificationsPage() {
   const archiveRangeEnd = Math.min(archivePage * ARCHIVE_PAGE_SIZE, archiveRows.length)
   const activeAdminSubscriptionCount = (adminSubsQuery.data ?? []).length
   const canNotifyAdmins = activeAdminSubscriptionCount > 0
+  const currentAdminUsername = (user?.username ?? '').trim().toLowerCase()
+  const currentAdminClaimCount = useMemo(() => {
+    if (!currentAdminUsername) {
+      return 0
+    }
+    return (adminSubsQuery.data ?? []).filter(
+      (item) => (item.admin_username || '').trim().toLowerCase() === currentAdminUsername,
+    ).length
+  }, [adminSubsQuery.data, currentAdminUsername])
+  const currentAdminHasActiveClaim = currentAdminClaimCount > 0
 
   const inviteMutation = useMutation({
     mutationFn: createAdminDeviceInvite,
@@ -263,6 +275,13 @@ export function NotificationsPage() {
           title: 'Arsiv bildirimi gonderildi',
           description: `Hedef: ${result.total_targets} | Gonderilen: ${result.sent} | Hata: ${result.failed}`,
         })
+        if (!currentAdminHasActiveClaim) {
+          pushToast({
+            variant: 'error',
+            title: 'Bu hesapta claim eksik',
+            description: 'Bildirim gitti ama bu admin hesabinda aktif cihaz claim olmadigi icin sana dusmeyebilir.',
+          })
+        }
       }
       void queryClient.invalidateQueries({ queryKey: ['notification-jobs'] })
     },
@@ -537,6 +556,37 @@ export function NotificationsPage() {
         {!canNotifyAdmins ? (
           <p className="mt-2 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
             Aktif admin push aboneligi yok. "Admin cihaz claim linki uret" adimini tamamlamadan bildirim gonderilemez.
+          </p>
+        ) : null}
+      </Panel>
+
+      <Panel>
+        <h4 className="text-base font-semibold text-slate-900">Admin Push Self-Check</h4>
+        <div className="mt-2 grid gap-2 md:grid-cols-4">
+          <div className="rounded border border-slate-200 p-3 text-sm">
+            Login admin: <strong>{user?.username ?? '-'}</strong>
+          </div>
+          <div className="rounded border border-slate-200 p-3 text-sm">
+            Push config: <strong>{pushConfigQuery.data?.enabled ? 'Aktif' : 'Pasif'}</strong>
+          </div>
+          <div
+            className={`rounded border p-3 text-sm ${
+              currentAdminHasActiveClaim ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'
+            }`}
+          >
+            Bu hesap claim: <strong>{currentAdminClaimCount}</strong>
+          </div>
+          <div
+            className={`rounded border p-3 text-sm ${
+              canNotifyAdmins ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'
+            }`}
+          >
+            Gonderim hazirligi: <strong>{canNotifyAdmins ? 'Hazir' : 'Eksik'}</strong>
+          </div>
+        </div>
+        {!currentAdminHasActiveClaim ? (
+          <p className="mt-2 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+            Bu admin hesabinda aktif cihaz claim gorunmuyor. Bildirim almak icin telefonda claim linkini acip izin adimini tamamla.
           </p>
         ) : null}
       </Panel>

@@ -4328,6 +4328,30 @@ def notify_daily_report_archive(
             "url": f"/admin-panel/archive-download?archive_id={archive.id}",
         },
     )
+    total_targets = int(push_summary.get("total_targets", 0))
+    if total_targets <= 0:
+        log_audit(
+            db,
+            actor_type=AuditActorType.ADMIN,
+            actor_id=str(claims.get("username") or claims.get("sub") or "admin"),
+            action="ADMIN_DAILY_REPORT_ARCHIVE_NOTIFY_BLOCKED",
+            success=False,
+            entity_type="admin_daily_report_archive",
+            entity_id=str(archive.id),
+            ip=_client_ip(request),
+            user_agent=_user_agent(request),
+            details={
+                "reason": "NO_ACTIVE_ADMIN_PUSH_SUBSCRIPTION",
+                "report_date": report_date_text,
+                "requested_admin_user_ids": admin_user_ids,
+            },
+            request_id=getattr(request.state, "request_id", None),
+        )
+        raise ApiError(
+            status_code=409,
+            code="ADMIN_PUSH_SUBSCRIPTION_REQUIRED",
+            message="No active admin push subscription found. Claim an admin device first.",
+        )
 
     actor_id = str(claims.get("username") or claims.get("sub") or "admin")
     log_audit(
