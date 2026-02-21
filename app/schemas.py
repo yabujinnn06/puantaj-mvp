@@ -301,6 +301,41 @@ class PasskeyRecoverVerifyResponse(BaseModel):
     device_fingerprint: str
 
 
+class RecoveryCodeIssueRequest(BaseModel):
+    device_fingerprint: str
+    recovery_pin: str = Field(min_length=6, max_length=12)
+
+
+class RecoveryCodeIssueResponse(BaseModel):
+    ok: bool
+    employee_id: int
+    device_id: int
+    code_count: int
+    expires_at: datetime
+    recovery_codes: list[str] = Field(default_factory=list)
+
+
+class RecoveryCodeStatusResponse(BaseModel):
+    employee_id: int
+    device_id: int
+    recovery_ready: bool
+    active_code_count: int
+    expires_at: datetime | None = None
+
+
+class RecoveryCodeRecoverRequest(BaseModel):
+    employee_id: int = Field(ge=1)
+    recovery_pin: str = Field(min_length=6, max_length=12)
+    recovery_code: str = Field(min_length=4, max_length=32)
+
+
+class RecoveryCodeRecoverResponse(BaseModel):
+    ok: bool
+    employee_id: int
+    device_id: int
+    device_fingerprint: str
+
+
 class AdminLoginRequest(BaseModel):
     username: str
     password: str

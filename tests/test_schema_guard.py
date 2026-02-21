@@ -55,6 +55,8 @@ class SchemaGuardTests(unittest.TestCase):
             columns_by_table={
                 "employees": {"id", "full_name", "shift_id"},
                 "attendance_events": {"id", "source", "employee_id"},
+                "devices": {"id", "recovery_pin_hash"},
+                "device_recovery_codes": {"id", "device_id", "code_hash", "expires_at"},
                 "alembic_version": {"version_num"},
             },
             enums=[{"name": "attendance_event_source", "labels": ["DEVICE", "MANUAL"]}],
@@ -73,6 +75,8 @@ class SchemaGuardTests(unittest.TestCase):
             columns_by_table={
                 "employees": {"id", "full_name"},
                 "attendance_events": {"id", "employee_id"},
+                "devices": {"id"},
+                "device_recovery_codes": {"id", "device_id"},
                 "alembic_version": {"version_num"},
             },
             enums=[{"name": "attendance_event_source", "labels": ["DEVICE"]}],

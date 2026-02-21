@@ -35,6 +35,11 @@ from app.schemas import (
     PasskeyRegisterOptionsResponse,
     PasskeyRegisterVerifyRequest,
     PasskeyRegisterVerifyResponse,
+    RecoveryCodeIssueRequest,
+    RecoveryCodeIssueResponse,
+    RecoveryCodeRecoverRequest,
+    RecoveryCodeRecoverResponse,
+    RecoveryCodeStatusResponse,
 )
 from app.services.push_notifications import (
     deactivate_device_push_subscription,
@@ -56,6 +61,11 @@ from app.services.passkeys import (
     create_registration_options,
     verify_recover,
     verify_registration,
+)
+from app.services.recovery_codes import (
+    get_recovery_status,
+    issue_recovery_codes,
+    recover_device_with_code,
 )
 
 router = APIRouter(tags=["attendance"])
@@ -591,6 +601,107 @@ def device_passkey_recover_verify(
     return PasskeyRecoverVerifyResponse(
         ok=True,
         employee_id=employee_id,
+        device_id=device.id,
+        device_fingerprint=device.device_fingerprint,
+    )
+
+
+@router.post(
+    "/api/device/recovery-codes/issue",
+    response_model=RecoveryCodeIssueResponse,
+)
+def device_recovery_codes_issue(
+    payload: RecoveryCodeIssueRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> RecoveryCodeIssueResponse:
+    request.state.actor = "employee"
+    device, recovery_codes, expires_at = issue_recovery_codes(
+        db,
+        device_fingerprint=payload.device_fingerprint,
+        recovery_pin=payload.recovery_pin,
+    )
+    request.state.employee_id = device.employee_id
+    log_audit(
+        db,
+        actor_type=AuditActorType.SYSTEM,
+        actor_id=str(device.employee_id),
+        action="RECOVERY_CODES_ISSUED",
+        success=True,
+        entity_type="device",
+        entity_id=str(device.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "code_count": len(recovery_codes),
+            "expires_at": expires_at.isoformat(),
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return RecoveryCodeIssueResponse(
+        ok=True,
+        employee_id=device.employee_id,
+        device_id=device.id,
+        code_count=len(recovery_codes),
+        expires_at=expires_at,
+        recovery_codes=recovery_codes,
+    )
+
+
+@router.get(
+    "/api/device/recovery-codes/status",
+    response_model=RecoveryCodeStatusResponse,
+)
+def device_recovery_codes_status(
+    device_fingerprint: str,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> RecoveryCodeStatusResponse:
+    request.state.actor = "employee"
+    status_data = get_recovery_status(db, device_fingerprint=device_fingerprint)
+    request.state.employee_id = status_data["employee_id"]
+    return RecoveryCodeStatusResponse(**status_data)
+
+
+@router.post(
+    "/api/device/recovery-codes/recover",
+    response_model=RecoveryCodeRecoverResponse,
+)
+def device_recovery_codes_recover(
+    payload: RecoveryCodeRecoverRequest,
+    response: Response,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> RecoveryCodeRecoverResponse:
+    request.state.actor = "employee"
+    device = recover_device_with_code(
+        db,
+        employee_id=payload.employee_id,
+        recovery_pin=payload.recovery_pin,
+        recovery_code=payload.recovery_code,
+    )
+    request.state.employee_id = device.employee_id
+    log_audit(
+        db,
+        actor_type=AuditActorType.SYSTEM,
+        actor_id=str(device.employee_id),
+        action="RECOVERY_CODE_RECOVERED",
+        success=True,
+        entity_type="device",
+        entity_id=str(device.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={},
+        request_id=getattr(request.state, "request_id", None),
+    )
+    _set_device_fingerprint_cookie(
+        response=response,
+        request=request,
+        device_fingerprint=device.device_fingerprint,
+    )
+    return RecoveryCodeRecoverResponse(
+        ok=True,
+        employee_id=device.employee_id,
         device_id=device.id,
         device_fingerprint=device.device_fingerprint,
     )

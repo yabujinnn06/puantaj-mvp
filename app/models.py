@@ -163,6 +163,8 @@ class Device(Base):
     employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"), nullable=False)
     device_fingerprint: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
+    recovery_pin_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    recovery_pin_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -172,6 +174,10 @@ class Device(Base):
     employee: Mapped[Employee] = relationship(back_populates="devices")
     attendance_events: Mapped[list[AttendanceEvent]] = relationship(back_populates="device")
     passkeys: Mapped[list[DevicePasskey]] = relationship(
+        back_populates="device",
+        cascade="all, delete-orphan",
+    )
+    recovery_codes: Mapped[list[DeviceRecoveryCode]] = relationship(
         back_populates="device",
         cascade="all, delete-orphan",
     )
@@ -213,6 +219,33 @@ class DevicePasskey(Base):
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     device: Mapped[Device] = relationship(back_populates="passkeys")
+
+
+class DeviceRecoveryCode(Base):
+    __tablename__ = "device_recovery_codes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    device_id: Mapped[int] = mapped_column(
+        ForeignKey("devices.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    code_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    device: Mapped[Device] = relationship(back_populates="recovery_codes")
 
 
 class DevicePushSubscription(Base):

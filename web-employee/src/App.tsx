@@ -59,10 +59,10 @@ function EmployeeRouteGuard({ children }: { children: ReactNode }) {
             <span className="banner-icon" aria-hidden="true">
               !
             </span>
-            Cihaz bağlı değil. Önce passkey kurtarma deneyin, olmazsa aktivasyon linki kullanın.
+            Cihaz bagli degil. Once passkey veya recovery code ile kurtarma deneyin, olmazsa aktivasyon linki kullanin.
           </p>
         </div>
-        <p className="muted">Passkey kurtarma ekranına yönlendiriliyorsunuz...</p>
+        <p className="muted">Kurtarma ekranina yonlendiriliyorsunuz...</p>
         <div className="footer-link">
           <Link className="inline-link" to="/recover">
             Kurtarma ekranına git

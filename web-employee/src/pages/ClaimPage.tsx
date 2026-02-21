@@ -254,7 +254,7 @@ export function ClaimPage() {
         ) : null}
 
         <div className="footer-link">
-          <Link to="/recover">Passkey ile kurtarma dene</Link>
+          <Link to="/recover">Passkey veya recovery code ile kurtarma dene</Link>
         </div>
 
         <BrandSignature />

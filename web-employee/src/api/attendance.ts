@@ -25,6 +25,11 @@ import type {
   PasskeyRegisterOptionsResponse,
   PasskeyRegisterVerifyRequest,
   PasskeyRegisterVerifyResponse,
+  RecoveryCodeIssueRequest,
+  RecoveryCodeIssueResponse,
+  RecoveryCodeRecoverRequest,
+  RecoveryCodeRecoverResponse,
+  RecoveryCodeStatusResponse,
 } from '../types/api'
 
 export interface ParsedApiError {
@@ -51,6 +56,9 @@ const errorCodeMap: Record<string, string> = {
   PASSKEY_REGISTRATION_FAILED: 'Passkey kaydı doğrulanamadı.',
   PASSKEY_AUTH_FAILED: 'Passkey doğrulaması başarısız oldu.',
   PASSKEY_NOT_REGISTERED: 'Bu cihaz için passkey kaydı bulunamadı.',
+  RECOVERY_PIN_INVALID: 'Recovery PIN hatali.',
+  RECOVERY_CODE_INVALID: 'Recovery code hatali.',
+  RECOVERY_CODES_NOT_READY: 'Bu hesapta aktif recovery code yok veya suresi dolmus.',
   QR_POINT_OUT_OF_RANGE: 'Bu QR kod sadece tanımlı konum içinde okutulabilir.',
   QR_CODE_NOT_FOUND: 'QR kod bulunamadı veya pasif durumda.',
   QR_CODE_HAS_NO_ACTIVE_POINTS: 'Bu QR koda aktif konum noktası atanmadı.',
@@ -226,6 +234,36 @@ export async function verifyPasskeyRecover(
 ): Promise<PasskeyRecoverVerifyResponse> {
   const response = await apiClient.post<PasskeyRecoverVerifyResponse>(
     '/api/device/passkey/recover/verify',
+    payload,
+  )
+  return response.data
+}
+
+export async function issueRecoveryCodes(
+  payload: RecoveryCodeIssueRequest,
+): Promise<RecoveryCodeIssueResponse> {
+  const response = await apiClient.post<RecoveryCodeIssueResponse>(
+    '/api/device/recovery-codes/issue',
+    payload,
+  )
+  return response.data
+}
+
+export async function getRecoveryCodeStatus(
+  deviceFingerprint: string,
+): Promise<RecoveryCodeStatusResponse> {
+  const response = await apiClient.get<RecoveryCodeStatusResponse>(
+    '/api/device/recovery-codes/status',
+    { params: { device_fingerprint: deviceFingerprint } },
+  )
+  return response.data
+}
+
+export async function recoverDeviceWithCode(
+  payload: RecoveryCodeRecoverRequest,
+): Promise<RecoveryCodeRecoverResponse> {
+  const response = await apiClient.post<RecoveryCodeRecoverResponse>(
+    '/api/device/recovery-codes/recover',
     payload,
   )
   return response.data

@@ -82,6 +82,55 @@ class PasskeyEndpointsTests(unittest.TestCase):
         self.assertEqual(body['device_id'], 12)
         self.assertEqual(body['device_fingerprint'], 'fp-test')
 
+    @patch('app.routers.attendance.log_audit')
+    @patch('app.routers.attendance.issue_recovery_codes')
+    def test_recovery_code_issue_endpoint(self, mock_issue_recovery_codes, _mock_log_audit) -> None:
+        device = Device(id=22, employee_id=9, device_fingerprint='fp-rec-issue', is_active=True)
+        expires_at = datetime(2026, 12, 31, 12, 0, 0, tzinfo=timezone.utc)
+        mock_issue_recovery_codes.return_value = (
+            device,
+            ['AB3D-9K2M', 'HT7L-Q2PW'],
+            expires_at,
+        )
+
+        fake_db = _FakeDB()
+        app.dependency_overrides[get_db] = _override_get_db(fake_db)
+        client = TestClient(app)
+
+        response = client.post(
+            '/api/device/recovery-codes/issue',
+            json={'device_fingerprint': 'fp-rec-issue', 'recovery_pin': '123456'},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body['ok'])
+        self.assertEqual(body['employee_id'], 9)
+        self.assertEqual(body['device_id'], 22)
+        self.assertEqual(body['code_count'], 2)
+        self.assertEqual(body['recovery_codes'], ['AB3D-9K2M', 'HT7L-Q2PW'])
+
+    @patch('app.routers.attendance.recover_device_with_code')
+    def test_recovery_code_recover_endpoint(self, mock_recover_with_code) -> None:
+        device = Device(id=23, employee_id=10, device_fingerprint='fp-rec-ok', is_active=True)
+        mock_recover_with_code.return_value = device
+
+        fake_db = _FakeDB()
+        app.dependency_overrides[get_db] = _override_get_db(fake_db)
+        client = TestClient(app)
+
+        response = client.post(
+            '/api/device/recovery-codes/recover',
+            json={'employee_id': 10, 'recovery_pin': '987654', 'recovery_code': 'AB3D-9K2M'},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body['ok'])
+        self.assertEqual(body['employee_id'], 10)
+        self.assertEqual(body['device_id'], 23)
+        self.assertEqual(body['device_fingerprint'], 'fp-rec-ok')
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -29,6 +29,8 @@ class SchemaGuardResult:
 REQUIRED_TABLE_COLUMNS: dict[str, set[str]] = {
     "employees": {"id", "shift_id"},
     "attendance_events": {"id", "source"},
+    "devices": {"id", "recovery_pin_hash"},
+    "device_recovery_codes": {"id", "device_id", "code_hash", "expires_at"},
     "alembic_version": {"version_num"},
 }
 

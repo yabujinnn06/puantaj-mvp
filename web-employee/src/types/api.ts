@@ -150,6 +150,41 @@ export interface PasskeyRecoverVerifyResponse {
   device_fingerprint: string
 }
 
+export interface RecoveryCodeIssueRequest {
+  device_fingerprint: string
+  recovery_pin: string
+}
+
+export interface RecoveryCodeIssueResponse {
+  ok: boolean
+  employee_id: number
+  device_id: number
+  code_count: number
+  expires_at: string
+  recovery_codes: string[]
+}
+
+export interface RecoveryCodeStatusResponse {
+  employee_id: number
+  device_id: number
+  recovery_ready: boolean
+  active_code_count: number
+  expires_at: string | null
+}
+
+export interface RecoveryCodeRecoverRequest {
+  employee_id: number
+  recovery_pin: string
+  recovery_code: string
+}
+
+export interface RecoveryCodeRecoverResponse {
+  ok: boolean
+  employee_id: number
+  device_id: number
+  device_fingerprint: string
+}
+
 export interface ApiErrorShape {
   error?: {
     code?: string

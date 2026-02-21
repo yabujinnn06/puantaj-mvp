@@ -4,8 +4,10 @@ import { Link } from 'react-router-dom'
 import {
   checkout,
   getEmployeePushConfig,
+  getRecoveryCodeStatus,
   getEmployeeStatus,
   getPasskeyRegisterOptions,
+  issueRecoveryCodes,
   parseApiError,
   scanEmployeeQr,
   subscribeEmployeePush,
@@ -216,6 +218,12 @@ export function HomePage() {
 
   const [isPasskeyBusy, setIsPasskeyBusy] = useState(false)
   const [passkeyNotice, setPasskeyNotice] = useState<string | null>(null)
+  const [isRecoveryBusy, setIsRecoveryBusy] = useState(false)
+  const [recoveryReady, setRecoveryReady] = useState(false)
+  const [recoveryCodeCount, setRecoveryCodeCount] = useState(0)
+  const [recoveryExpiresAt, setRecoveryExpiresAt] = useState<string | null>(null)
+  const [recoveryNotice, setRecoveryNotice] = useState<string | null>(null)
+  const [recoveryCodesPreview, setRecoveryCodesPreview] = useState<string[] | null>(null)
 
   const [isPushBusy, setIsPushBusy] = useState(false)
   const [pushEnabled, setPushEnabled] = useState(false)
@@ -251,6 +259,11 @@ export function HomePage() {
     setPushNeedsResubscribe(false)
     setPushSecondChanceOpen(false)
     setPasskeyNotice(null)
+    setRecoveryReady(false)
+    setRecoveryCodeCount(0)
+    setRecoveryExpiresAt(null)
+    setRecoveryNotice(null)
+    setRecoveryCodesPreview(null)
     setPushNotice(null)
     return true
   }, [])
@@ -379,6 +392,37 @@ export function HomePage() {
     }
 
     void loadStatus()
+    return () => {
+      cancelled = true
+    }
+  }, [deviceFingerprint, handleDeviceNotClaimed, lastAction?.response.event_id])
+
+  useEffect(() => {
+    if (!deviceFingerprint) {
+      setRecoveryReady(false)
+      setRecoveryCodeCount(0)
+      setRecoveryExpiresAt(null)
+      return
+    }
+
+    let cancelled = false
+    const loadRecoveryStatus = async () => {
+      try {
+        const statusData = await getRecoveryCodeStatus(deviceFingerprint)
+        if (cancelled) {
+          return
+        }
+        setRecoveryReady(Boolean(statusData.recovery_ready))
+        setRecoveryCodeCount(Number(statusData.active_code_count || 0))
+        setRecoveryExpiresAt(statusData.expires_at ?? null)
+      } catch (error) {
+        const parsed = parseApiError(error, 'Recovery code durumu alinamadi.')
+        if (!cancelled) {
+          handleDeviceNotClaimed(parsed)
+        }
+      }
+    }
+    void loadRecoveryStatus()
     return () => {
       cancelled = true
     }
@@ -513,6 +557,7 @@ export function HomePage() {
 
   const openShiftCheckinTime = statusSnapshot?.last_checkin_time_utc ?? statusSnapshot?.last_in_ts ?? null
   const passkeyRegistered = Boolean(statusSnapshot?.passkey_registered)
+  const recoveryStatusLabel = recoveryReady ? `Hazir (${recoveryCodeCount})` : 'Kurulu Degil'
 
   const pushGateRequired =
     Boolean(deviceFingerprint) && pushEnabled && !pushRegistered
@@ -714,6 +759,57 @@ export function HomePage() {
       setRequestId(parsed.requestId ?? null)
     } finally {
       setIsPasskeyBusy(false)
+    }
+  }
+
+  const runRecoveryCodeIssue = async () => {
+    if (!deviceFingerprint) {
+      setErrorMessage('Cihaz bagli degil. Davet linkine tiklayin.')
+      return
+    }
+
+    const pinInput = window.prompt('Recovery PIN belirleyin (6-12 hane, sadece rakam):', '')
+    if (pinInput === null) {
+      return
+    }
+    const pinConfirm = window.prompt('Recovery PIN tekrar:', '')
+    if (pinConfirm === null) {
+      return
+    }
+
+    const normalizedPin = pinInput.trim()
+    if (normalizedPin.length < 6 || normalizedPin.length > 12 || !/^\d+$/.test(normalizedPin)) {
+      setErrorMessage('Recovery PIN 6-12 hane olmali ve sadece rakam icermeli.')
+      return
+    }
+    if (normalizedPin !== pinConfirm.trim()) {
+      setErrorMessage('Recovery PIN dogrulamasi eslesmedi.')
+      return
+    }
+
+    setIsRecoveryBusy(true)
+    setRecoveryNotice(null)
+    setRecoveryCodesPreview(null)
+    setErrorMessage(null)
+    setRequestId(null)
+
+    try {
+      const result = await issueRecoveryCodes({
+        device_fingerprint: deviceFingerprint,
+        recovery_pin: normalizedPin,
+      })
+      setRecoveryReady(true)
+      setRecoveryCodeCount(result.code_count)
+      setRecoveryExpiresAt(result.expires_at)
+      setRecoveryCodesPreview(result.recovery_codes)
+      setRecoveryNotice('Recovery kodlari olusturuldu. Kodlari guvenli bir yere kaydet.')
+    } catch (error) {
+      const parsed = parseApiError(error, 'Recovery kodlari olusturulamadi.')
+      handleDeviceNotClaimed(parsed)
+      setErrorMessage(parsed.message)
+      setRequestId(parsed.requestId ?? null)
+    } finally {
+      setIsRecoveryBusy(false)
     }
   }
 
@@ -1150,6 +1246,13 @@ export function HomePage() {
                         : 'Servis Kapalı'}
                 </span>
               </article>
+
+              <article className="status-card">
+                <p className="small-title">Recovery Code</p>
+                <span className={`status-pill ${recoveryReady ? 'state-ok' : 'state-warn'}`}>
+                  {recoveryStatusLabel}
+                </span>
+              </article>
             </div>
 
             {hasOpenShift ? (
@@ -1198,6 +1301,47 @@ export function HomePage() {
                 </p>
               </section>
             )}
+
+            <section className={`passkey-brief ${recoveryReady ? 'passkey-brief-ready' : 'passkey-brief-setup'}`}>
+              <p className="passkey-brief-kicker">RECOVERY FALLBACK</p>
+              <h3 className="passkey-brief-title">Passkey zorunlu degil, Recovery Code kullan</h3>
+              <p className="passkey-brief-text">
+                iPhone dahil tum cihazlarda recovery code + PIN ile cihaz kimligini geri yukleyebilirsin.
+              </p>
+              {recoveryExpiresAt ? (
+                <p className="small-text">
+                  Son gecerlilik: <strong>{formatTs(recoveryExpiresAt)}</strong>
+                </p>
+              ) : null}
+              <div className="passkey-brief-actions">
+                <button
+                  type="button"
+                  className="btn btn-primary passkey-brief-btn"
+                  disabled={!deviceFingerprint || isRecoveryBusy || isSubmitting}
+                  onClick={() => void runRecoveryCodeIssue()}
+                >
+                  {isRecoveryBusy
+                    ? 'Recovery kodlari uretiliyor...'
+                    : recoveryReady
+                      ? 'Recovery Kodlarini Yenile'
+                      : 'Recovery Kodu Olustur'}
+                </button>
+                <Link className="inline-link passkey-brief-link" to="/recover">
+                  Kurtarma ekranina git
+                </Link>
+              </div>
+              {recoveryNotice ? <p className="small-text mt-2">{recoveryNotice}</p> : null}
+              {recoveryCodesPreview && recoveryCodesPreview.length > 0 ? (
+                <div className="notice-box notice-box-warning mt-2">
+                  <p className="small-text">
+                    Kodlari bir kez goruyorsun. Guvenli yere kaydet:
+                  </p>
+                  <p className="small-text">
+                    <strong>{recoveryCodesPreview.join(' | ')}</strong>
+                  </p>
+                </div>
+              ) : null}
+            </section>
 
             <div className="status-cta-row status-cta-row-compact">
               <button type="button" className="btn btn-ghost" onClick={() => setIsHelpOpen(true)}>
@@ -1307,7 +1451,7 @@ export function HomePage() {
                 <Link className="inline-link" to="/claim">
                   /claim ekranına git
                 </Link>
-                <p className="muted small-text mt-2">Daha once kurulum yaptiysan passkey ile kurtarma kullan.</p>
+                <p className="muted small-text mt-2">Daha once kurulum yaptiysan passkey veya recovery code ile kurtarma kullan.</p>
                 <Link className="inline-link" to="/recover">
                   /recover ekranına git
                 </Link>
