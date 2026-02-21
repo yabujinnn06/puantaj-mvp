@@ -892,6 +892,52 @@ def _cleanup_expired_daily_report_archives(
     return len(stale_archives)
 
 
+def _ensure_daily_report_notification_job(
+    session: Session,
+    *,
+    report_date: date,
+    archive_id: int,
+    file_name: str,
+    scheduled_at_utc: datetime,
+) -> tuple[NotificationJob | None, str]:
+    idempotency_key = f"{JOB_TYPE_ADMIN_DAILY_REPORT_READY}:{report_date.isoformat()}"
+    existing_job = session.scalar(
+        select(NotificationJob).where(NotificationJob.idempotency_key == idempotency_key)
+    )
+    if existing_job is None:
+        job = NotificationJob(
+            employee_id=None,
+            admin_user_id=None,
+            job_type=JOB_TYPE_ADMIN_DAILY_REPORT_READY,
+            payload={
+                "report_date": report_date.isoformat(),
+                "archive_id": archive_id,
+                "file_name": file_name,
+            },
+            scheduled_at_utc=scheduled_at_utc,
+            status="PENDING",
+            attempts=0,
+            last_error=None,
+            idempotency_key=idempotency_key,
+        )
+        session.add(job)
+        return job, "created"
+
+    if existing_job.status in {"FAILED", "CANCELED"}:
+        existing_job.status = "PENDING"
+        existing_job.scheduled_at_utc = scheduled_at_utc
+        existing_job.attempts = 0
+        existing_job.last_error = None
+        existing_job.payload = {
+            "report_date": report_date.isoformat(),
+            "archive_id": archive_id,
+            "file_name": file_name,
+        }
+        return existing_job, "reactivated"
+
+    return None, "unchanged"
+
+
 def schedule_daily_admin_report_archive_notifications(
     now_utc: datetime,
     db: Session | None = None,
@@ -910,114 +956,95 @@ def schedule_daily_admin_report_archive_notifications(
         local_now_date=local_now.date(),
     )
 
-    existing_archive = session.scalar(
+    archive = session.scalar(
         select(AdminDailyReportArchive).where(
             AdminDailyReportArchive.report_date == report_date,
             AdminDailyReportArchive.department_id.is_(None),
             AdminDailyReportArchive.region_id.is_(None),
         )
     )
-    if existing_archive is not None:
-        if deleted_archive_count > 0:
-            session.commit()
-            log_audit(
-                session,
-                actor_type=AuditActorType.SYSTEM,
-                actor_id="notification_scheduler",
-                action="ADMIN_DAILY_REPORT_ARCHIVE_CLEANUP",
-                success=True,
-                entity_type="admin_daily_report_archive",
-                entity_id=None,
-                details={
-                    "deleted_count": deleted_archive_count,
-                    "retention_days": max(0, int(get_settings().daily_report_archive_retention_days)),
-                },
-            )
-        return []
+    archive_created = False
+    archive_bytes_len = 0
+    employee_count = 0
+    if archive is None:
+        archive_bytes = build_puantaj_xlsx_bytes(
+            session,
+            mode="date_range",
+            start_date=report_date,
+            end_date=report_date,
+        )
+        employee_count, employee_ids_index, employee_names_index = _build_archive_employee_index(
+            session,
+            report_date=report_date,
+            department_id=None,
+            region_id=None,
+        )
+        file_name = f"puantaj-gunluk-{report_date.isoformat()}.xlsx"
+        archive = AdminDailyReportArchive(
+            report_date=report_date,
+            department_id=None,
+            region_id=None,
+            file_name=file_name,
+            file_data=archive_bytes,
+            file_size_bytes=len(archive_bytes),
+            employee_count=employee_count,
+            employee_ids_index=employee_ids_index,
+            employee_names_index=employee_names_index,
+        )
+        session.add(archive)
+        session.flush()
+        archive_created = True
+        archive_bytes_len = len(archive_bytes)
 
-    archive_bytes = build_puantaj_xlsx_bytes(
-        session,
-        mode="date_range",
-        start_date=report_date,
-        end_date=report_date,
-    )
-    employee_count, employee_ids_index, employee_names_index = _build_archive_employee_index(
+    ensured_job, ensured_job_state = _ensure_daily_report_notification_job(
         session,
         report_date=report_date,
-        department_id=None,
-        region_id=None,
-    )
-    file_name = f"puantaj-gunluk-{report_date.isoformat()}.xlsx"
-    archive = AdminDailyReportArchive(
-        report_date=report_date,
-        department_id=None,
-        region_id=None,
-        file_name=file_name,
-        file_data=archive_bytes,
-        file_size_bytes=len(archive_bytes),
-        employee_count=employee_count,
-        employee_ids_index=employee_ids_index,
-        employee_names_index=employee_names_index,
-    )
-    session.add(archive)
-    session.flush()
-
-    idempotency_key = f"{JOB_TYPE_ADMIN_DAILY_REPORT_READY}:{report_date.isoformat()}"
-    if _has_pending_or_sent_job(session, idempotency_key=idempotency_key):
-        session.commit()
-        return []
-
-    job = NotificationJob(
-        employee_id=None,
-        admin_user_id=None,
-        job_type=JOB_TYPE_ADMIN_DAILY_REPORT_READY,
-        payload={
-            "report_date": report_date.isoformat(),
-            "archive_id": archive.id,
-            "file_name": file_name,
-        },
+        archive_id=archive.id,
+        file_name=archive.file_name,
         scheduled_at_utc=reference_utc,
-        status="PENDING",
-        attempts=0,
-        last_error=None,
-        idempotency_key=idempotency_key,
     )
-    session.add(job)
-    session.commit()
-    session.refresh(job)
 
-    log_audit(
-        session,
-        actor_type=AuditActorType.SYSTEM,
-        actor_id="notification_scheduler",
-        action="ADMIN_DAILY_REPORT_ARCHIVE_CREATED",
-        success=True,
-        entity_type="admin_daily_report_archive",
-        entity_id=str(archive.id),
-        details={
-            "report_date": report_date.isoformat(),
-            "file_name": file_name,
-            "file_size_bytes": len(archive_bytes),
-            "employee_count": employee_count,
-            "notification_job_id": job.id,
-        },
-    )
-    log_audit(
-        session,
-        actor_type=AuditActorType.SYSTEM,
-        actor_id="notification_scheduler",
-        action="NOTIFICATION_JOB_CREATED",
-        success=True,
-        entity_type="notification_job",
-        entity_id=str(job.id),
-        details={
-            "job_type": job.job_type,
-            "idempotency_key": job.idempotency_key,
-            "scheduled_at_utc": job.scheduled_at_utc.isoformat(),
-            "report_date": report_date.isoformat(),
-            "archive_id": archive.id,
-        },
-    )
+    if archive_created or ensured_job is not None or deleted_archive_count > 0:
+        session.commit()
+
+    if ensured_job is not None:
+        session.refresh(ensured_job)
+
+    if archive_created and ensured_job is not None:
+        log_audit(
+            session,
+            actor_type=AuditActorType.SYSTEM,
+            actor_id="notification_scheduler",
+            action="ADMIN_DAILY_REPORT_ARCHIVE_CREATED",
+            success=True,
+            entity_type="admin_daily_report_archive",
+            entity_id=str(archive.id),
+            details={
+                "report_date": report_date.isoformat(),
+                "file_name": archive.file_name,
+                "file_size_bytes": archive_bytes_len,
+                "employee_count": employee_count,
+                "notification_job_id": ensured_job.id,
+            },
+        )
+    if ensured_job is not None:
+        log_audit(
+            session,
+            actor_type=AuditActorType.SYSTEM,
+            actor_id="notification_scheduler",
+            action="NOTIFICATION_JOB_CREATED",
+            success=True,
+            entity_type="notification_job",
+            entity_id=str(ensured_job.id),
+            details={
+                "job_type": ensured_job.job_type,
+                "idempotency_key": ensured_job.idempotency_key,
+                "scheduled_at_utc": ensured_job.scheduled_at_utc.isoformat(),
+                "report_date": report_date.isoformat(),
+                "archive_id": archive.id,
+                "job_state": ensured_job_state,
+            },
+        )
     if deleted_archive_count > 0:
         log_audit(
             session,
@@ -1033,7 +1060,9 @@ def schedule_daily_admin_report_archive_notifications(
             },
         )
 
-    return [job]
+    if ensured_job is None:
+        return []
+    return [ensured_job]
 
 
 def send_pending_notifications(

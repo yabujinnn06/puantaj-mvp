@@ -16,6 +16,7 @@ from app.models import (
 )
 from app.services.notifications import (
     JOB_TYPE_ADMIN_ESCALATION_MISSED_CHECKOUT,
+    _ensure_daily_report_notification_job,
     _build_message_for_job,
     get_employees_with_open_shift,
 )
@@ -45,6 +46,18 @@ class _FakeNotificationDB:
 
     def get(self, model, pk):  # type: ignore[no-untyped-def]
         return self._get_map.get((model, pk))
+
+
+class _FakeDailyReportJobSession:
+    def __init__(self, *, existing_job: NotificationJob | None):
+        self._existing_job = existing_job
+        self.added: list[NotificationJob] = []
+
+    def scalar(self, _statement):  # type: ignore[no-untyped-def]
+        return self._existing_job
+
+    def add(self, job):  # type: ignore[no-untyped-def]
+        self.added.append(job)
 
 
 class NotificationServiceTests(unittest.TestCase):
@@ -216,6 +229,61 @@ class NotificationServiceTests(unittest.TestCase):
         self.assertIn("Vardiya dışı giriş: Evet", message.body)
         self.assertIn("Giriş (yerel): 2026-02-12 10:42", message.body)
         self.assertIn("Çıkış (yerel): KAYIT YOK", message.body)
+
+
+    def test_ensure_daily_report_job_creates_when_missing(self) -> None:
+        fake_session = _FakeDailyReportJobSession(existing_job=None)
+        scheduled_at = datetime(2026, 2, 21, 0, 0, tzinfo=timezone.utc)
+
+        job, state = _ensure_daily_report_notification_job(
+            fake_session,  # type: ignore[arg-type]
+            report_date=date(2026, 2, 20),
+            archive_id=77,
+            file_name="puantaj-gunluk-2026-02-20.xlsx",
+            scheduled_at_utc=scheduled_at,
+        )
+
+        self.assertEqual(state, "created")
+        self.assertIsNotNone(job)
+        self.assertEqual(len(fake_session.added), 1)
+        created_job = fake_session.added[0]
+        self.assertEqual(created_job.job_type, "ADMIN_DAILY_REPORT_READY")
+        self.assertEqual(created_job.status, "PENDING")
+        self.assertEqual(created_job.scheduled_at_utc, scheduled_at)
+        self.assertEqual(created_job.payload.get("archive_id"), 77)
+
+    def test_ensure_daily_report_job_reactivates_failed_job(self) -> None:
+        existing_job = NotificationJob(
+            id=88,
+            employee_id=None,
+            admin_user_id=None,
+            job_type="ADMIN_DAILY_REPORT_READY",
+            payload={"report_date": "2026-02-19", "archive_id": 55},
+            scheduled_at_utc=datetime(2026, 2, 20, 0, 0, tzinfo=timezone.utc),
+            status="FAILED",
+            attempts=5,
+            last_error="timeout",
+            idempotency_key="ADMIN_DAILY_REPORT_READY:2026-02-19",
+        )
+        fake_session = _FakeDailyReportJobSession(existing_job=existing_job)
+        scheduled_at = datetime(2026, 2, 21, 0, 1, tzinfo=timezone.utc)
+
+        job, state = _ensure_daily_report_notification_job(
+            fake_session,  # type: ignore[arg-type]
+            report_date=date(2026, 2, 19),
+            archive_id=99,
+            file_name="puantaj-gunluk-2026-02-19.xlsx",
+            scheduled_at_utc=scheduled_at,
+        )
+
+        self.assertEqual(state, "reactivated")
+        self.assertIs(job, existing_job)
+        self.assertEqual(existing_job.status, "PENDING")
+        self.assertEqual(existing_job.attempts, 0)
+        self.assertIsNone(existing_job.last_error)
+        self.assertEqual(existing_job.scheduled_at_utc, scheduled_at)
+        self.assertEqual(existing_job.payload.get("archive_id"), 99)
+        self.assertEqual(existing_job.payload.get("file_name"), "puantaj-gunluk-2026-02-19.xlsx")
 
 
 if __name__ == "__main__":

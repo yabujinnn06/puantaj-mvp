@@ -85,6 +85,13 @@ function isIosFamilyDevice(): boolean {
   return navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1
 }
 
+function isAndroidDevice(): boolean {
+  if (typeof navigator === 'undefined') {
+    return false
+  }
+  return /Android/i.test(navigator.userAgent || '')
+}
+
 function isStandaloneDisplayMode(): boolean {
   if (typeof window === 'undefined') {
     return false
@@ -583,16 +590,14 @@ export function HomePage() {
       return
     }
     if (!installPromptEvent) {
-      if (typeof document !== 'undefined') {
-        const manifestLink = document.createElement('a')
-        manifestLink.href = '/employee/manifest.webmanifest'
-        manifestLink.download = 'yabujin-employee.webmanifest'
-        document.body.appendChild(manifestLink)
-        manifestLink.click()
-        manifestLink.remove()
+      if (isAndroidDevice()) {
+        setInstallNotice(
+          'Android kurulum penceresi henüz hazır değil. Birkaç saniye sonra tekrar deneyin veya Chrome menüsünden "Ana Ekrana Ekle" seçin.',
+        )
+        return
       }
       setInstallNotice(
-        'Otomatik kurulum desteklenmiyor. Manifest indirildi; tarayıcı menüsünden ana ekrana ekleyin.',
+        'Bu tarayıcı otomatik kurulum penceresi sunmuyor. Tarayıcı menüsünden "Ana Ekrana Ekle" adımını kullanın.',
       )
       return
     }
@@ -622,17 +627,24 @@ export function HomePage() {
     !scannerActive &&
     !isHelpOpen
   const installPrimaryLabel =
-    isIosFamilyDevice() && !installPromptEvent ? 'Ana Ekrana Ekle' : 'Uygulamayı Yükle'
+    isIosFamilyDevice() && !installPromptEvent
+      ? 'Ana Ekrana Ekle'
+      : installPromptEvent && isAndroidDevice()
+        ? 'Tek Dokunuşla Ekle'
+        : 'Uygulamayı Yükle'
   const installBannerHint =
     isIosFamilyDevice() && !installPromptEvent
-      ? 'Safari Paylaş menüsünden Ana Ekrana Ekle adımıyla hızlı kurulum yapabilirsiniz.'
-      : 'Uygulamayı ana ekrana ekleyerek daha stabil ve hızlı kullanın.'
+      ? 'Safari alt menüden Paylaş > Ana Ekrana Ekle adımıyla kurulumu tamamlayın.'
+      : installPromptEvent && isAndroidDevice()
+        ? 'Android cihazlarda tek dokunuşla kurulum penceresi açılır.'
+        : 'Uygulamayı ana ekrana ekleyerek daha stabil ve hızlı kullanın.'
   const showInstallPromotions = !isStandaloneApp
   const installRailPrimaryLabel = useMemo(() => {
     if (isStandaloneApp) return 'Uygulama Kurulu'
     if (isInstallPromptBusy) return 'Hazırlanıyor...'
     if (isIosFamilyDevice() && !installPromptEvent) return 'Ana Ekrana Ekle'
-    if (!installPromptEvent) return 'Manifest İndir'
+    if (!installPromptEvent) return 'Ana Ekrana Ekle'
+    if (isAndroidDevice()) return 'Tek Dokunuşla Ekle'
     return 'Uygulamayı İndir'
   }, [installPromptEvent, isInstallPromptBusy, isStandaloneApp])
 
@@ -1476,11 +1488,11 @@ export function HomePage() {
             <div className="help-modal install-onboarding-modal">
               <p className="install-onboarding-kicker">IPHONE KURULUM</p>
               <h2>Ana Ekrana Ekle</h2>
-              <p>Bu portali uygulama gibi kullanmak icin bir kez Ana Ekrana ekleyin.</p>
+              <p>Bu portali uygulama gibi kullanmak icin Safari uzerinden tek seferlik kurulum yapin.</p>
               <ol className="install-onboarding-list">
-                <li>Safari altindaki Paylas ikonuna dokunun.</li>
+                <li>Safari alt menuden Paylas ikonuna dokunun.</li>
                 <li>Ana Ekrana Ekle secenegini secin.</li>
-                <li>YABUJIN kisayolunu acip devam edin.</li>
+                <li>Ekleye dokunup YABUJIN kisayolunu acin.</li>
               </ol>
               <div className="stack">
                 <button
@@ -1492,7 +1504,7 @@ export function HomePage() {
                   {isInstallPromptBusy ? 'Aciliyor...' : 'Ana Ekrana Ekle'}
                 </button>
                 <button type="button" className="btn btn-soft" onClick={dismissIosInstallOnboarding}>
-                  Anladim
+                  Adimlari Gosterme
                 </button>
               </div>
             </div>
