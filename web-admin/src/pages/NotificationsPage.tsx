@@ -188,6 +188,8 @@ export function NotificationsPage() {
   }, [archivePage, archiveRows])
   const archiveRangeStart = archiveRows.length === 0 ? 0 : (archivePage - 1) * ARCHIVE_PAGE_SIZE + 1
   const archiveRangeEnd = Math.min(archivePage * ARCHIVE_PAGE_SIZE, archiveRows.length)
+  const activeAdminSubscriptionCount = (adminSubsQuery.data ?? []).length
+  const canNotifyAdmins = activeAdminSubscriptionCount > 0
 
   const inviteMutation = useMutation({
     mutationFn: createAdminDeviceInvite,
@@ -203,11 +205,25 @@ export function NotificationsPage() {
   const sendMutation = useMutation({
     mutationFn: sendManualNotification,
     onSuccess: (res) => {
-      pushToast({
-        variant: 'success',
-        title: 'Bildirim gonderildi',
-        description: `Hedef: ${res.total_targets} / Gonderilen: ${res.sent}`,
-      })
+      if (res.total_targets <= 0) {
+        pushToast({
+          variant: 'error',
+          title: 'Bildirim gonderilemedi',
+          description: 'Hedef 0. Aktif abonelik yok; once cihaz claim edin.',
+        })
+      } else if (res.sent <= 0) {
+        pushToast({
+          variant: 'error',
+          title: 'Bildirim gonderilemedi',
+          description: `Hedef: ${res.total_targets} / Gonderilen: ${res.sent} / Hata: ${res.failed}`,
+        })
+      } else {
+        pushToast({
+          variant: 'success',
+          title: 'Bildirim gonderildi',
+          description: `Hedef: ${res.total_targets} / Gonderilen: ${res.sent}`,
+        })
+      }
       void queryClient.invalidateQueries({ queryKey: ['notification-jobs'] })
       void queryClient.invalidateQueries({ queryKey: ['notification-delivery-logs'] })
     },
@@ -235,11 +251,19 @@ export function NotificationsPage() {
   const notifyArchiveMutation = useMutation({
     mutationFn: (archiveId: number) => notifyDailyReportArchive(archiveId),
     onSuccess: (result) => {
-      pushToast({
-        variant: 'success',
-        title: 'Arsiv bildirimi gonderildi',
-        description: `Hedef: ${result.total_targets} | Gonderilen: ${result.sent} | Hata: ${result.failed}`,
-      })
+      if (result.total_targets <= 0 || result.sent <= 0) {
+        pushToast({
+          variant: 'error',
+          title: 'Arsiv bildirimi gonderilemedi',
+          description: `Hedef: ${result.total_targets} | Gonderilen: ${result.sent} | Hata: ${result.failed}. Aktif admin cihazi claim edilmeli.`,
+        })
+      } else {
+        pushToast({
+          variant: 'success',
+          title: 'Arsiv bildirimi gonderildi',
+          description: `Hedef: ${result.total_targets} | Gonderilen: ${result.sent} | Hata: ${result.failed}`,
+        })
+      }
       void queryClient.invalidateQueries({ queryKey: ['notification-jobs'] })
     },
     onError: (error) => {
@@ -510,6 +534,11 @@ export function NotificationsPage() {
           <div className="rounded border border-slate-200 p-3 text-sm">Arsiv dosyasi: {(archivesQuery.data ?? []).length}</div>
           <div className="rounded border border-slate-200 p-3 text-sm">Teslimat log satiri: {(deliveryLogsQuery.data ?? []).length}</div>
         </div>
+        {!canNotifyAdmins ? (
+          <p className="mt-2 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+            Aktif admin push aboneligi yok. "Admin cihaz claim linki uret" adimini tamamlamadan bildirim gonderilemez.
+          </p>
+        ) : null}
       </Panel>
 
       <Panel>
@@ -775,8 +804,9 @@ export function NotificationsPage() {
                       <button
                         type="button"
                         className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700"
+                        title={!canNotifyAdmins ? 'Aktif admin push aboneligi yok' : undefined}
                         onClick={() => notifyArchiveMutation.mutate(item.id)}
-                        disabled={notifyArchiveMutation.isPending}
+                        disabled={notifyArchiveMutation.isPending || !canNotifyAdmins}
                       >
                         Adminlere bildir
                       </button>
