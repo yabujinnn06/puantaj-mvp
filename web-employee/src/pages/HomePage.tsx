@@ -45,6 +45,10 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>
 }
 
+type WindowWithDeferredInstallPrompt = Window & {
+  __pfDeferredInstallPrompt?: BeforeInstallPromptEvent | null
+}
+
 function eventTypeLabel(eventType: 'IN' | 'OUT'): string {
   return eventType === 'IN' ? 'Giriş' : 'Çıkış'
 }
@@ -100,6 +104,21 @@ function isStandaloneDisplayMode(): boolean {
   }
   const nav = window.navigator as Navigator & { standalone?: boolean }
   return Boolean(window.matchMedia('(display-mode: standalone)').matches || nav.standalone)
+}
+
+function getDeferredInstallPromptFromWindow(): BeforeInstallPromptEvent | null {
+  if (typeof window === 'undefined') {
+    return null
+  }
+  const raw = (window as WindowWithDeferredInstallPrompt).__pfDeferredInstallPrompt
+  return raw ?? null
+}
+
+function setDeferredInstallPromptOnWindow(event: BeforeInstallPromptEvent | null): void {
+  if (typeof window === 'undefined') {
+    return
+  }
+  ;(window as WindowWithDeferredInstallPrompt).__pfDeferredInstallPrompt = event
 }
 
 function isSecurePushContext(): boolean {
@@ -235,11 +254,14 @@ export function HomePage() {
   const [pushSecondChanceOpen, setPushSecondChanceOpen] = useState(false)
   const [pushGateDismissed, setPushGateDismissed] = useState(false)
   const [isStandaloneApp, setIsStandaloneApp] = useState(() => isStandaloneDisplayMode())
-  const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null)
+  const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(() =>
+    getDeferredInstallPromptFromWindow(),
+  )
   const [installBannerVisible, setInstallBannerVisible] = useState(false)
   const [isInstallPromptBusy, setIsInstallPromptBusy] = useState(false)
   const [installNotice, setInstallNotice] = useState<string | null>(null)
   const [iosInstallOnboardingOpen, setIosInstallOnboardingOpen] = useState(false)
+  const [androidInstallOnboardingOpen, setAndroidInstallOnboardingOpen] = useState(false)
   const [iosInstallOnboardingDismissed, setIosInstallOnboardingDismissed] = useState(() =>
     hasSeenIosInstallOnboarding(),
   )
@@ -299,28 +321,48 @@ export function HomePage() {
       return
     }
 
+    const syncInstallPromptFromWindow = () => {
+      const deferredPrompt = getDeferredInstallPromptFromWindow()
+      if (deferredPrompt) {
+        setInstallPromptEvent(deferredPrompt)
+        if (!isInstallBannerDismissed() && !isStandaloneDisplayMode()) {
+          setInstallBannerVisible(true)
+        }
+      }
+    }
+
     const handleDisplayModeChange = () => {
       setIsStandaloneApp(isStandaloneDisplayMode())
     }
     const handleBeforeInstallPrompt = (event: Event) => {
       const promptEvent = event as BeforeInstallPromptEvent
       promptEvent.preventDefault()
+      setDeferredInstallPromptOnWindow(promptEvent)
       setInstallPromptEvent(promptEvent)
       if (!isInstallBannerDismissed() && !isStandaloneDisplayMode()) {
         setInstallBannerVisible(true)
       }
     }
     const handleAppInstalled = () => {
+      setDeferredInstallPromptOnWindow(null)
       setInstallPromptEvent(null)
       setInstallBannerVisible(false)
       setIosInstallOnboardingOpen(false)
+      setAndroidInstallOnboardingOpen(false)
       setIosInstallOnboardingDismissed(true)
       markIosInstallOnboardingSeen()
       setInstallNotice('Uygulama ana ekrana eklendi.')
       setIsStandaloneApp(true)
     }
+    const handleInstallPromptReady = () => {
+      syncInstallPromptFromWindow()
+    }
+    const handleFocus = () => {
+      syncInstallPromptFromWindow()
+    }
 
     const displayModeMedia = window.matchMedia('(display-mode: standalone)')
+    syncInstallPromptFromWindow()
     handleDisplayModeChange()
 
     if (typeof displayModeMedia.addEventListener === 'function') {
@@ -330,6 +372,8 @@ export function HomePage() {
     }
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt as EventListener)
     window.addEventListener('appinstalled', handleAppInstalled)
+    window.addEventListener('pf:installprompt-ready', handleInstallPromptReady as EventListener)
+    window.addEventListener('focus', handleFocus)
 
     return () => {
       if (typeof displayModeMedia.removeEventListener === 'function') {
@@ -339,6 +383,8 @@ export function HomePage() {
       }
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt as EventListener)
       window.removeEventListener('appinstalled', handleAppInstalled)
+      window.removeEventListener('pf:installprompt-ready', handleInstallPromptReady as EventListener)
+      window.removeEventListener('focus', handleFocus)
     }
   }, [])
 
@@ -346,6 +392,7 @@ export function HomePage() {
     if (isStandaloneApp) {
       setInstallBannerVisible(false)
       setIosInstallOnboardingOpen(false)
+      setAndroidInstallOnboardingOpen(false)
       setIosInstallOnboardingDismissed(true)
       markIosInstallOnboardingSeen()
       return
@@ -590,55 +637,71 @@ export function HomePage() {
     markIosInstallOnboardingSeen()
   }, [])
 
+  const dismissAndroidInstallOnboarding = useCallback(() => {
+    setAndroidInstallOnboardingOpen(false)
+  }, [])
+
   const openIosInstallOnboarding = useCallback(() => {
     setInstallNotice(null)
     setPushGateDismissed(true)
     setIosInstallOnboardingOpen(true)
   }, [])
 
+  const openAndroidInstallOnboarding = useCallback(() => {
+    setInstallNotice(null)
+    setAndroidInstallOnboardingOpen(true)
+  }, [])
+
   const runInstallPrompt = useCallback(async () => {
     setInstallNotice(null)
+    const activePrompt = installPromptEvent ?? getDeferredInstallPromptFromWindow()
 
-    if (isIosFamilyDevice() && !installPromptEvent) {
+    if (isIosFamilyDevice() && !activePrompt) {
       setInstallNotice('Kurulum için Safari paylaş menüsünden "Ana Ekrana Ekle" adımını kullanın.')
       return
     }
-    if (!installPromptEvent) {
-      setInstallNotice('Bu tarayıcı otomatik kurulum penceresi sunmuyor.')
+    if (!activePrompt) {
+      if (isAndroidDevice()) {
+        openAndroidInstallOnboarding()
+      } else {
+        setInstallNotice('Bu tarayıcı otomatik kurulum penceresi sunmuyor.')
+      }
       return
     }
 
+    setInstallPromptEvent(activePrompt)
     setIsInstallPromptBusy(true)
     try {
-      await installPromptEvent.prompt()
-      const choice = await installPromptEvent.userChoice
+      await activePrompt.prompt()
+      const choice = await activePrompt.userChoice
       if (choice.outcome === 'accepted') {
         setInstallBannerVisible(false)
+        setAndroidInstallOnboardingOpen(false)
       }
     } catch {
       setInstallNotice('Kurulum penceresi açılamadı. Tarayıcı menüsünden Ana Ekrana Ekle deneyin.')
     } finally {
+      setDeferredInstallPromptOnWindow(null)
       setInstallPromptEvent(null)
       setIsInstallPromptBusy(false)
     }
-  }, [installPromptEvent])
+  }, [installPromptEvent, openAndroidInstallOnboarding])
 
   const runDownloadInstallAction = useCallback(async () => {
     setInstallNotice(null)
+    const activePrompt = installPromptEvent ?? getDeferredInstallPromptFromWindow()
 
     if (isStandaloneApp) {
       setInstallNotice('Uygulama bu cihazda zaten kurulu.')
       return
     }
-    if (isIosFamilyDevice() && !installPromptEvent) {
+    if (isIosFamilyDevice() && !activePrompt) {
       openIosInstallOnboarding()
       return
     }
-    if (!installPromptEvent) {
+    if (!activePrompt) {
       if (isAndroidDevice()) {
-        setInstallNotice(
-          'Android kurulum penceresi henüz hazır değil. Birkaç saniye sonra tekrar deneyin veya Chrome menüsünden "Ana Ekrana Ekle" seçin.',
-        )
+        openAndroidInstallOnboarding()
         return
       }
       setInstallNotice(
@@ -647,7 +710,7 @@ export function HomePage() {
       return
     }
     await runInstallPrompt()
-  }, [installPromptEvent, isStandaloneApp, openIosInstallOnboarding, runInstallPrompt])
+  }, [installPromptEvent, isStandaloneApp, openAndroidInstallOnboarding, openIosInstallOnboarding, runInstallPrompt])
 
   const installBannerEligible = useMemo(() => {
     if (isStandaloneApp) {
@@ -660,6 +723,13 @@ export function HomePage() {
   const showIosInstallOnboarding =
     iosInstallOnboardingOpen &&
     isIosFamilyDevice() &&
+    !isStandaloneApp &&
+    !scannerActive &&
+    !isHelpOpen &&
+    !showPushGateModal
+  const showAndroidInstallOnboarding =
+    androidInstallOnboardingOpen &&
+    isAndroidDevice() &&
     !isStandaloneApp &&
     !scannerActive &&
     !isHelpOpen &&
@@ -703,7 +773,13 @@ export function HomePage() {
       qrPanelAutoFocusDoneRef.current = true
       return
     }
-    if (scannerActive || isHelpOpen || showPushGateModal || showIosInstallOnboarding) {
+    if (
+      scannerActive ||
+      isHelpOpen ||
+      showPushGateModal ||
+      showIosInstallOnboarding ||
+      showAndroidInstallOnboarding
+    ) {
       return
     }
 
@@ -719,7 +795,7 @@ export function HomePage() {
     if (!fullyVisible) {
       actionPanel.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
-  }, [isHelpOpen, scannerActive, showIosInstallOnboarding, showPushGateModal])
+  }, [isHelpOpen, scannerActive, showAndroidInstallOnboarding, showIosInstallOnboarding, showPushGateModal])
 
   const runPasskeyRegistration = async () => {
     if (!deviceFingerprint) {
@@ -1649,6 +1725,36 @@ export function HomePage() {
                 </button>
                 <button type="button" className="btn btn-soft" onClick={dismissIosInstallOnboarding}>
                   Adimlari Gosterme
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {showAndroidInstallOnboarding ? (
+          <div className="modal-backdrop install-onboarding-backdrop" role="dialog" aria-modal="true">
+            <div className="help-modal install-onboarding-modal">
+              <p className="install-onboarding-kicker">ANDROID KURULUM</p>
+              <h2>Tek Seferde Ana Ekrana Ekle</h2>
+              <p>
+                Kurulum penceresi otomatik gelmediyse Chrome menüsünden hızlıca tamamlayın.
+              </p>
+              <ol className="install-onboarding-list">
+                <li>Chrome sağ üstten 3 nokta menüsünü açın.</li>
+                <li>"Ana ekrana ekle" veya "Install app" seçeneğini seçin.</li>
+                <li>"Ekle / Install" ile kurulumu bitirin.</li>
+              </ol>
+              <div className="stack">
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={isInstallPromptBusy}
+                  onClick={() => void runInstallPrompt()}
+                >
+                  {isInstallPromptBusy ? 'Aciliyor...' : 'Tekrar Dene'}
+                </button>
+                <button type="button" className="btn btn-soft" onClick={dismissAndroidInstallOnboarding}>
+                  Simdilik Kapat
                 </button>
               </div>
             </div>
