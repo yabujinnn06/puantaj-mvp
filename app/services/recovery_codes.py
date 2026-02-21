@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import json
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -12,10 +15,18 @@ from app.models import Device, DeviceRecoveryCode, Employee
 from app.security import hash_password, verify_password
 from app.settings import get_settings
 
+try:
+    from cryptography.fernet import Fernet, InvalidToken
+except Exception:  # pragma: no cover - optional runtime guard
+    Fernet = None  # type: ignore[assignment]
+    InvalidToken = Exception  # type: ignore[assignment]
+
 RECOVERY_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 RECOVERY_CODE_RAW_LENGTH = 8
 RECOVERY_PIN_MIN_LEN = 6
 RECOVERY_PIN_MAX_LEN = 12
+RECOVERY_CODE_STATUS_ACTIVE = "ACTIVE"
+RECOVERY_CODE_STATUS_USED_OR_EXPIRED = "USED_OR_EXPIRED"
 
 
 def _utc_now() -> datetime:
@@ -53,6 +64,53 @@ def _format_code(raw_code: str) -> str:
 
 def _generate_code() -> str:
     return "".join(secrets.choice(RECOVERY_CODE_ALPHABET) for _ in range(RECOVERY_CODE_RAW_LENGTH))
+
+
+def _build_vault_cipher() -> Fernet:
+    if Fernet is None:
+        raise ApiError(
+            status_code=500,
+            code="RECOVERY_VAULT_UNAVAILABLE",
+            message="Recovery vault runtime is unavailable.",
+        )
+
+    settings = get_settings()
+    raw_key = (settings.recovery_admin_vault_key or "").strip()
+    material = raw_key or (settings.jwt_secret or "").strip() or "dev-recovery-vault-key"
+    derived = base64.urlsafe_b64encode(hashlib.sha256(material.encode("utf-8")).digest())
+    return Fernet(derived)
+
+
+def _encrypt_admin_vault(
+    *,
+    recovery_pin: str,
+    recovery_codes: list[str],
+    issued_at: datetime,
+    expires_at: datetime,
+) -> str:
+    cipher = _build_vault_cipher()
+    payload = {
+        "recovery_pin": recovery_pin,
+        "recovery_codes": list(recovery_codes),
+        "issued_at": issued_at.isoformat(),
+        "expires_at": expires_at.isoformat(),
+    }
+    raw = json.dumps(payload, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    return cipher.encrypt(raw).decode("utf-8")
+
+
+def _decrypt_admin_vault(token: str | None) -> dict[str, Any] | None:
+    if not token:
+        return None
+    try:
+        cipher = _build_vault_cipher()
+        decoded = cipher.decrypt(token.encode("utf-8"))
+        payload = json.loads(decoded.decode("utf-8"))
+    except (InvalidToken, ValueError, TypeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
 
 
 def _resolve_active_device(db: Session, *, device_fingerprint: str) -> Device:
@@ -122,6 +180,13 @@ def issue_recovery_codes(
 
     device.recovery_pin_hash = hash_password(normalized_pin)
     device.recovery_pin_updated_at = now_utc
+    device.recovery_admin_vault = _encrypt_admin_vault(
+        recovery_pin=normalized_pin,
+        recovery_codes=plain_codes,
+        issued_at=now_utc,
+        expires_at=expires_at,
+    )
+    device.recovery_admin_vault_updated_at = now_utc
     db.commit()
     db.refresh(device)
     return device, plain_codes, expires_at
@@ -151,6 +216,64 @@ def get_recovery_status(
         "recovery_ready": bool(device.recovery_pin_hash and active_codes),
         "active_code_count": len(active_codes),
         "expires_at": nearest_expiry,
+    }
+
+
+def get_admin_recovery_snapshot(
+    db: Session,
+    *,
+    device: Device,
+) -> dict[str, Any]:
+    now_utc = _utc_now()
+    all_codes = list(
+        db.scalars(
+            select(DeviceRecoveryCode).where(
+                DeviceRecoveryCode.device_id == device.id,
+            )
+        ).all()
+    )
+    active_codes = [
+        row
+        for row in all_codes
+        if row.is_active and row.used_at is None and row.expires_at >= now_utc
+    ]
+    nearest_expiry = min((row.expires_at for row in active_codes), default=None)
+
+    payload = _decrypt_admin_vault(device.recovery_admin_vault)
+    plain_pin = payload.get("recovery_pin") if isinstance(payload, dict) else None
+    raw_codes = payload.get("recovery_codes") if isinstance(payload, dict) else None
+    plain_codes: list[str] = []
+    if isinstance(raw_codes, list):
+        for item in raw_codes:
+            if isinstance(item, str):
+                plain_codes.append(_format_code(item))
+
+    unmatched_active = list(active_codes)
+    entries: list[dict[str, str]] = []
+    for item in plain_codes:
+        try:
+            normalized_code = _normalize_code(item)
+        except ApiError:
+            entries.append({"code": item, "status": RECOVERY_CODE_STATUS_USED_OR_EXPIRED})
+            continue
+        matched_index = None
+        for index, candidate in enumerate(unmatched_active):
+            if verify_password(normalized_code, candidate.code_hash):
+                matched_index = index
+                break
+        if matched_index is None:
+            entries.append({"code": item, "status": RECOVERY_CODE_STATUS_USED_OR_EXPIRED})
+            continue
+        entries.append({"code": item, "status": RECOVERY_CODE_STATUS_ACTIVE})
+        unmatched_active.pop(matched_index)
+
+    return {
+        "recovery_ready": bool(device.recovery_pin_hash and active_codes),
+        "recovery_code_active_count": len(active_codes),
+        "recovery_expires_at": nearest_expiry,
+        "recovery_pin_updated_at": device.recovery_pin_updated_at,
+        "recovery_pin_plain": plain_pin if isinstance(plain_pin, str) and plain_pin else None,
+        "recovery_code_entries": entries,
     }
 
 

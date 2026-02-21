@@ -326,6 +326,7 @@ export interface EmployeeDeviceOverviewParams {
   employee_id?: number
   region_id?: number
   include_inactive?: boolean
+  include_recovery_secrets?: boolean
   q?: string
   offset?: number
   limit?: number

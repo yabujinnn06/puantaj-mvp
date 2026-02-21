@@ -98,6 +98,17 @@ export interface EmployeeDeviceOverviewDevice {
   device_fingerprint: string
   is_active: boolean
   created_at: string
+  recovery_ready: boolean
+  recovery_code_active_count: number
+  recovery_expires_at: string | null
+  recovery_pin_updated_at: string | null
+  recovery_pin_plain: string | null
+  recovery_code_entries: RecoveryCodeAdminEntry[]
+}
+
+export interface RecoveryCodeAdminEntry {
+  code: string
+  status: 'ACTIVE' | 'USED_OR_EXPIRED'
 }
 
 export interface EmployeeDeviceOverview {

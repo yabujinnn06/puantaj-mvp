@@ -165,6 +165,7 @@ from app.services.push_notifications import (
     send_push_to_employees,
     upsert_admin_push_subscription,
 )
+from app.services.recovery_codes import get_admin_recovery_snapshot
 from app.services.schedule_plans import plan_applies_to_employee
 
 router = APIRouter(tags=["admin"])
@@ -1815,9 +1816,11 @@ def list_devices(db: Session = Depends(get_db)) -> list[DeviceRead]:
     dependencies=[Depends(require_admin_permission("devices"))],
 )
 def list_employee_device_overview(
+    request: Request,
     employee_id: int | None = Query(default=None, ge=1),
     region_id: int | None = Query(default=None, ge=1),
     include_inactive: bool = Query(default=True),
+    include_recovery_secrets: bool = Query(default=False),
     q: str | None = Query(default=None, min_length=1),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=500),
@@ -1880,15 +1883,51 @@ def list_employee_device_overview(
             reverse=True,
         )
         limited_devices = all_devices[:device_limit]
-        device_rows = [
-            EmployeeDeviceOverviewDevice(
-                id=device.id,
-                device_fingerprint=device.device_fingerprint,
-                is_active=device.is_active,
-                created_at=device.created_at,
+        device_rows: list[EmployeeDeviceOverviewDevice] = []
+        for device in limited_devices:
+            recovery_snapshot = (
+                get_admin_recovery_snapshot(db, device=device)
+                if include_recovery_secrets
+                else None
             )
-            for device in limited_devices
-        ]
+            device_rows.append(
+                EmployeeDeviceOverviewDevice(
+                    id=device.id,
+                    device_fingerprint=device.device_fingerprint,
+                    is_active=device.is_active,
+                    created_at=device.created_at,
+                    recovery_ready=(
+                        recovery_snapshot["recovery_ready"]
+                        if recovery_snapshot is not None
+                        else False
+                    ),
+                    recovery_code_active_count=(
+                        recovery_snapshot["recovery_code_active_count"]
+                        if recovery_snapshot is not None
+                        else 0
+                    ),
+                    recovery_expires_at=(
+                        recovery_snapshot["recovery_expires_at"]
+                        if recovery_snapshot is not None
+                        else None
+                    ),
+                    recovery_pin_updated_at=(
+                        recovery_snapshot["recovery_pin_updated_at"]
+                        if recovery_snapshot is not None
+                        else None
+                    ),
+                    recovery_pin_plain=(
+                        recovery_snapshot["recovery_pin_plain"]
+                        if recovery_snapshot is not None
+                        else None
+                    ),
+                    recovery_code_entries=(
+                        recovery_snapshot["recovery_code_entries"]
+                        if recovery_snapshot is not None
+                        else []
+                    ),
+                )
+            )
 
         rows.append(
             EmployeeDeviceOverviewRead(
@@ -1911,6 +1950,26 @@ def list_employee_device_overview(
             )
         )
 
+    if include_recovery_secrets and request is not None:
+        log_audit(
+            db,
+            actor_type=AuditActorType.ADMIN,
+            actor_id=str(getattr(request.state, "actor_id", "admin")),
+            action="DEVICE_RECOVERY_SECRETS_VIEWED",
+            success=True,
+            entity_type="employee",
+            entity_id=str(employee_id) if employee_id is not None else None,
+            ip=_client_ip(request),
+            user_agent=_user_agent(request),
+            details={
+                "employee_id": employee_id,
+                "region_id": region_id,
+                "offset": offset,
+                "limit": limit,
+                "device_limit": device_limit,
+            },
+            request_id=getattr(request.state, "request_id", None),
+        )
     return rows
 
 

@@ -682,6 +682,50 @@ class AdminPuantajFeatureTests(unittest.TestCase):
         self.assertEqual(payload[0]["token_expired"], 1)
         self.assertEqual(len(payload[0]["devices"]), 2)
 
+    @patch("app.routers.admin.log_audit")
+    @patch("app.routers.admin.get_admin_recovery_snapshot")
+    def test_employee_device_overview_can_include_recovery_secrets(
+        self,
+        mock_get_admin_recovery_snapshot,
+        _mock_log_audit,
+    ) -> None:
+        employee = Employee(id=4, full_name="Recovery Test", department_id=1, is_active=True)
+        employee.department = Department(id=1, name="Operasyon")
+        employee.devices = [
+            Device(
+                id=31,
+                employee_id=4,
+                device_fingerprint="device-recovery",
+                is_active=True,
+                created_at=datetime(2026, 2, 11, 9, 30, tzinfo=timezone.utc),
+            )
+        ]
+        employee.device_invites = []
+        mock_get_admin_recovery_snapshot.return_value = {
+            "recovery_ready": True,
+            "recovery_code_active_count": 7,
+            "recovery_expires_at": datetime(2026, 12, 31, 18, 0, tzinfo=timezone.utc),
+            "recovery_pin_updated_at": datetime(2026, 2, 11, 9, 31, tzinfo=timezone.utc),
+            "recovery_pin_plain": "123456",
+            "recovery_code_entries": [{"code": "AB3D-9K2M", "status": "ACTIVE"}],
+        }
+
+        fake_db = _FakeEmployeeDeviceOverviewDB([employee])
+        app.dependency_overrides[get_db] = _override_get_db(fake_db)
+        app.dependency_overrides[require_admin] = lambda: _super_admin_claims()
+        client = TestClient(app)
+
+        response = client.get("/api/admin/employee-device-overview?employee_id=4&include_recovery_secrets=true")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload), 1)
+        self.assertEqual(len(payload[0]["devices"]), 1)
+        device = payload[0]["devices"][0]
+        self.assertTrue(device["recovery_ready"])
+        self.assertEqual(device["recovery_code_active_count"], 7)
+        self.assertEqual(device["recovery_pin_plain"], "123456")
+        self.assertEqual(device["recovery_code_entries"][0]["status"], "ACTIVE")
+
     def test_update_employee_department_clears_shift_if_department_changes(self) -> None:
         employee = Employee(id=6, full_name="Departman Test", region_id=1, department_id=1, shift_id=7, is_active=True)
         old_department = Department(id=1, name="Eski Departman", region_id=1)

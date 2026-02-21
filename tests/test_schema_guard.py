@@ -55,7 +55,7 @@ class SchemaGuardTests(unittest.TestCase):
             columns_by_table={
                 "employees": {"id", "full_name", "shift_id"},
                 "attendance_events": {"id", "source", "employee_id"},
-                "devices": {"id", "recovery_pin_hash"},
+                "devices": {"id", "recovery_pin_hash", "recovery_admin_vault"},
                 "device_recovery_codes": {"id", "device_id", "code_hash", "expires_at"},
                 "alembic_version": {"version_num"},
             },
@@ -89,6 +89,7 @@ class SchemaGuardTests(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertTrue(any(item.startswith("MISSING_COLUMNS:employees:shift_id") for item in result.issues))
         self.assertTrue(any(item.startswith("MISSING_COLUMNS:attendance_events:source") for item in result.issues))
+        self.assertTrue(any(item.startswith("MISSING_COLUMNS:devices:") for item in result.issues))
         self.assertTrue(any(item.startswith("MISSING_ENUM_VALUES:attendance_event_source:MANUAL") for item in result.issues))
         self.assertIn("ALEMBIC_VERSION_EMPTY", result.issues)
 

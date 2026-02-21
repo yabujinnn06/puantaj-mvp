@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     schema_guard_strict: bool = True
     recovery_code_count: int = 8
     recovery_code_expiry_days: int = 365
+    recovery_admin_vault_key: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=".env",

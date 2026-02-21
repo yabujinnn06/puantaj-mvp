@@ -6,10 +6,12 @@ import { parseApiError } from '../api/error'
 import { EmployeeAutocompleteField } from '../components/EmployeeAutocompleteField'
 import { ErrorBlock } from '../components/ErrorBlock'
 import { LoadingBlock } from '../components/LoadingBlock'
+import { Modal } from '../components/Modal'
 import { PageHeader } from '../components/PageHeader'
 import { Panel } from '../components/Panel'
 import { StatusBadge } from '../components/StatusBadge'
 import { useToast } from '../hooks/useToast'
+import type { EmployeeDeviceOverviewDevice } from '../types/api'
 
 function formatDateTime(value: string | null | undefined): string {
   if (!value) return '-'
@@ -17,6 +19,10 @@ function formatDateTime(value: string | null | undefined): string {
     dateStyle: 'short',
     timeStyle: 'short',
   }).format(new Date(value))
+}
+
+function recoveryCodeStatusLabel(value: 'ACTIVE' | 'USED_OR_EXPIRED'): string {
+  return value === 'ACTIVE' ? 'Aktif' : 'Kullanildi/Suresi Doldu'
 }
 
 export function DevicesPage() {
@@ -30,6 +36,7 @@ export function DevicesPage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
   const [expandedEmployeeId, setExpandedEmployeeId] = useState<number | null>(null)
+  const [selectedDeviceDetail, setSelectedDeviceDetail] = useState<EmployeeDeviceOverviewDevice | null>(null)
 
   const employeeId = selectedEmployeeId ? Number(selectedEmployeeId) : undefined
   const offset = employeeId ? 0 : (page - 1) * pageSize
@@ -63,6 +70,7 @@ export function DevicesPage() {
       getEmployeeDeviceOverview({
         employee_id: expandedEmployeeId ?? undefined,
         include_inactive: true,
+        include_recovery_secrets: true,
         offset: 0,
         limit: 1,
         device_limit: 100,
@@ -297,6 +305,7 @@ export function DevicesPage() {
                                     <th className="py-2">Cihaz ID</th>
                                     <th className="py-2">Durum</th>
                                     <th className="py-2">Fingerprint</th>
+                                    <th className="py-2">Recovery</th>
                                     <th className="py-2">Oluşturulma</th>
                                     <th className="py-2 text-right">İşlem</th>
                                   </tr>
@@ -309,25 +318,45 @@ export function DevicesPage() {
                                         <StatusBadge value={device.is_active ? 'Aktif' : 'Pasif'} />
                                       </td>
                                       <td className="py-2 font-mono">{device.device_fingerprint}</td>
+                                      <td className="py-2 text-[11px] text-slate-700">
+                                        {device.recovery_ready ? (
+                                          <span className="rounded-full bg-emerald-100 px-2 py-1 font-semibold text-emerald-700">
+                                            Hazir ({device.recovery_code_active_count})
+                                          </span>
+                                        ) : (
+                                          <span className="rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-700">
+                                            Kurulu Degil
+                                          </span>
+                                        )}
+                                      </td>
                                       <td className="py-2">{formatDateTime(device.created_at)}</td>
                                       <td className="py-2 text-right">
-                                        <button
-                                          type="button"
-                                          disabled={toggleDeviceMutation.isPending}
-                                          onClick={() =>
-                                            toggleDeviceMutation.mutate({
-                                              deviceId: device.id,
-                                              isActive: !device.is_active,
-                                            })
-                                          }
-                                          className={`rounded-lg px-2 py-1 text-[11px] font-semibold text-white ${
-                                            device.is_active
-                                              ? 'bg-rose-600 hover:bg-rose-700'
-                                              : 'bg-emerald-600 hover:bg-emerald-700'
-                                          } disabled:cursor-not-allowed disabled:opacity-60`}
-                                        >
-                                          {device.is_active ? 'Pasife Al' : 'Aktif Et'}
-                                        </button>
+                                        <div className="flex items-center justify-end gap-2">
+                                          <button
+                                            type="button"
+                                            onClick={() => setSelectedDeviceDetail(device)}
+                                            className="rounded-lg border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
+                                          >
+                                            Detay
+                                          </button>
+                                          <button
+                                            type="button"
+                                            disabled={toggleDeviceMutation.isPending}
+                                            onClick={() =>
+                                              toggleDeviceMutation.mutate({
+                                                deviceId: device.id,
+                                                isActive: !device.is_active,
+                                              })
+                                            }
+                                            className={`rounded-lg px-2 py-1 text-[11px] font-semibold text-white ${
+                                              device.is_active
+                                                ? 'bg-rose-600 hover:bg-rose-700'
+                                                : 'bg-emerald-600 hover:bg-emerald-700'
+                                            } disabled:cursor-not-allowed disabled:opacity-60`}
+                                          >
+                                            {device.is_active ? 'Pasife Al' : 'Aktif Et'}
+                                          </button>
+                                        </div>
                                       </td>
                                     </tr>
                                   ))}
@@ -359,6 +388,78 @@ export function DevicesPage() {
           <p className="mt-3 text-sm text-slate-500">Seçilen filtreye uygun çalışan veya cihaz kaydı yok.</p>
         ) : null}
       </Panel>
+
+      <Modal
+        open={selectedDeviceDetail !== null}
+        title={selectedDeviceDetail ? `Cihaz #${selectedDeviceDetail.id} Recovery Detayi` : 'Recovery Detayi'}
+        onClose={() => setSelectedDeviceDetail(null)}
+      >
+        {selectedDeviceDetail ? (
+          <div className="space-y-3 text-sm">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <p className="text-xs uppercase tracking-wide text-slate-500">Fingerprint</p>
+              <p className="mt-1 break-all font-mono text-xs text-slate-800">
+                {selectedDeviceDetail.device_fingerprint}
+              </p>
+            </div>
+
+            <div className="grid gap-2 rounded-lg border border-slate-200 p-3 sm:grid-cols-2">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Recovery Durumu</p>
+                <p className="mt-1 font-semibold text-slate-900">
+                  {selectedDeviceDetail.recovery_ready ? 'Hazir' : 'Kurulu Degil'}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Aktif Kod</p>
+                <p className="mt-1 font-semibold text-slate-900">{selectedDeviceDetail.recovery_code_active_count}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-500">PIN Son Guncelleme</p>
+                <p className="mt-1 text-slate-800">{formatDateTime(selectedDeviceDetail.recovery_pin_updated_at)}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Kod Son Gecerlilik</p>
+                <p className="mt-1 text-slate-800">{formatDateTime(selectedDeviceDetail.recovery_expires_at)}</p>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-rose-200 bg-rose-50 p-3">
+              <p className="text-xs uppercase tracking-wide text-rose-700">Recovery PIN</p>
+              <p className="mt-1 font-mono text-lg font-semibold text-rose-900">
+                {selectedDeviceDetail.recovery_pin_plain ?? '-'}
+              </p>
+            </div>
+
+            {selectedDeviceDetail.recovery_code_entries.length > 0 ? (
+              <div className="rounded-lg border border-slate-200 p-3">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Recovery Kodlari</p>
+                <div className="mt-2 space-y-2">
+                  {selectedDeviceDetail.recovery_code_entries.map((entry) => (
+                    <div
+                      key={`${selectedDeviceDetail.id}-${entry.code}`}
+                      className="flex items-center justify-between rounded border border-slate-200 px-3 py-2"
+                    >
+                      <span className="font-mono text-slate-900">{entry.code}</span>
+                      <span
+                        className={`rounded-full px-2 py-1 text-[11px] font-semibold ${
+                          entry.status === 'ACTIVE'
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : 'bg-amber-100 text-amber-700'
+                        }`}
+                      >
+                        {recoveryCodeStatusLabel(entry.status)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-slate-500">Bu cihaz icin kayitli recovery kodu bulunamadi.</p>
+            )}
+          </div>
+        ) : null}
+      </Modal>
     </div>
   )
 }

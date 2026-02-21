@@ -202,11 +202,22 @@ class DeviceRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class RecoveryCodeAdminEntry(BaseModel):
+    code: str
+    status: Literal["ACTIVE", "USED_OR_EXPIRED"]
+
+
 class EmployeeDeviceOverviewDevice(BaseModel):
     id: int
     device_fingerprint: str
     is_active: bool
     created_at: datetime
+    recovery_ready: bool = False
+    recovery_code_active_count: int = 0
+    recovery_expires_at: datetime | None = None
+    recovery_pin_updated_at: datetime | None = None
+    recovery_pin_plain: str | None = None
+    recovery_code_entries: list[RecoveryCodeAdminEntry] = Field(default_factory=list)
 
 
 class EmployeeDeviceOverviewRead(BaseModel):

@@ -165,6 +165,8 @@ class Device(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
     recovery_pin_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     recovery_pin_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    recovery_admin_vault: Mapped[str | None] = mapped_column(Text, nullable=True)
+    recovery_admin_vault_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
