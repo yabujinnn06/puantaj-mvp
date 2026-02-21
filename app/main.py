@@ -136,7 +136,7 @@ def _apply_security_headers(request: Request, response: JSONResponse | Any) -> N
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
-    response.headers.setdefault("Permissions-Policy", "geolocation=(self), microphone=(), camera=(), payment=()")
+    response.headers.setdefault("Permissions-Policy", "geolocation=(self), microphone=(), camera=(self), payment=()")
     response.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
     response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
 
