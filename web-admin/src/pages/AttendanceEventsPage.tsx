@@ -26,6 +26,7 @@ import { SuspiciousReasonList } from '../components/SuspiciousReasonList'
 import { useToast } from '../hooks/useToast'
 import type { AttendanceEvent, AttendanceType, LocationStatus } from '../types/api'
 import { buildMonthlyAttendanceInsight, getAttendanceDayType } from '../utils/attendanceInsights'
+import { getFlagMeta } from '../utils/flagDictionary'
 
 const LOCATION_OPTIONS: { value: 'ALL' | LocationStatus; label: string }[] = [
   { value: 'ALL', label: 'Tüm konum durumları' },
@@ -122,6 +123,13 @@ function numericValue(raw: string): number | null {
     return parsed
   }
   return null
+}
+
+function formatFlagList(flags: string[]): string {
+  if (!flags.length) {
+    return '-'
+  }
+  return flags.map((flag) => `${getFlagMeta(flag).label} (${flag})`).join(', ')
 }
 
 export function AttendanceEventsPage() {
@@ -679,7 +687,7 @@ export function AttendanceEventsPage() {
                       <td className="py-2"><MinuteDisplay minutes={day.plan_overtime_minutes} /></td>
                       <td className="py-2"><MinuteDisplay minutes={day.legal_extra_work_minutes} /></td>
                       <td className="py-2"><MinuteDisplay minutes={day.legal_overtime_minutes} /></td>
-                      <td className="py-2 text-xs text-slate-600">{day.flags.length ? day.flags.join(', ') : '-'}</td>
+                      <td className="py-2 text-xs text-slate-600">{formatFlagList(day.flags)}</td>
                     </tr>
                   ))}
                 </tbody>

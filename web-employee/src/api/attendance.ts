@@ -48,6 +48,8 @@ const errorCodeMap: Record<string, string> = {
   ALREADY_CHECKED_IN: 'Bugün zaten giriş yaptınız. Mesaiyi bitirmeniz bekleniyor.',
   ALREADY_CHECKED_OUT: 'Bugün için çıkış işlemi zaten yapılmış.',
   DAY_ALREADY_FINISHED: 'Bugünkü mesai tamamlandı. Yeni giriş yarın yapılabilir.',
+  SECOND_CHECKIN_APPROVAL_REQUIRED:
+    'Bugünkü ikinci giriş için admin onayı gerekiyor. Admin onayından sonra tekrar deneyin.',
   PASSKEY_DISABLED: 'Passkey özelliği şu anda devre dışı.',
   PASSKEY_RUNTIME_UNAVAILABLE: 'Passkey altyapısı hazır değil.',
   PASSKEY_CHALLENGE_NOT_FOUND: 'Passkey doğrulama oturumu bulunamadı.',

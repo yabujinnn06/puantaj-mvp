@@ -146,6 +146,9 @@ export function flagLabel(key: string, value: unknown): string {
   if (key === 'MANUAL_CHECKOUT') {
     return 'Manuel çıkış'
   }
+  if (key === 'SECOND_CHECKIN_APPROVED') {
+    return '2. giris admin onayi'
+  }
   if (key === 'home_location_not_set' || (key === 'reason' && value === 'home_location_not_set')) {
     return 'Konum bilgisi eksik'
   }
@@ -155,3 +158,4 @@ export function flagLabel(key: string, value: unknown): string {
 export function hasDuplicateFlag(response: AttendanceActionResponse): boolean {
   return response.flags.DUPLICATE_EVENT === true
 }
+

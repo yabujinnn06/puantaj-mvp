@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from functools import lru_cache
+import secrets
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -11,6 +12,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.errors import ApiError
 from app.models import (
+    AttendanceExtraCheckinApproval,
     AttendanceEvent,
     AttendanceEventSource,
     AttendanceType,
@@ -27,9 +29,14 @@ from app.models import (
 from app.schemas import AttendanceEventCreate
 from app.settings import get_settings
 from app.services.location import distance_m, evaluate_location
+from app.services.push_notifications import send_push_to_admins
 from app.services.schedule_plans import resolve_effective_plan_for_employee_day
 
 QR_DOUBLE_SCAN_WINDOW = timedelta(minutes=5)
+EXTRA_CHECKIN_APPROVAL_STATUS_PENDING = "PENDING"
+EXTRA_CHECKIN_APPROVAL_STATUS_APPROVED = "APPROVED"
+EXTRA_CHECKIN_APPROVAL_STATUS_CONSUMED = "CONSUMED"
+EXTRA_CHECKIN_APPROVAL_STATUS_EXPIRED = "EXPIRED"
 
 
 def _normalize_ts(ts_utc: datetime | None) -> datetime:
@@ -590,6 +597,208 @@ def _resolve_today_status_for_employee(
     return today_status, last_in_event, last_out_event, last_event_today
 
 
+def _has_reached_daily_shift_limit(
+    db: Session,
+    *,
+    employee_id: int,
+    reference_ts_utc: datetime,
+) -> bool:
+    settings = get_settings()
+    max_cycles = int(settings.attendance_daily_max_cycles or 0)
+    if max_cycles <= 0:
+        return False
+
+    day_start, day_end = _local_day_bounds_utc(reference_ts_utc)
+    day_events = list(
+        db.scalars(
+            select(AttendanceEvent)
+            .where(
+                AttendanceEvent.employee_id == employee_id,
+                AttendanceEvent.ts_utc >= day_start,
+                AttendanceEvent.ts_utc < day_end,
+                AttendanceEvent.deleted_at.is_(None),
+            )
+            .order_by(AttendanceEvent.ts_utc.asc(), AttendanceEvent.id.asc())
+        ).all()
+    )
+
+    completed_cycles = 0
+    open_shift = False
+    for event in day_events:
+        if event.type == AttendanceType.IN:
+            if not open_shift:
+                open_shift = True
+            continue
+        if event.type == AttendanceType.OUT and open_shift:
+            completed_cycles += 1
+            open_shift = False
+            if completed_cycles >= max_cycles:
+                return True
+    return False
+
+
+def _local_day_from_utc(ts_utc: datetime) -> date:
+    return _normalize_ts(ts_utc).astimezone(_attendance_timezone()).date()
+
+
+def _expire_stale_extra_checkin_approvals(
+    db: Session,
+    *,
+    employee_id: int,
+    local_day: date,
+    reference_ts_utc: datetime,
+) -> None:
+    now_utc = _normalize_ts(reference_ts_utc)
+    rows = list(
+        db.scalars(
+            select(AttendanceExtraCheckinApproval).where(
+                AttendanceExtraCheckinApproval.employee_id == employee_id,
+                AttendanceExtraCheckinApproval.local_day == local_day,
+                AttendanceExtraCheckinApproval.status.in_(
+                    (
+                        EXTRA_CHECKIN_APPROVAL_STATUS_PENDING,
+                        EXTRA_CHECKIN_APPROVAL_STATUS_APPROVED,
+                    )
+                ),
+                AttendanceExtraCheckinApproval.expires_at < now_utc,
+            )
+        ).all()
+    )
+    if not rows:
+        return
+    for row in rows:
+        row.status = EXTRA_CHECKIN_APPROVAL_STATUS_EXPIRED
+    db.commit()
+
+
+def _resolve_approved_extra_checkin_approval(
+    db: Session,
+    *,
+    employee_id: int,
+    local_day: date,
+    reference_ts_utc: datetime,
+) -> AttendanceExtraCheckinApproval | None:
+    _expire_stale_extra_checkin_approvals(
+        db,
+        employee_id=employee_id,
+        local_day=local_day,
+        reference_ts_utc=reference_ts_utc,
+    )
+    now_utc = _normalize_ts(reference_ts_utc)
+    return db.scalar(
+        select(AttendanceExtraCheckinApproval)
+        .where(
+            AttendanceExtraCheckinApproval.employee_id == employee_id,
+            AttendanceExtraCheckinApproval.local_day == local_day,
+            AttendanceExtraCheckinApproval.status == EXTRA_CHECKIN_APPROVAL_STATUS_APPROVED,
+            AttendanceExtraCheckinApproval.consumed_at.is_(None),
+            AttendanceExtraCheckinApproval.expires_at >= now_utc,
+        )
+        .order_by(
+            AttendanceExtraCheckinApproval.approved_at.desc(),
+            AttendanceExtraCheckinApproval.id.desc(),
+        )
+    )
+
+
+def _create_or_refresh_extra_checkin_approval_request(
+    db: Session,
+    *,
+    employee: Employee,
+    device: Device,
+    requested_ts_utc: datetime,
+) -> AttendanceExtraCheckinApproval:
+    now_utc = _normalize_ts(requested_ts_utc)
+    local_day = _local_day_from_utc(now_utc)
+    _expire_stale_extra_checkin_approvals(
+        db,
+        employee_id=employee.id,
+        local_day=local_day,
+        reference_ts_utc=now_utc,
+    )
+    pending = db.scalar(
+        select(AttendanceExtraCheckinApproval)
+        .where(
+            AttendanceExtraCheckinApproval.employee_id == employee.id,
+            AttendanceExtraCheckinApproval.local_day == local_day,
+            AttendanceExtraCheckinApproval.status == EXTRA_CHECKIN_APPROVAL_STATUS_PENDING,
+            AttendanceExtraCheckinApproval.expires_at >= now_utc,
+        )
+        .order_by(AttendanceExtraCheckinApproval.id.desc())
+    )
+    approval_row = pending
+    created_new = False
+    if approval_row is None:
+        ttl_minutes = max(1, int(get_settings().attendance_extra_checkin_approval_ttl_minutes or 30))
+        approval_row = AttendanceExtraCheckinApproval(
+            employee_id=employee.id,
+            device_id=device.id,
+            local_day=local_day,
+            approval_token=secrets.token_urlsafe(32),
+            status=EXTRA_CHECKIN_APPROVAL_STATUS_PENDING,
+            requested_at=now_utc,
+            expires_at=now_utc + timedelta(minutes=ttl_minutes),
+            approved_at=None,
+            approved_by_admin_user_id=None,
+            approved_by_username=None,
+            consumed_at=None,
+            consumed_by_event_id=None,
+            push_total_targets=0,
+            push_sent=0,
+            push_failed=0,
+            last_push_at=None,
+        )
+        db.add(approval_row)
+        db.commit()
+        db.refresh(approval_row)
+        created_new = True
+
+    should_send_push = created_new
+    if not should_send_push:
+        if approval_row.last_push_at is None:
+            should_send_push = True
+        else:
+            should_send_push = (now_utc - _normalize_ts(approval_row.last_push_at)) >= timedelta(seconds=60)
+
+    if should_send_push:
+        employee_name = (employee.full_name or "-").strip() or "-"
+        local_day_text = local_day.isoformat()
+        push_result = send_push_to_admins(
+            db,
+            title=f"Ek Giris Onayi Gerekli (#{employee.id})",
+            body=(
+                f"{employee_name} bugun ikinci giris denemesi yapti. "
+                "Onaylamak icin bildirime dokunun."
+            ),
+            data={
+                "type": "ATTENDANCE_EXTRA_CHECKIN_APPROVAL",
+                "approval_id": approval_row.id,
+                "employee_id": employee.id,
+                "employee_name": employee_name,
+                "local_day": local_day_text,
+                "url": f"/admin-panel/attendance-extra-checkin-approval?token={approval_row.approval_token}",
+            },
+        )
+        approval_row.push_total_targets = int(push_result.get("total_targets", 0))
+        approval_row.push_sent = int(push_result.get("sent", 0))
+        approval_row.push_failed = int(push_result.get("failed", 0))
+        approval_row.last_push_at = now_utc
+        db.commit()
+
+    return approval_row
+
+
+def _consume_extra_checkin_approval(
+    approval: AttendanceExtraCheckinApproval,
+    *,
+    consumed_at_utc: datetime,
+    event_id: int,
+) -> None:
+    approval.status = EXTRA_CHECKIN_APPROVAL_STATUS_CONSUMED
+    approval.consumed_at = _normalize_ts(consumed_at_utc)
+    approval.consumed_by_event_id = event_id
+
+
 def _build_attendance_event(
     db: Session,
     *,
@@ -613,6 +822,7 @@ def _build_attendance_event(
         employee_id=employee.id,
         reference_ts_utc=ts_utc,
     )
+    approved_extra_checkin: AttendanceExtraCheckinApproval | None = None
     if event_type == AttendanceType.IN:
         if latest_event is not None and latest_event.type == AttendanceType.IN:
             raise ApiError(
@@ -620,6 +830,30 @@ def _build_attendance_event(
                 code="ALREADY_CHECKED_IN",
                 message="Acik mesai kaydi var. Lutfen once cikis yapin.",
             )
+        if _has_reached_daily_shift_limit(
+            db,
+            employee_id=employee.id,
+            reference_ts_utc=ts_utc,
+        ):
+            local_day = _local_day_from_utc(ts_utc)
+            approved_extra_checkin = _resolve_approved_extra_checkin_approval(
+                db,
+                employee_id=employee.id,
+                local_day=local_day,
+                reference_ts_utc=ts_utc,
+            )
+            if approved_extra_checkin is None:
+                _create_or_refresh_extra_checkin_approval_request(
+                    db,
+                    employee=employee,
+                    device=device,
+                    requested_ts_utc=ts_utc,
+                )
+                raise ApiError(
+                    status_code=409,
+                    code="SECOND_CHECKIN_APPROVAL_REQUIRED",
+                    message="Bugunku ikinci giris icin admin onayi gerekiyor. Onaydan sonra tekrar deneyin.",
+                )
     if event_type == AttendanceType.OUT:
         if latest_event is None:
             raise ApiError(
@@ -720,6 +954,9 @@ def _build_attendance_event(
         flags["SHIFT_NAME"] = resolved_shift.name
     if qr_site_id:
         flags["QR_SITE_ID"] = qr_site_id
+    if approved_extra_checkin is not None:
+        flags["SECOND_CHECKIN_APPROVED"] = True
+        flags["SECOND_CHECKIN_APPROVAL_ID"] = approved_extra_checkin.id
     if extra_flags:
         flags.update(extra_flags)
 
@@ -743,6 +980,13 @@ def _build_attendance_event(
         note=None,
     )
     db.add(event)
+    db.flush()
+    if approved_extra_checkin is not None:
+        _consume_extra_checkin_approval(
+            approved_extra_checkin,
+            consumed_at_utc=ts_utc,
+            event_id=event.id,
+        )
     db.commit()
     db.refresh(event)
     return event

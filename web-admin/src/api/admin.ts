@@ -7,6 +7,8 @@ import type {
   AdminDeviceInviteCreateResponse,
   AdminDevicePushSubscription,
   AdminManualNotificationSendResponse,
+  AttendanceExtraCheckinApproval,
+  AttendanceExtraCheckinApprovalApproveResponse,
   AdminPushSelfCheckResponse,
   AdminPushSelfTestResponse,
   AdminAuthResponse,
@@ -294,6 +296,12 @@ export interface DailyReportArchivesParams {
 
 export interface NotifyDailyReportArchivePayload {
   admin_user_ids?: number[]
+}
+
+export interface AttendanceExtraCheckinApprovalApprovePayload {
+  token: string
+  username: string
+  password: string
 }
 
 export interface CreateLeavePayload {
@@ -919,6 +927,26 @@ export async function downloadDailyReportArchiveWithPassword(
     blob: response.data,
     file_name: extractFileNameFromDisposition(contentDisposition),
   }
+}
+
+export async function getAttendanceExtraCheckinApproval(
+  token: string,
+): Promise<AttendanceExtraCheckinApproval> {
+  const response = await publicApiClient.get<AttendanceExtraCheckinApproval>(
+    '/api/admin/attendance-extra-checkin-approval',
+    { params: { token } },
+  )
+  return response.data
+}
+
+export async function approveAttendanceExtraCheckinApproval(
+  payload: AttendanceExtraCheckinApprovalApprovePayload,
+): Promise<AttendanceExtraCheckinApprovalApproveResponse> {
+  const response = await publicApiClient.post<AttendanceExtraCheckinApprovalApproveResponse>(
+    '/api/admin/attendance-extra-checkin-approval/approve',
+    payload,
+  )
+  return response.data
 }
 
 export async function notifyDailyReportArchive(

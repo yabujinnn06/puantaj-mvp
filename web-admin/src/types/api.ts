@@ -382,6 +382,32 @@ export interface AdminDailyReportArchivePasswordDownloadPayload {
   password: string
 }
 
+export type AttendanceExtraCheckinApprovalStatus = 'PENDING' | 'APPROVED' | 'CONSUMED' | 'EXPIRED'
+
+export interface AttendanceExtraCheckinApproval {
+  approval_id: number
+  employee_id: number
+  employee_name: string
+  device_id: number | null
+  local_day: string
+  status: AttendanceExtraCheckinApprovalStatus
+  requested_at: string
+  expires_at: string
+  approved_at: string | null
+  approved_by_username: string | null
+  consumed_at: string | null
+  push_total_targets: number
+  push_sent: number
+  push_failed: number
+  last_push_at: string | null
+}
+
+export interface AttendanceExtraCheckinApprovalApproveResponse {
+  ok: boolean
+  approval: AttendanceExtraCheckinApproval
+  already_processed: boolean
+}
+
 export interface AdminManualNotificationSendResponse {
   ok: boolean
   total_targets: number

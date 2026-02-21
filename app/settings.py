@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     base_public_url: str | None = None
     employee_portal_base_url: str = "http://127.0.0.1:8000/employee"
     attendance_timezone: str = "Europe/Istanbul"
+    attendance_daily_max_cycles: int = 1
+    attendance_extra_checkin_approval_ttl_minutes: int = 30
     passkey_mode: str = "optional"
     webauthn_rp_id: str | None = None
     webauthn_rp_name: str = "PuantajMVP"

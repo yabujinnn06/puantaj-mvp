@@ -17,6 +17,7 @@ from app.models import (
     AdminPushSubscription,
     AdminUser,
     AdminRefreshToken,
+    AttendanceExtraCheckinApproval,
     AttendanceEvent,
     AttendanceType,
     AuditActorType,
@@ -70,6 +71,9 @@ from app.schemas import (
     AdminDailyReportArchiveNotifyRequest,
     AdminDailyReportArchiveNotifyResponse,
     AdminDailyReportArchivePasswordDownloadRequest,
+    AdminAttendanceExtraCheckinApprovalApproveRequest,
+    AdminAttendanceExtraCheckinApprovalApproveResponse,
+    AdminAttendanceExtraCheckinApprovalRead,
     AuditLogRead,
     AttendanceEventRead,
     AttendanceEventManualCreateRequest,
@@ -190,6 +194,10 @@ from app.services.notifications import decrypt_archive_file_data
 router = APIRouter(tags=["admin"])
 settings = get_settings()
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+EXTRA_CHECKIN_APPROVAL_STATUS_PENDING = "PENDING"
+EXTRA_CHECKIN_APPROVAL_STATUS_APPROVED = "APPROVED"
+EXTRA_CHECKIN_APPROVAL_STATUS_CONSUMED = "CONSUMED"
+EXTRA_CHECKIN_APPROVAL_STATUS_EXPIRED = "EXPIRED"
 
 
 def _parse_hhmm(value: str) -> time:
@@ -529,6 +537,91 @@ def _build_admin_user_identity(admin_user: AdminUser) -> dict[str, Any]:
         if is_reserved_admin
         else normalize_permissions(admin_user.permissions),
     }
+
+
+def _authenticate_admin_identity_by_password(
+    db: Session,
+    *,
+    username: str,
+    password: str,
+) -> dict[str, Any] | None:
+    normalized_username = username.strip()
+    if not normalized_username:
+        return None
+    if verify_admin_credentials(normalized_username, password):
+        return _build_env_admin_identity(normalized_username)
+
+    admin_user = db.scalar(select(AdminUser).where(AdminUser.username == normalized_username))
+    if admin_user is None or not admin_user.is_active:
+        return None
+    if not verify_password(password, admin_user.password_hash):
+        return None
+    return _build_admin_user_identity(admin_user)
+
+
+def _normalize_extra_checkin_approval_status(
+    db: Session,
+    *,
+    approval: AttendanceExtraCheckinApproval,
+    now_utc: datetime,
+) -> None:
+    if approval.status in {
+        EXTRA_CHECKIN_APPROVAL_STATUS_PENDING,
+        EXTRA_CHECKIN_APPROVAL_STATUS_APPROVED,
+    } and approval.expires_at < now_utc:
+        approval.status = EXTRA_CHECKIN_APPROVAL_STATUS_EXPIRED
+        db.commit()
+        db.refresh(approval)
+
+
+def _resolve_extra_checkin_approval_by_token(
+    db: Session,
+    *,
+    token: str,
+) -> AttendanceExtraCheckinApproval:
+    normalized_token = token.strip()
+    if not normalized_token:
+        raise ApiError(
+            status_code=422,
+            code="VALIDATION_ERROR",
+            message="Approval token is required.",
+        )
+    approval = db.scalar(
+        select(AttendanceExtraCheckinApproval).where(
+            AttendanceExtraCheckinApproval.approval_token == normalized_token
+        )
+    )
+    if approval is None:
+        raise ApiError(
+            status_code=404,
+            code="EXTRA_CHECKIN_APPROVAL_NOT_FOUND",
+            message="Ek giris onay talebi bulunamadi.",
+        )
+    return approval
+
+
+def _to_attendance_extra_checkin_approval_read(
+    *,
+    approval: AttendanceExtraCheckinApproval,
+    employee_name: str,
+) -> AdminAttendanceExtraCheckinApprovalRead:
+    return AdminAttendanceExtraCheckinApprovalRead(
+        approval_id=approval.id,
+        employee_id=approval.employee_id,
+        employee_name=employee_name,
+        device_id=approval.device_id,
+        local_day=approval.local_day,
+        status=approval.status,
+        requested_at=approval.requested_at,
+        expires_at=approval.expires_at,
+        approved_at=approval.approved_at,
+        approved_by_username=approval.approved_by_username,
+        consumed_at=approval.consumed_at,
+        push_total_targets=int(approval.push_total_targets or 0),
+        push_sent=int(approval.push_sent or 0),
+        push_failed=int(approval.push_failed or 0),
+        last_push_at=approval.last_push_at,
+    )
 
 
 def _persist_refresh_token(
@@ -5042,6 +5135,182 @@ def password_download_daily_report_archive(
         content=archive_bytes,
         media_type=XLSX_MEDIA_TYPE,
         headers={"Content-Disposition": f'attachment; filename="{archive.file_name}"'},
+    )
+
+
+@router.get(
+    "/api/admin/attendance-extra-checkin-approval",
+    response_model=AdminAttendanceExtraCheckinApprovalRead,
+)
+def get_attendance_extra_checkin_approval(
+    request: Request,
+    token: str = Query(min_length=16, max_length=255),
+    db: Session = Depends(get_db),
+) -> AdminAttendanceExtraCheckinApprovalRead:
+    approval = _resolve_extra_checkin_approval_by_token(db, token=token)
+    now_utc = datetime.now(timezone.utc)
+    _normalize_extra_checkin_approval_status(
+        db,
+        approval=approval,
+        now_utc=now_utc,
+    )
+
+    employee = db.get(Employee, approval.employee_id)
+    if employee is None:
+        raise ApiError(
+            status_code=404,
+            code="EMPLOYEE_NOT_FOUND",
+            message="Calisan bulunamadi.",
+        )
+
+    request.state.actor = "system"
+    request.state.actor_id = "system"
+    request.state.employee_id = approval.employee_id
+    request.state.flags = {
+        "approval_id": approval.id,
+        "status": approval.status,
+    }
+    return _to_attendance_extra_checkin_approval_read(
+        approval=approval,
+        employee_name=(employee.full_name or "-"),
+    )
+
+
+@router.post(
+    "/api/admin/attendance-extra-checkin-approval/approve",
+    response_model=AdminAttendanceExtraCheckinApprovalApproveResponse,
+)
+def approve_attendance_extra_checkin_approval(
+    payload: AdminAttendanceExtraCheckinApprovalApproveRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> AdminAttendanceExtraCheckinApprovalApproveResponse:
+    ip = _client_ip(request)
+    user_agent = _user_agent(request)
+    request_id = getattr(request.state, "request_id", None)
+    request.state.actor = "system"
+    request.state.actor_id = "system"
+
+    if ip:
+        try:
+            ensure_login_attempt_allowed(ip)
+        except ApiError:
+            log_audit(
+                db,
+                actor_type=AuditActorType.SYSTEM,
+                actor_id=payload.username.strip() or "admin",
+                action="ATTENDANCE_EXTRA_CHECKIN_APPROVAL_FAIL",
+                success=False,
+                entity_type="attendance_extra_checkin_approval",
+                entity_id=None,
+                ip=ip,
+                user_agent=user_agent,
+                details={"reason": "TOO_MANY_ATTEMPTS"},
+                request_id=request_id,
+            )
+            raise
+
+    approval = _resolve_extra_checkin_approval_by_token(db, token=payload.token)
+    employee = db.get(Employee, approval.employee_id)
+    if employee is None:
+        raise ApiError(
+            status_code=404,
+            code="EMPLOYEE_NOT_FOUND",
+            message="Calisan bulunamadi.",
+        )
+
+    now_utc = datetime.now(timezone.utc)
+    _normalize_extra_checkin_approval_status(
+        db,
+        approval=approval,
+        now_utc=now_utc,
+    )
+
+    identity = _authenticate_admin_identity_by_password(
+        db,
+        username=payload.username,
+        password=payload.password,
+    )
+    if identity is None:
+        if ip:
+            register_login_failure(ip)
+        log_audit(
+            db,
+            actor_type=AuditActorType.SYSTEM,
+            actor_id=payload.username.strip() or "admin",
+            action="ATTENDANCE_EXTRA_CHECKIN_APPROVAL_FAIL",
+            success=False,
+            entity_type="attendance_extra_checkin_approval",
+            entity_id=str(approval.id),
+            ip=ip,
+            user_agent=user_agent,
+            details={"reason": "INVALID_CREDENTIALS"},
+            request_id=request_id,
+        )
+        raise ApiError(
+            status_code=401,
+            code="INVALID_CREDENTIALS",
+            message="Invalid credentials.",
+        )
+
+    if ip:
+        register_login_success(ip)
+
+    if approval.status == EXTRA_CHECKIN_APPROVAL_STATUS_EXPIRED:
+        raise ApiError(
+            status_code=409,
+            code="EXTRA_CHECKIN_APPROVAL_EXPIRED",
+            message="Ek giris onay talebinin suresi dolmus.",
+        )
+
+    already_processed = approval.status in {
+        EXTRA_CHECKIN_APPROVAL_STATUS_APPROVED,
+        EXTRA_CHECKIN_APPROVAL_STATUS_CONSUMED,
+    }
+    if approval.status == EXTRA_CHECKIN_APPROVAL_STATUS_PENDING:
+        approval.status = EXTRA_CHECKIN_APPROVAL_STATUS_APPROVED
+        approval.approved_at = now_utc
+        approval.approved_by_username = str(identity.get("username") or identity.get("sub") or payload.username)
+        admin_user_id = identity.get("admin_user_id")
+        approval.approved_by_admin_user_id = admin_user_id if isinstance(admin_user_id, int) else None
+        db.commit()
+        db.refresh(approval)
+
+    actor_id = str(identity.get("username") or identity.get("sub") or payload.username).strip() or "admin"
+    request.state.actor = "admin"
+    request.state.actor_id = actor_id
+    request.state.employee_id = approval.employee_id
+    request.state.flags = {
+        "approval_id": approval.id,
+        "status": approval.status,
+        "already_processed": already_processed,
+    }
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=actor_id,
+        action="ATTENDANCE_EXTRA_CHECKIN_APPROVAL_APPROVED",
+        success=True,
+        entity_type="attendance_extra_checkin_approval",
+        entity_id=str(approval.id),
+        ip=ip,
+        user_agent=user_agent,
+        details={
+            "employee_id": approval.employee_id,
+            "local_day": approval.local_day.isoformat(),
+            "status": approval.status,
+            "already_processed": already_processed,
+        },
+        request_id=request_id,
+    )
+
+    return AdminAttendanceExtraCheckinApprovalApproveResponse(
+        ok=True,
+        approval=_to_attendance_extra_checkin_approval_read(
+            approval=approval,
+            employee_name=(employee.full_name or "-"),
+        ),
+        already_processed=already_processed,
     )
 
 

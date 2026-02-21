@@ -11,6 +11,7 @@ import { DepartmentsPage } from './pages/DepartmentsPage'
 import { DevicesPage } from './pages/DevicesPage'
 import { ComplianceSettingsPage } from './pages/ComplianceSettingsPage'
 import { ArchivePasswordDownloadPage } from './pages/ArchivePasswordDownloadPage'
+import { AttendanceExtraCheckinApprovalPage } from './pages/AttendanceExtraCheckinApprovalPage'
 import { AdminUsersPage } from './pages/AdminUsersPage'
 import { EmployeeDetailPage } from './pages/EmployeeDetailPage'
 import { EmployeeMonthlyReportPage } from './pages/EmployeeMonthlyReportPage'
@@ -36,6 +37,7 @@ function App() {
 
       <Route path="/device-claim" element={<AdminDeviceClaimPage />} />
       <Route path="/archive-download" element={<ArchivePasswordDownloadPage />} />
+      <Route path="/attendance-extra-checkin-approval" element={<AttendanceExtraCheckinApprovalPage />} />
 
       <Route element={<AuthGuard />}>
         <Route element={<AppLayout />}>

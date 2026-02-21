@@ -20,6 +20,8 @@ const codeMessageMap: Record<string, string> = {
   MFA_SETUP_NOT_STARTED: 'Once MFA kurulumunu baslatin.',
   MFA_NOT_ENABLED: 'Bu hesapta MFA aktif degil.',
   ARCHIVE_DECRYPT_FAILED: 'Arsiv dosyasi acilamadi. Sunucu anahtarini kontrol edin.',
+  EXTRA_CHECKIN_APPROVAL_NOT_FOUND: 'Ek giris onay talebi bulunamadi.',
+  EXTRA_CHECKIN_APPROVAL_EXPIRED: 'Ek giris onay talebinin suresi dolmus.',
 }
 
 export function parseApiError(error: unknown, fallback: string): ParsedApiError {

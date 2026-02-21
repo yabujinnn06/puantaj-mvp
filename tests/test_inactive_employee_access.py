@@ -23,6 +23,12 @@ class _FakeDB:
     def get(self, _model, _pk):  # type: ignore[no-untyped-def]
         return None
 
+    def commit(self) -> None:
+        return None
+
+    def refresh(self, _obj) -> None:  # type: ignore[no-untyped-def]
+        return None
+
 
 def _override_get_db(fake_db: _FakeDB):
     def _override() -> Generator[_FakeDB, None, None]:

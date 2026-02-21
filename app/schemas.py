@@ -930,6 +930,36 @@ class AdminDailyReportArchivePasswordDownloadRequest(BaseModel):
     password: str = Field(min_length=1, max_length=128)
 
 
+class AdminAttendanceExtraCheckinApprovalRead(BaseModel):
+    approval_id: int
+    employee_id: int
+    employee_name: str
+    device_id: int | None = None
+    local_day: date
+    status: Literal["PENDING", "APPROVED", "CONSUMED", "EXPIRED"]
+    requested_at: datetime
+    expires_at: datetime
+    approved_at: datetime | None = None
+    approved_by_username: str | None = None
+    consumed_at: datetime | None = None
+    push_total_targets: int = 0
+    push_sent: int = 0
+    push_failed: int = 0
+    last_push_at: datetime | None = None
+
+
+class AdminAttendanceExtraCheckinApprovalApproveRequest(BaseModel):
+    token: str = Field(min_length=16, max_length=255)
+    username: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=1, max_length=128)
+
+
+class AdminAttendanceExtraCheckinApprovalApproveResponse(BaseModel):
+    ok: bool
+    approval: AdminAttendanceExtraCheckinApprovalRead
+    already_processed: bool = False
+
+
 class AdminManualNotificationSendRequest(BaseModel):
     title: str = Field(min_length=1, max_length=120)
     message: str = Field(min_length=1, max_length=2000)

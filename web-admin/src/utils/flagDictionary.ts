@@ -47,6 +47,12 @@ const FLAG_DICTIONARY: Record<string, FlagMeta> = {
     description: 'Net çalışma süresi, o gün için planlanan sürenin altında kaldı.',
     tone: 'warning',
   },
+  SECOND_CHECKIN_APPROVED: {
+    label: '2. giriş admin onayı',
+    description:
+      'Günlük maksimum vardiya döngüsü tamamlandıktan sonra, ek giriş kaydı admin onayı ile açıldı.',
+    tone: 'info',
+  },
   LOCATION_NO_LOCATION: {
     label: 'Konum yok',
     description: 'Kayıt sırasında konum bilgisi gönderilmedi veya alınamadı.',

@@ -1076,6 +1076,65 @@ class NotificationJob(Base):
     admin_user: Mapped[AdminUser | None] = relationship()
 
 
+class AttendanceExtraCheckinApproval(Base):
+    __tablename__ = "attendance_extra_checkin_approvals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    employee_id: Mapped[int] = mapped_column(
+        ForeignKey("employees.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    device_id: Mapped[int | None] = mapped_column(
+        ForeignKey("devices.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    local_day: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    approval_token: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="PENDING",
+        server_default=text("'PENDING'"),
+        index=True,
+    )
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approved_by_admin_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("admin_users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    approved_by_username: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    consumed_by_event_id: Mapped[int | None] = mapped_column(
+        ForeignKey("attendance_events.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    push_total_targets: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    push_sent: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    push_failed: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    last_push_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    employee: Mapped[Employee] = relationship("Employee")
+    device: Mapped[Device | None] = relationship("Device")
+    approved_by_admin_user: Mapped[AdminUser | None] = relationship("AdminUser")
+    consumed_by_event: Mapped[AttendanceEvent | None] = relationship("AttendanceEvent")
+
+
 class AdminDailyReportArchive(Base):
     __tablename__ = "admin_daily_report_archives"
     __table_args__ = (

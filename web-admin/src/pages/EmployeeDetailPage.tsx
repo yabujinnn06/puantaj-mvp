@@ -31,6 +31,7 @@ import { StatusBadge } from '../components/StatusBadge'
 import { useToast } from '../hooks/useToast'
 import type { MonthlyEmployeeDay } from '../types/api'
 import { buildMonthlyAttendanceInsight, getAttendanceDayType } from '../utils/attendanceInsights'
+import { getFlagMeta } from '../utils/flagDictionary'
 
 const locationSchema = z.object({
   home_lat: z.coerce.number().min(-90),
@@ -65,6 +66,13 @@ function formatCoordinate(lat: number | null, lon: number | null): string {
     return '-'
   }
   return `${lat.toFixed(6)}, ${lon.toFixed(6)}`
+}
+
+function formatFlagList(flags: string[]): string {
+  if (!flags.length) {
+    return '-'
+  }
+  return flags.map((flag) => `${getFlagMeta(flag).label} (${flag})`).join(', ')
 }
 
 export function EmployeeDetailPage() {
@@ -851,7 +859,7 @@ export function EmployeeDetailPage() {
                       <td className="py-2">
                         <MinuteDisplay minutes={day.legal_overtime_minutes} />
                       </td>
-                      <td className="py-2 text-xs text-slate-600">{day.flags.length ? day.flags.join(', ') : '-'}</td>
+                      <td className="py-2 text-xs text-slate-600">{formatFlagList(day.flags)}</td>
                     </tr>
                   ))}
                 </tbody>
