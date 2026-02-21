@@ -311,6 +311,30 @@ export interface AdminDeviceClaimResponse {
   subscription_id: number
 }
 
+export interface AdminPushSelfCheckResponse {
+  push_enabled: boolean
+  actor_username: string
+  actor_admin_user_id: number | null
+  active_total_subscriptions: number
+  active_claims_for_actor: number
+  active_claims_for_actor_by_id: number
+  active_claims_for_actor_by_username: number
+  latest_claim_seen_at: string | null
+  latest_claim_error: string | null
+  ready_for_receive: boolean
+  has_other_active_subscriptions: boolean
+}
+
+export interface AdminPushSelfTestResponse {
+  ok: boolean
+  total_targets: number
+  sent: number
+  failed: number
+  deactivated: number
+  admin_user_ids: number[]
+  admin_usernames: string[]
+}
+
 export interface AdminDailyReportArchive {
   id: number
   report_date: string
@@ -530,6 +554,7 @@ export interface AdminUser {
 export interface AdminMeResponse {
   sub: string
   username: string
+  admin_user_id: number | null
   full_name?: string | null
   role: string
   is_super_admin: boolean

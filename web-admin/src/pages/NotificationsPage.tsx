@@ -8,6 +8,7 @@ import {
   downloadDailyReportArchive,
   getAdminNotificationSubscriptions,
   getAdminPushConfig,
+  getAdminPushSelfCheck,
   getAdminUsers,
   getDailyReportArchives,
   getEmployees,
@@ -15,6 +16,7 @@ import {
   getNotificationJobs,
   getNotificationSubscriptions,
   notifyDailyReportArchive,
+  sendAdminPushSelfTest,
   sendManualNotification,
 } from '../api/admin'
 import { parseApiError } from '../api/error'
@@ -94,6 +96,11 @@ export function NotificationsPage() {
   const employeesQuery = useQuery({ queryKey: ['employees', 'notify'], queryFn: () => getEmployees({ status: 'active' }) })
   const adminsQuery = useQuery({ queryKey: ['admin-users', 'notify'], queryFn: getAdminUsers })
   const pushConfigQuery = useQuery({ queryKey: ['admin-push-config'], queryFn: getAdminPushConfig })
+  const adminSelfCheckQuery = useQuery({
+    queryKey: ['admin-push-self-check'],
+    queryFn: getAdminPushSelfCheck,
+    refetchInterval: 15000,
+  })
   const jobsQuery = useQuery({
     queryKey: ['notification-jobs', jobsStatus],
     queryFn: () => getNotificationJobs({ status: jobsStatus || undefined, limit: 100 }),
@@ -193,14 +200,27 @@ export function NotificationsPage() {
   const activeAdminSubscriptionCount = (adminSubsQuery.data ?? []).length
   const canNotifyAdmins = activeAdminSubscriptionCount > 0
   const currentAdminUsername = (user?.username ?? '').trim().toLowerCase()
-  const currentAdminClaimCount = useMemo(() => {
-    if (!currentAdminUsername) {
-      return 0
+  const currentAdminUserId = typeof user?.admin_user_id === 'number' && user.admin_user_id > 0 ? user.admin_user_id : null
+  const fallbackCurrentAdminClaimBreakdown = useMemo(() => {
+    const rows = adminSubsQuery.data ?? []
+    let byId = 0
+    let byUsername = 0
+    let total = 0
+    for (const item of rows) {
+      const matchesById = currentAdminUserId !== null && item.admin_user_id === currentAdminUserId
+      const matchesByUsername =
+        currentAdminUsername.length > 0 && (item.admin_username || '').trim().toLowerCase() === currentAdminUsername
+      if (matchesById) byId += 1
+      if (matchesByUsername) byUsername += 1
+      if (matchesById || matchesByUsername) total += 1
     }
-    return (adminSubsQuery.data ?? []).filter(
-      (item) => (item.admin_username || '').trim().toLowerCase() === currentAdminUsername,
-    ).length
-  }, [adminSubsQuery.data, currentAdminUsername])
+    return { total, byId, byUsername }
+  }, [adminSubsQuery.data, currentAdminUserId, currentAdminUsername])
+  const currentAdminClaimCount = adminSelfCheckQuery.data?.active_claims_for_actor ?? fallbackCurrentAdminClaimBreakdown.total
+  const currentAdminClaimCountById =
+    adminSelfCheckQuery.data?.active_claims_for_actor_by_id ?? fallbackCurrentAdminClaimBreakdown.byId
+  const currentAdminClaimCountByUsername =
+    adminSelfCheckQuery.data?.active_claims_for_actor_by_username ?? fallbackCurrentAdminClaimBreakdown.byUsername
   const currentAdminHasActiveClaim = currentAdminClaimCount > 0
 
   const inviteMutation = useMutation({
@@ -214,9 +234,34 @@ export function NotificationsPage() {
       pushToast({ variant: 'error', title: 'Davet hatasi', description: parseApiError(e, 'Davet olusturulamadi').message }),
   })
 
+  const selfTestMutation = useMutation({
+    mutationFn: sendAdminPushSelfTest,
+    onSuccess: (result) => {
+      if (result.total_targets <= 0 || result.sent <= 0) {
+        pushToast({
+          variant: 'error',
+          title: 'Self-test basarisiz',
+          description: `Hedef: ${result.total_targets} | Gonderilen: ${result.sent} | Hata: ${result.failed}`,
+        })
+      } else {
+        pushToast({
+          variant: 'success',
+          title: 'Self-test bildirimi gonderildi',
+          description: `Hedef: ${result.total_targets} | Gonderilen: ${result.sent}`,
+        })
+      }
+      void queryClient.invalidateQueries({ queryKey: ['admin-push-self-check'] })
+      void queryClient.invalidateQueries({ queryKey: ['notification-delivery-logs'] })
+    },
+    onError: (error) => {
+      const parsed = parseApiError(error, 'Self-test bildirimi gonderilemedi.')
+      pushToast({ variant: 'error', title: 'Self-test hatasi', description: parsed.message })
+    },
+  })
+
   const sendMutation = useMutation({
     mutationFn: sendManualNotification,
-    onSuccess: (res) => {
+    onSuccess: (res, payload) => {
       if (res.total_targets <= 0) {
         pushToast({
           variant: 'error',
@@ -235,6 +280,13 @@ export function NotificationsPage() {
           title: 'Bildirim gonderildi',
           description: `Hedef: ${res.total_targets} / Gonderilen: ${res.sent}`,
         })
+        if ((payload.target === 'admins' || payload.target === 'both') && !currentAdminHasActiveClaim) {
+          pushToast({
+            variant: 'error',
+            title: 'Bu hesapta claim eksik',
+            description: 'Admin hedefli gonderim yapildi ancak bu hesapta aktif claim olmadigi icin sana dusmeyebilir.',
+          })
+        }
       }
       void queryClient.invalidateQueries({ queryKey: ['notification-jobs'] })
       void queryClient.invalidateQueries({ queryKey: ['notification-delivery-logs'] })
@@ -567,26 +619,58 @@ export function NotificationsPage() {
             Login admin: <strong>{user?.username ?? '-'}</strong>
           </div>
           <div className="rounded border border-slate-200 p-3 text-sm">
-            Push config: <strong>{pushConfigQuery.data?.enabled ? 'Aktif' : 'Pasif'}</strong>
+            Login admin ID: <strong>{user?.admin_user_id ?? '-'}</strong>
           </div>
           <div
             className={`rounded border p-3 text-sm ${
               currentAdminHasActiveClaim ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'
             }`}
           >
-            Bu hesap claim: <strong>{currentAdminClaimCount}</strong>
+            Bu hesap claim: <strong>{currentAdminClaimCount}</strong> (id:{currentAdminClaimCountById} / user:{currentAdminClaimCountByUsername})
           </div>
           <div
             className={`rounded border p-3 text-sm ${
-              canNotifyAdmins ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'
+              (adminSelfCheckQuery.data?.push_enabled ?? pushConfigQuery.data?.enabled)
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                : 'border-rose-200 bg-rose-50 text-rose-800'
             }`}
           >
-            Gonderim hazirligi: <strong>{canNotifyAdmins ? 'Hazir' : 'Eksik'}</strong>
+            Push config:{' '}
+            <strong>{(adminSelfCheckQuery.data?.push_enabled ?? pushConfigQuery.data?.enabled) ? 'Aktif' : 'Pasif'}</strong>
           </div>
         </div>
+        <div className="mt-2 grid gap-2 md:grid-cols-3">
+          <div className="rounded border border-slate-200 p-3 text-sm">
+            Toplam aktif admin claim: <strong>{adminSelfCheckQuery.data?.active_total_subscriptions ?? activeAdminSubscriptionCount}</strong>
+          </div>
+          <div className="rounded border border-slate-200 p-3 text-sm">
+            Son claim gorulme:{' '}
+            <strong>{adminSelfCheckQuery.data?.latest_claim_seen_at ? dt(adminSelfCheckQuery.data.latest_claim_seen_at) : '-'}</strong>
+          </div>
+          <div className="flex items-end">
+            <button
+              type="button"
+              onClick={() => selfTestMutation.mutate()}
+              disabled={selfTestMutation.isPending}
+              className="rounded border border-brand-300 px-3 py-2 text-sm text-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {selfTestMutation.isPending ? 'Self-test gonderiliyor...' : 'Kendime test bildirimi gonder'}
+            </button>
+          </div>
+        </div>
+        {adminSelfCheckQuery.isError ? (
+          <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            Self-check verisi alinamadi. Fallback olarak abonelik listesi kullaniliyor.
+          </p>
+        ) : null}
         {!currentAdminHasActiveClaim ? (
           <p className="mt-2 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
             Bu admin hesabinda aktif cihaz claim gorunmuyor. Bildirim almak icin telefonda claim linkini acip izin adimini tamamla.
+          </p>
+        ) : null}
+        {adminSelfCheckQuery.data?.latest_claim_error ? (
+          <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            Son claim hatasi: {adminSelfCheckQuery.data.latest_claim_error}
           </p>
         ) : null}
       </Panel>

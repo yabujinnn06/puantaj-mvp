@@ -364,6 +364,7 @@ class AdminUserRead(BaseModel):
 class AdminMeResponse(BaseModel):
     sub: str
     username: str
+    admin_user_id: int | None = None
     full_name: str | None = None
     role: str
     is_super_admin: bool = False
@@ -771,6 +772,30 @@ class AdminDeviceClaimResponse(BaseModel):
     ok: bool
     admin_username: str
     subscription_id: int
+
+
+class AdminPushSelfCheckResponse(BaseModel):
+    push_enabled: bool
+    actor_username: str
+    actor_admin_user_id: int | None = None
+    active_total_subscriptions: int
+    active_claims_for_actor: int
+    active_claims_for_actor_by_id: int
+    active_claims_for_actor_by_username: int
+    latest_claim_seen_at: datetime | None = None
+    latest_claim_error: str | None = None
+    ready_for_receive: bool
+    has_other_active_subscriptions: bool
+
+
+class AdminPushSelfTestResponse(BaseModel):
+    ok: bool
+    total_targets: int
+    sent: int
+    failed: int
+    deactivated: int = 0
+    admin_user_ids: list[int] = Field(default_factory=list)
+    admin_usernames: list[str] = Field(default_factory=list)
 
 
 class AdminDailyReportArchiveRead(BaseModel):

@@ -46,6 +46,8 @@ from app.schemas import (
     AdminDeviceInviteCreateResponse,
     AdminDeviceClaimRequest,
     AdminDeviceClaimResponse,
+    AdminPushSelfCheckResponse,
+    AdminPushSelfTestResponse,
     AdminAuthResponse,
     AdminLoginRequest,
     AdminLogoutRequest,
@@ -158,6 +160,7 @@ from app.services.push_notifications import (
     get_push_public_config,
     list_active_admin_push_subscriptions,
     list_active_push_subscriptions,
+    send_push_to_admin_subscriptions,
     send_push_to_admins,
     send_push_to_employees,
     upsert_admin_push_subscription,
@@ -213,6 +216,39 @@ def _as_positive_int(value: Any) -> int | None:
             parsed = int(normalized)
             return parsed if parsed > 0 else None
     return None
+
+
+def _normalized_admin_actor_from_claims(claims: dict[str, Any]) -> tuple[str, int | None]:
+    actor_username = str(claims.get("username") or claims.get("sub") or "admin").strip()
+    actor_admin_user_id = _as_positive_int(claims.get("admin_user_id"))
+    return actor_username, actor_admin_user_id
+
+
+def _resolve_current_admin_claim_subscriptions(
+    rows: list[AdminPushSubscription],
+    *,
+    actor_username: str,
+    actor_admin_user_id: int | None,
+) -> tuple[list[AdminPushSubscription], int, int]:
+    actor_username_lc = actor_username.strip().lower()
+    matched: list[AdminPushSubscription] = []
+    by_id = 0
+    by_username = 0
+    seen_subscription_ids: set[int] = set()
+
+    for row in rows:
+        matched_row = False
+        if actor_admin_user_id is not None and row.admin_user_id == actor_admin_user_id:
+            by_id += 1
+            matched_row = True
+        if actor_username_lc and (row.admin_username or "").strip().lower() == actor_username_lc:
+            by_username += 1
+            matched_row = True
+        if matched_row and row.id not in seen_subscription_ids:
+            seen_subscription_ids.add(row.id)
+            matched.append(row)
+
+    return matched, by_id, by_username
 
 
 def _resolve_employee_by_name(db: Session, employee_name: str) -> Employee:
@@ -724,6 +760,7 @@ def admin_me(
     return AdminMeResponse(
         sub=str(claims["sub"]),
         username=str(claims.get("username") or claims["sub"]),
+        admin_user_id=_as_positive_int(claims.get("admin_user_id")),
         full_name=claims.get("full_name"),
         role=str(claims["role"]),
         is_super_admin=_is_super_admin(claims),
@@ -3602,6 +3639,145 @@ def list_admin_notification_subscriptions(
 
 
 @router.get(
+    "/api/admin/notifications/admin-self-check",
+    response_model=AdminPushSelfCheckResponse,
+)
+def admin_push_self_check(
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> AdminPushSelfCheckResponse:
+    actor_username, actor_admin_user_id = _normalized_admin_actor_from_claims(claims)
+    rows = list_active_admin_push_subscriptions(db)
+    actor_rows, by_id, by_username = _resolve_current_admin_claim_subscriptions(
+        rows,
+        actor_username=actor_username,
+        actor_admin_user_id=actor_admin_user_id,
+    )
+    latest_claim = max(actor_rows, key=lambda row: row.last_seen_at, default=None)
+    push_enabled = bool(get_push_public_config().get("enabled"))
+    ready_for_receive = push_enabled and len(actor_rows) > 0
+    response = AdminPushSelfCheckResponse(
+        push_enabled=push_enabled,
+        actor_username=actor_username,
+        actor_admin_user_id=actor_admin_user_id,
+        active_total_subscriptions=len(rows),
+        active_claims_for_actor=len(actor_rows),
+        active_claims_for_actor_by_id=by_id,
+        active_claims_for_actor_by_username=by_username,
+        latest_claim_seen_at=(latest_claim.last_seen_at if latest_claim is not None else None),
+        latest_claim_error=(latest_claim.last_error if latest_claim is not None else None),
+        ready_for_receive=ready_for_receive,
+        has_other_active_subscriptions=len(rows) > len(actor_rows),
+    )
+
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=actor_username,
+        action="ADMIN_PUSH_SELF_CHECK",
+        success=True,
+        entity_type="admin_push_subscription",
+        entity_id=None,
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "push_enabled": push_enabled,
+            "actor_admin_user_id": actor_admin_user_id,
+            "active_total_subscriptions": len(rows),
+            "active_claims_for_actor": len(actor_rows),
+            "active_claims_for_actor_by_id": by_id,
+            "active_claims_for_actor_by_username": by_username,
+            "ready_for_receive": ready_for_receive,
+            "has_other_active_subscriptions": len(rows) > len(actor_rows),
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return response
+
+
+@router.post(
+    "/api/admin/notifications/admin-self-test",
+    response_model=AdminPushSelfTestResponse,
+)
+def admin_push_self_test(
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin_permission("audit", write=True)),
+    db: Session = Depends(get_db),
+) -> AdminPushSelfTestResponse:
+    if not bool(get_push_public_config().get("enabled")):
+        raise ApiError(
+            status_code=503,
+            code="PUSH_NOT_CONFIGURED",
+            message="Push notification service is not configured.",
+        )
+
+    actor_username, actor_admin_user_id = _normalized_admin_actor_from_claims(claims)
+    rows = list_active_admin_push_subscriptions(db)
+    actor_rows, by_id, by_username = _resolve_current_admin_claim_subscriptions(
+        rows,
+        actor_username=actor_username,
+        actor_admin_user_id=actor_admin_user_id,
+    )
+    if not actor_rows:
+        raise ApiError(
+            status_code=409,
+            code="ADMIN_DEVICE_CLAIM_REQUIRED",
+            message="Current admin account has no active push claim. Claim a device first.",
+        )
+
+    now_utc = datetime.now(timezone.utc)
+    local_time = now_utc.astimezone(_attendance_timezone()).strftime("%Y-%m-%d %H:%M:%S")
+    push_summary = send_push_to_admin_subscriptions(
+        db,
+        subscriptions=actor_rows,
+        title="Admin Push Test",
+        body=f"{actor_username} hesabi icin test bildirimi ({local_time}).",
+        data={
+            "type": "ADMIN_SELF_TEST",
+            "actor": actor_username,
+            "url": "/admin-panel/notifications",
+            "ts_utc": now_utc.isoformat(),
+        },
+    )
+
+    admin_user_ids = sorted({row.admin_user_id for row in actor_rows if row.admin_user_id is not None})
+    admin_usernames = sorted({row.admin_username for row in actor_rows if row.admin_username})
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=actor_username,
+        action="ADMIN_PUSH_SELF_TEST",
+        success=int(push_summary.get("sent", 0)) > 0,
+        entity_type="admin_push_subscription",
+        entity_id=None,
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "actor_admin_user_id": actor_admin_user_id,
+            "active_claims_for_actor": len(actor_rows),
+            "active_claims_for_actor_by_id": by_id,
+            "active_claims_for_actor_by_username": by_username,
+            "total_targets": int(push_summary.get("total_targets", 0)),
+            "sent": int(push_summary.get("sent", 0)),
+            "failed": int(push_summary.get("failed", 0)),
+            "deactivated": int(push_summary.get("deactivated", 0)),
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+
+    return AdminPushSelfTestResponse(
+        ok=True,
+        total_targets=int(push_summary.get("total_targets", 0)),
+        sent=int(push_summary.get("sent", 0)),
+        failed=int(push_summary.get("failed", 0)),
+        deactivated=int(push_summary.get("deactivated", 0)),
+        admin_user_ids=admin_user_ids,
+        admin_usernames=admin_usernames,
+    )
+
+
+@router.get(
     "/api/admin/notifications/delivery-logs",
     response_model=list[NotificationDeliveryLogRead],
 )
@@ -4310,10 +4486,10 @@ def notify_daily_report_archive(
 
     archive_url = f"{get_public_base_url()}/admin-panel/archive-download?archive_id={archive.id}"
     report_date_text = archive.report_date.isoformat()
-    title = f"Günlük Puantaj Raporu Hazır ({report_date_text})"
+    title = f"Gunluk Puantaj Raporu Hazir ({report_date_text})"
     body = (
-        f"{report_date_text} tarihli günlük puantaj Excel raporu hazır. "
-        "Bildirime dokunup doğrudan indirebilirsin."
+        f"{report_date_text} tarihli gunluk puantaj Excel raporu hazir. "
+        "Bildirime dokunup dogrudan indirebilirsin."
     )
     push_summary = send_push_to_admins(
         db,

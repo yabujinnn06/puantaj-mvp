@@ -7,6 +7,8 @@ import type {
   AdminDeviceInviteCreateResponse,
   AdminDevicePushSubscription,
   AdminManualNotificationSendResponse,
+  AdminPushSelfCheckResponse,
+  AdminPushSelfTestResponse,
   AdminAuthResponse,
   AdminMeResponse,
   AdminPermissions,
@@ -761,6 +763,20 @@ export async function getAdminNotificationSubscriptions(
 export async function getAdminPushConfig(): Promise<{ enabled: boolean; vapid_public_key: string | null }> {
   const response = await apiClient.get<{ enabled: boolean; vapid_public_key: string | null }>(
     '/api/admin/notifications/push/config',
+  )
+  return response.data
+}
+
+export async function getAdminPushSelfCheck(): Promise<AdminPushSelfCheckResponse> {
+  const response = await apiClient.get<AdminPushSelfCheckResponse>(
+    '/api/admin/notifications/admin-self-check',
+  )
+  return response.data
+}
+
+export async function sendAdminPushSelfTest(): Promise<AdminPushSelfTestResponse> {
+  const response = await apiClient.post<AdminPushSelfTestResponse>(
+    '/api/admin/notifications/admin-self-test',
   )
   return response.data
 }
