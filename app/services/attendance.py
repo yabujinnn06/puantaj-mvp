@@ -759,6 +759,13 @@ def _create_or_refresh_extra_checkin_approval_request(
             should_send_push = True
         else:
             should_send_push = (now_utc - _normalize_ts(approval_row.last_push_at)) >= timedelta(seconds=60)
+            # If the previous attempt had no reachable admin target (or no successful send),
+            # allow a faster retry so newly-claimed admin devices can start receiving quickly.
+            if not should_send_push:
+                previous_total_targets = int(approval_row.push_total_targets or 0)
+                previous_sent = int(approval_row.push_sent or 0)
+                if previous_total_targets <= 0 or previous_sent <= 0:
+                    should_send_push = (now_utc - _normalize_ts(approval_row.last_push_at)) >= timedelta(seconds=10)
 
     if should_send_push:
         employee_name = (employee.full_name or "-").strip() or "-"
