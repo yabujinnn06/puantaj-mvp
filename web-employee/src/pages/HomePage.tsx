@@ -29,8 +29,10 @@ type TodayStatus = EmployeeStatusResponse['today_status']
 const PUSH_VAPID_KEY_STORAGE = 'pf_push_vapid_public_key'
 const PUSH_TEST_RETRYABLE_STATUS_CODES = new Set([404, 410])
 const INSTALL_BANNER_DISMISS_UNTIL_STORAGE = 'pf_install_banner_dismiss_until'
-const INSTALL_BANNER_DISMISS_MS = 1000 * 60 * 60 * 8
+const INSTALL_BANNER_DISMISS_MS = 1000 * 60 * 60 * 24
 const IOS_INSTALL_ONBOARDING_SEEN_STORAGE = 'pf_ios_install_onboarding_seen'
+const IOS_INSTALL_ONBOARDING_DISMISS_UNTIL_STORAGE = 'pf_ios_install_onboarding_dismiss_until'
+const INSTALL_FUNNEL_STORAGE = 'pf_install_funnel_v2'
 const QrScanner = lazy(() =>
   import('../components/QrScanner').then((module) => ({ default: module.QrScanner })),
 )
@@ -47,6 +49,160 @@ interface BeforeInstallPromptEvent extends Event {
 
 type WindowWithDeferredInstallPrompt = Window & {
   __pfDeferredInstallPrompt?: BeforeInstallPromptEvent | null
+}
+
+type InstallFunnelEvent =
+  | 'banner_shown'
+  | 'install_cta_clicked'
+  | 'ios_onboarding_opened'
+  | 'android_onboarding_opened'
+  | 'install_prompt_opened'
+  | 'install_prompt_accepted'
+  | 'install_prompt_dismissed'
+  | 'app_installed'
+  | 'ios_inapp_browser_detected'
+  | 'install_link_copied'
+
+interface InstallFunnelSnapshot {
+  firstSeenAt: number | null
+  lastEventAt: number | null
+  lastAttemptAt: number | null
+  bannerShownCount: number
+  installCtaClickCount: number
+  iosOnboardingOpenCount: number
+  androidOnboardingOpenCount: number
+  installPromptOpenCount: number
+  installPromptAcceptedCount: number
+  installPromptDismissedCount: number
+  appInstalledCount: number
+  iosInAppBrowserDetectedCount: number
+  installLinkCopiedCount: number
+}
+
+interface IosBrowserContext {
+  isIos: boolean
+  isSafari: boolean
+  isInAppBrowser: boolean
+  browserLabel: string
+}
+
+const EMPTY_INSTALL_FUNNEL_SNAPSHOT: InstallFunnelSnapshot = {
+  firstSeenAt: null,
+  lastEventAt: null,
+  lastAttemptAt: null,
+  bannerShownCount: 0,
+  installCtaClickCount: 0,
+  iosOnboardingOpenCount: 0,
+  androidOnboardingOpenCount: 0,
+  installPromptOpenCount: 0,
+  installPromptAcceptedCount: 0,
+  installPromptDismissedCount: 0,
+  appInstalledCount: 0,
+  iosInAppBrowserDetectedCount: 0,
+  installLinkCopiedCount: 0,
+}
+
+function finiteOrDefault(value: unknown, fallback = 0): number {
+  if (typeof value !== 'number') {
+    return fallback
+  }
+  return Number.isFinite(value) ? value : fallback
+}
+
+function finiteTimestampOrNull(value: unknown): number | null {
+  if (typeof value !== 'number') {
+    return null
+  }
+  if (!Number.isFinite(value) || value <= 0) {
+    return null
+  }
+  return value
+}
+
+function loadInstallFunnelSnapshot(): InstallFunnelSnapshot {
+  if (typeof window === 'undefined') {
+    return EMPTY_INSTALL_FUNNEL_SNAPSHOT
+  }
+  const raw = window.localStorage.getItem(INSTALL_FUNNEL_STORAGE)
+  if (!raw) {
+    return EMPTY_INSTALL_FUNNEL_SNAPSHOT
+  }
+  try {
+    const parsed = JSON.parse(raw) as Partial<InstallFunnelSnapshot>
+    return {
+      firstSeenAt: finiteTimestampOrNull(parsed.firstSeenAt),
+      lastEventAt: finiteTimestampOrNull(parsed.lastEventAt),
+      lastAttemptAt: finiteTimestampOrNull(parsed.lastAttemptAt),
+      bannerShownCount: finiteOrDefault(parsed.bannerShownCount),
+      installCtaClickCount: finiteOrDefault(parsed.installCtaClickCount),
+      iosOnboardingOpenCount: finiteOrDefault(parsed.iosOnboardingOpenCount),
+      androidOnboardingOpenCount: finiteOrDefault(parsed.androidOnboardingOpenCount),
+      installPromptOpenCount: finiteOrDefault(parsed.installPromptOpenCount),
+      installPromptAcceptedCount: finiteOrDefault(parsed.installPromptAcceptedCount),
+      installPromptDismissedCount: finiteOrDefault(parsed.installPromptDismissedCount),
+      appInstalledCount: finiteOrDefault(parsed.appInstalledCount),
+      iosInAppBrowserDetectedCount: finiteOrDefault(parsed.iosInAppBrowserDetectedCount),
+      installLinkCopiedCount: finiteOrDefault(parsed.installLinkCopiedCount),
+    }
+  } catch {
+    return EMPTY_INSTALL_FUNNEL_SNAPSHOT
+  }
+}
+
+function saveInstallFunnelSnapshot(snapshot: InstallFunnelSnapshot): void {
+  if (typeof window === 'undefined') {
+    return
+  }
+  window.localStorage.setItem(INSTALL_FUNNEL_STORAGE, JSON.stringify(snapshot))
+}
+
+function nextInstallFunnelSnapshot(
+  current: InstallFunnelSnapshot,
+  event: InstallFunnelEvent,
+): InstallFunnelSnapshot {
+  const now = Date.now()
+  const next: InstallFunnelSnapshot = {
+    ...current,
+    firstSeenAt: current.firstSeenAt ?? now,
+    lastEventAt: now,
+  }
+  switch (event) {
+    case 'banner_shown':
+      next.bannerShownCount += 1
+      break
+    case 'install_cta_clicked':
+      next.installCtaClickCount += 1
+      next.lastAttemptAt = now
+      break
+    case 'ios_onboarding_opened':
+      next.iosOnboardingOpenCount += 1
+      break
+    case 'android_onboarding_opened':
+      next.androidOnboardingOpenCount += 1
+      break
+    case 'install_prompt_opened':
+      next.installPromptOpenCount += 1
+      break
+    case 'install_prompt_accepted':
+      next.installPromptAcceptedCount += 1
+      next.lastAttemptAt = now
+      break
+    case 'install_prompt_dismissed':
+      next.installPromptDismissedCount += 1
+      next.lastAttemptAt = now
+      break
+    case 'app_installed':
+      next.appInstalledCount += 1
+      next.lastAttemptAt = now
+      break
+    case 'ios_inapp_browser_detected':
+      next.iosInAppBrowserDetectedCount += 1
+      break
+    case 'install_link_copied':
+      next.installLinkCopiedCount += 1
+      break
+  }
+  return next
 }
 
 function eventTypeLabel(eventType: 'IN' | 'OUT'): string {
@@ -104,6 +260,58 @@ function isStandaloneDisplayMode(): boolean {
   }
   const nav = window.navigator as Navigator & { standalone?: boolean }
   return Boolean(window.matchMedia('(display-mode: standalone)').matches || nav.standalone)
+}
+
+function detectIosBrowserContext(): IosBrowserContext {
+  if (typeof navigator === 'undefined') {
+    return {
+      isIos: false,
+      isSafari: false,
+      isInAppBrowser: false,
+      browserLabel: 'Bilinmeyen',
+    }
+  }
+  const ua = navigator.userAgent || ''
+  const isIos = isIosFamilyDevice()
+  if (!isIos) {
+    return {
+      isIos: false,
+      isSafari: false,
+      isInAppBrowser: false,
+      browserLabel: 'Bilinmeyen',
+    }
+  }
+
+  const isCriOS = /CriOS/i.test(ua)
+  const isFxiOS = /FxiOS/i.test(ua)
+  const isEdgiOS = /EdgiOS/i.test(ua)
+  const hasSafariToken = /Safari/i.test(ua)
+  const isSafari = hasSafariToken && !isCriOS && !isFxiOS && !isEdgiOS
+  const isKnownInAppBrowser =
+    /(Instagram|FBAN|FBAV|Line|MicroMessenger|WhatsApp|Telegram|Twitter|TikTok|Snapchat|LinkedInApp)/i.test(
+      ua,
+    ) || /\bwv\b/i.test(ua)
+  const isWebViewStyleUa = /\b(iPhone|iPad|iPod)\b.*AppleWebKit(?!.*Safari)/i.test(ua)
+  const isInAppBrowser = !isSafari && (isKnownInAppBrowser || isWebViewStyleUa)
+
+  if (isSafari) {
+    return { isIos: true, isSafari: true, isInAppBrowser: false, browserLabel: 'Safari' }
+  }
+  if (isCriOS) {
+    return { isIos: true, isSafari: false, isInAppBrowser: false, browserLabel: 'Chrome (iOS)' }
+  }
+  if (isFxiOS) {
+    return { isIos: true, isSafari: false, isInAppBrowser: false, browserLabel: 'Firefox (iOS)' }
+  }
+  if (isEdgiOS) {
+    return { isIos: true, isSafari: false, isInAppBrowser: false, browserLabel: 'Edge (iOS)' }
+  }
+  return {
+    isIos: true,
+    isSafari: false,
+    isInAppBrowser,
+    browserLabel: isInAppBrowser ? 'Uygulama içi tarayıcı' : 'iOS tarayıcı',
+  }
 }
 
 function getDeferredInstallPromptFromWindow(): BeforeInstallPromptEvent | null {
@@ -164,17 +372,34 @@ function isInstallBannerDismissed(): boolean {
   return dismissUntil > Date.now()
 }
 
-function hasSeenIosInstallOnboarding(): boolean {
+function getIosInstallOnboardingDismissUntil(): number {
   if (typeof window === 'undefined') {
-    return true
+    return 0
   }
-  return window.localStorage.getItem(IOS_INSTALL_ONBOARDING_SEEN_STORAGE) === '1'
+  const raw = window.localStorage.getItem(IOS_INSTALL_ONBOARDING_DISMISS_UNTIL_STORAGE)
+  if (raw) {
+    const parsed = Number(raw)
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed
+    }
+  }
+
+  if (window.localStorage.getItem(IOS_INSTALL_ONBOARDING_SEEN_STORAGE) === '1') {
+    const migratedDismissUntil = Date.now() + INSTALL_BANNER_DISMISS_MS
+    window.localStorage.setItem(
+      IOS_INSTALL_ONBOARDING_DISMISS_UNTIL_STORAGE,
+      String(migratedDismissUntil),
+    )
+    return migratedDismissUntil
+  }
+  return 0
 }
 
-function markIosInstallOnboardingSeen(): void {
+function setIosInstallOnboardingDismissUntil(untilTs: number): void {
   if (typeof window === 'undefined') {
     return
   }
+  window.localStorage.setItem(IOS_INSTALL_ONBOARDING_DISMISS_UNTIL_STORAGE, String(untilTs))
   window.localStorage.setItem(IOS_INSTALL_ONBOARDING_SEEN_STORAGE, '1')
 }
 
@@ -262,12 +487,33 @@ export function HomePage() {
   const [installNotice, setInstallNotice] = useState<string | null>(null)
   const [iosInstallOnboardingOpen, setIosInstallOnboardingOpen] = useState(false)
   const [androidInstallOnboardingOpen, setAndroidInstallOnboardingOpen] = useState(false)
-  const [iosInstallOnboardingDismissed, setIosInstallOnboardingDismissed] = useState(() =>
-    hasSeenIosInstallOnboarding(),
+  const [iosInstallOnboardingDismissUntil, setIosInstallOnboardingDismissUntilState] = useState(
+    () => getIosInstallOnboardingDismissUntil(),
+  )
+  const [installFunnelSnapshot, setInstallFunnelSnapshot] = useState<InstallFunnelSnapshot>(() =>
+    loadInstallFunnelSnapshot(),
   )
   const scanSuccessFxTimerRef = useRef<number | null>(null)
   const actionPanelRef = useRef<HTMLElement | null>(null)
   const qrPanelAutoFocusDoneRef = useRef(false)
+  const installBannerVisiblePrevRef = useRef(false)
+  const iosOnboardingVisiblePrevRef = useRef(false)
+  const androidOnboardingVisiblePrevRef = useRef(false)
+  const iosInAppBrowserLoggedRef = useRef(false)
+
+  const trackInstallFunnel = useCallback((event: InstallFunnelEvent) => {
+    setInstallFunnelSnapshot((current) => {
+      const next = nextInstallFunnelSnapshot(current, event)
+      saveInstallFunnelSnapshot(next)
+      return next
+    })
+  }, [])
+
+  const iosBrowserContext = useMemo(() => detectIosBrowserContext(), [])
+  const iosInAppBrowserBlocked =
+    iosBrowserContext.isIos && iosBrowserContext.isInAppBrowser && !isStandaloneApp
+  const iosInstallOnboardingDismissed = iosInstallOnboardingDismissUntil > Date.now()
+  const hasAttendanceActivity = Boolean(lastAction || statusSnapshot?.last_in_ts || statusSnapshot?.last_out_ts)
 
   const handleDeviceNotClaimed = useCallback((parsed: ParsedApiError): boolean => {
     if (parsed.code !== 'DEVICE_NOT_CLAIMED') {
@@ -349,8 +595,10 @@ export function HomePage() {
       setInstallBannerVisible(false)
       setIosInstallOnboardingOpen(false)
       setAndroidInstallOnboardingOpen(false)
-      setIosInstallOnboardingDismissed(true)
-      markIosInstallOnboardingSeen()
+      const nextDismissUntil = Date.now() + INSTALL_BANNER_DISMISS_MS
+      setIosInstallOnboardingDismissUntilState(nextDismissUntil)
+      setIosInstallOnboardingDismissUntil(nextDismissUntil)
+      trackInstallFunnel('app_installed')
       setInstallNotice('Uygulama ana ekrana eklendi.')
       setIsStandaloneApp(true)
     }
@@ -386,15 +634,16 @@ export function HomePage() {
       window.removeEventListener('pf:installprompt-ready', handleInstallPromptReady as EventListener)
       window.removeEventListener('focus', handleFocus)
     }
-  }, [])
+  }, [trackInstallFunnel])
 
   useEffect(() => {
     if (isStandaloneApp) {
       setInstallBannerVisible(false)
       setIosInstallOnboardingOpen(false)
       setAndroidInstallOnboardingOpen(false)
-      setIosInstallOnboardingDismissed(true)
-      markIosInstallOnboardingSeen()
+      const nextDismissUntil = Date.now() + INSTALL_BANNER_DISMISS_MS
+      setIosInstallOnboardingDismissUntilState(nextDismissUntil)
+      setIosInstallOnboardingDismissUntil(nextDismissUntil)
       return
     }
     if (isInstallBannerDismissed()) {
@@ -410,10 +659,27 @@ export function HomePage() {
       setIosInstallOnboardingOpen(false)
       return
     }
-    if (!iosInstallOnboardingDismissed) {
+    const shouldAutoOpen =
+      !iosInstallOnboardingDismissed &&
+      (hasAttendanceActivity || pushRequiresStandalone || iosInAppBrowserBlocked)
+    if (shouldAutoOpen) {
       setIosInstallOnboardingOpen(true)
     }
-  }, [iosInstallOnboardingDismissed, isStandaloneApp])
+  }, [
+    hasAttendanceActivity,
+    iosInAppBrowserBlocked,
+    iosInstallOnboardingDismissed,
+    isStandaloneApp,
+    pushRequiresStandalone,
+  ])
+
+  useEffect(() => {
+    if (!iosInAppBrowserBlocked || iosInAppBrowserLoggedRef.current) {
+      return
+    }
+    iosInAppBrowserLoggedRef.current = true
+    trackInstallFunnel('ios_inapp_browser_detected')
+  }, [iosInAppBrowserBlocked, trackInstallFunnel])
 
   useEffect(() => {
     if (!deviceFingerprint) {
@@ -633,8 +899,9 @@ export function HomePage() {
 
   const dismissIosInstallOnboarding = useCallback(() => {
     setIosInstallOnboardingOpen(false)
-    setIosInstallOnboardingDismissed(true)
-    markIosInstallOnboardingSeen()
+    const nextDismissUntil = Date.now() + INSTALL_BANNER_DISMISS_MS
+    setIosInstallOnboardingDismissUntilState(nextDismissUntil)
+    setIosInstallOnboardingDismissUntil(nextDismissUntil)
   }, [])
 
   const dismissAndroidInstallOnboarding = useCallback(() => {
@@ -652,16 +919,64 @@ export function HomePage() {
     setAndroidInstallOnboardingOpen(true)
   }, [])
 
+  const copyPortalLinkForSafari = useCallback(async () => {
+    if (typeof window === 'undefined') {
+      return
+    }
+    const portalUrl = window.location.href
+    let copied = false
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(portalUrl)
+        copied = true
+      }
+    } catch {
+      copied = false
+    }
+
+    if (!copied && typeof document !== 'undefined') {
+      const textarea = document.createElement('textarea')
+      textarea.value = portalUrl
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      textarea.style.pointerEvents = 'none'
+      document.body.appendChild(textarea)
+      textarea.focus()
+      textarea.select()
+      copied = document.execCommand('copy')
+      document.body.removeChild(textarea)
+    }
+
+    if (copied) {
+      setInstallNotice('Link kopyalandi. Safari acip adres cubuguna yapistirin.')
+      trackInstallFunnel('install_link_copied')
+      return
+    }
+    setInstallNotice('Link kopyalanamadi. Safari acip bu adresi manuel girin.')
+  }, [trackInstallFunnel])
+
   const runInstallPrompt = useCallback(async () => {
     setInstallNotice(null)
+    trackInstallFunnel('install_cta_clicked')
     const activePrompt = installPromptEvent ?? getDeferredInstallPromptFromWindow()
 
+    if (iosInAppBrowserBlocked) {
+      setInstallNotice(
+        'iPhone kurulumu icin baglantiyi Safari ile acin. Uygulama ici tarayicida Ana Ekrana Ekle calismaz.',
+      )
+      openIosInstallOnboarding()
+      return
+    }
     if (isIosFamilyDevice() && !activePrompt) {
       setInstallNotice('Kurulum için Safari paylaş menüsünden "Ana Ekrana Ekle" adımını kullanın.')
+      openIosInstallOnboarding()
       return
     }
     if (!activePrompt) {
       if (isAndroidDevice()) {
+        setInstallNotice(
+          'Android kurulum penceresi henuz hazir degil. Chrome menusu uzerinden "Ana ekrana ekle" adimini kullanin.',
+        )
         openAndroidInstallOnboarding()
       } else {
         setInstallNotice('Bu tarayıcı otomatik kurulum penceresi sunmuyor.')
@@ -671,12 +986,19 @@ export function HomePage() {
 
     setInstallPromptEvent(activePrompt)
     setIsInstallPromptBusy(true)
+    trackInstallFunnel('install_prompt_opened')
     try {
       await activePrompt.prompt()
       const choice = await activePrompt.userChoice
       if (choice.outcome === 'accepted') {
+        trackInstallFunnel('install_prompt_accepted')
         setInstallBannerVisible(false)
         setAndroidInstallOnboardingOpen(false)
+        const nextDismissUntil = Date.now() + INSTALL_BANNER_DISMISS_MS
+        setIosInstallOnboardingDismissUntilState(nextDismissUntil)
+        setIosInstallOnboardingDismissUntil(nextDismissUntil)
+      } else {
+        trackInstallFunnel('install_prompt_dismissed')
       }
     } catch {
       setInstallNotice('Kurulum penceresi açılamadı. Tarayıcı menüsünden Ana Ekrana Ekle deneyin.')
@@ -685,7 +1007,13 @@ export function HomePage() {
       setInstallPromptEvent(null)
       setIsInstallPromptBusy(false)
     }
-  }, [installPromptEvent, openAndroidInstallOnboarding])
+  }, [
+    installPromptEvent,
+    iosInAppBrowserBlocked,
+    openAndroidInstallOnboarding,
+    openIosInstallOnboarding,
+    trackInstallFunnel,
+  ])
 
   const runDownloadInstallAction = useCallback(async () => {
     setInstallNotice(null)
@@ -746,22 +1074,111 @@ export function HomePage() {
       ? 'Ana Ekrana Ekle'
       : installPromptEvent && isAndroidDevice()
         ? 'Tek Dokunuşla Ekle'
+        : isAndroidDevice()
+          ? 'Kurulum Adimlarini Gor'
         : 'Uygulamayı Yükle'
   const installBannerHint =
-    isIosFamilyDevice() && !installPromptEvent
-      ? 'Safari alt menüden Paylaş > Ana Ekrana Ekle adımıyla kurulumu tamamlayın.'
+    iosInAppBrowserBlocked
+      ? 'Kurulum icin bu sayfayi Safari ile acin. Uygulama ici tarayicilar iOS kurulumunu engeller.'
+      : isIosFamilyDevice() && !installPromptEvent
+        ? 'Safari alt menüden Paylaş > Ana Ekrana Ekle adımıyla kurulumu tamamlayın.'
       : installPromptEvent && isAndroidDevice()
         ? 'Android cihazlarda tek dokunuşla kurulum penceresi açılır.'
-        : 'Uygulamayı ana ekrana ekleyerek daha stabil ve hızlı kullanın.'
+        : isAndroidDevice()
+          ? 'Android kurulum penceresi hazır değilse Chrome menüsünden Ana ekrana ekle adımını kullanın.'
+          : 'Uygulamayı ana ekrana ekleyerek daha stabil ve hızlı kullanın.'
   const showInstallPromotions = !isStandaloneApp
   const installRailPrimaryLabel = useMemo(() => {
     if (isStandaloneApp) return 'Uygulama Kurulu'
     if (isInstallPromptBusy) return 'Hazırlanıyor...'
     if (isIosFamilyDevice() && !installPromptEvent) return 'Ana Ekrana Ekle'
+    if (isAndroidDevice() && !installPromptEvent) return 'Kurulum Adimlari'
     if (!installPromptEvent) return 'Ana Ekrana Ekle'
     if (isAndroidDevice()) return 'Tek Dokunuşla Ekle'
     return 'Uygulamayı İndir'
   }, [installPromptEvent, isInstallPromptBusy, isStandaloneApp])
+
+  const installFunnelSteps = useMemo(() => {
+    const browserStepDone = !iosBrowserContext.isIos || iosBrowserContext.isSafari || isStandaloneApp
+    const onboardingStepDone =
+      installFunnelSnapshot.installPromptOpenCount > 0 ||
+      installFunnelSnapshot.iosOnboardingOpenCount > 0 ||
+      installFunnelSnapshot.androidOnboardingOpenCount > 0
+    const installedStepDone = isStandaloneApp || installFunnelSnapshot.appInstalledCount > 0
+
+    const steps = [
+      {
+        id: 'browser',
+        label: iosBrowserContext.isIos ? 'Safari veya destekli tarayici' : 'Tarayici uygun',
+        done: browserStepDone,
+      },
+      {
+        id: 'onboarding',
+        label: 'Kurulum adimi acildi',
+        done: onboardingStepDone,
+      },
+      {
+        id: 'installed',
+        label: 'Ana ekrana eklendi',
+        done: installedStepDone,
+      },
+    ]
+
+    return {
+      steps,
+      completed: steps.filter((step) => step.done).length,
+      total: steps.length,
+    }
+  }, [installFunnelSnapshot, iosBrowserContext.isIos, iosBrowserContext.isSafari, isStandaloneApp])
+
+  const installHealthHint = useMemo(() => {
+    if (iosInAppBrowserBlocked) {
+      return 'Su an uygulama ici tarayicidasiniz. Kurulum ve push icin Safari acmaniz gerekiyor.'
+    }
+    if (isAndroidDevice() && !installPromptEvent && !isStandaloneApp) {
+      return 'Android kurulum penceresi hazir degilse menuden "Ana ekrana ekle" adimini kullanin.'
+    }
+    if (installPromptEvent && isAndroidDevice()) {
+      return 'Android kurulum penceresi hazir. Butona basinca tek adimda kurabilirsiniz.'
+    }
+    return 'Kurulumu tamamladiginizda QR ve push akisi daha stabil olur.'
+  }, [installPromptEvent, iosInAppBrowserBlocked, isStandaloneApp])
+
+  const installLastAttemptLabel = useMemo(() => {
+    if (!installFunnelSnapshot.lastAttemptAt) {
+      return 'Henüz kurulum denemesi yok.'
+    }
+    return new Date(installFunnelSnapshot.lastAttemptAt).toLocaleString('tr-TR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      day: '2-digit',
+      month: '2-digit',
+    })
+  }, [installFunnelSnapshot.lastAttemptAt])
+
+  const showIosBrowserWarning =
+    iosInAppBrowserBlocked && !scannerActive && !isHelpOpen && !showPushGateModal
+
+  useEffect(() => {
+    if (showInstallBanner && !installBannerVisiblePrevRef.current) {
+      trackInstallFunnel('banner_shown')
+    }
+    installBannerVisiblePrevRef.current = showInstallBanner
+  }, [showInstallBanner, trackInstallFunnel])
+
+  useEffect(() => {
+    if (showIosInstallOnboarding && !iosOnboardingVisiblePrevRef.current) {
+      trackInstallFunnel('ios_onboarding_opened')
+    }
+    iosOnboardingVisiblePrevRef.current = showIosInstallOnboarding
+  }, [showIosInstallOnboarding, trackInstallFunnel])
+
+  useEffect(() => {
+    if (showAndroidInstallOnboarding && !androidOnboardingVisiblePrevRef.current) {
+      trackInstallFunnel('android_onboarding_opened')
+    }
+    androidOnboardingVisiblePrevRef.current = showAndroidInstallOnboarding
+  }, [showAndroidInstallOnboarding, trackInstallFunnel])
 
   useEffect(() => {
     if (qrPanelAutoFocusDoneRef.current || typeof window === 'undefined') {
@@ -1270,15 +1687,68 @@ export function HomePage() {
           </section>
         ) : null}
 
+        {showIosBrowserWarning ? (
+          <div className="warn-box install-browser-warning">
+            <p>
+              <span className="banner-icon" aria-hidden="true">
+                !
+              </span>
+              iPhone kurulumu icin Safari zorunlu. Simdi {iosBrowserContext.browserLabel} uzerindesiniz.
+            </p>
+            <div className="install-browser-warning-actions">
+              <button type="button" className="btn btn-soft" onClick={openIosInstallOnboarding}>
+                Safari Adimlarini Ac
+              </button>
+              <button type="button" className="btn btn-ghost" onClick={() => void copyPortalLinkForSafari()}>
+                Linki Kopyala
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {showInstallPromotions ? (
+          <section className="install-health" role="region" aria-label="Kurulum durumu">
+            <div className="install-health-head">
+              <p className="install-health-kicker">KURULUM DURUMU</p>
+              <span className="status-pill state-warn">
+                {installFunnelSteps.completed}/{installFunnelSteps.total}
+              </span>
+            </div>
+            <p className="install-health-text">{installHealthHint}</p>
+            <ul className="install-health-list">
+              {installFunnelSteps.steps.map((step) => (
+                <li key={step.id} className={`install-health-step ${step.done ? 'done' : 'pending'}`}>
+                  <span className="install-health-step-icon" aria-hidden="true">
+                    {step.done ? '✓' : '•'}
+                  </span>
+                  <span>{step.label}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="install-health-meta">
+              Son deneme: <strong>{installLastAttemptLabel}</strong>
+            </p>
+          </section>
+        ) : null}
+
         {showIosInstallDock ? (
           <div className="ios-install-dock" role="region" aria-label="Ana ekrana ekleme kisayolu">
             <div>
               <p className="ios-install-dock-title">Ana Ekrana Ekle</p>
-              <p className="ios-install-dock-subtitle">Uygulama gibi kullanmak icin kurulumu tamamlayin.</p>
+              <p className="ios-install-dock-subtitle">
+                {iosInAppBrowserBlocked
+                  ? 'Once Safari ile acin, sonra Paylas > Ana Ekrana Ekle adimini tamamlayin.'
+                  : 'Uygulama gibi kullanmak icin kurulumu tamamlayin.'}
+              </p>
             </div>
-            <button type="button" className="btn btn-soft ios-install-dock-btn" onClick={openIosInstallOnboarding}>
-              Ana Ekrana Ekle
-            </button>
+            <div className="ios-install-dock-actions">
+              <button type="button" className="btn btn-soft ios-install-dock-btn" onClick={openIosInstallOnboarding}>
+                Ana Ekrana Ekle
+              </button>
+              <button type="button" className="btn btn-ghost ios-install-dock-btn" onClick={() => void copyPortalLinkForSafari()}>
+                Linki Kopyala
+              </button>
+            </div>
           </div>
         ) : null}
 
@@ -1708,7 +2178,10 @@ export function HomePage() {
             <div className="help-modal install-onboarding-modal">
               <p className="install-onboarding-kicker">IPHONE KURULUM</p>
               <h2>Ana Ekrana Ekle</h2>
-              <p>Bu portali uygulama gibi kullanmak icin Safari uzerinden tek seferlik kurulum yapin.</p>
+              <p>
+                Bu portali uygulama gibi kullanmak icin Safari uzerinden tek seferlik kurulum yapin.
+                {iosInAppBrowserBlocked ? ' Once Safari ile acmaniz gerekiyor.' : ''}
+              </p>
               <ol className="install-onboarding-list">
                 <li>Safari alt menuden Paylas ikonuna dokunun.</li>
                 <li>Ana Ekrana Ekle secenegini secin.</li>
@@ -1723,8 +2196,17 @@ export function HomePage() {
                 >
                   {isInstallPromptBusy ? 'Aciliyor...' : 'Ana Ekrana Ekle'}
                 </button>
+                {iosInAppBrowserBlocked ? (
+                  <button
+                    type="button"
+                    className="btn btn-soft"
+                    onClick={() => void copyPortalLinkForSafari()}
+                  >
+                    Linki Kopyala
+                  </button>
+                ) : null}
                 <button type="button" className="btn btn-soft" onClick={dismissIosInstallOnboarding}>
-                  Adimlari Gosterme
+                  24 Saat Sonra Hatirlat
                 </button>
               </div>
             </div>
@@ -1737,7 +2219,9 @@ export function HomePage() {
               <p className="install-onboarding-kicker">ANDROID KURULUM</p>
               <h2>Tek Seferde Ana Ekrana Ekle</h2>
               <p>
-                Kurulum penceresi otomatik gelmediyse Chrome menüsünden hızlıca tamamlayın.
+                {installPromptEvent
+                  ? 'Kurulum penceresi hazir, tek butonla tamamlayabilirsiniz.'
+                  : 'Kurulum penceresi hazir degilse Chrome menüsünden hızlıca tamamlayın.'}
               </p>
               <ol className="install-onboarding-list">
                 <li>Chrome sağ üstten 3 nokta menüsünü açın.</li>
@@ -1751,7 +2235,7 @@ export function HomePage() {
                   disabled={isInstallPromptBusy}
                   onClick={() => void runInstallPrompt()}
                 >
-                  {isInstallPromptBusy ? 'Aciliyor...' : 'Tekrar Dene'}
+                  {isInstallPromptBusy ? 'Aciliyor...' : installPromptEvent ? 'Tek Dokunusla Kur' : 'Tekrar Dene'}
                 </button>
                 <button type="button" className="btn btn-soft" onClick={dismissAndroidInstallOnboarding}>
                   Simdilik Kapat
