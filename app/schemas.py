@@ -858,6 +858,13 @@ class AdminDeviceClaimRequest(BaseModel):
     subscription: dict[str, Any]
 
 
+class AdminDeviceClaimPublicRequest(BaseModel):
+    token: str = Field(min_length=8, max_length=255)
+    username: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=1, max_length=128)
+    subscription: dict[str, Any]
+
+
 class AdminDeviceClaimResponse(BaseModel):
     ok: bool
     admin_username: str

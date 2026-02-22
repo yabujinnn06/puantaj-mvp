@@ -2,9 +2,8 @@ import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
-import { claimAdminDevice, getAdminPushConfig } from '../api/admin'
+import { claimAdminDevicePublic, getAdminPushPublicConfig } from '../api/admin'
 import { parseApiError } from '../api/error'
-import { useAuth } from '../hooks/useAuth'
 import { urlBase64ToUint8Array } from '../utils/push'
 
 const PUSH_VAPID_KEY_STORAGE = 'pf_admin_push_vapid_public_key'
@@ -12,7 +11,6 @@ const PUSH_VAPID_KEY_STORAGE = 'pf_admin_push_vapid_public_key'
 export function AdminDeviceClaimPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const { login } = useAuth()
 
   const token = useMemo(() => searchParams.get('token')?.trim() ?? '', [searchParams])
 
@@ -43,9 +41,7 @@ export function AdminDeviceClaimPage() {
 
     try {
       setIsSubmitting(true)
-      await login(trimmedUsername, trimmedPassword)
-
-      const pushConfig = await getAdminPushConfig()
+      const pushConfig = await getAdminPushPublicConfig()
       if (!pushConfig.enabled || !pushConfig.vapid_public_key) {
         setErrorMessage('Push bildirim servisi yapılandırılmamış.')
         return
@@ -88,8 +84,10 @@ export function AdminDeviceClaimPage() {
         })
       }
 
-      await claimAdminDevice({
+      await claimAdminDevicePublic({
         token,
+        username: trimmedUsername,
+        password: trimmedPassword,
         subscription: subscription.toJSON() as Record<string, unknown>,
       })
       window.localStorage.setItem(PUSH_VAPID_KEY_STORAGE, pushConfig.vapid_public_key)

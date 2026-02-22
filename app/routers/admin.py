@@ -47,6 +47,7 @@ from app.schemas import (
     AdminDeviceInviteCreateRequest,
     AdminDeviceInviteCreateResponse,
     AdminDeviceClaimRequest,
+    AdminDeviceClaimPublicRequest,
     AdminDeviceClaimResponse,
     AdminPushSelfCheckResponse,
     AdminPushSelfTestResponse,
@@ -4714,6 +4715,14 @@ def admin_push_config(
     return EmployeePushConfigResponse(**get_push_public_config())
 
 
+@router.get(
+    "/api/admin/notifications/push/config/public",
+    response_model=EmployeePushConfigResponse,
+)
+def admin_push_config_public() -> EmployeePushConfigResponse:
+    return EmployeePushConfigResponse(**get_push_public_config())
+
+
 @router.post(
     "/api/admin/notifications/admin-device-invite",
     response_model=AdminDeviceInviteCreateResponse,
@@ -4776,26 +4785,23 @@ def create_admin_device_invite(
     )
 
 
-@router.post(
-    "/api/admin/notifications/admin-device-claim",
-    response_model=AdminDeviceClaimResponse,
-)
-def claim_admin_device_push(
-    payload: AdminDeviceClaimRequest,
+def _claim_admin_device_push_with_actor(
+    *,
+    token: str,
+    subscription_payload: dict[str, Any],
     request: Request,
-    claims: dict[str, Any] = Depends(require_admin),
-    db: Session = Depends(get_db),
+    db: Session,
+    actor_id: str,
+    admin_user_id: int | None,
 ) -> AdminDeviceClaimResponse:
     now_utc = datetime.now(timezone.utc)
-    actor_id = str(claims.get("username") or claims.get("sub") or settings.admin_user)
-    admin_user_id = claims.get("admin_user_id") if isinstance(claims.get("admin_user_id"), int) else None
     client_ip = _client_ip(request)
     user_agent = _user_agent(request)
     user_agent_hash = _user_agent_hash(request)
     request.state.actor = "admin"
     request.state.actor_id = actor_id
 
-    invite = db.scalar(select(AdminDeviceInvite).where(AdminDeviceInvite.token == payload.token))
+    invite = db.scalar(select(AdminDeviceInvite).where(AdminDeviceInvite.token == token))
     if invite is None:
         raise ApiError(status_code=404, code="INVITE_NOT_FOUND", message="Admin device invite token not found.")
     if invite.is_used:
@@ -4856,7 +4862,7 @@ def claim_admin_device_push(
         db,
         admin_user_id=admin_user_id,
         admin_username=actor_id,
-        subscription=payload.subscription,
+        subscription=subscription_payload,
         user_agent=user_agent,
     )
 
@@ -4889,6 +4895,102 @@ def claim_admin_device_push(
         ok=True,
         admin_username=actor_id,
         subscription_id=subscription.id,
+    )
+
+
+@router.post(
+    "/api/admin/notifications/admin-device-claim",
+    response_model=AdminDeviceClaimResponse,
+)
+def claim_admin_device_push(
+    payload: AdminDeviceClaimRequest,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> AdminDeviceClaimResponse:
+    actor_id = str(claims.get("username") or claims.get("sub") or settings.admin_user)
+    admin_user_id = claims.get("admin_user_id") if isinstance(claims.get("admin_user_id"), int) else None
+    return _claim_admin_device_push_with_actor(
+        token=payload.token,
+        subscription_payload=payload.subscription,
+        request=request,
+        db=db,
+        actor_id=actor_id,
+        admin_user_id=admin_user_id,
+    )
+
+
+@router.post(
+    "/api/admin/notifications/admin-device-claim/public",
+    response_model=AdminDeviceClaimResponse,
+)
+def claim_admin_device_push_public(
+    payload: AdminDeviceClaimPublicRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> AdminDeviceClaimResponse:
+    username = payload.username.strip()
+    password = payload.password
+    client_ip = _client_ip(request)
+    user_agent = _user_agent(request)
+    request_id = getattr(request.state, "request_id", None)
+    request.state.actor = "system"
+    request.state.actor_id = "system"
+
+    if client_ip:
+        try:
+            ensure_login_attempt_allowed(client_ip)
+        except ApiError:
+            log_audit(
+                db,
+                actor_type=AuditActorType.SYSTEM,
+                actor_id=username or "admin",
+                action="ADMIN_DEVICE_CLAIM_AUTH_FAIL",
+                success=False,
+                ip=client_ip,
+                user_agent=user_agent,
+                details={"reason": "TOO_MANY_ATTEMPTS"},
+                request_id=request_id,
+            )
+            raise
+
+    identity = _authenticate_admin_identity_by_password(
+        db,
+        username=username,
+        password=password,
+    )
+    if identity is None:
+        if client_ip:
+            register_login_failure(client_ip)
+        log_audit(
+            db,
+            actor_type=AuditActorType.SYSTEM,
+            actor_id=username or "admin",
+            action="ADMIN_DEVICE_CLAIM_AUTH_FAIL",
+            success=False,
+            ip=client_ip,
+            user_agent=user_agent,
+            details={"reason": "INVALID_CREDENTIALS"},
+            request_id=request_id,
+        )
+        raise ApiError(
+            status_code=401,
+            code="INVALID_CREDENTIALS",
+            message="Invalid credentials.",
+        )
+
+    if client_ip:
+        register_login_success(client_ip)
+
+    actor_id = str(identity.get("username") or identity.get("sub") or username or "admin")
+    admin_user_id = identity.get("admin_user_id") if isinstance(identity.get("admin_user_id"), int) else None
+    return _claim_admin_device_push_with_actor(
+        token=payload.token,
+        subscription_payload=payload.subscription,
+        request=request,
+        db=db,
+        actor_id=actor_id,
+        admin_user_id=admin_user_id,
     )
 
 

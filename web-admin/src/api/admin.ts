@@ -284,6 +284,13 @@ export interface ClaimAdminDevicePayload {
   subscription: Record<string, unknown>
 }
 
+export interface ClaimAdminDevicePublicPayload {
+  token: string
+  username: string
+  password: string
+  subscription: Record<string, unknown>
+}
+
 export interface DailyReportArchivesParams {
   start_date?: string
   end_date?: string
@@ -832,6 +839,13 @@ export async function getAdminPushConfig(): Promise<{ enabled: boolean; vapid_pu
   return response.data
 }
 
+export async function getAdminPushPublicConfig(): Promise<{ enabled: boolean; vapid_public_key: string | null }> {
+  const response = await publicApiClient.get<{ enabled: boolean; vapid_public_key: string | null }>(
+    '/api/admin/notifications/push/config/public',
+  )
+  return response.data
+}
+
 export async function getAdminPushSelfCheck(): Promise<AdminPushSelfCheckResponse> {
   const response = await apiClient.get<AdminPushSelfCheckResponse>(
     '/api/admin/notifications/admin-self-check',
@@ -861,6 +875,16 @@ export async function claimAdminDevice(
 ): Promise<AdminDeviceClaimResponse> {
   const response = await apiClient.post<AdminDeviceClaimResponse>(
     '/api/admin/notifications/admin-device-claim',
+    payload,
+  )
+  return response.data
+}
+
+export async function claimAdminDevicePublic(
+  payload: ClaimAdminDevicePublicPayload,
+): Promise<AdminDeviceClaimResponse> {
+  const response = await publicApiClient.post<AdminDeviceClaimResponse>(
+    '/api/admin/notifications/admin-device-claim/public',
     payload,
   )
   return response.data
