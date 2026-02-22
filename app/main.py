@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -431,6 +431,18 @@ async def stop_notification_worker() -> None:
             await task
     app.state.notification_worker_stop_event = None
     app.state.notification_worker_task = None
+
+
+@app.api_route("/healthz", methods=["GET", "HEAD"], include_in_schema=False)
+def healthz() -> Response:
+    # Lightweight probe endpoint (no DB/service checks) for uptime monitors.
+    return Response(content="ok", media_type="text/plain")
+
+
+@app.head("/health", include_in_schema=False)
+def health_head() -> Response:
+    # Keep HEAD cheap so monitors using HEAD do not fail with 405.
+    return Response(status_code=200)
 
 
 @app.get("/health")
