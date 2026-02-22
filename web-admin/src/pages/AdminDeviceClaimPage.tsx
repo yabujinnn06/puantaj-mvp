@@ -94,7 +94,7 @@ export function AdminDeviceClaimPage() {
 
       setSuccessMessage('Admin cihazı başarıyla bağlandı. Bildirimler bu cihaza gönderilecek.')
       window.setTimeout(() => {
-        navigate('/notifications', { replace: true })
+        navigate('/login', { replace: true })
       }, 1000)
     } catch (error) {
       const parsed = parseApiError(error, 'Cihaz bağlama işlemi başarısız oldu.')
