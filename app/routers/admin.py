@@ -44,6 +44,8 @@ from app.models import (
 from app.schemas import (
     AdminManualNotificationSendRequest,
     AdminManualNotificationSendResponse,
+    AdminDeviceHealRequest,
+    AdminDeviceHealResponse,
     AdminDeviceInviteCreateRequest,
     AdminDeviceInviteCreateResponse,
     AdminDeviceClaimRequest,
@@ -64,6 +66,9 @@ from app.schemas import (
     AdminUserMfaSetupConfirmResponse,
     AdminUserMfaSetupStartResponse,
     AdminUserMfaStatusResponse,
+    AdminUserClaimDetailResponse,
+    AdminPushClaimDetailRead,
+    AdminDeviceInviteDetailRead,
     AdminUserRead,
     AdminUserUpdateRequest,
     AdminDevicePushSubscriptionRead,
@@ -172,6 +177,7 @@ from app.services.push_notifications import (
     get_push_public_config,
     list_active_admin_push_subscriptions,
     list_active_push_subscriptions,
+    send_test_push_to_admin_subscription,
     send_push_to_admin_subscriptions,
     send_push_to_admins,
     send_push_to_employees,
@@ -420,6 +426,55 @@ def _to_admin_device_push_subscription_read(
         created_at=row.created_at,
         updated_at=row.updated_at,
         last_seen_at=row.last_seen_at,
+    )
+
+
+def _endpoint_fingerprint(endpoint: str) -> str:
+    return hashlib.sha256(endpoint.encode("utf-8")).hexdigest()[:16]
+
+
+def _to_admin_push_claim_detail_read(row: AdminPushSubscription) -> AdminPushClaimDetailRead:
+    return AdminPushClaimDetailRead(
+        id=row.id,
+        admin_user_id=row.admin_user_id,
+        admin_username=row.admin_username,
+        is_active=row.is_active,
+        endpoint=row.endpoint,
+        endpoint_fingerprint=_endpoint_fingerprint(row.endpoint),
+        user_agent=row.user_agent,
+        last_error=row.last_error,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+        last_seen_at=row.last_seen_at,
+    )
+
+
+def _to_admin_device_invite_detail_read(
+    row: AdminDeviceInvite,
+    *,
+    now_utc: datetime,
+) -> AdminDeviceInviteDetailRead:
+    status_value: Literal["PENDING", "USED", "EXPIRED"]
+    if row.is_used:
+        status_value = "USED"
+    elif row.expires_at <= now_utc:
+        status_value = "EXPIRED"
+    else:
+        status_value = "PENDING"
+
+    return AdminDeviceInviteDetailRead(
+        id=row.id,
+        status=status_value,
+        expires_at=row.expires_at,
+        is_used=row.is_used,
+        attempt_count=int(row.attempt_count or 0),
+        max_attempts=int(row.max_attempts or 0),
+        created_by_admin_user_id=row.created_by_admin_user_id,
+        created_by_username=row.created_by_username,
+        used_by_admin_user_id=row.used_by_admin_user_id,
+        used_by_username=row.used_by_username,
+        created_at=row.created_at,
+        used_at=row.used_at,
     )
 
 
@@ -1031,6 +1086,108 @@ def admin_me(
 def list_admin_users(db: Session = Depends(get_db)) -> list[AdminUserRead]:
     rows = list(db.scalars(select(AdminUser).order_by(AdminUser.id)).all())
     return [_to_admin_user_read(item) for item in rows]
+
+
+@router.get(
+    "/api/admin/admin-users/{admin_user_id}/claim-detail",
+    response_model=AdminUserClaimDetailResponse,
+    dependencies=[Depends(require_admin_permission("admin_users"))],
+)
+def get_admin_user_claim_detail(
+    admin_user_id: int,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> AdminUserClaimDetailResponse:
+    admin_user = db.get(AdminUser, admin_user_id)
+    if admin_user is None:
+        raise HTTPException(status_code=404, detail="Admin user not found")
+
+    claim_rows = list(
+        db.scalars(
+            select(AdminPushSubscription)
+            .where(
+                or_(
+                    AdminPushSubscription.admin_user_id == admin_user.id,
+                    AdminPushSubscription.admin_username.ilike(admin_user.username),
+                )
+            )
+            .order_by(
+                AdminPushSubscription.is_active.desc(),
+                AdminPushSubscription.last_seen_at.desc(),
+                AdminPushSubscription.id.desc(),
+            )
+            .limit(200)
+        ).all()
+    )
+    active_claim_total = sum(1 for row in claim_rows if bool(row.is_active))
+    inactive_claim_total = len(claim_rows) - active_claim_total
+    now_utc = datetime.now(timezone.utc)
+
+    created_invites = list(
+        db.scalars(
+            select(AdminDeviceInvite)
+            .where(
+                or_(
+                    AdminDeviceInvite.created_by_admin_user_id == admin_user.id,
+                    AdminDeviceInvite.created_by_username.ilike(admin_user.username),
+                )
+            )
+            .order_by(AdminDeviceInvite.id.desc())
+            .limit(30)
+        ).all()
+    )
+    used_invites = list(
+        db.scalars(
+            select(AdminDeviceInvite)
+            .where(
+                or_(
+                    AdminDeviceInvite.used_by_admin_user_id == admin_user.id,
+                    AdminDeviceInvite.used_by_username.ilike(admin_user.username),
+                )
+            )
+            .order_by(AdminDeviceInvite.id.desc())
+            .limit(30)
+        ).all()
+    )
+
+    actor_id = str(claims.get("username") or claims.get("sub") or "admin")
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=actor_id,
+        action="ADMIN_USER_CLAIM_DETAIL_VIEWED",
+        success=True,
+        entity_type="admin_user",
+        entity_id=str(admin_user.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "username": admin_user.username,
+            "claim_total": len(claim_rows),
+            "claim_active_total": active_claim_total,
+            "claim_inactive_total": inactive_claim_total,
+            "created_invites_total": len(created_invites),
+            "used_invites_total": len(used_invites),
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+
+    return AdminUserClaimDetailResponse(
+        admin_user=_to_admin_user_read(admin_user),
+        claim_total=len(claim_rows),
+        claim_active_total=active_claim_total,
+        claim_inactive_total=inactive_claim_total,
+        claims=[_to_admin_push_claim_detail_read(row) for row in claim_rows],
+        created_invites=[
+            _to_admin_device_invite_detail_read(item, now_utc=now_utc)
+            for item in created_invites
+        ],
+        used_invites=[
+            _to_admin_device_invite_detail_read(item, now_utc=now_utc)
+            for item in used_invites
+        ],
+    )
 
 
 @router.post(
@@ -4991,6 +5148,78 @@ def claim_admin_device_push_public(
         db=db,
         actor_id=actor_id,
         admin_user_id=admin_user_id,
+    )
+
+
+@router.post(
+    "/api/admin/notifications/admin-device-heal",
+    response_model=AdminDeviceHealResponse,
+)
+def heal_admin_device_push(
+    payload: AdminDeviceHealRequest,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> AdminDeviceHealResponse:
+    actor_id = str(claims.get("username") or claims.get("sub") or settings.admin_user)
+    admin_user_id = claims.get("admin_user_id") if isinstance(claims.get("admin_user_id"), int) else None
+    request.state.actor = "admin"
+    request.state.actor_id = actor_id
+    user_agent = _user_agent(request)
+
+    subscription = upsert_admin_push_subscription(
+        db,
+        admin_user_id=admin_user_id,
+        admin_username=actor_id,
+        subscription=payload.subscription,
+        user_agent=user_agent,
+    )
+
+    test_result: dict[str, Any] | None = None
+    if payload.send_test:
+        now_utc = datetime.now(timezone.utc)
+        local_time = now_utc.astimezone(_attendance_timezone()).strftime("%Y-%m-%d %H:%M:%S")
+        test_result = send_test_push_to_admin_subscription(
+            db,
+            subscription=subscription,
+            title="Admin Claim Heal Test",
+            body=f"{actor_id} hesabi icin heal dogrulama bildirimi ({local_time}).",
+            data={
+                "type": "ADMIN_DEVICE_HEAL_TEST",
+                "actor": actor_id,
+                "url": "/admin-panel/notifications",
+                "ts_utc": now_utc.isoformat(),
+            },
+        )
+
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=actor_id,
+        action="ADMIN_DEVICE_HEALED",
+        success=bool((test_result or {}).get("ok", True)),
+        entity_type="admin_push_subscription",
+        entity_id=str(subscription.id),
+        ip=_client_ip(request),
+        user_agent=user_agent,
+        details={
+            "admin_user_id": admin_user_id,
+            "admin_username": actor_id,
+            "send_test": payload.send_test,
+            "test_push_ok": bool((test_result or {}).get("ok", False)) if test_result is not None else None,
+            "test_push_status_code": (test_result or {}).get("status_code") if test_result is not None else None,
+            "test_push_error": (test_result or {}).get("error") if test_result is not None else None,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+
+    return AdminDeviceHealResponse(
+        ok=True,
+        admin_username=actor_id,
+        subscription_id=subscription.id,
+        test_push_ok=bool((test_result or {}).get("ok", False)) if test_result is not None else None,
+        test_push_error=((test_result or {}).get("error") if test_result is not None else None),
+        test_push_status_code=((test_result or {}).get("status_code") if test_result is not None else None),
     )
 
 

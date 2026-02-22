@@ -12,6 +12,7 @@ import {
   getAdminUsers,
   getDailyReportArchives,
   getEmployees,
+  healAdminDevice,
   getNotificationDeliveryLogs,
   getNotificationJobs,
   getNotificationSubscriptions,
@@ -28,6 +29,7 @@ import { TableSearchInput } from '../components/TableSearchInput'
 import { useAuth } from '../hooks/useAuth'
 import { useToast } from '../hooks/useToast'
 import type { AdminDeviceInviteCreateResponse, NotificationDeliveryLog, NotificationJobStatus } from '../types/api'
+import { urlBase64ToUint8Array } from '../utils/push'
 
 function dt(value: string): string {
   return new Intl.DateTimeFormat('tr-TR', { dateStyle: 'short', timeStyle: 'medium' }).format(new Date(value))
@@ -66,6 +68,46 @@ function downloadBlob(blob: Blob, name: string): void {
 
 const JOBS_PAGE_SIZE = 25
 const ARCHIVE_PAGE_SIZE = 50
+const PUSH_VAPID_KEY_STORAGE = 'pf_admin_push_vapid_public_key'
+
+async function ensureAdminPushSubscription(vapidPublicKey: string): Promise<PushSubscription> {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    throw new Error('Bu tarayici push bildirimlerini desteklemiyor.')
+  }
+
+  const permission =
+    Notification.permission === 'granted'
+      ? 'granted'
+      : await Notification.requestPermission()
+  if (permission !== 'granted') {
+    throw new Error('Bildirim izni verilmedi.')
+  }
+
+  const swUrl = `${import.meta.env.BASE_URL}admin-sw.js`
+  const registration = await navigator.serviceWorker.register(swUrl, {
+    scope: import.meta.env.BASE_URL,
+  })
+
+  let subscription = await registration.pushManager.getSubscription()
+  const savedVapidKey = window.localStorage.getItem(PUSH_VAPID_KEY_STORAGE)
+  if (subscription && savedVapidKey && savedVapidKey !== vapidPublicKey) {
+    try {
+      await subscription.unsubscribe()
+    } catch {
+      // best effort
+    }
+    subscription = null
+  }
+
+  if (!subscription) {
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(vapidPublicKey) as unknown as BufferSource,
+    })
+  }
+
+  return subscription
+}
 
 export function NotificationsPage() {
   const queryClient = useQueryClient()
@@ -256,6 +298,42 @@ export function NotificationsPage() {
     onError: (error) => {
       const parsed = parseApiError(error, 'Self-test bildirimi gonderilemedi.')
       pushToast({ variant: 'error', title: 'Self-test hatasi', description: parsed.message })
+    },
+  })
+
+  const healMutation = useMutation({
+    mutationFn: async () => {
+      const pushConfig = await getAdminPushConfig()
+      if (!pushConfig.enabled || !pushConfig.vapid_public_key) {
+        throw new Error('Push bildirim servisi yapilandirilmamis.')
+      }
+      const subscription = await ensureAdminPushSubscription(pushConfig.vapid_public_key)
+      const result = await healAdminDevice({
+        subscription: subscription.toJSON() as Record<string, unknown>,
+        send_test: true,
+      })
+      window.localStorage.setItem(PUSH_VAPID_KEY_STORAGE, pushConfig.vapid_public_key)
+      return result
+    },
+    onSuccess: (result) => {
+      pushToast({
+        variant: result.test_push_ok ? 'success' : 'error',
+        title: result.test_push_ok ? 'Heal tamamlandi' : 'Heal tamamlandi ama test hatali',
+        description: result.test_push_ok
+          ? `Abonelik yenilendi (#${result.subscription_id}) ve test bildirimi gonderildi.`
+          : `Abonelik yenilendi (#${result.subscription_id}) ancak test bildirimi hatali.`,
+      })
+      void queryClient.invalidateQueries({ queryKey: ['admin-push-self-check'] })
+      void queryClient.invalidateQueries({ queryKey: ['notify-subs-admin'] })
+      void queryClient.invalidateQueries({ queryKey: ['notification-delivery-logs'] })
+    },
+    onError: (error) => {
+      if (error instanceof Error && !('response' in error)) {
+        pushToast({ variant: 'error', title: 'Heal hatasi', description: error.message })
+        return
+      }
+      const parsed = parseApiError(error, 'Cihaz heal islemi basarisiz oldu.')
+      pushToast({ variant: 'error', title: 'Heal hatasi', description: parsed.message })
     },
   })
 
@@ -667,14 +745,24 @@ export function NotificationsPage() {
             </strong>
           </div>
           <div className="flex items-end">
-            <button
-              type="button"
-              onClick={() => selfTestMutation.mutate()}
-              disabled={selfTestMutation.isPending}
-              className="rounded border border-brand-300 px-3 py-2 text-sm text-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {selfTestMutation.isPending ? 'Self-test gonderiliyor...' : 'Kendime test bildirimi gonder'}
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => selfTestMutation.mutate()}
+                disabled={selfTestMutation.isPending || healMutation.isPending}
+                className="rounded border border-brand-300 px-3 py-2 text-sm text-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {selfTestMutation.isPending ? 'Self-test gonderiliyor...' : 'Kendime test bildirimi gonder'}
+              </button>
+              <button
+                type="button"
+                onClick={() => healMutation.mutate()}
+                disabled={healMutation.isPending || selfTestMutation.isPending}
+                className="rounded border border-emerald-300 px-3 py-2 text-sm text-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {healMutation.isPending ? 'Heal calisiyor...' : 'Bu cihazi heal et'}
+              </button>
+            </div>
           </div>
         </div>
         <div className="mt-2 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">

@@ -322,6 +322,15 @@ export interface AdminDeviceClaimResponse {
   subscription_id: number
 }
 
+export interface AdminDeviceHealResponse {
+  ok: boolean
+  admin_username: string
+  subscription_id: number
+  test_push_ok: boolean | null
+  test_push_error: string | null
+  test_push_status_code: number | null
+}
+
 export interface AdminPushSelfCheckResponse {
   push_enabled: boolean
   actor_username: string
@@ -605,6 +614,47 @@ export interface AdminUser {
   permissions: AdminPermissions
   created_at: string
   updated_at: string
+}
+
+export interface AdminPushClaimDetail {
+  id: number
+  admin_user_id: number | null
+  admin_username: string
+  is_active: boolean
+  endpoint: string
+  endpoint_fingerprint: string
+  user_agent: string | null
+  last_error: string | null
+  created_at: string
+  updated_at: string
+  last_seen_at: string
+}
+
+export type AdminDeviceInviteStatus = 'PENDING' | 'USED' | 'EXPIRED'
+
+export interface AdminDeviceInviteDetail {
+  id: number
+  status: AdminDeviceInviteStatus
+  expires_at: string
+  is_used: boolean
+  attempt_count: number
+  max_attempts: number
+  created_by_admin_user_id: number | null
+  created_by_username: string
+  used_by_admin_user_id: number | null
+  used_by_username: string | null
+  created_at: string
+  used_at: string | null
+}
+
+export interface AdminUserClaimDetail {
+  admin_user: AdminUser
+  claim_total: number
+  claim_active_total: number
+  claim_inactive_total: number
+  claims: AdminPushClaimDetail[]
+  created_invites: AdminDeviceInviteDetail[]
+  used_invites: AdminDeviceInviteDetail[]
 }
 
 export interface AdminUserMfaStatus {

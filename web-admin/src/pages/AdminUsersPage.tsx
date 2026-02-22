@@ -6,6 +6,7 @@ import {
   confirmAdminUserMfaSetup,
   createAdminUser,
   deleteAdminUser,
+  getAdminUserClaimDetail,
   getAdminUserMfaStatus,
   getAdminUsers,
   regenerateAdminUserMfaRecoveryCodes,
@@ -21,7 +22,12 @@ import { PageHeader } from '../components/PageHeader'
 import { Panel } from '../components/Panel'
 import { useAuth } from '../hooks/useAuth'
 import { useToast } from '../hooks/useToast'
-import type { AdminPermissions, AdminUser, AdminUserMfaSetupStartResponse } from '../types/api'
+import type {
+  AdminPermissions,
+  AdminUser,
+  AdminUserClaimDetail,
+  AdminUserMfaSetupStartResponse,
+} from '../types/api'
 
 type PermissionKey =
   | 'regions'
@@ -169,6 +175,35 @@ function buildCreateFormState(): CreateFormState {
   }
 }
 
+function formatDateTime(value: string | null | undefined): string {
+  if (!value) {
+    return '-'
+  }
+  return new Date(value).toLocaleString('tr-TR')
+}
+
+function truncateUserAgent(value: string | null | undefined): string {
+  const text = (value ?? '').trim()
+  if (!text) {
+    return '-'
+  }
+  if (text.length <= 80) {
+    return text
+  }
+  return `${text.slice(0, 80)}...`
+}
+
+function maskEndpoint(value: string): string {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return '-'
+  }
+  if (trimmed.length <= 60) {
+    return trimmed
+  }
+  return `${trimmed.slice(0, 30)}...${trimmed.slice(-22)}`
+}
+
 export function AdminUsersPage() {
   const queryClient = useQueryClient()
   const { pushToast } = useToast()
@@ -184,6 +219,7 @@ export function AdminUsersPage() {
   const [editIsActive, setEditIsActive] = useState(true)
   const [editIsSuperAdmin, setEditIsSuperAdmin] = useState(false)
   const [editPermissions, setEditPermissions] = useState<AdminPermissions>(buildEmptyPermissions())
+  const [detailUser, setDetailUser] = useState<AdminUser | null>(null)
   const [mfaUser, setMfaUser] = useState<AdminUser | null>(null)
   const [mfaSetupDraft, setMfaSetupDraft] = useState<AdminUserMfaSetupStartResponse | null>(null)
   const [mfaSetupCode, setMfaSetupCode] = useState('')
@@ -202,6 +238,11 @@ export function AdminUsersPage() {
     queryKey: ['admin-user-mfa-status', mfaUser?.id],
     queryFn: () => getAdminUserMfaStatus(mfaUser!.id),
     enabled: Boolean(mfaUser),
+  })
+  const detailQuery = useQuery<AdminUserClaimDetail>({
+    queryKey: ['admin-user-claim-detail', detailUser?.id],
+    queryFn: () => getAdminUserClaimDetail(detailUser!.id),
+    enabled: Boolean(detailUser),
   })
 
   const createMutation = useMutation({
@@ -451,6 +492,14 @@ export function AdminUsersPage() {
     setEditPermissions(normalizePermissions(user.permissions))
   }
 
+  const openDetailModal = (user: AdminUser) => {
+    setDetailUser(user)
+  }
+
+  const closeDetailModal = () => {
+    setDetailUser(null)
+  }
+
   const openMfaModal = (user: AdminUser) => {
     setMfaUser(user)
     setMfaSetupDraft(null)
@@ -654,6 +703,13 @@ export function AdminUsersPage() {
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
+                        onClick={() => openDetailModal(user)}
+                        className="rounded-lg border border-emerald-300 px-3 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50"
+                      >
+                        Detay
+                      </button>
+                      <button
+                        type="button"
                         disabled={!(isSuperAdmin || (authUser?.admin_user_id ?? 0) === user.id)}
                         onClick={() => openMfaModal(user)}
                         className="rounded-lg border border-brand-200 px-3 py-1 text-xs font-medium text-brand-700 hover:bg-brand-50 disabled:opacity-50"
@@ -695,6 +751,149 @@ export function AdminUsersPage() {
           <p className="mt-3 text-sm text-slate-500">Kayitli admin kullanici bulunamadi.</p>
         ) : null}
       </Panel>
+
+      <Modal
+        open={Boolean(detailUser)}
+        title={detailUser ? `Admin Detay: ${detailUser.username}` : 'Admin Detay'}
+        onClose={closeDetailModal}
+      >
+        {detailUser ? (
+          <div className="space-y-4">
+            {detailQuery.isLoading ? (
+              <p className="text-sm text-slate-500">Detay yukleniyor...</p>
+            ) : null}
+            {detailQuery.isError ? (
+              <ErrorBlock message="Admin claim detayi alinamadi." />
+            ) : null}
+            {detailQuery.data ? (
+              <>
+                <div className="grid gap-2 md:grid-cols-3">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                    Toplam claim: <strong>{detailQuery.data.claim_total}</strong>
+                  </div>
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                    Aktif claim: <strong>{detailQuery.data.claim_active_total}</strong>
+                  </div>
+                  <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+                    Pasif claim: <strong>{detailQuery.data.claim_inactive_total}</strong>
+                  </div>
+                </div>
+
+                <section>
+                  <h5 className="text-sm font-semibold text-slate-900">Bagli Cihaz / Claim Listesi</h5>
+                  <div className="mt-2 max-h-60 overflow-auto rounded-lg border border-slate-200">
+                    <table className="min-w-full text-left text-xs">
+                      <thead className="sticky top-0 bg-slate-50 uppercase text-slate-500">
+                        <tr>
+                          <th className="px-2 py-2">ID</th>
+                          <th className="px-2 py-2">Durum</th>
+                          <th className="px-2 py-2">Fingerprint</th>
+                          <th className="px-2 py-2">Son Gorulme</th>
+                          <th className="px-2 py-2">Hata</th>
+                          <th className="px-2 py-2">Tarayici</th>
+                          <th className="px-2 py-2">Endpoint</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detailQuery.data.claims.map((claim) => (
+                          <tr key={claim.id} className="border-t border-slate-100">
+                            <td className="px-2 py-2">{claim.id}</td>
+                            <td className="px-2 py-2">
+                              <span
+                                className={`rounded-full px-2 py-1 text-[11px] font-semibold ${
+                                  claim.is_active
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : 'bg-rose-100 text-rose-800'
+                                }`}
+                              >
+                                {claim.is_active ? 'Aktif' : 'Pasif'}
+                              </span>
+                            </td>
+                            <td className="px-2 py-2 font-mono text-[11px]">{claim.endpoint_fingerprint}</td>
+                            <td className="px-2 py-2">{formatDateTime(claim.last_seen_at)}</td>
+                            <td className="px-2 py-2">{claim.last_error?.trim() ? claim.last_error : '-'}</td>
+                            <td className="px-2 py-2" title={claim.user_agent ?? '-'}>
+                              {truncateUserAgent(claim.user_agent)}
+                            </td>
+                            <td className="px-2 py-2 font-mono text-[11px]" title={claim.endpoint}>
+                              {maskEndpoint(claim.endpoint)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {detailQuery.data.claims.length === 0 ? (
+                      <p className="px-2 py-2 text-sm text-slate-500">Bu kullanici icin claim kaydi yok.</p>
+                    ) : null}
+                  </div>
+                </section>
+
+                <section>
+                  <h5 className="text-sm font-semibold text-slate-900">Olusturulan Claim Davetleri</h5>
+                  <div className="mt-2 max-h-40 overflow-auto rounded-lg border border-slate-200">
+                    <table className="min-w-full text-left text-xs">
+                      <thead className="sticky top-0 bg-slate-50 uppercase text-slate-500">
+                        <tr>
+                          <th className="px-2 py-2">ID</th>
+                          <th className="px-2 py-2">Durum</th>
+                          <th className="px-2 py-2">Deneme</th>
+                          <th className="px-2 py-2">Bitis</th>
+                          <th className="px-2 py-2">Kullanan</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detailQuery.data.created_invites.map((invite) => (
+                          <tr key={invite.id} className="border-t border-slate-100">
+                            <td className="px-2 py-2">{invite.id}</td>
+                            <td className="px-2 py-2">{invite.status}</td>
+                            <td className="px-2 py-2">
+                              {invite.attempt_count}/{invite.max_attempts}
+                            </td>
+                            <td className="px-2 py-2">{formatDateTime(invite.expires_at)}</td>
+                            <td className="px-2 py-2">{invite.used_by_username ?? '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {detailQuery.data.created_invites.length === 0 ? (
+                      <p className="px-2 py-2 text-sm text-slate-500">Kayit yok.</p>
+                    ) : null}
+                  </div>
+                </section>
+
+                <section>
+                  <h5 className="text-sm font-semibold text-slate-900">Kullandigi Claim Davetleri</h5>
+                  <div className="mt-2 max-h-40 overflow-auto rounded-lg border border-slate-200">
+                    <table className="min-w-full text-left text-xs">
+                      <thead className="sticky top-0 bg-slate-50 uppercase text-slate-500">
+                        <tr>
+                          <th className="px-2 py-2">ID</th>
+                          <th className="px-2 py-2">Durum</th>
+                          <th className="px-2 py-2">Olusturan</th>
+                          <th className="px-2 py-2">Kullanilan Zaman</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detailQuery.data.used_invites.map((invite) => (
+                          <tr key={invite.id} className="border-t border-slate-100">
+                            <td className="px-2 py-2">{invite.id}</td>
+                            <td className="px-2 py-2">{invite.status}</td>
+                            <td className="px-2 py-2">{invite.created_by_username}</td>
+                            <td className="px-2 py-2">{formatDateTime(invite.used_at)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {detailQuery.data.used_invites.length === 0 ? (
+                      <p className="px-2 py-2 text-sm text-slate-500">Kayit yok.</p>
+                    ) : null}
+                  </div>
+                </section>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+      </Modal>
 
       <Modal
         open={Boolean(editingUser)}
@@ -885,7 +1084,7 @@ export function AdminUsersPage() {
                   disabled={
                     regenerateMfaCodesMutation.isPending ||
                     !criticalActionPassword.trim() ||
-                    !Boolean(mfaStatus?.mfa_enabled)
+                    !mfaStatus?.mfa_enabled
                   }
                   onClick={() => {
                     if (!criticalActionPassword.trim()) {

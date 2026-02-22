@@ -430,6 +430,37 @@ def send_test_push_to_device_subscription(
     }
 
 
+def send_test_push_to_admin_subscription(
+    db: Session,
+    *,
+    subscription: AdminPushSubscription,
+    title: str = "Admin Bildirim Testi",
+    body: str = "Admin cihaz claim sagligi dogrulandi.",
+    data: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    ok, error_text, status_code = _send_to_subscription_row(
+        endpoint=subscription.endpoint,
+        p256dh=subscription.p256dh,
+        auth_key=subscription.auth,
+        title=title,
+        body=body,
+        data=data,
+    )
+    subscription.last_seen_at = _utcnow()
+    if ok:
+        subscription.last_error = None
+    else:
+        subscription.last_error = error_text
+        if status_code in {404, 410} and subscription.is_active:
+            subscription.is_active = False
+    db.commit()
+    return {
+        "ok": ok,
+        "error": error_text,
+        "status_code": status_code,
+    }
+
+
 def send_push_to_employees(
     db: Session,
     *,

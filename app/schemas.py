@@ -411,6 +411,45 @@ class AdminUserRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class AdminPushClaimDetailRead(BaseModel):
+    id: int
+    admin_user_id: int | None = None
+    admin_username: str
+    is_active: bool
+    endpoint: str
+    endpoint_fingerprint: str
+    user_agent: str | None = None
+    last_error: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    last_seen_at: datetime
+
+
+class AdminDeviceInviteDetailRead(BaseModel):
+    id: int
+    status: Literal["PENDING", "USED", "EXPIRED"]
+    expires_at: datetime
+    is_used: bool
+    attempt_count: int
+    max_attempts: int
+    created_by_admin_user_id: int | None = None
+    created_by_username: str
+    used_by_admin_user_id: int | None = None
+    used_by_username: str | None = None
+    created_at: datetime
+    used_at: datetime | None = None
+
+
+class AdminUserClaimDetailResponse(BaseModel):
+    admin_user: AdminUserRead
+    claim_total: int
+    claim_active_total: int
+    claim_inactive_total: int
+    claims: list[AdminPushClaimDetailRead] = Field(default_factory=list)
+    created_invites: list[AdminDeviceInviteDetailRead] = Field(default_factory=list)
+    used_invites: list[AdminDeviceInviteDetailRead] = Field(default_factory=list)
+
+
 class AdminUserMfaStatusResponse(BaseModel):
     admin_user_id: int
     username: str
@@ -869,6 +908,20 @@ class AdminDeviceClaimResponse(BaseModel):
     ok: bool
     admin_username: str
     subscription_id: int
+
+
+class AdminDeviceHealRequest(BaseModel):
+    subscription: dict[str, Any]
+    send_test: bool = True
+
+
+class AdminDeviceHealResponse(BaseModel):
+    ok: bool
+    admin_username: str
+    subscription_id: int
+    test_push_ok: bool | None = None
+    test_push_error: str | None = None
+    test_push_status_code: int | None = None
 
 
 class AdminPushSelfCheckResponse(BaseModel):

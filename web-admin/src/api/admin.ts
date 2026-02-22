@@ -4,6 +4,7 @@ import type {
   AdminDailyReportArchivePasswordDownloadPayload,
   AdminDailyReportArchiveNotifyResponse,
   AdminDeviceClaimResponse,
+  AdminDeviceHealResponse,
   AdminDeviceInviteCreateResponse,
   AdminDevicePushSubscription,
   AdminManualNotificationSendResponse,
@@ -15,6 +16,7 @@ import type {
   AdminMeResponse,
   AdminPermissions,
   AdminPushSubscription,
+  AdminUserClaimDetail,
   AdminUser,
   AdminUserMfaRecoveryRegenerateResponse,
   AdminUserMfaSetupConfirmResponse,
@@ -291,6 +293,11 @@ export interface ClaimAdminDevicePublicPayload {
   subscription: Record<string, unknown>
 }
 
+export interface HealAdminDevicePayload {
+  subscription: Record<string, unknown>
+  send_test?: boolean
+}
+
 export interface DailyReportArchivesParams {
   start_date?: string
   end_date?: string
@@ -485,6 +492,13 @@ export async function getAdminMe(): Promise<AdminMeResponse> {
 
 export async function getAdminUsers(): Promise<AdminUser[]> {
   const response = await apiClient.get<AdminUser[]>('/api/admin/admin-users')
+  return response.data
+}
+
+export async function getAdminUserClaimDetail(adminUserId: number): Promise<AdminUserClaimDetail> {
+  const response = await apiClient.get<AdminUserClaimDetail>(
+    `/api/admin/admin-users/${adminUserId}/claim-detail`,
+  )
   return response.data
 }
 
@@ -885,6 +899,16 @@ export async function claimAdminDevicePublic(
 ): Promise<AdminDeviceClaimResponse> {
   const response = await publicApiClient.post<AdminDeviceClaimResponse>(
     '/api/admin/notifications/admin-device-claim/public',
+    payload,
+  )
+  return response.data
+}
+
+export async function healAdminDevice(
+  payload: HealAdminDevicePayload,
+): Promise<AdminDeviceHealResponse> {
+  const response = await apiClient.post<AdminDeviceHealResponse>(
+    '/api/admin/notifications/admin-device-heal',
     payload,
   )
   return response.data
