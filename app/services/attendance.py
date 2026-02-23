@@ -64,7 +64,8 @@ def _normalize_local_or_utc(
         return _normalize_ts(ts_utc)
     if ts_local is not None:
         if ts_local.tzinfo is None:
-            return ts_local.astimezone().astimezone(timezone.utc)
+            localized = ts_local.replace(tzinfo=_attendance_timezone())
+            return localized.astimezone(timezone.utc)
         return ts_local.astimezone(timezone.utc)
     raise ApiError(
         status_code=422,

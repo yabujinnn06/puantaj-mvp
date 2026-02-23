@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from functools import lru_cache
 from datetime import date, datetime, time, timezone
+from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -8,6 +10,16 @@ from sqlalchemy.orm import Session
 
 from app.models import DepartmentShift, Employee, ManualDayOverride
 from app.schemas import ManualDayOverrideUpsertRequest
+from app.settings import get_settings
+
+
+@lru_cache
+def _attendance_timezone() -> ZoneInfo:
+    raw_name = (get_settings().attendance_timezone or "").strip() or "Europe/Istanbul"
+    try:
+        return ZoneInfo(raw_name)
+    except Exception:
+        return ZoneInfo("Europe/Istanbul")
 
 
 def _ensure_employee_exists(db: Session, employee_id: int) -> Employee:
@@ -30,7 +42,8 @@ def _combine_utc(day_date: date, hhmm: str | None) -> datetime | None:
     if hhmm is None:
         return None
     parsed_time = _parse_hhmm(hhmm)
-    return datetime.combine(day_date, parsed_time, tzinfo=timezone.utc)
+    local_dt = datetime.combine(day_date, parsed_time, tzinfo=_attendance_timezone())
+    return local_dt.astimezone(timezone.utc)
 
 
 def upsert_manual_day_override(
