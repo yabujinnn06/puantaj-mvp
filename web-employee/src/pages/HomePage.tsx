@@ -478,6 +478,7 @@ export function HomePage() {
   const [pushNotice, setPushNotice] = useState<string | null>(null)
   const [pushSecondChanceOpen, setPushSecondChanceOpen] = useState(false)
   const [pushGateDismissed, setPushGateDismissed] = useState(false)
+  const [pushGateRequestedByQr, setPushGateRequestedByQr] = useState(false)
   const [isStandaloneApp, setIsStandaloneApp] = useState(() => isStandaloneDisplayMode())
   const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(() =>
     getDeferredInstallPromptFromWindow(),
@@ -661,7 +662,7 @@ export function HomePage() {
     }
     const shouldAutoOpen =
       !iosInstallOnboardingDismissed &&
-      (hasAttendanceActivity || pushRequiresStandalone || iosInAppBrowserBlocked)
+      (hasAttendanceActivity || iosInAppBrowserBlocked)
     if (shouldAutoOpen) {
       setIosInstallOnboardingOpen(true)
     }
@@ -670,7 +671,6 @@ export function HomePage() {
     iosInAppBrowserBlocked,
     iosInstallOnboardingDismissed,
     isStandaloneApp,
-    pushRequiresStandalone,
   ])
 
   useEffect(() => {
@@ -853,10 +853,11 @@ export function HomePage() {
 
   useEffect(() => {
     const gateRequired = Boolean(deviceFingerprint) && pushEnabled && !pushRegistered
-    if (!gateRequired || isStandaloneApp) {
+    if (!gateRequired) {
       setPushGateDismissed(false)
+      setPushGateRequestedByQr(false)
     }
-  }, [deviceFingerprint, isStandaloneApp, pushEnabled, pushRegistered])
+  }, [deviceFingerprint, pushEnabled, pushRegistered])
 
   const hasOpenShift = useMemo(() => {
     if (!deviceFingerprint) {
@@ -877,9 +878,11 @@ export function HomePage() {
   const pushGateCanBeDismissedForInstall =
     pushGateRequired && pushRequiresStandalone && !isStandaloneApp
   const showPushGateModal =
-    pushGateRequired && (!pushGateCanBeDismissedForInstall || !pushGateDismissed)
-  const canQrScan = Boolean(deviceFingerprint) && !isSubmitting && !pushGateRequired
-  const canCheckout = Boolean(deviceFingerprint) && !isSubmitting && hasOpenShift && !pushGateRequired
+    pushGateRequired &&
+    pushGateRequestedByQr &&
+    (!pushGateCanBeDismissedForInstall || !pushGateDismissed)
+  const canQrScan = Boolean(deviceFingerprint) && !isSubmitting
+  const canCheckout = Boolean(deviceFingerprint) && !isSubmitting && hasOpenShift
 
   const currentHour = new Date().getHours()
   const shouldShowEveningReminder = useMemo(() => {
@@ -1455,6 +1458,17 @@ export function HomePage() {
       setErrorMessage('Cihaz bağlı değil. Davet linkine tıklayın.')
       return
     }
+    if (pushGateRequired) {
+      setPushGateDismissed(false)
+      setPushGateRequestedByQr(true)
+      setPushSecondChanceOpen(false)
+      setErrorMessage(
+        pushRequiresStandalone
+          ? 'QR baslatmadan once iPhone kurulumunu tamamlayip bildirimleri acin.'
+          : 'QR baslatmadan once bildirimleri acin.',
+      )
+      return
+    }
     const codeValue = rawQrValue.trim()
     if (!codeValue) {
       setErrorMessage('QR kod değeri boş olamaz.')
@@ -1603,7 +1617,7 @@ export function HomePage() {
 
   const pushGateMessage = useMemo(() => {
     if (pushRequiresStandalone) {
-      return 'iPhone/iPad bildirimleri Safari sekmesinde çalışmaz. Portalı Ana Ekran uygulamasından açıp "Bildirimleri Aç" adımını tamamlayın.'
+      return 'iPhone/iPad icin once Safari ile acip Paylas > Ana Ekrana Ekle yapin. Ardindan ana ekran ikonundan acip "Bildirimleri Ac" adimini tamamlayin.'
     }
     if (!pushRuntimeSupported) {
       return 'Bu tarayıcı bildirim altyapısını desteklemiyor veya bağlantı güvenli değil. Linki HTTPS altında Safari (iOS) veya Chrome (Android) ile açın.'
@@ -1937,7 +1951,18 @@ export function HomePage() {
                   disabled={!canQrScan}
                   onClick={() => {
                     if (!canQrScan) {
-                      setErrorMessage(pushGateRequired ? 'Önce bildirimleri açmanız gerekir.' : todayStatusHint(todayStatus))
+                      setErrorMessage(todayStatusHint(todayStatus))
+                      return
+                    }
+                    if (pushGateRequired) {
+                      setPushGateDismissed(false)
+                      setPushGateRequestedByQr(true)
+                      setPushSecondChanceOpen(false)
+                      setErrorMessage(
+                        pushRequiresStandalone
+                          ? 'QR baslatmak icin once iPhone kurulumunu tamamlayip bildirimleri acin.'
+                          : 'QR baslatmak icin once bildirimleri acin.',
+                      )
                       return
                     }
                     setScannerError(null)
@@ -1982,7 +2007,7 @@ export function HomePage() {
 
               <p className="muted small-text employee-flow-hint">
                 {pushGateRequired
-                  ? 'Devam etmek için önce bildirim adımını tamamlayın.'
+                  ? 'QR islemi baslatirken bildirim adimi zorunlu olarak acilir.'
                   : 'QR ile işlem başlatabilir veya açık vardiyayı güvenli şekilde kapatabilirsiniz.'}
               </p>
             </section>
@@ -2273,6 +2298,7 @@ export function HomePage() {
                   disabled={isPushBusy || !pushEnabled || !pushRuntimeSupported}
                   onClick={() => {
                     if (pushRequiresStandalone) {
+                      setPushGateRequestedByQr(false)
                       openIosInstallOnboarding()
                       return
                     }
