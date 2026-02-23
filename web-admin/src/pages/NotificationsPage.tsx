@@ -119,7 +119,7 @@ export function NotificationsPage() {
   const [message, setMessage] = useState('')
   const [password, setPassword] = useState('')
   const [target, setTarget] = useState<'employees' | 'admins' | 'both'>('employees')
-  const [expiresIn, setExpiresIn] = useState(60)
+  const [expiresIn, setExpiresIn] = useState(15)
   const [jobsStatus, setJobsStatus] = useState<'' | NotificationJobStatus>('')
   const [jobsPage, setJobsPage] = useState(1)
   const [searchEmployee, setSearchEmployee] = useState('')
@@ -502,7 +502,7 @@ export function NotificationsPage() {
               min={1}
               max={1440}
               value={expiresIn}
-              onChange={(e) => setExpiresIn(Number(e.target.value || 60))}
+              onChange={(e) => setExpiresIn(Number(e.target.value || 15))}
               className="mt-1 w-40 rounded border border-slate-300 px-3 py-2"
             />
           </label>
@@ -515,7 +515,9 @@ export function NotificationsPage() {
           </button>
           <span className="text-xs text-slate-500">Push: {pushConfigQuery.data?.enabled ? 'Aktif' : 'Pasif'}</span>
         </div>
-        <p className="mt-2 text-xs text-slate-500">Link otomatik kopyalanir. Ekran: /admin-panel/device-claim?token=...</p>
+        <p className="mt-2 text-xs text-slate-500">
+          Link otomatik kopyalanir. Guvenlik icin kisa sure onerilir (ornegin 10-30 dk). Ekran: /admin-panel/device-claim?token=...
+        </p>
         {createdInvite ? (
           <div className="mt-2 rounded border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-800">
             <p>Token: {createdInvite.token}</p>

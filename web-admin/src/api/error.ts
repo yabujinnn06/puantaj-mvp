@@ -22,6 +22,10 @@ const codeMessageMap: Record<string, string> = {
   ARCHIVE_DECRYPT_FAILED: 'Arsiv dosyasi acilamadi. Sunucu anahtarini kontrol edin.',
   EXTRA_CHECKIN_APPROVAL_NOT_FOUND: 'Ek giris onay talebi bulunamadi.',
   EXTRA_CHECKIN_APPROVAL_EXPIRED: 'Ek giris onay talebinin suresi dolmus.',
+  INVITE_ATTEMPTS_EXCEEDED: 'Davet linkinin deneme limiti doldu. Yeni bir link uretin.',
+  INVITE_CONTEXT_MISMATCH: 'Davet linki ayni cihaz/tarayici baglaminda kullanilmalidir.',
+  INVITE_RETRY_TOO_FAST: 'Cok hizli deneme yaptiniz. Birkac saniye bekleyip tekrar deneyin.',
+  INVITE_TTL_TOO_LONG: 'Davet suresi izin verilen limiti asiyor.',
 }
 
 export function parseApiError(error: unknown, fallback: string): ParsedApiError {

@@ -106,7 +106,7 @@ export function EmployeeDetailPage() {
   })
 
   const [isInviteModalOpen, setInviteModalOpen] = useState(false)
-  const [expiresInMinutes, setExpiresInMinutes] = useState('60')
+  const [expiresInMinutes, setExpiresInMinutes] = useState('30')
   const [inviteError, setInviteError] = useState<string | null>(null)
   const [inviteToken, setInviteToken] = useState<string | null>(null)
   const [inviteUrl, setInviteUrl] = useState<string | null>(null)
@@ -321,7 +321,7 @@ export function EmployeeDetailPage() {
     setInviteError(null)
     setInviteToken(null)
     setInviteUrl(null)
-    setExpiresInMinutes('60')
+    setExpiresInMinutes('30')
     setInviteModalOpen(true)
   }
 

@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import hashlib
+from math import ceil
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
@@ -42,6 +43,7 @@ from app.schemas import (
     RecoveryCodeRecoverResponse,
     RecoveryCodeStatusResponse,
 )
+from app.settings import get_settings
 from app.services.push_notifications import (
     deactivate_device_push_subscription,
     get_push_public_config,
@@ -70,6 +72,7 @@ from app.services.recovery_codes import (
 )
 
 router = APIRouter(tags=["attendance"])
+settings = get_settings()
 DEVICE_FINGERPRINT_COOKIE = "pf_device_fingerprint"
 DEVICE_FINGERPRINT_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365 * 3
 
@@ -382,6 +385,37 @@ def claim_device(
             code="INVITE_ATTEMPTS_EXCEEDED",
             message="Invite attempt limit exceeded. Create a new invite link.",
         )
+    min_retry_seconds = max(0, int(settings.device_invite_min_retry_seconds or 0))
+    if min_retry_seconds > 0 and invite.last_attempt_at is not None:
+        elapsed_seconds = (now_utc - invite.last_attempt_at).total_seconds()
+        if elapsed_seconds < min_retry_seconds:
+            retry_after_seconds = max(1, ceil(min_retry_seconds - elapsed_seconds))
+            invite.attempt_count = int(invite.attempt_count or 0) + 1
+            invite.last_attempt_at = now_utc
+            db.commit()
+            log_audit(
+                db,
+                actor_type=AuditActorType.SYSTEM,
+                actor_id=str(invite.employee_id),
+                action="DEVICE_CLAIM_BLOCKED",
+                success=False,
+                entity_type="device_invite",
+                entity_id=str(invite.id),
+                ip=client_ip,
+                user_agent=user_agent,
+                details={
+                    "reason": "INVITE_RETRY_TOO_FAST",
+                    "retry_after_seconds": retry_after_seconds,
+                    "attempt_count": invite.attempt_count,
+                    "max_attempts": max_attempts,
+                },
+                request_id=getattr(request.state, "request_id", None),
+            )
+            raise ApiError(
+                status_code=429,
+                code="INVITE_RETRY_TOO_FAST",
+                message=f"Invite retry is too fast. Wait {retry_after_seconds} seconds and try again.",
+            )
     if invite.bound_ip is None and client_ip:
         invite.bound_ip = client_ip
     if invite.bound_user_agent_hash is None and user_agent_hash:

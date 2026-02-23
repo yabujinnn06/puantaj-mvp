@@ -44,7 +44,7 @@ export function DashboardPage() {
   const queryClient = useQueryClient()
 
   const [employeeTargetId, setEmployeeTargetId] = useState('')
-  const [expiresInMinutes, setExpiresInMinutes] = useState('60')
+  const [expiresInMinutes, setExpiresInMinutes] = useState('30')
   const [inviteResult, setInviteResult] = useState<{ token: string; invite_url: string } | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
@@ -171,7 +171,7 @@ export function DashboardPage() {
                 value={expiresInMinutes}
                 onChange={(event) => setExpiresInMinutes(event.target.value)}
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-                placeholder="60"
+                placeholder="30"
               />
             </label>
           </div>

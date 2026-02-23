@@ -67,6 +67,9 @@ const errorCodeMap: Record<string, string> = {
   QR_DOUBLE_SCAN_BLOCKED: 'Aynı çalışan için QR okutmalar arasında en az 5 dakika olmalıdır.',
   PUSH_NOT_CONFIGURED: 'Bildirim servisi şu anda aktif değil.',
   INVALID_PUSH_SUBSCRIPTION: 'Bildirim abonelik verisi geçersiz.',
+  INVITE_ATTEMPTS_EXCEEDED: 'Davet linkinin deneme limiti doldu. Yeni bir link isteyin.',
+  INVITE_CONTEXT_MISMATCH: 'Davet linki ayni cihaz/tarayici baglaminda kullanilmalidir.',
+  INVITE_RETRY_TOO_FAST: 'Cok hizli deneme yaptiniz. Birkac saniye sonra tekrar deneyin.',
 }
 
 const backendDetailMap: Record<string, string> = {

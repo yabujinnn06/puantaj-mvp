@@ -883,7 +883,7 @@ class AdminDevicePushSubscriptionRead(BaseModel):
 
 
 class AdminDeviceInviteCreateRequest(BaseModel):
-    expires_in_minutes: int = Field(default=60, ge=1, le=60 * 24)
+    expires_in_minutes: int = Field(default=15, ge=1, le=60 * 24)
 
 
 class AdminDeviceInviteCreateResponse(BaseModel):

@@ -1,6 +1,7 @@
 import secrets
 from datetime import date, datetime, time, timedelta, timezone
 import hashlib
+from math import ceil
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
@@ -258,6 +259,32 @@ def _as_positive_int(value: Any) -> int | None:
             parsed = int(normalized)
             return parsed if parsed > 0 else None
     return None
+
+
+def _as_int(value: Any, default: int = 0) -> int:
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        normalized = value.strip()
+        if not normalized:
+            return default
+        try:
+            return int(normalized)
+        except ValueError:
+            return default
+    return default
+
+
+def _as_utc_datetime(value: Any) -> datetime | None:
+    if not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def _normalized_admin_actor_from_claims(claims: dict[str, Any]) -> tuple[str, int | None]:
@@ -4350,15 +4377,20 @@ def admin_push_self_check(
         actor_username=actor_username,
         actor_admin_user_id=actor_admin_user_id,
     )
-    latest_claim = max(actor_rows, key=lambda row: row.last_seen_at, default=None)
+    latest_claim = max(
+        actor_rows,
+        key=lambda row: _as_utc_datetime(row.last_seen_at) or datetime.min.replace(tzinfo=timezone.utc),
+        default=None,
+    )
     now_utc = datetime.now(timezone.utc)
     stale_cutoff = now_utc - timedelta(hours=24)
     active_claims_healthy = 0
     active_claims_with_error = 0
     active_claims_stale = 0
     for row in actor_rows:
+        row_last_seen_at = _as_utc_datetime(row.last_seen_at)
         has_error = bool((row.last_error or "").strip())
-        is_stale = row.last_seen_at < stale_cutoff
+        is_stale = row_last_seen_at is None or row_last_seen_at < stale_cutoff
         if has_error:
             active_claims_with_error += 1
         if is_stale:
@@ -4408,7 +4440,7 @@ def admin_push_self_check(
         active_claims_healthy=active_claims_healthy,
         active_claims_with_error=active_claims_with_error,
         active_claims_stale=active_claims_stale,
-        latest_claim_seen_at=(latest_claim.last_seen_at if latest_claim is not None else None),
+        latest_claim_seen_at=(_as_utc_datetime(latest_claim.last_seen_at) if latest_claim is not None else None),
         latest_claim_error=(latest_claim.last_error if latest_claim is not None else None),
         last_self_test_at=(latest_self_test.ts_utc if latest_self_test is not None else None),
         last_self_test_total_targets=last_self_test_total_targets,
@@ -4955,10 +4987,11 @@ def _claim_admin_device_push_with_actor(
     client_ip = _client_ip(request)
     user_agent = _user_agent(request)
     user_agent_hash = _user_agent_hash(request)
+    normalized_token = token.strip()
     request.state.actor = "admin"
     request.state.actor_id = actor_id
 
-    invite = db.scalar(select(AdminDeviceInvite).where(AdminDeviceInvite.token == token))
+    invite = db.scalar(select(AdminDeviceInvite).where(AdminDeviceInvite.token == normalized_token))
     if invite is None:
         raise ApiError(status_code=404, code="INVITE_NOT_FOUND", message="Admin device invite token not found.")
     if invite.is_used:
@@ -4972,6 +5005,37 @@ def _claim_admin_device_push_with_actor(
             code="INVITE_ATTEMPTS_EXCEEDED",
             message="Admin invite attempt limit exceeded. Create a new invite link.",
         )
+    min_retry_seconds = max(0, int(settings.admin_device_invite_min_retry_seconds or 0))
+    if min_retry_seconds > 0 and invite.last_attempt_at is not None:
+        elapsed_seconds = (now_utc - invite.last_attempt_at).total_seconds()
+        if elapsed_seconds < min_retry_seconds:
+            retry_after_seconds = max(1, ceil(min_retry_seconds - elapsed_seconds))
+            invite.attempt_count = int(invite.attempt_count or 0) + 1
+            invite.last_attempt_at = now_utc
+            db.commit()
+            log_audit(
+                db,
+                actor_type=AuditActorType.ADMIN,
+                actor_id=actor_id,
+                action="ADMIN_DEVICE_CLAIM_BLOCKED",
+                success=False,
+                entity_type="admin_device_invite",
+                entity_id=str(invite.id),
+                ip=client_ip,
+                user_agent=user_agent,
+                details={
+                    "reason": "INVITE_RETRY_TOO_FAST",
+                    "retry_after_seconds": retry_after_seconds,
+                    "attempt_count": invite.attempt_count,
+                    "max_attempts": max_attempts,
+                },
+                request_id=getattr(request.state, "request_id", None),
+            )
+            raise ApiError(
+                status_code=429,
+                code="INVITE_RETRY_TOO_FAST",
+                message=f"Invite retry is too fast. Wait {retry_after_seconds} seconds and try again.",
+            )
     if invite.bound_ip is None and client_ip:
         invite.bound_ip = client_ip
     if invite.bound_user_agent_hash is None and user_agent_hash:
@@ -5068,7 +5132,7 @@ def claim_admin_device_push(
     actor_id = str(claims.get("username") or claims.get("sub") or settings.admin_user)
     admin_user_id = claims.get("admin_user_id") if isinstance(claims.get("admin_user_id"), int) else None
     return _claim_admin_device_push_with_actor(
-        token=payload.token,
+        token=payload.token.strip(),
         subscription_payload=payload.subscription,
         request=request,
         db=db,
@@ -5088,16 +5152,35 @@ def claim_admin_device_push_public(
 ) -> AdminDeviceClaimResponse:
     username = payload.username.strip()
     password = payload.password
+    normalized_token = payload.token.strip()
+    now_utc = datetime.now(timezone.utc)
     client_ip = _client_ip(request)
     user_agent = _user_agent(request)
     request_id = getattr(request.state, "request_id", None)
     request.state.actor = "system"
     request.state.actor_id = "system"
 
+    invite = db.scalar(select(AdminDeviceInvite).where(AdminDeviceInvite.token == normalized_token))
+    if invite is None:
+        raise ApiError(status_code=404, code="INVITE_NOT_FOUND", message="Admin device invite token not found.")
+    if invite.is_used:
+        raise ApiError(status_code=409, code="INVITE_ALREADY_USED", message="Admin device invite already used.")
+    if invite.expires_at < now_utc:
+        raise ApiError(status_code=410, code="INVITE_EXPIRED", message="Admin device invite expired.")
+    max_attempts = max(1, int(invite.max_attempts or 0))
+    if int(invite.attempt_count or 0) >= max_attempts:
+        raise ApiError(
+            status_code=429,
+            code="INVITE_ATTEMPTS_EXCEEDED",
+            message="Admin invite attempt limit exceeded. Create a new invite link.",
+        )
+
     if client_ip:
         try:
             ensure_login_attempt_allowed(client_ip)
         except ApiError:
+            invite.attempt_count = int(invite.attempt_count or 0) + 1
+            db.commit()
             log_audit(
                 db,
                 actor_type=AuditActorType.SYSTEM,
@@ -5106,7 +5189,12 @@ def claim_admin_device_push_public(
                 success=False,
                 ip=client_ip,
                 user_agent=user_agent,
-                details={"reason": "TOO_MANY_ATTEMPTS"},
+                details={
+                    "reason": "TOO_MANY_ATTEMPTS",
+                    "invite_id": invite.id,
+                    "invite_attempt_count": invite.attempt_count,
+                    "invite_max_attempts": max_attempts,
+                },
                 request_id=request_id,
             )
             raise
@@ -5119,6 +5207,8 @@ def claim_admin_device_push_public(
     if identity is None:
         if client_ip:
             register_login_failure(client_ip)
+        invite.attempt_count = int(invite.attempt_count or 0) + 1
+        db.commit()
         log_audit(
             db,
             actor_type=AuditActorType.SYSTEM,
@@ -5127,7 +5217,12 @@ def claim_admin_device_push_public(
             success=False,
             ip=client_ip,
             user_agent=user_agent,
-            details={"reason": "INVALID_CREDENTIALS"},
+            details={
+                "reason": "INVALID_CREDENTIALS",
+                "invite_id": invite.id,
+                "invite_attempt_count": invite.attempt_count,
+                "invite_max_attempts": max_attempts,
+            },
             request_id=request_id,
         )
         raise ApiError(
@@ -5142,7 +5237,7 @@ def claim_admin_device_push_public(
     actor_id = str(identity.get("username") or identity.get("sub") or username or "admin")
     admin_user_id = identity.get("admin_user_id") if isinstance(identity.get("admin_user_id"), int) else None
     return _claim_admin_device_push_with_actor(
-        token=payload.token,
+        token=normalized_token,
         subscription_payload=payload.subscription,
         request=request,
         db=db,

@@ -36,10 +36,12 @@ class Settings(BaseSettings):
     recovery_code_count: int = 8
     recovery_code_expiry_days: int = 365
     recovery_admin_vault_key: str | None = None
-    device_invite_max_attempts: int = 5
-    admin_device_invite_max_attempts: int = 5
-    device_invite_max_ttl_minutes: int = 60 * 24
-    admin_device_invite_max_ttl_minutes: int = 60 * 24
+    device_invite_max_attempts: int = 3
+    admin_device_invite_max_attempts: int = 3
+    device_invite_max_ttl_minutes: int = 240
+    admin_device_invite_max_ttl_minutes: int = 120
+    device_invite_min_retry_seconds: int = 4
+    admin_device_invite_min_retry_seconds: int = 6
     admin_mfa_required: bool = False
     admin_mfa_totp_secret: str | None = None
     admin_mfa_step_seconds: int = 30
