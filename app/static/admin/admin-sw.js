@@ -9,7 +9,7 @@ self.addEventListener('activate', (event) => {
 function parsePayload(event) {
   const fallback = {
     title: 'Puantaj Bildirimi',
-    body: 'Yeni bir yönetici bildirimi var.',
+    body: 'Yeni bir yonetici bildirimi var.',
     data: {},
   }
 
@@ -38,8 +38,27 @@ function parsePayload(event) {
   }
 }
 
+function isSilentPayload(payload) {
+  const data = payload?.data
+  if (!data || typeof data !== 'object') {
+    return false
+  }
+  if (data.silent === true) {
+    return true
+  }
+  if (typeof data.silent === 'string' && data.silent.trim().toLowerCase() === 'true') {
+    return true
+  }
+  return false
+}
+
 self.addEventListener('push', (event) => {
   const payload = parsePayload(event)
+  if (isSilentPayload(payload)) {
+    event.waitUntil(Promise.resolve())
+    return
+  }
+
   event.waitUntil(
     self.registration.showNotification(payload.title, {
       body: payload.body,

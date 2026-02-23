@@ -84,6 +84,29 @@ export interface EmployeeStatusResponse {
   passkey_registered?: boolean | null
 }
 
+export type EmployeeInstallFunnelEventType =
+  | 'banner_shown'
+  | 'install_cta_clicked'
+  | 'ios_onboarding_opened'
+  | 'android_onboarding_opened'
+  | 'install_prompt_opened'
+  | 'install_prompt_accepted'
+  | 'install_prompt_dismissed'
+  | 'app_installed'
+  | 'ios_inapp_browser_detected'
+  | 'install_link_copied'
+
+export interface EmployeeInstallFunnelEventRequest {
+  device_fingerprint: string
+  event: EmployeeInstallFunnelEventType
+  occurred_at_ms?: number | null
+  context?: Record<string, unknown>
+}
+
+export interface EmployeeInstallFunnelEventResponse {
+  ok: boolean
+}
+
 export interface EmployeePushConfigResponse {
   enabled: boolean
   vapid_public_key: string | null

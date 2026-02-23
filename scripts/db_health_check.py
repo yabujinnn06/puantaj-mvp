@@ -6,10 +6,11 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, text
 
-
-EXPECTED_HEAD = "0019_admin_push_and_archives"
+ROOT_DIR = Path(__file__).resolve().parents[1]
 
 
 def load_env_if_exists() -> None:
@@ -30,6 +31,8 @@ def run() -> dict:
     if not database_url:
         raise RuntimeError("DATABASE_URL not found (.env or env vars).")
 
+    alembic_config = Config(str(ROOT_DIR / "alembic.ini"))
+    expected_heads = sorted(ScriptDirectory.from_config(alembic_config).get_heads())
     engine = create_engine(database_url)
     report: dict = {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -69,8 +72,8 @@ def run() -> dict:
 
         add(
             "migration_up_to_date",
-            "ok" if EXPECTED_HEAD in current_versions else "warn",
-            {"expected_head": EXPECTED_HEAD, "current": current_versions},
+            "ok" if all(head in current_versions for head in expected_heads) else "warn",
+            {"expected_heads": expected_heads, "current": current_versions},
         )
 
         required_by_revision = {

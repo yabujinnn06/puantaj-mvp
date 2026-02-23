@@ -8,6 +8,8 @@ import type {
   AttendanceCheckoutRequest,
   DeviceClaimRequest,
   DeviceClaimResponse,
+  EmployeeInstallFunnelEventRequest,
+  EmployeeInstallFunnelEventResponse,
   EmployeeQrScanRequest,
   EmployeeQrScanDeniedResponse,
   EmployeePushConfigResponse,
@@ -181,6 +183,16 @@ export async function getEmployeeStatus(deviceFingerprint: string): Promise<Empl
   const response = await apiClient.get<EmployeeStatusResponse>('/api/employee/status', {
     params: { device_fingerprint: deviceFingerprint },
   })
+  return response.data
+}
+
+export async function postEmployeeInstallFunnelEvent(
+  payload: EmployeeInstallFunnelEventRequest,
+): Promise<EmployeeInstallFunnelEventResponse> {
+  const response = await apiClient.post<EmployeeInstallFunnelEventResponse>(
+    '/api/employee/install-funnel-event',
+    payload,
+  )
   return response.data
 }
 

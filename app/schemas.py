@@ -1147,7 +1147,34 @@ class EmployeeStatusResponse(BaseModel):
     last_out_ts: datetime | None = None
     last_location_status: LocationStatus | None = None
     last_flags: dict[str, Any] = Field(default_factory=dict)
+    has_open_shift: bool | None = None
+    suggested_action: Literal["CHECKIN", "CHECKOUT", "WAIT_NEXT_DAY"] | None = None
+    last_checkin_time_utc: datetime | None = None
+    completed_cycles_today: int | None = None
+    home_location_required: bool | None = None
     passkey_registered: bool | None = None
+
+
+class EmployeeInstallFunnelEventRequest(BaseModel):
+    device_fingerprint: str = Field(min_length=8, max_length=255)
+    event: Literal[
+        "banner_shown",
+        "install_cta_clicked",
+        "ios_onboarding_opened",
+        "android_onboarding_opened",
+        "install_prompt_opened",
+        "install_prompt_accepted",
+        "install_prompt_dismissed",
+        "app_installed",
+        "ios_inapp_browser_detected",
+        "install_link_copied",
+    ]
+    occurred_at_ms: int | None = Field(default=None, ge=0)
+    context: dict[str, Any] = Field(default_factory=dict)
+
+
+class EmployeeInstallFunnelEventResponse(BaseModel):
+    ok: bool
 
 
 class EmployeeHomeLocationSetRequest(BaseModel):

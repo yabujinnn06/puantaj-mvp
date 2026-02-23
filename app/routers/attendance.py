@@ -23,6 +23,8 @@ from app.schemas import (
     EmployeeHomeLocationSetRequest,
     EmployeeHomeLocationSetResponse,
     EmployeePushConfigResponse,
+    EmployeeInstallFunnelEventRequest,
+    EmployeeInstallFunnelEventResponse,
     EmployeePushSubscribeRequest,
     EmployeePushSubscribeResponse,
     EmployeePushUnsubscribeRequest,
@@ -816,6 +818,75 @@ def employee_status(
     request.state.location_status = last_location_status.value if last_location_status else None
     request.state.flags = status_data["last_flags"]
     return EmployeeStatusResponse(**status_data)
+
+
+@router.post(
+    "/api/employee/install-funnel-event",
+    response_model=EmployeeInstallFunnelEventResponse,
+)
+def employee_install_funnel_event(
+    payload: EmployeeInstallFunnelEventRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> EmployeeInstallFunnelEventResponse:
+    request.state.actor = "employee"
+    device = db.scalar(
+        select(Device).where(
+            Device.device_fingerprint == payload.device_fingerprint,
+            Device.is_active.is_(True),
+        )
+    )
+    if device is None:
+        raise ApiError(
+            status_code=404,
+            code="DEVICE_NOT_CLAIMED",
+            message="Device must be claimed first.",
+        )
+    employee = device.employee
+    if employee is None:
+        raise ApiError(
+            status_code=404,
+            code="EMPLOYEE_NOT_FOUND",
+            message="Employee not found for this device.",
+        )
+    if not employee.is_active:
+        raise ApiError(
+            status_code=403,
+            code="EMPLOYEE_INACTIVE",
+            message="Inactive employee cannot submit install events.",
+        )
+
+    request.state.employee_id = employee.id
+    request.state.flags = {"install_event": payload.event}
+    raw_context = payload.context if isinstance(payload.context, dict) else {}
+    sanitized_context: dict[str, str | int | float | bool | None] = {}
+    for raw_key, raw_value in raw_context.items():
+        key = str(raw_key or "").strip()
+        if not key:
+            continue
+        if isinstance(raw_value, (str, int, float, bool)) or raw_value is None:
+            sanitized_context[key[:64]] = raw_value
+            continue
+        sanitized_context[key[:64]] = str(raw_value)[:255]
+
+    log_audit(
+        db,
+        actor_type=AuditActorType.SYSTEM,
+        actor_id=str(employee.id),
+        action="EMPLOYEE_INSTALL_FUNNEL_EVENT",
+        success=True,
+        entity_type="device",
+        entity_id=str(device.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "event": payload.event,
+            "occurred_at_ms": payload.occurred_at_ms,
+            "context": sanitized_context,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return EmployeeInstallFunnelEventResponse(ok=True)
 
 
 @router.get("/api/employee/push/config", response_model=EmployeePushConfigResponse)

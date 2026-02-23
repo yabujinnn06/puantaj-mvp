@@ -25,6 +25,8 @@ from app.services.notifications import (
     schedule_missed_checkout_notifications,
     send_pending_notifications,
 )
+from app.services.notifications_alerts import dispatch_daily_report_alarm
+from app.services.push_notifications import run_admin_push_claim_health_check
 from app.services.schema_guard import SchemaGuardResult, verify_runtime_schema
 from app.db import engine
 
@@ -316,20 +318,49 @@ def _default_schema_guard_result() -> SchemaGuardResult:
 
 async def _notification_worker_loop(stop_event: asyncio.Event) -> None:
     interval_seconds = max(15, int(settings.notification_worker_interval_seconds))
+    admin_claim_health_interval_seconds = max(
+        300,
+        int(settings.admin_push_healthcheck_interval_seconds or 0),
+    )
     last_daily_alarm_signature: str | None = None
     last_daily_health_signature: str | None = None
     last_daily_health_logged_ts: datetime | None = None
+    last_admin_claim_health_check_ts: datetime | None = None
     health_log_interval_seconds = max(300, interval_seconds)
     while not stop_event.is_set():
         created_jobs_count = 0
         processed_jobs_count = 0
         daily_report_health: dict[str, Any] | None = None
+        admin_claim_health_summary: dict[str, Any] | None = None
         try:
             now_utc = datetime.now(timezone.utc)
             created_jobs = await asyncio.to_thread(schedule_missed_checkout_notifications, now_utc)
             daily_jobs = await asyncio.to_thread(schedule_daily_admin_report_archive_notifications, now_utc)
             processed_jobs = await asyncio.to_thread(send_pending_notifications, 100, now_utc=now_utc)
             daily_report_health = await asyncio.to_thread(get_daily_report_job_health, now_utc)
+            if settings.admin_push_healthcheck_enabled:
+                should_run_claim_health = (
+                    last_admin_claim_health_check_ts is None
+                    or (now_utc - last_admin_claim_health_check_ts).total_seconds()
+                    >= admin_claim_health_interval_seconds
+                )
+                if should_run_claim_health:
+                    admin_claim_health_summary = await asyncio.to_thread(
+                        run_admin_push_claim_health_check,
+                        stale_after_minutes=max(
+                            5,
+                            int(settings.admin_push_healthcheck_stale_minutes or 0),
+                        ),
+                        batch_size=max(
+                            1,
+                            int(settings.admin_push_healthcheck_batch_size or 0),
+                        ),
+                    )
+                    last_admin_claim_health_check_ts = now_utc
+                    notification_worker_logger.info(
+                        "notification_admin_claim_health_check",
+                        extra=admin_claim_health_summary,
+                    )
             created_jobs_count = len(created_jobs) + len(daily_jobs)
             processed_jobs_count = len(processed_jobs)
         except Exception:
@@ -350,12 +381,52 @@ async def _notification_worker_loop(stop_event: asyncio.Event) -> None:
                     "notification_daily_report_alarm",
                     extra=daily_report_health if isinstance(daily_report_health, dict) else {},
                 )
+                if isinstance(daily_report_health, dict):
+                    try:
+                        alarm_dispatch_result = await asyncio.to_thread(
+                            dispatch_daily_report_alarm,
+                            daily_report_health=daily_report_health,
+                            cleared=False,
+                        )
+                    except Exception:
+                        notification_worker_logger.exception(
+                            "notification_daily_report_alarm_dispatch_failed"
+                        )
+                    else:
+                        notification_worker_logger.info(
+                            "notification_daily_report_alarm_dispatched",
+                            extra={
+                                "status": alarm_dispatch_result.get("status"),
+                                "configured_channels": alarm_dispatch_result.get("configured_channels"),
+                                "successful_channels": alarm_dispatch_result.get("successful_channels"),
+                            },
+                        )
                 last_daily_alarm_signature = alarm_signature
             elif alarm_signature is None and last_daily_alarm_signature is not None:
                 notification_worker_logger.info(
                     "notification_daily_report_alarm_cleared",
                     extra=daily_report_health if isinstance(daily_report_health, dict) else {},
                 )
+                if isinstance(daily_report_health, dict):
+                    try:
+                        alarm_dispatch_result = await asyncio.to_thread(
+                            dispatch_daily_report_alarm,
+                            daily_report_health=daily_report_health,
+                            cleared=True,
+                        )
+                    except Exception:
+                        notification_worker_logger.exception(
+                            "notification_daily_report_alarm_clear_dispatch_failed"
+                        )
+                    else:
+                        notification_worker_logger.info(
+                            "notification_daily_report_alarm_clear_dispatched",
+                            extra={
+                                "status": alarm_dispatch_result.get("status"),
+                                "configured_channels": alarm_dispatch_result.get("configured_channels"),
+                                "successful_channels": alarm_dispatch_result.get("successful_channels"),
+                            },
+                        )
                 last_daily_alarm_signature = None
 
             if isinstance(daily_report_health, dict):
@@ -398,6 +469,7 @@ async def _notification_worker_loop(stop_event: asyncio.Event) -> None:
                         "created_jobs": created_jobs_count,
                         "processed_jobs": processed_jobs_count,
                         "daily_report_health": daily_report_health or {},
+                        "admin_claim_health": admin_claim_health_summary or {},
                     },
                 )
 

@@ -597,17 +597,12 @@ def _resolve_today_status_for_employee(
     return today_status, last_in_event, last_out_event, last_event_today
 
 
-def _has_reached_daily_shift_limit(
+def _summarize_daily_cycles(
     db: Session,
     *,
     employee_id: int,
     reference_ts_utc: datetime,
-) -> bool:
-    settings = get_settings()
-    max_cycles = int(settings.attendance_daily_max_cycles or 0)
-    if max_cycles <= 0:
-        return False
-
+) -> tuple[int, bool]:
     day_start, day_end = _local_day_bounds_utc(reference_ts_utc)
     day_events = list(
         db.scalars(
@@ -623,18 +618,34 @@ def _has_reached_daily_shift_limit(
     )
 
     completed_cycles = 0
-    open_shift = False
+    has_open_shift = False
     for event in day_events:
         if event.type == AttendanceType.IN:
-            if not open_shift:
-                open_shift = True
+            has_open_shift = True
             continue
-        if event.type == AttendanceType.OUT and open_shift:
+        if event.type == AttendanceType.OUT and has_open_shift:
             completed_cycles += 1
-            open_shift = False
-            if completed_cycles >= max_cycles:
-                return True
-    return False
+            has_open_shift = False
+    return completed_cycles, has_open_shift
+
+
+def _has_reached_daily_shift_limit(
+    db: Session,
+    *,
+    employee_id: int,
+    reference_ts_utc: datetime,
+) -> bool:
+    settings = get_settings()
+    max_cycles = int(settings.attendance_daily_max_cycles or 0)
+    if max_cycles <= 0:
+        return False
+
+    completed_cycles, _ = _summarize_daily_cycles(
+        db,
+        employee_id=employee_id,
+        reference_ts_utc=reference_ts_utc,
+    )
+    return completed_cycles >= max_cycles
 
 
 def _local_day_from_utc(ts_utc: datetime) -> date:
@@ -1310,10 +1321,16 @@ def get_employee_status_by_device(
     if employee is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Employee is not active")
 
+    reference_now_utc = datetime.now(timezone.utc)
     today_status, last_in_event, last_out_event, last_event_today = _resolve_today_status_for_employee(
         db,
         employee_id=employee.id,
-        reference_ts_utc=datetime.now(timezone.utc),
+        reference_ts_utc=reference_now_utc,
+    )
+    completed_cycles_today, has_open_shift = _summarize_daily_cycles(
+        db,
+        employee_id=employee.id,
+        reference_ts_utc=reference_now_utc,
     )
     passkey_registered = db.scalar(
         select(DevicePasskey.id).where(
@@ -1321,6 +1338,14 @@ def get_employee_status_by_device(
             DevicePasskey.is_active.is_(True),
         )
     ) is not None
+    home_location_required = db.scalar(
+        select(EmployeeLocation.id).where(EmployeeLocation.employee_id == employee.id)
+    ) is None
+    suggested_action = (
+        "CHECKOUT"
+        if has_open_shift
+        else ("CHECKIN" if today_status == "NOT_STARTED" else "WAIT_NEXT_DAY")
+    )
 
     return {
         "employee_id": employee.id,
@@ -1331,6 +1356,11 @@ def get_employee_status_by_device(
             last_event_today.location_status if last_event_today is not None else None
         ),
         "last_flags": last_event_today.flags if last_event_today is not None else {},
+        "has_open_shift": has_open_shift,
+        "suggested_action": suggested_action,
+        "last_checkin_time_utc": last_in_event.ts_utc if last_in_event is not None else None,
+        "completed_cycles_today": completed_cycles_today,
+        "home_location_required": home_location_required,
         "passkey_registered": passkey_registered,
     }
 

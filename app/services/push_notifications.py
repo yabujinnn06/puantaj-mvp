@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from pywebpush import WebPushException, webpush
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.db import SessionLocal
 from app.errors import ApiError
 from app.models import (
     AdminPushSubscription,
@@ -21,6 +22,14 @@ from app.settings import get_public_base_url, get_settings, is_push_enabled
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _as_utc_datetime(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def _resolve_vapid_subject(raw_subject: str | None) -> str:
@@ -605,3 +614,115 @@ def send_push_to_admins(
     )
     result["admin_usernames"] = sorted({item.admin_username for item in subscriptions if item.admin_username})
     return result
+
+
+def run_admin_push_claim_health_check(
+    *,
+    stale_after_minutes: int | None = None,
+    batch_size: int | None = None,
+    db: Session | None = None,
+) -> dict[str, Any]:
+    if db is None:
+        with SessionLocal() as managed_db:
+            return run_admin_push_claim_health_check(
+                stale_after_minutes=stale_after_minutes,
+                batch_size=batch_size,
+                db=managed_db,
+            )
+
+    if not is_push_enabled():
+        return {
+            "push_enabled": False,
+            "checked_at_utc": _utcnow().isoformat(),
+            "stale_after_minutes": 0,
+            "total_active": 0,
+            "stale_candidates": 0,
+            "checked": 0,
+            "healthy_active": 0,
+            "with_error_active": 0,
+            "stale_active": 0,
+            "ping_total_targets": 0,
+            "ping_sent": 0,
+            "ping_failed": 0,
+            "ping_deactivated": 0,
+            "checked_subscription_ids": [],
+        }
+
+    settings = get_settings()
+    now_utc = _utcnow()
+    stale_minutes = max(
+        5,
+        int(stale_after_minutes or settings.admin_push_healthcheck_stale_minutes or 0),
+    )
+    max_batch = max(1, int(batch_size or settings.admin_push_healthcheck_batch_size or 0))
+    stale_cutoff = now_utc - timedelta(minutes=stale_minutes)
+
+    rows = list_active_admin_push_subscriptions(db)
+    stale_rows: list[AdminPushSubscription] = []
+    for row in rows:
+        row_last_seen_at = _as_utc_datetime(row.last_seen_at)
+        has_error = bool((row.last_error or "").strip())
+        is_stale = row_last_seen_at is None or row_last_seen_at < stale_cutoff
+        if has_error or is_stale:
+            stale_rows.append(row)
+
+    stale_rows.sort(
+        key=lambda row: (
+            0 if bool((row.last_error or "").strip()) else 1,
+            _as_utc_datetime(row.last_seen_at) or datetime.min.replace(tzinfo=timezone.utc),
+            row.id,
+        )
+    )
+    checked_rows = stale_rows[:max_batch]
+
+    ping_summary: dict[str, Any] = {
+        "total_targets": 0,
+        "sent": 0,
+        "failed": 0,
+        "deactivated": 0,
+    }
+    if checked_rows:
+        ping_summary = send_push_to_admin_subscriptions(
+            db,
+            subscriptions=checked_rows,
+            title="Admin Claim Health Check",
+            body="Silent health ping for admin claim validation.",
+            data={
+                "type": "ADMIN_CLAIM_HEALTH_PING",
+                "silent": True,
+                "url": "/admin-panel/notifications",
+                "source": "notification_worker",
+                "ts_utc": now_utc.isoformat(),
+            },
+        )
+
+    healthy_active = 0
+    with_error_active = 0
+    stale_active = 0
+    for row in rows:
+        row_last_seen_at = _as_utc_datetime(row.last_seen_at)
+        has_error = bool((row.last_error or "").strip())
+        is_stale = row_last_seen_at is None or row_last_seen_at < stale_cutoff
+        if has_error:
+            with_error_active += 1
+        if is_stale:
+            stale_active += 1
+        if (not has_error) and (not is_stale):
+            healthy_active += 1
+
+    return {
+        "push_enabled": True,
+        "checked_at_utc": now_utc.isoformat(),
+        "stale_after_minutes": stale_minutes,
+        "total_active": len(rows),
+        "stale_candidates": len(stale_rows),
+        "checked": len(checked_rows),
+        "healthy_active": healthy_active,
+        "with_error_active": with_error_active,
+        "stale_active": stale_active,
+        "ping_total_targets": int(ping_summary.get("total_targets", 0)),
+        "ping_sent": int(ping_summary.get("sent", 0)),
+        "ping_failed": int(ping_summary.get("failed", 0)),
+        "ping_deactivated": int(ping_summary.get("deactivated", 0)),
+        "checked_subscription_ids": [int(row.id) for row in checked_rows],
+    }

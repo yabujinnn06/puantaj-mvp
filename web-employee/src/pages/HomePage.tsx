@@ -8,6 +8,7 @@ import {
   getEmployeeStatus,
   getPasskeyRegisterOptions,
   issueRecoveryCodes,
+  postEmployeeInstallFunnelEvent,
   parseApiError,
   scanEmployeeQr,
   subscribeEmployeePush,
@@ -501,16 +502,77 @@ export function HomePage() {
   const iosOnboardingVisiblePrevRef = useRef(false)
   const androidOnboardingVisiblePrevRef = useRef(false)
   const iosInAppBrowserLoggedRef = useRef(false)
-
-  const trackInstallFunnel = useCallback((event: InstallFunnelEvent) => {
-    setInstallFunnelSnapshot((current) => {
-      const next = nextInstallFunnelSnapshot(current, event)
-      saveInstallFunnelSnapshot(next)
-      return next
-    })
-  }, [])
-
   const iosBrowserContext = useMemo(() => detectIosBrowserContext(), [])
+  const installFunnelLastSentRef = useRef<Record<string, number>>({})
+
+  const sendInstallFunnelEvent = useCallback(
+    (event: InstallFunnelEvent, snapshot: InstallFunnelSnapshot) => {
+      if (!deviceFingerprint) {
+        return
+      }
+      const now = Date.now()
+      const dedupeKey = `${deviceFingerprint}:${event}`
+      const previousSentAt = installFunnelLastSentRef.current[dedupeKey] ?? 0
+      const minIntervalMs = event === 'banner_shown' ? 30_000 : 1_500
+      if (now - previousSentAt < minIntervalMs) {
+        return
+      }
+      installFunnelLastSentRef.current[dedupeKey] = now
+
+      void postEmployeeInstallFunnelEvent({
+        device_fingerprint: deviceFingerprint,
+        event,
+        occurred_at_ms: now,
+        context: {
+          standalone: isStandaloneApp,
+          push_enabled: pushEnabled,
+          push_registered: pushRegistered,
+          push_requires_standalone: pushRequiresStandalone,
+          install_prompt_ready: Boolean(installPromptEvent),
+          ios_is_device: iosBrowserContext.isIos,
+          ios_is_safari: iosBrowserContext.isSafari,
+          ios_in_app_browser: iosBrowserContext.isInAppBrowser,
+          browser_label: iosBrowserContext.browserLabel,
+          banner_shown_count: snapshot.bannerShownCount,
+          install_cta_click_count: snapshot.installCtaClickCount,
+          ios_onboarding_open_count: snapshot.iosOnboardingOpenCount,
+          android_onboarding_open_count: snapshot.androidOnboardingOpenCount,
+          prompt_open_count: snapshot.installPromptOpenCount,
+          prompt_accepted_count: snapshot.installPromptAcceptedCount,
+          prompt_dismissed_count: snapshot.installPromptDismissedCount,
+          app_installed_count: snapshot.appInstalledCount,
+          link_copied_count: snapshot.installLinkCopiedCount,
+        },
+      }).catch(() => {
+        // Best-effort telemetry: UX akisini asla bloke etmez.
+      })
+    },
+    [
+      deviceFingerprint,
+      installPromptEvent,
+      iosBrowserContext.browserLabel,
+      iosBrowserContext.isInAppBrowser,
+      iosBrowserContext.isIos,
+      iosBrowserContext.isSafari,
+      isStandaloneApp,
+      pushEnabled,
+      pushRegistered,
+      pushRequiresStandalone,
+    ],
+  )
+
+  const trackInstallFunnel = useCallback(
+    (event: InstallFunnelEvent) => {
+      setInstallFunnelSnapshot((current) => {
+        const next = nextInstallFunnelSnapshot(current, event)
+        saveInstallFunnelSnapshot(next)
+        sendInstallFunnelEvent(event, next)
+        return next
+      })
+    },
+    [sendInstallFunnelEvent],
+  )
+
   const iosInAppBrowserBlocked =
     iosBrowserContext.isIos && iosBrowserContext.isInAppBrowser && !isStandaloneApp
   const iosInstallOnboardingDismissed = iosInstallOnboardingDismissUntil > Date.now()
