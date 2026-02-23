@@ -958,6 +958,32 @@ class AdminPushSubscription(Base):
     admin_user: Mapped[AdminUser | None] = relationship(back_populates="push_subscriptions")
 
 
+class AdminNotificationEmailTarget(Base):
+    __tablename__ = "admin_notification_email_targets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    email: Mapped[str] = mapped_column(String(320), nullable=False, unique=True, index=True)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
+    created_by_username: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    updated_by_username: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
 class AdminDeviceInvite(Base):
     __tablename__ = "admin_device_invites"
 

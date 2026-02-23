@@ -16,6 +16,7 @@ from app.errors import ApiError
 from app.models import (
     AdminDeviceInvite,
     AdminDailyReportArchive,
+    AdminNotificationEmailTarget,
     AdminPushSubscription,
     AdminUser,
     AdminRefreshToken,
@@ -56,6 +57,11 @@ from app.schemas import (
     AdminPushSelfCheckResponse,
     AdminPushSelfTestResponse,
     AdminDailyReportJobHealthResponse,
+    AdminNotificationEmailTargetRead,
+    AdminNotificationEmailTargetsResponse,
+    AdminNotificationEmailTargetsUpdateRequest,
+    AdminNotificationEmailTestRequest,
+    AdminNotificationEmailTestResponse,
     AdminAuthResponse,
     AdminLoginRequest,
     AdminLogoutRequest,
@@ -199,7 +205,14 @@ from app.services.admin_mfa import (
 )
 from app.services.recovery_codes import get_admin_recovery_snapshot
 from app.services.schedule_plans import plan_applies_to_employee
-from app.services.notifications import decrypt_archive_file_data, get_daily_report_job_health
+from app.services.notifications import (
+    decrypt_archive_file_data,
+    get_daily_report_job_health,
+    list_admin_notification_email_targets,
+    normalize_notification_email,
+    replace_admin_notification_email_targets,
+    send_admin_notification_test_email,
+)
 
 router = APIRouter(tags=["admin"])
 logger = logging.getLogger("app.admin")
@@ -457,6 +470,12 @@ def _to_admin_device_push_subscription_read(
         updated_at=row.updated_at,
         last_seen_at=row.last_seen_at,
     )
+
+
+def _to_admin_notification_email_target_read(
+    row: AdminNotificationEmailTarget,
+) -> AdminNotificationEmailTargetRead:
+    return AdminNotificationEmailTargetRead.model_validate(row)
 
 
 def _endpoint_fingerprint(endpoint: str) -> str:
@@ -4372,6 +4391,165 @@ def admin_daily_report_health(
     _claims: dict[str, Any] = Depends(require_admin),
 ) -> AdminDailyReportJobHealthResponse:
     return AdminDailyReportJobHealthResponse.model_validate(get_daily_report_job_health())
+
+
+@router.get(
+    "/api/admin/notifications/email-targets",
+    response_model=AdminNotificationEmailTargetsResponse,
+)
+def get_admin_notification_email_targets(
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin_permission("audit")),
+    db: Session = Depends(get_db),
+) -> AdminNotificationEmailTargetsResponse:
+    rows = list_admin_notification_email_targets(db, include_inactive=True)
+    active_recipients = [
+        row.email
+        for row in rows
+        if row.is_active and (row.email or "").strip()
+    ]
+    actor_id = str(claims.get("username") or claims.get("sub") or "admin")
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=actor_id,
+        action="ADMIN_NOTIFICATION_EMAIL_TARGETS_LIST",
+        success=True,
+        entity_type="admin_notification_email_targets",
+        entity_id=None,
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "total_count": len(rows),
+            "active_count": len(active_recipients),
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return AdminNotificationEmailTargetsResponse(
+        recipients=[_to_admin_notification_email_target_read(row) for row in rows],
+        active_recipients=sorted(active_recipients),
+        active_count=len(active_recipients),
+    )
+
+
+@router.put(
+    "/api/admin/notifications/email-targets",
+    response_model=AdminNotificationEmailTargetsResponse,
+)
+def update_admin_notification_email_targets(
+    payload: AdminNotificationEmailTargetsUpdateRequest,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin_permission("audit", write=True)),
+    db: Session = Depends(get_db),
+) -> AdminNotificationEmailTargetsResponse:
+    invalid_values: list[str] = []
+    normalized_values: list[str] = []
+    for raw_value in payload.emails:
+        normalized = normalize_notification_email(raw_value)
+        if normalized is None:
+            trimmed = " ".join((raw_value or "").strip().split())
+            if trimmed:
+                invalid_values.append(trimmed)
+            continue
+        normalized_values.append(normalized)
+
+    if invalid_values:
+        raise ApiError(
+            status_code=422,
+            code="VALIDATION_ERROR",
+            message=f"Gecersiz email degeri: {invalid_values[0]}",
+        )
+
+    actor_id = str(claims.get("username") or claims.get("sub") or "admin")
+    rows = replace_admin_notification_email_targets(
+        db,
+        emails=normalized_values,
+        actor_username=actor_id,
+    )
+    active_recipients = [
+        row.email
+        for row in rows
+        if row.is_active and (row.email or "").strip()
+    ]
+
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=actor_id,
+        action="ADMIN_NOTIFICATION_EMAIL_TARGETS_UPDATE",
+        success=True,
+        entity_type="admin_notification_email_targets",
+        entity_id=None,
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "requested_count": len(payload.emails),
+            "applied_count": len(normalized_values),
+            "active_count": len(active_recipients),
+            "emails": sorted(active_recipients),
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return AdminNotificationEmailTargetsResponse(
+        recipients=[_to_admin_notification_email_target_read(row) for row in rows],
+        active_recipients=sorted(active_recipients),
+        active_count=len(active_recipients),
+    )
+
+
+@router.post(
+    "/api/admin/notifications/email-test",
+    response_model=AdminNotificationEmailTestResponse,
+)
+def test_admin_notification_email(
+    payload: AdminNotificationEmailTestRequest,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin_permission("audit", write=True)),
+    db: Session = Depends(get_db),
+) -> AdminNotificationEmailTestResponse:
+    normalized_recipients: list[str] = []
+    if payload.recipients is not None:
+        for raw_value in payload.recipients:
+            normalized = normalize_notification_email(raw_value)
+            if normalized is None:
+                trimmed = " ".join((raw_value or "").strip().split())
+                if trimmed:
+                    raise ApiError(
+                        status_code=422,
+                        code="VALIDATION_ERROR",
+                        message=f"Gecersiz email degeri: {trimmed}",
+                    )
+                continue
+            normalized_recipients.append(normalized)
+
+    actor_id = str(claims.get("username") or claims.get("sub") or "admin")
+    result = send_admin_notification_test_email(
+        db,
+        recipients=(normalized_recipients if payload.recipients is not None else None),
+        subject=payload.subject,
+        body=payload.message,
+    )
+
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=actor_id,
+        action="ADMIN_NOTIFICATION_EMAIL_TEST",
+        success=bool(result.get("ok")),
+        entity_type="admin_notification_email_targets",
+        entity_id=None,
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "recipients": list(result.get("recipients") or []),
+            "sent": int(result.get("sent") or 0),
+            "mode": str(result.get("mode") or "unknown"),
+            "configured": bool(result.get("configured")),
+            "error": result.get("error"),
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return AdminNotificationEmailTestResponse.model_validate(result)
 
 
 @router.get(

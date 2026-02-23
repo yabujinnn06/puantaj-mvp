@@ -7,6 +7,7 @@ import {
   createAdminDeviceInvite,
   downloadDailyReportArchive,
   getAdminDailyReportHealth,
+  getAdminNotificationEmailTargets,
   getAdminNotificationSubscriptions,
   getAdminPushConfig,
   getAdminPushSelfCheck,
@@ -19,7 +20,9 @@ import {
   getNotificationSubscriptions,
   notifyDailyReportArchive,
   sendAdminPushSelfTest,
+  sendAdminNotificationEmailTest,
   sendManualNotification,
+  updateAdminNotificationEmailTargets,
 } from '../api/admin'
 import { parseApiError } from '../api/error'
 import { ErrorBlock } from '../components/ErrorBlock'
@@ -156,6 +159,10 @@ export function NotificationsPage() {
   const [archivePage, setArchivePage] = useState(1)
   const [deliverySearch, setDeliverySearch] = useState('')
   const [selectedDeliveryAuditId, setSelectedDeliveryAuditId] = useState<number | null>(null)
+  const [emailTargetsText, setEmailTargetsText] = useState('')
+  const [emailTestRecipient, setEmailTestRecipient] = useState('')
+  const [emailTestSubject, setEmailTestSubject] = useState('Puantaj test email bildirimi')
+  const [emailTestMessage, setEmailTestMessage] = useState('Bu mesaj admin bildirim email testidir.')
 
   const employeesQuery = useQuery({ queryKey: ['employees', 'notify'], queryFn: () => getEmployees({ status: 'active' }) })
   const adminsQuery = useQuery({ queryKey: ['admin-users', 'notify'], queryFn: getAdminUsers })
@@ -164,6 +171,11 @@ export function NotificationsPage() {
     queryKey: ['admin-daily-report-health'],
     queryFn: getAdminDailyReportHealth,
     refetchInterval: 30000,
+    retry: false,
+  })
+  const emailTargetsQuery = useQuery({
+    queryKey: ['admin-notification-email-targets'],
+    queryFn: getAdminNotificationEmailTargets,
     retry: false,
   })
   const adminSelfCheckQuery = useQuery({
@@ -305,6 +317,13 @@ export function NotificationsPage() {
     && !!dailyReportHealth?.archive_exists
     && dailyReportHealth?.status === 'SENT'
     && !!dailyReportHealth?.delivery_succeeded
+  const configuredEmailTargets = emailTargetsQuery.data?.active_recipients ?? []
+  const configuredEmailTargetCount = emailTargetsQuery.data?.active_count ?? 0
+
+  useEffect(() => {
+    if (!emailTargetsQuery.data) return
+    setEmailTargetsText((prev) => (prev.trim().length > 0 ? prev : configuredEmailTargets.join('\n')))
+  }, [emailTargetsQuery.data, configuredEmailTargets])
 
   const inviteMutation = useMutation({
     mutationFn: createAdminDeviceInvite,
@@ -375,6 +394,63 @@ export function NotificationsPage() {
       }
       const parsed = parseApiError(error, 'Cihaz heal islemi basarisiz oldu.')
       pushToast({ variant: 'error', title: 'Heal hatasi', description: parsed.message })
+    },
+  })
+
+  const saveEmailTargetsMutation = useMutation({
+    mutationFn: async () => {
+      const emails = Array.from(
+        new Set(
+          emailTargetsText
+            .split(/[\n,;]+/g)
+            .map((item) => item.trim().toLowerCase())
+            .filter((item) => item.length > 0),
+        ),
+      )
+      return updateAdminNotificationEmailTargets({ emails })
+    },
+    onSuccess: (result) => {
+      setEmailTargetsText((result.active_recipients ?? []).join('\n'))
+      pushToast({
+        variant: 'success',
+        title: 'Mail alicilari guncellendi',
+        description: `Aktif alici: ${result.active_count}`,
+      })
+      void queryClient.invalidateQueries({ queryKey: ['admin-notification-email-targets'] })
+    },
+    onError: (error) => {
+      const parsed = parseApiError(error, 'Mail alicilari kaydedilemedi.')
+      pushToast({ variant: 'error', title: 'Kayit hatasi', description: parsed.message })
+    },
+  })
+
+  const testEmailMutation = useMutation({
+    mutationFn: async () => {
+      const target = emailTestRecipient.trim()
+      return sendAdminNotificationEmailTest({
+        recipients: target ? [target] : undefined,
+        subject: emailTestSubject.trim() || undefined,
+        message: emailTestMessage.trim() || undefined,
+      })
+    },
+    onSuccess: (result) => {
+      if (!result.ok) {
+        pushToast({
+          variant: 'error',
+          title: 'Test mail gonderilemedi',
+          description: `${result.error ?? result.mode} | Alici: ${result.recipients.join(', ') || '-'}`,
+        })
+        return
+      }
+      pushToast({
+        variant: 'success',
+        title: 'Test mail gonderildi',
+        description: `Alici: ${result.recipients.join(', ')} | Sent: ${result.sent}`,
+      })
+    },
+    onError: (error) => {
+      const parsed = parseApiError(error, 'Test mail gonderilemedi.')
+      pushToast({ variant: 'error', title: 'Test mail hatasi', description: parsed.message })
     },
   })
 
@@ -865,6 +941,111 @@ export function NotificationsPage() {
       </Panel>
 
       <Panel>
+        <h4 className="text-base font-semibold text-slate-900">Mail Bildirim Ayarlari</h4>
+        <p className="mt-1 text-xs text-slate-500">
+          Gece gunluk Excel arsiv job&apos;unda mail gonderimi zorunludur. Alicilari burada yonetin.
+        </p>
+
+        <div className="mt-3 grid gap-2 md:grid-cols-3">
+          <div className="rounded border border-slate-200 p-3 text-sm">
+            Aktif mail alicisi: <strong>{configuredEmailTargetCount}</strong>
+          </div>
+          <div className="rounded border border-slate-200 p-3 text-sm">
+            Son health email: <strong>{dailyReportHealth?.email_sent ?? 0}</strong>
+          </div>
+          <button
+            type="button"
+            onClick={() => void emailTargetsQuery.refetch()}
+            className="rounded border border-slate-300 px-3 py-2 text-sm"
+          >
+            Mail listesini yenile
+          </button>
+        </div>
+
+        {emailTargetsQuery.isError ? (
+          <p className="mt-2 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+            Mail hedefleri yuklenemedi.
+          </p>
+        ) : null}
+        {configuredEmailTargetCount <= 0 ? (
+          <p className="mt-2 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+            Aktif mail alicisi yok. Gece rapor maili zorunlu oldugu icin job hata verir.
+          </p>
+        ) : null}
+
+        <label className="mt-3 block text-xs text-slate-600">
+          Alici listesi (satir satir veya virgul ile)
+          <textarea
+            value={emailTargetsText}
+            onChange={(event) => setEmailTargetsText(event.target.value)}
+            rows={5}
+            placeholder="ornek@domain.com&#10;destek@domain.com"
+            className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+          />
+        </label>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => saveEmailTargetsMutation.mutate()}
+            disabled={saveEmailTargetsMutation.isPending}
+            className="rounded border border-brand-300 bg-brand-50 px-3 py-2 text-sm text-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {saveEmailTargetsMutation.isPending ? 'Kaydediliyor...' : 'Mail alicilarini kaydet'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setEmailTargetsText(configuredEmailTargets.join('\n'))}
+            className="rounded border border-slate-300 px-3 py-2 text-sm"
+          >
+            Listeyi geri al
+          </button>
+        </div>
+
+        <div className="mt-4 rounded border border-slate-200 bg-slate-50 p-3">
+          <h5 className="text-sm font-semibold text-slate-900">Test mail gonder</h5>
+          <p className="mt-1 text-xs text-slate-600">
+            Alici bos birakilirsa kayitli tum aktif adreslere test mail gonderilir.
+          </p>
+          <div className="mt-2 grid gap-2 md:grid-cols-3">
+            <label className="text-xs text-slate-600">
+              Test alici (opsiyonel)
+              <input
+                value={emailTestRecipient}
+                onChange={(event) => setEmailTestRecipient(event.target.value)}
+                placeholder="tekbir@adres.com"
+                className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+              />
+            </label>
+            <label className="text-xs text-slate-600 md:col-span-2">
+              Konu
+              <input
+                value={emailTestSubject}
+                onChange={(event) => setEmailTestSubject(event.target.value)}
+                className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+              />
+            </label>
+          </div>
+          <label className="mt-2 block text-xs text-slate-600">
+            Mesaj
+            <textarea
+              value={emailTestMessage}
+              onChange={(event) => setEmailTestMessage(event.target.value)}
+              rows={3}
+              className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => testEmailMutation.mutate()}
+            disabled={testEmailMutation.isPending}
+            className="mt-2 rounded border border-slate-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {testEmailMutation.isPending ? 'Test gonderiliyor...' : 'Test mail gonder'}
+          </button>
+        </div>
+      </Panel>
+
+      <Panel>
         <h4 className="text-base font-semibold text-slate-900">Bildirim Teslimat Logu</h4>
         <p className="mt-1 text-xs text-slate-500">
           Kime gitti / gitmedi, isim-ID, cihaz, IP ve hata bilgisini izleyin.
@@ -1075,7 +1256,7 @@ export function NotificationsPage() {
         ) : null}
         {dailyReportHealth?.target_zero ? (
           <p className="mt-2 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
-            Gece job hedefi 0 gorunuyor. Aktif admin push claim/abonelik zorunlu.
+            Gece job hedefi 0 gorunuyor. Push claim veya mail alici listesi bos olabilir.
           </p>
         ) : null}
         {dailyReportHealth?.last_error ? (

@@ -985,6 +985,44 @@ class AdminDailyReportJobHealthResponse(BaseModel):
     alarms: list[str] = Field(default_factory=list)
 
 
+class AdminNotificationEmailTargetRead(BaseModel):
+    id: int
+    email: str
+    is_active: bool
+    created_by_username: str | None = None
+    updated_by_username: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AdminNotificationEmailTargetsResponse(BaseModel):
+    recipients: list[AdminNotificationEmailTargetRead] = Field(default_factory=list)
+    active_recipients: list[str] = Field(default_factory=list)
+    active_count: int = 0
+
+
+class AdminNotificationEmailTargetsUpdateRequest(BaseModel):
+    emails: list[str] = Field(default_factory=list)
+
+
+class AdminNotificationEmailTestRequest(BaseModel):
+    recipients: list[str] | None = None
+    subject: str | None = Field(default=None, max_length=200)
+    message: str | None = Field(default=None, max_length=4000)
+
+
+class AdminNotificationEmailTestResponse(BaseModel):
+    ok: bool
+    sent: int
+    mode: str
+    recipients: list[str] = Field(default_factory=list)
+    configured: bool
+    error: str | None = None
+    channel: dict[str, Any] = Field(default_factory=dict)
+
+
 class AdminDailyReportArchiveRead(BaseModel):
     id: int
     report_date: date

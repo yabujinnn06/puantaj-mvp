@@ -392,6 +392,32 @@ export interface AdminDailyReportJobHealth {
   alarms: string[]
 }
 
+export interface AdminNotificationEmailTarget {
+  id: number
+  email: string
+  is_active: boolean
+  created_by_username: string | null
+  updated_by_username: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface AdminNotificationEmailTargetsResponse {
+  recipients: AdminNotificationEmailTarget[]
+  active_recipients: string[]
+  active_count: number
+}
+
+export interface AdminNotificationEmailTestResponse {
+  ok: boolean
+  sent: number
+  mode: string
+  recipients: string[]
+  configured: boolean
+  error: string | null
+  channel: Record<string, unknown>
+}
+
 export interface AdminDailyReportArchive {
   id: number
   report_date: string

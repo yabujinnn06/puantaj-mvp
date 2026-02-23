@@ -2,6 +2,8 @@ import { apiClient, publicApiClient } from './client'
 import type {
   AdminDailyReportArchive,
   AdminDailyReportJobHealth,
+  AdminNotificationEmailTargetsResponse,
+  AdminNotificationEmailTestResponse,
   AdminDailyReportArchivePasswordDownloadPayload,
   AdminDailyReportArchiveNotifyResponse,
   AdminDeviceClaimResponse,
@@ -267,6 +269,16 @@ export interface NotificationSubscriptionsParams {
 
 export interface AdminNotificationSubscriptionsParams {
   admin_user_id?: number
+}
+
+export interface AdminNotificationEmailTargetsUpdatePayload {
+  emails: string[]
+}
+
+export interface AdminNotificationEmailTestPayload {
+  recipients?: string[]
+  subject?: string
+  message?: string
 }
 
 export interface ManualNotificationPayload {
@@ -864,6 +876,33 @@ export async function getAdminPushPublicConfig(): Promise<{ enabled: boolean; va
 export async function getAdminDailyReportHealth(): Promise<AdminDailyReportJobHealth> {
   const response = await apiClient.get<AdminDailyReportJobHealth>(
     '/api/admin/notifications/daily-report-health',
+  )
+  return response.data
+}
+
+export async function getAdminNotificationEmailTargets(): Promise<AdminNotificationEmailTargetsResponse> {
+  const response = await apiClient.get<AdminNotificationEmailTargetsResponse>(
+    '/api/admin/notifications/email-targets',
+  )
+  return response.data
+}
+
+export async function updateAdminNotificationEmailTargets(
+  payload: AdminNotificationEmailTargetsUpdatePayload,
+): Promise<AdminNotificationEmailTargetsResponse> {
+  const response = await apiClient.put<AdminNotificationEmailTargetsResponse>(
+    '/api/admin/notifications/email-targets',
+    payload,
+  )
+  return response.data
+}
+
+export async function sendAdminNotificationEmailTest(
+  payload: AdminNotificationEmailTestPayload = {},
+): Promise<AdminNotificationEmailTestResponse> {
+  const response = await apiClient.post<AdminNotificationEmailTestResponse>(
+    '/api/admin/notifications/email-test',
+    payload,
   )
   return response.data
 }

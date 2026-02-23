@@ -6,6 +6,7 @@ from datetime import date, datetime, time, timedelta, timezone
 import hashlib
 import logging
 import os
+import re
 import smtplib
 from email.message import EmailMessage
 from typing import Any
@@ -16,8 +17,8 @@ from sqlalchemy.orm import Session
 from app.audit import log_audit
 from app.db import SessionLocal
 from app.models import (
+    AdminNotificationEmailTarget,
     AdminDailyReportArchive,
-    AdminUser,
     AuditActorType,
     AttendanceEvent,
     AttendanceType,
@@ -52,6 +53,7 @@ JOB_TYPE_ADMIN_DAILY_REPORT_READY = "ADMIN_DAILY_REPORT_READY"
 logger = logging.getLogger("app.notifications")
 
 ARCHIVE_DATA_ENC_PREFIX = b"ENCV1:"
+EMAIL_ADDRESS_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def _archive_file_cipher() -> Fernet | None:
@@ -121,6 +123,124 @@ class NotificationChannel:
 
     def send(self, message: NotificationMessage) -> dict[str, Any]:
         raise NotImplementedError
+
+
+def normalize_notification_email(value: str) -> str | None:
+    normalized = " ".join((value or "").strip().lower().split())
+    if not normalized:
+        return None
+    if not EMAIL_ADDRESS_PATTERN.match(normalized):
+        return None
+    return normalized
+
+
+def list_admin_notification_email_targets(
+    session: Session,
+    *,
+    include_inactive: bool = False,
+) -> list[AdminNotificationEmailTarget]:
+    stmt = select(AdminNotificationEmailTarget).order_by(
+        AdminNotificationEmailTarget.email.asc(),
+        AdminNotificationEmailTarget.id.asc(),
+    )
+    if not include_inactive:
+        stmt = stmt.where(AdminNotificationEmailTarget.is_active.is_(True))
+    return list(session.scalars(stmt).all())
+
+
+def get_admin_notification_email_recipients(session: Session) -> list[str]:
+    try:
+        return [
+            row.email
+            for row in list_admin_notification_email_targets(session, include_inactive=False)
+            if (row.email or "").strip()
+        ]
+    except Exception as exc:
+        logger.warning(
+            "admin_notification_email_targets_unavailable",
+            extra={"error": str(exc)[:500]},
+        )
+        return []
+
+
+def replace_admin_notification_email_targets(
+    session: Session,
+    *,
+    emails: list[str],
+    actor_username: str | None,
+) -> list[AdminNotificationEmailTarget]:
+    actor = (actor_username or "").strip() or "admin"
+    normalized_emails = sorted(
+        {
+            normalized
+            for normalized in (normalize_notification_email(item) for item in emails)
+            if normalized is not None
+        }
+    )
+
+    existing_rows = list_admin_notification_email_targets(session, include_inactive=True)
+    existing_by_email = {str(row.email).strip().lower(): row for row in existing_rows}
+    active_emails = set(normalized_emails)
+
+    for email in normalized_emails:
+        row = existing_by_email.get(email)
+        if row is None:
+            session.add(
+                AdminNotificationEmailTarget(
+                    email=email,
+                    is_active=True,
+                    created_by_username=actor,
+                    updated_by_username=actor,
+                )
+            )
+            continue
+        row.is_active = True
+        row.updated_by_username = actor
+
+    for row in existing_rows:
+        key = str(row.email or "").strip().lower()
+        if key not in active_emails and row.is_active:
+            row.is_active = False
+            row.updated_by_username = actor
+
+    session.commit()
+    return list_admin_notification_email_targets(session, include_inactive=True)
+
+
+def send_admin_notification_test_email(
+    session: Session,
+    *,
+    recipients: list[str] | None = None,
+    subject: str | None = None,
+    body: str | None = None,
+) -> dict[str, Any]:
+    resolved_recipients = sorted(
+        {
+            normalized
+            for normalized in (
+                normalize_notification_email(item)
+                for item in (recipients or get_admin_notification_email_recipients(session))
+            )
+            if normalized is not None
+        }
+    )
+    email_channel = EmailChannel()
+    message = NotificationMessage(
+        recipients=resolved_recipients,
+        subject=(subject or "Puantaj test email bildirimi").strip() or "Puantaj test email bildirimi",
+        body=(body or "Bu mesaj admin bildirim email testidir.").strip() or "Bu mesaj admin bildirim email testidir.",
+    )
+    result = email_channel.send(message)
+    sent_count = int(result.get("sent", 0) or 0)
+    return {
+        "ok": sent_count > 0,
+        "sent": sent_count,
+        "mode": str(result.get("mode") or "unknown"),
+        "recipients": resolved_recipients,
+        "configured": bool(email_channel.configured),
+        "error": None if sent_count > 0 else str(result.get("mode") or "EMAIL_NOT_SENT"),
+        "channel": email_channel.config_status(),
+    }
 
 
 class EmailChannel(NotificationChannel):
@@ -502,24 +622,7 @@ def _claim_due_pending_jobs(
 
 
 def _admin_notification_emails(session: Session) -> list[str]:
-    values: set[str] = set()
-    configured = (os.getenv("ADMIN_NOTIFICATION_EMAILS") or "").strip()
-    if configured:
-        for raw in configured.split(","):
-            item = raw.strip()
-            if item:
-                values.add(item)
-
-    admin_users = list(
-        session.scalars(
-            select(AdminUser).where(AdminUser.is_active.is_(True)).order_by(AdminUser.id.asc())
-        ).all()
-    )
-    for user in admin_users:
-        username = (user.username or "").strip()
-        if "@" in username:
-            values.add(username)
-    return sorted(values)
+    return get_admin_notification_email_recipients(session)
 
 
 def _employee_notification_emails(session: Session, *, job: NotificationJob) -> list[str]:
@@ -1069,9 +1172,13 @@ def get_notification_channel_health() -> dict[str, Any]:
         (settings.push_vapid_public_key or "").strip()
         and (settings.push_vapid_private_key or "").strip()
     )
+    # Health endpoint surfaces whether any admin mail target is configured in DB.
+    with SessionLocal() as session:
+        recipient_count = len(get_admin_notification_email_recipients(session))
     return {
         "push_enabled": push_enabled,
         "email": email_channel.config_status(),
+        "admin_email_target_count": recipient_count,
     }
 
 
@@ -1392,20 +1499,48 @@ def send_pending_notifications(
             if current_job is None:
                 continue
             message = _build_message_for_job(session, current_job)
-            push_summary = _send_push_for_job(session, job=current_job, message=message)
-            push_total_targets = int(push_summary.get("total_targets", 0))
-            push_sent = int(push_summary.get("sent", 0))
-            push_failed = int(push_summary.get("failed", 0))
-            push_deactivated = int(push_summary.get("deactivated", 0))
-
+            push_summary: dict[str, Any] = {
+                "total_targets": 0,
+                "sent": 0,
+                "failed": 0,
+                "deactivated": 0,
+            }
             email_result: dict[str, Any] = {
                 "mode": "not_attempted",
                 "sent": 0,
                 "recipients": [],
             }
-            if push_sent <= 0:
-                email_result = email_channel.send(message)
 
+            is_daily_report_job = current_job.job_type == JOB_TYPE_ADMIN_DAILY_REPORT_READY
+            if is_daily_report_job:
+                # Daily archive report mail is mandatory regardless of push status.
+                email_result = email_channel.send(message)
+                email_sent = _as_int(email_result.get("sent"), 0)
+                if email_sent <= 0:
+                    raise RuntimeError(
+                        "Nightly daily-report mail delivery is mandatory "
+                        f"(email_mode={email_result.get('mode')})"
+                    )
+                try:
+                    push_summary = _send_push_for_job(session, job=current_job, message=message)
+                except Exception as push_exc:
+                    push_summary = {
+                        "total_targets": 0,
+                        "sent": 0,
+                        "failed": 0,
+                        "deactivated": 0,
+                        "error": str(push_exc)[:500],
+                    }
+            else:
+                push_summary = _send_push_for_job(session, job=current_job, message=message)
+                push_sent = int(push_summary.get("sent", 0))
+                if push_sent <= 0:
+                    email_result = email_channel.send(message)
+
+            push_total_targets = int(push_summary.get("total_targets", 0))
+            push_sent = int(push_summary.get("sent", 0))
+            push_failed = int(push_summary.get("failed", 0))
+            push_deactivated = int(push_summary.get("deactivated", 0))
             email_sent = _as_int(email_result.get("sent"), 0)
             delivery_ok = push_sent > 0 or email_sent > 0
             if not delivery_ok:
@@ -1424,6 +1559,8 @@ def send_pending_notifications(
                     "push_deactivated": push_deactivated,
                     "email_mode": str(email_result.get("mode") or "unknown"),
                     "email_sent": email_sent,
+                    "email_required": is_daily_report_job,
+                    "push_error": push_summary.get("error"),
                 },
             )
             if sent_job is not None:
