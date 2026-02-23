@@ -283,10 +283,14 @@ def _resolve_day_event_pair(
     day_date: date,
     events_by_day: dict[date, dict[str, list[AttendanceEvent]]],
     consumed_out_event_ids: set[int],
-) -> tuple[AttendanceEvent | None, AttendanceEvent | None, bool]:
+) -> tuple[AttendanceEvent | None, AttendanceEvent | None, bool, bool]:
     day_bucket = events_by_day.get(day_date, {"IN": [], "OUT": []})
     day_in_events = day_bucket["IN"]
     day_out_events = [event for event in day_bucket["OUT"] if event.id not in consumed_out_event_ids]
+    day_events = sorted(
+        [*day_in_events, *day_out_events],
+        key=lambda event: (event.ts_utc, event.id),
+    )
 
     first_in = day_in_events[0] if day_in_events else None
     if first_in is not None:
@@ -312,7 +316,14 @@ def _resolve_day_event_pair(
             used_cross_midnight_checkout = True
             break
 
-    return first_in, last_out, used_cross_midnight_checkout
+    open_shift_active = False
+    if day_events:
+        latest_event = day_events[-1]
+        if latest_event.type == AttendanceType.IN:
+            if last_out is None or latest_event.ts_utc > last_out.ts_utc:
+                open_shift_active = True
+
+    return first_in, last_out, used_cross_midnight_checkout, open_shift_active
 
 
 def _to_utc(value: datetime | None) -> datetime | None:
@@ -514,7 +525,7 @@ def _build_day_records(
     cursor = start_date
     while cursor <= end_date:
         leave_type = leave_type_by_day.get(cursor)
-        first_in, last_out, used_cross_midnight_checkout = _resolve_day_event_pair(
+        first_in, last_out, used_cross_midnight_checkout, open_shift_active = _resolve_day_event_pair(
             day_date=cursor,
             events_by_day=events_by_day,
             consumed_out_event_ids=consumed_out_event_ids,
@@ -724,6 +735,9 @@ def _build_day_records(
                 flags.append("SHIFT_WEEKLY_RULE_OVERRIDE")
             if used_cross_midnight_checkout:
                 flags.append("CROSS_MIDNIGHT_CHECKOUT")
+            if open_shift_active:
+                flags.append("OPEN_SHIFT_ACTIVE")
+                flags.append("MISSING_OUT")
             metrics = calculate_day_metrics(
                 first_in_ts=first_in.ts_utc if first_in else None,
                 last_out_ts=last_out.ts_utc if last_out else None,
@@ -755,16 +769,28 @@ def _build_day_records(
                 min_break_not_met=metrics.min_break_not_met,
                 night_work_exceeded=metrics.night_work_exceeded,
             )
+            day_status = "INCOMPLETE" if open_shift_active else metrics.status
+            check_out_ts = None if open_shift_active else (last_out.ts_utc if last_out else None)
+            check_out_lat = (
+                None
+                if open_shift_active
+                else (last_out.lat if last_out and last_out.lat is not None else None)
+            )
+            check_out_lon = (
+                None
+                if open_shift_active
+                else (last_out.lon if last_out and last_out.lon is not None else None)
+            )
             records.append(
                 _InternalDayRecord(
                     day_date=cursor,
-                    status=metrics.status,
+                    status=day_status,
                     check_in=first_in.ts_utc if first_in else None,
-                    check_out=last_out.ts_utc if last_out else None,
+                    check_out=check_out_ts,
                     check_in_lat=(first_in.lat if first_in and first_in.lat is not None else None),
                     check_in_lon=(first_in.lon if first_in and first_in.lon is not None else None),
-                    check_out_lat=(last_out.lat if last_out and last_out.lat is not None else None),
-                    check_out_lon=(last_out.lon if last_out and last_out.lon is not None else None),
+                    check_out_lat=check_out_lat,
+                    check_out_lon=check_out_lon,
                     worked_minutes=metrics.worked_minutes_net,
                     overtime_minutes=metrics.overtime_minutes,
                     missing_minutes=missing_minutes,

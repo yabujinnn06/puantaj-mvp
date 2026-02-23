@@ -295,6 +295,64 @@ class WeeklyRulesAndShiftsTests(unittest.TestCase):
         self.assertEqual(monday.missing_minutes, 240)
         self.assertIn("UNDERWORKED", monday.flags)
 
+    def test_second_checkin_after_checkout_marks_day_incomplete(self) -> None:
+        employee = Employee(id=55, full_name="Second Checkin User", department_id=1, shift_id=None, is_active=True)
+        work_rule = WorkRule(
+            id=55,
+            department_id=1,
+            daily_minutes_planned=540,
+            break_minutes=60,
+            grace_minutes=5,
+        )
+        event_in_1 = AttendanceEvent(
+            id=551,
+            employee_id=55,
+            device_id=1,
+            type=AttendanceType.IN,
+            ts_utc=datetime(2026, 2, 9, 6, 0, tzinfo=timezone.utc),
+            location_status=LocationStatus.NO_LOCATION,
+            flags={},
+        )
+        event_out_1 = AttendanceEvent(
+            id=552,
+            employee_id=55,
+            device_id=1,
+            type=AttendanceType.OUT,
+            ts_utc=datetime(2026, 2, 9, 11, 0, tzinfo=timezone.utc),
+            location_status=LocationStatus.NO_LOCATION,
+            flags={},
+        )
+        event_in_2 = AttendanceEvent(
+            id=553,
+            employee_id=55,
+            device_id=1,
+            type=AttendanceType.IN,
+            ts_utc=datetime(2026, 2, 9, 12, 30, tzinfo=timezone.utc),
+            location_status=LocationStatus.NO_LOCATION,
+            flags={"SECOND_CHECKIN_APPROVED": True},
+        )
+
+        fake_db = _FakeMonthlyDB(
+            scalar_values=[employee, work_rule, None],
+            scalars_values=[
+                [event_in_1, event_out_1, event_in_2],
+                [],
+                [],
+                [],
+                [],
+            ],
+        )
+
+        report = calculate_employee_monthly(fake_db, employee_id=55, year=2026, month=2)
+        day = next((item for item in report.days if item.date == date(2026, 2, 9)), None)
+        self.assertIsNotNone(day)
+        assert day is not None
+        self.assertEqual(day.status, "INCOMPLETE")
+        self.assertIsNone(day.check_out)
+        self.assertEqual(day.worked_minutes, 240)
+        self.assertIn("OPEN_SHIFT_ACTIVE", day.flags)
+        self.assertIn("MISSING_OUT", day.flags)
+
     def test_cross_midnight_checkout_is_attached_to_checkin_day(self) -> None:
         employee = Employee(id=6, full_name="Night Shift User", department_id=1, shift_id=None, is_active=True)
         work_rule = WorkRule(

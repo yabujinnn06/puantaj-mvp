@@ -149,6 +149,9 @@ export function flagLabel(key: string, value: unknown): string {
   if (key === 'SECOND_CHECKIN_APPROVED') {
     return '2. giris admin onayi'
   }
+  if (key === 'OPEN_SHIFT_ACTIVE') {
+    return 'Acik vardiya devam ediyor'
+  }
   if (key === 'home_location_not_set' || (key === 'reason' && value === 'home_location_not_set')) {
     return 'Konum bilgisi eksik'
   }

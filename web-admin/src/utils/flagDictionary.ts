@@ -83,6 +83,12 @@ const FLAG_DICTIONARY: Record<string, FlagMeta> = {
     description: 'Bu gün için çıkış (OUT) kaydı bulunamadı.',
     tone: 'danger',
   },
+  OPEN_SHIFT_ACTIVE: {
+    label: 'Açık vardiya devam ediyor',
+    description:
+      'Gün içinde bir çıkıştan sonra yeniden giriş yapıldı ve son giriş için henüz çıkış kaydı oluşmadı.',
+    tone: 'warning',
+  },
   DAILY_MAX_EXCEEDED: {
     label: 'Günlük süre aşıldı',
     description: 'Günlük azami çalışma süresi (11 saat) aşıldı.',
