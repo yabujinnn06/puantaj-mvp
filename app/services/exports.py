@@ -313,7 +313,6 @@ def _style_table_region(
         if isinstance(header_value, str) and header_value.strip():
             header_map[header_value] = col_idx
 
-    ws.auto_filter.ref = f"A{header_row}:{get_column_letter(table_max_col)}{data_end_row}"
     ws.freeze_panes = f"A{header_row + 1}"
 
     status_col = header_map.get(status_col_name)
@@ -376,12 +375,16 @@ def _style_table_region(
         status_col_name=status_col_name,
         flags_col_name=flags_col_name,
     )
-    _add_interactive_table(
+    table_added = _add_interactive_table(
         ws,
         header_row=header_row,
         data_end_row=data_end_row,
         max_col=table_max_col,
     )
+    if table_added:
+        ws.auto_filter.ref = None
+    else:
+        ws.auto_filter.ref = f"A{header_row}:{get_column_letter(table_max_col)}{data_end_row}"
 
 
 def _apply_duration_formats(
@@ -498,11 +501,11 @@ def _add_interactive_table(
     header_row: int,
     data_end_row: int,
     max_col: int,
-) -> None:
+) -> bool:
     if data_end_row <= header_row:
-        return
+        return False
     if not _can_add_table(ws, header_row=header_row, max_col=max_col):
-        return
+        return False
     ref = _table_range_ref(ws, header_row=header_row, data_end_row=data_end_row, max_col=max_col)
     table_name = _build_unique_table_name(ws, seed=f"{ws.title}_{header_row}")
     try:
@@ -515,9 +518,10 @@ def _add_interactive_table(
             showColumnStripes=False,
         )
         ws.add_table(table)
+        return True
     except ValueError:
         # Fail-safe: export should still succeed even if a table cannot be created.
-        return
+        return False
 
 
 def _apply_conditional_formatting(
