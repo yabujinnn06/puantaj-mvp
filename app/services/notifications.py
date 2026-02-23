@@ -1092,38 +1092,79 @@ def get_daily_report_job_health(
         job = session.scalar(
             select(NotificationJob).where(NotificationJob.idempotency_key == idempotency_key)
         )
+        archive = session.scalar(
+            select(AdminDailyReportArchive).where(
+                AdminDailyReportArchive.report_date == report_date,
+                AdminDailyReportArchive.department_id.is_(None),
+                AdminDailyReportArchive.region_id.is_(None),
+            )
+        )
     except Exception as exc:
         return {
             "report_date": report_date.isoformat(),
+            "evaluated_at_utc": reference_utc.isoformat(),
+            "evaluated_local_time": local_now.isoformat(),
             "idempotency_key": idempotency_key,
             "job_exists": False,
+            "archive_exists": False,
+            "archive_id": None,
+            "archive_created_at_utc": None,
+            "archive_employee_count": 0,
+            "archive_file_size_bytes": 0,
             "status": None,
             "scheduled_at_utc": None,
+            "job_created_at_utc": None,
+            "job_updated_at_utc": None,
             "attempts": 0,
             "last_error": str(exc)[:500],
             "push_total_targets": 0,
             "push_sent": 0,
             "push_failed": 0,
             "email_sent": 0,
+            "delivery_succeeded": False,
+            "target_zero": True,
             "alarms": ["DAILY_REPORT_HEALTH_QUERY_FAILED"],
         }
 
     alarms: list[str] = []
+    archive_exists = archive is not None
+    archive_id = int(archive.id) if archive is not None else None
+    archive_created_at = (
+        archive.created_at.isoformat()
+        if archive is not None and archive.created_at is not None
+        else None
+    )
+    archive_employee_count = int(archive.employee_count or 0) if archive is not None else 0
+    archive_file_size_bytes = int(archive.file_size_bytes or 0) if archive is not None else 0
+    if (not archive_exists) and local_now.time() >= time(0, 15):
+        alarms.append("DAILY_REPORT_ARCHIVE_MISSING")
+
     if job is None:
         if local_now.time() >= time(0, 15):
             alarms.append("DAILY_REPORT_JOB_MISSING")
         return {
             "report_date": report_date.isoformat(),
+            "evaluated_at_utc": reference_utc.isoformat(),
+            "evaluated_local_time": local_now.isoformat(),
             "idempotency_key": idempotency_key,
             "job_exists": False,
+            "archive_exists": archive_exists,
+            "archive_id": archive_id,
+            "archive_created_at_utc": archive_created_at,
+            "archive_employee_count": archive_employee_count,
+            "archive_file_size_bytes": archive_file_size_bytes,
             "status": None,
             "scheduled_at_utc": None,
+            "job_created_at_utc": None,
+            "job_updated_at_utc": None,
             "attempts": 0,
             "last_error": None,
             "push_total_targets": 0,
             "push_sent": 0,
             "push_failed": 0,
             "email_sent": 0,
+            "delivery_succeeded": False,
+            "target_zero": True,
             "alarms": alarms,
         }
 
@@ -1133,29 +1174,50 @@ def get_daily_report_job_health(
     push_sent = _as_int(delivery.get("push_sent"), 0)
     push_failed = _as_int(delivery.get("push_failed"), 0)
     email_sent = _as_int(delivery.get("email_sent"), 0)
+    payload_archive_id_raw = payload.get("archive_id")
+    payload_archive_id: int | None = None
+    if payload_archive_id_raw is not None:
+        parsed_archive_id = _as_int(payload_archive_id_raw, -1)
+        if parsed_archive_id >= 0:
+            payload_archive_id = parsed_archive_id
+    delivery_succeeded = push_sent > 0 or email_sent > 0
+    target_zero = push_total_targets <= 0 and email_sent <= 0
 
     if job.status == "FAILED":
         alarms.append("DAILY_REPORT_JOB_FAILED")
     if local_now.time() >= time(0, 30) and job.status in {"PENDING", "SENDING"}:
         alarms.append("DAILY_REPORT_JOB_STUCK")
-    if job.status == "SENT" and push_sent <= 0 and email_sent <= 0:
+    if job.status == "SENT" and not delivery_succeeded:
         alarms.append("DAILY_REPORT_DELIVERY_EMPTY")
-    if push_total_targets <= 0 and email_sent <= 0 and local_now.time() >= time(0, 30):
+    if target_zero and local_now.time() >= time(0, 30):
         alarms.append("DAILY_REPORT_TARGET_ZERO")
+    if archive_id is not None and payload_archive_id is not None and payload_archive_id != archive_id:
+        alarms.append("DAILY_REPORT_ARCHIVE_MISMATCH")
 
     return {
         "report_date": report_date.isoformat(),
+        "evaluated_at_utc": reference_utc.isoformat(),
+        "evaluated_local_time": local_now.isoformat(),
         "idempotency_key": idempotency_key,
         "job_exists": True,
         "job_id": job.id,
+        "archive_exists": archive_exists,
+        "archive_id": archive_id,
+        "archive_created_at_utc": archive_created_at,
+        "archive_employee_count": archive_employee_count,
+        "archive_file_size_bytes": archive_file_size_bytes,
         "status": job.status,
         "scheduled_at_utc": job.scheduled_at_utc.isoformat() if job.scheduled_at_utc else None,
+        "job_created_at_utc": job.created_at.isoformat() if job.created_at else None,
+        "job_updated_at_utc": job.updated_at.isoformat() if job.updated_at else None,
         "attempts": int(job.attempts or 0),
         "last_error": job.last_error,
         "push_total_targets": push_total_targets,
         "push_sent": push_sent,
         "push_failed": push_failed,
         "email_sent": email_sent,
+        "delivery_succeeded": delivery_succeeded,
+        "target_zero": target_zero,
         "alarms": alarms,
     }
 

@@ -317,6 +317,9 @@ def _default_schema_guard_result() -> SchemaGuardResult:
 async def _notification_worker_loop(stop_event: asyncio.Event) -> None:
     interval_seconds = max(15, int(settings.notification_worker_interval_seconds))
     last_daily_alarm_signature: str | None = None
+    last_daily_health_signature: str | None = None
+    last_daily_health_logged_ts: datetime | None = None
+    health_log_interval_seconds = max(300, interval_seconds)
     while not stop_event.is_set():
         created_jobs_count = 0
         processed_jobs_count = 0
@@ -354,6 +357,39 @@ async def _notification_worker_loop(stop_event: asyncio.Event) -> None:
                     extra=daily_report_health if isinstance(daily_report_health, dict) else {},
                 )
                 last_daily_alarm_signature = None
+
+            if isinstance(daily_report_health, dict):
+                health_signature = "|".join(
+                    (
+                        str(daily_report_health.get("report_date") or ""),
+                        str(daily_report_health.get("status") or ""),
+                        str(bool(daily_report_health.get("job_exists"))),
+                        str(bool(daily_report_health.get("archive_exists"))),
+                        str(daily_report_health.get("push_total_targets") or 0),
+                        str(daily_report_health.get("push_sent") or 0),
+                        str(daily_report_health.get("push_failed") or 0),
+                        str(daily_report_health.get("email_sent") or 0),
+                        ",".join(
+                            str(item)
+                            for item in (
+                                daily_report_health.get("alarms")
+                                if isinstance(daily_report_health.get("alarms"), list)
+                                else []
+                            )
+                        ),
+                    )
+                )
+                should_log_health = health_signature != last_daily_health_signature
+                if (not should_log_health) and last_daily_health_logged_ts is not None:
+                    elapsed_seconds = (now_utc - last_daily_health_logged_ts).total_seconds()
+                    should_log_health = elapsed_seconds >= health_log_interval_seconds
+                if should_log_health:
+                    notification_worker_logger.info(
+                        "notification_daily_report_health",
+                        extra=daily_report_health,
+                    )
+                    last_daily_health_signature = health_signature
+                    last_daily_health_logged_ts = now_utc
 
             if created_jobs_count or processed_jobs_count:
                 notification_worker_logger.info(

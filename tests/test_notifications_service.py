@@ -6,6 +6,7 @@ import os
 from unittest.mock import patch
 
 from app.models import (
+    AdminDailyReportArchive,
     AttendanceEvent,
     AttendanceType,
     DepartmentShift,
@@ -64,11 +65,18 @@ class _FakeDailyReportJobSession:
 
 
 class _FakeDailyReportHealthSession:
-    def __init__(self, *, job: NotificationJob | None):
-        self._job = job
+    def __init__(
+        self,
+        *,
+        job: NotificationJob | None,
+        archive: AdminDailyReportArchive | None = None,
+    ):
+        self._scalar_values = [job, archive]
 
     def scalar(self, _statement):  # type: ignore[no-untyped-def]
-        return self._job
+        if not self._scalar_values:
+            return None
+        return self._scalar_values.pop(0)
 
 
 class NotificationServiceTests(unittest.TestCase):
@@ -297,7 +305,7 @@ class NotificationServiceTests(unittest.TestCase):
         self.assertEqual(existing_job.payload.get("file_name"), "puantaj-gunluk-2026-02-19.xlsx")
 
     def test_daily_report_health_alarm_when_job_missing_after_window(self) -> None:
-        fake_session = _FakeDailyReportHealthSession(job=None)
+        fake_session = _FakeDailyReportHealthSession(job=None, archive=None)
         with patch("app.services.notifications._attendance_timezone", return_value=timezone.utc):
             result = get_daily_report_job_health(
                 now_utc=datetime(2026, 2, 21, 0, 20, tzinfo=timezone.utc),
@@ -305,9 +313,22 @@ class NotificationServiceTests(unittest.TestCase):
             )
 
         self.assertFalse(result["job_exists"])
+        self.assertFalse(result["archive_exists"])
         self.assertIn("DAILY_REPORT_JOB_MISSING", result["alarms"])
+        self.assertIn("DAILY_REPORT_ARCHIVE_MISSING", result["alarms"])
 
     def test_daily_report_health_alarm_for_empty_delivery(self) -> None:
+        archive = AdminDailyReportArchive(
+            id=55,
+            report_date=date(2026, 2, 20),
+            department_id=None,
+            region_id=None,
+            file_name="puantaj-gunluk-2026-02-20.xlsx",
+            file_data=b"demo",
+            file_size_bytes=4,
+            employee_count=3,
+            created_at=datetime(2026, 2, 21, 0, 0, tzinfo=timezone.utc),
+        )
         job = NotificationJob(
             id=101,
             employee_id=None,
@@ -328,7 +349,7 @@ class NotificationServiceTests(unittest.TestCase):
             attempts=1,
             idempotency_key="ADMIN_DAILY_REPORT_READY:2026-02-20",
         )
-        fake_session = _FakeDailyReportHealthSession(job=job)
+        fake_session = _FakeDailyReportHealthSession(job=job, archive=archive)
         with patch("app.services.notifications._attendance_timezone", return_value=timezone.utc):
             result = get_daily_report_job_health(
                 now_utc=datetime(2026, 2, 21, 0, 35, tzinfo=timezone.utc),
@@ -336,8 +357,47 @@ class NotificationServiceTests(unittest.TestCase):
             )
 
         self.assertTrue(result["job_exists"])
+        self.assertTrue(result["archive_exists"])
+        self.assertEqual(result["archive_id"], 55)
+        self.assertEqual(result["archive_employee_count"], 3)
+        self.assertFalse(result["delivery_succeeded"])
+        self.assertTrue(result["target_zero"])
         self.assertIn("DAILY_REPORT_DELIVERY_EMPTY", result["alarms"])
         self.assertIn("DAILY_REPORT_TARGET_ZERO", result["alarms"])
+        self.assertNotIn("DAILY_REPORT_ARCHIVE_MISSING", result["alarms"])
+
+    def test_daily_report_health_alarm_when_archive_missing_but_job_exists(self) -> None:
+        job = NotificationJob(
+            id=102,
+            employee_id=None,
+            admin_user_id=None,
+            job_type="ADMIN_DAILY_REPORT_READY",
+            payload={
+                "report_date": "2026-02-20",
+                "archive_id": 999,
+                "delivery": {
+                    "push_total_targets": 2,
+                    "push_sent": 1,
+                    "push_failed": 1,
+                    "email_sent": 0,
+                },
+            },
+            scheduled_at_utc=datetime(2026, 2, 21, 0, 0, tzinfo=timezone.utc),
+            status="SENT",
+            attempts=1,
+            idempotency_key="ADMIN_DAILY_REPORT_READY:2026-02-20",
+        )
+        fake_session = _FakeDailyReportHealthSession(job=job, archive=None)
+        with patch("app.services.notifications._attendance_timezone", return_value=timezone.utc):
+            result = get_daily_report_job_health(
+                now_utc=datetime(2026, 2, 21, 0, 40, tzinfo=timezone.utc),
+                db=fake_session,  # type: ignore[arg-type]
+            )
+
+        self.assertTrue(result["job_exists"])
+        self.assertFalse(result["archive_exists"])
+        self.assertTrue(result["delivery_succeeded"])
+        self.assertIn("DAILY_REPORT_ARCHIVE_MISSING", result["alarms"])
 
     def test_notification_channel_health_reports_missing_smtp_fields(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
