@@ -351,6 +351,8 @@ export interface AdminPushSelfCheckResponse {
   last_self_test_success: boolean | null
   ready_for_receive: boolean
   has_other_active_subscriptions: boolean
+  self_check_ok: boolean
+  self_check_error: string | null
 }
 
 export interface AdminPushSelfTestResponse {

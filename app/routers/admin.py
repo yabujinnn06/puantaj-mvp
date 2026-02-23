@@ -1,6 +1,7 @@
 import secrets
 from datetime import date, datetime, time, timedelta, timezone
 import hashlib
+import logging
 from math import ceil
 from typing import Any, Literal
 
@@ -200,6 +201,7 @@ from app.services.schedule_plans import plan_applies_to_employee
 from app.services.notifications import decrypt_archive_file_data
 
 router = APIRouter(tags=["admin"])
+logger = logging.getLogger("app.admin")
 settings = get_settings()
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 EXTRA_CHECKIN_APPROVAL_STATUS_PENDING = "PENDING"
@@ -4371,121 +4373,188 @@ def admin_push_self_check(
     db: Session = Depends(get_db),
 ) -> AdminPushSelfCheckResponse:
     actor_username, actor_admin_user_id = _normalized_admin_actor_from_claims(claims)
-    rows = list_active_admin_push_subscriptions(db)
-    actor_rows, by_id, by_username = _resolve_current_admin_claim_subscriptions(
-        rows,
-        actor_username=actor_username,
-        actor_admin_user_id=actor_admin_user_id,
-    )
-    latest_claim = max(
-        actor_rows,
-        key=lambda row: _as_utc_datetime(row.last_seen_at) or datetime.min.replace(tzinfo=timezone.utc),
-        default=None,
-    )
-    now_utc = datetime.now(timezone.utc)
-    stale_cutoff = now_utc - timedelta(hours=24)
-    active_claims_healthy = 0
-    active_claims_with_error = 0
-    active_claims_stale = 0
-    for row in actor_rows:
-        row_last_seen_at = _as_utc_datetime(row.last_seen_at)
-        has_error = bool((row.last_error or "").strip())
-        is_stale = row_last_seen_at is None or row_last_seen_at < stale_cutoff
-        if has_error:
-            active_claims_with_error += 1
-        if is_stale:
-            active_claims_stale += 1
-        if (not has_error) and (not is_stale):
-            active_claims_healthy += 1
-
-    latest_self_test = db.scalar(
-        select(AuditLog)
-        .where(
-            AuditLog.action == "ADMIN_PUSH_SELF_TEST",
-            AuditLog.actor_id == actor_username,
-        )
-        .order_by(AuditLog.ts_utc.desc(), AuditLog.id.desc())
-        .limit(1)
-    )
-    latest_self_test_details = (
-        latest_self_test.details
-        if latest_self_test is not None and isinstance(latest_self_test.details, dict)
-        else {}
-    )
-    last_self_test_total_targets = (
-        _as_int(latest_self_test_details.get("total_targets"), 0)
-        if latest_self_test is not None
-        else None
-    )
-    last_self_test_sent = (
-        _as_int(latest_self_test_details.get("sent"), 0)
-        if latest_self_test is not None
-        else None
-    )
-    last_self_test_failed = (
-        _as_int(latest_self_test_details.get("failed"), 0)
-        if latest_self_test is not None
-        else None
-    )
     push_enabled = bool(get_push_public_config().get("enabled"))
-    ready_for_receive = push_enabled and len(actor_rows) > 0
-    response = AdminPushSelfCheckResponse(
-        push_enabled=push_enabled,
-        actor_username=actor_username,
-        actor_admin_user_id=actor_admin_user_id,
-        active_total_subscriptions=len(rows),
-        active_claims_for_actor=len(actor_rows),
-        active_claims_for_actor_by_id=by_id,
-        active_claims_for_actor_by_username=by_username,
-        active_claims_healthy=active_claims_healthy,
-        active_claims_with_error=active_claims_with_error,
-        active_claims_stale=active_claims_stale,
-        latest_claim_seen_at=(_as_utc_datetime(latest_claim.last_seen_at) if latest_claim is not None else None),
-        latest_claim_error=(latest_claim.last_error if latest_claim is not None else None),
-        last_self_test_at=(latest_self_test.ts_utc if latest_self_test is not None else None),
-        last_self_test_total_targets=last_self_test_total_targets,
-        last_self_test_sent=last_self_test_sent,
-        last_self_test_failed=last_self_test_failed,
-        last_self_test_success=(
-            bool(latest_self_test.success)
+    request_id = getattr(request.state, "request_id", None)
+    try:
+        rows = list_active_admin_push_subscriptions(db)
+        actor_rows, by_id, by_username = _resolve_current_admin_claim_subscriptions(
+            rows,
+            actor_username=actor_username,
+            actor_admin_user_id=actor_admin_user_id,
+        )
+        latest_claim = max(
+            actor_rows,
+            key=lambda row: _as_utc_datetime(row.last_seen_at) or datetime.min.replace(tzinfo=timezone.utc),
+            default=None,
+        )
+        now_utc = datetime.now(timezone.utc)
+        stale_cutoff = now_utc - timedelta(hours=24)
+        active_claims_healthy = 0
+        active_claims_with_error = 0
+        active_claims_stale = 0
+        for row in actor_rows:
+            row_last_seen_at = _as_utc_datetime(row.last_seen_at)
+            has_error = bool((row.last_error or "").strip())
+            is_stale = row_last_seen_at is None or row_last_seen_at < stale_cutoff
+            if has_error:
+                active_claims_with_error += 1
+            if is_stale:
+                active_claims_stale += 1
+            if (not has_error) and (not is_stale):
+                active_claims_healthy += 1
+
+        latest_self_test = db.scalar(
+            select(AuditLog)
+            .where(
+                AuditLog.action == "ADMIN_PUSH_SELF_TEST",
+                AuditLog.actor_id == actor_username,
+            )
+            .order_by(AuditLog.ts_utc.desc(), AuditLog.id.desc())
+            .limit(1)
+        )
+        latest_self_test_details = (
+            latest_self_test.details
+            if latest_self_test is not None and isinstance(latest_self_test.details, dict)
+            else {}
+        )
+        last_self_test_total_targets = (
+            _as_int(latest_self_test_details.get("total_targets"), 0)
             if latest_self_test is not None
             else None
-        ),
-        ready_for_receive=ready_for_receive,
-        has_other_active_subscriptions=len(rows) > len(actor_rows),
-    )
+        )
+        last_self_test_sent = (
+            _as_int(latest_self_test_details.get("sent"), 0)
+            if latest_self_test is not None
+            else None
+        )
+        last_self_test_failed = (
+            _as_int(latest_self_test_details.get("failed"), 0)
+            if latest_self_test is not None
+            else None
+        )
+        ready_for_receive = push_enabled and len(actor_rows) > 0
+        response = AdminPushSelfCheckResponse(
+            push_enabled=push_enabled,
+            actor_username=actor_username,
+            actor_admin_user_id=actor_admin_user_id,
+            active_total_subscriptions=len(rows),
+            active_claims_for_actor=len(actor_rows),
+            active_claims_for_actor_by_id=by_id,
+            active_claims_for_actor_by_username=by_username,
+            active_claims_healthy=active_claims_healthy,
+            active_claims_with_error=active_claims_with_error,
+            active_claims_stale=active_claims_stale,
+            latest_claim_seen_at=(_as_utc_datetime(latest_claim.last_seen_at) if latest_claim is not None else None),
+            latest_claim_error=(latest_claim.last_error if latest_claim is not None else None),
+            last_self_test_at=(latest_self_test.ts_utc if latest_self_test is not None else None),
+            last_self_test_total_targets=last_self_test_total_targets,
+            last_self_test_sent=last_self_test_sent,
+            last_self_test_failed=last_self_test_failed,
+            last_self_test_success=(
+                bool(latest_self_test.success)
+                if latest_self_test is not None
+                else None
+            ),
+            ready_for_receive=ready_for_receive,
+            has_other_active_subscriptions=len(rows) > len(actor_rows),
+            self_check_ok=True,
+            self_check_error=None,
+        )
 
-    log_audit(
-        db,
-        actor_type=AuditActorType.ADMIN,
-        actor_id=actor_username,
-        action="ADMIN_PUSH_SELF_CHECK",
-        success=True,
-        entity_type="admin_push_subscription",
-        entity_id=None,
-        ip=_client_ip(request),
-        user_agent=_user_agent(request),
-        details={
-            "push_enabled": push_enabled,
-            "actor_admin_user_id": actor_admin_user_id,
-            "active_total_subscriptions": len(rows),
-            "active_claims_for_actor": len(actor_rows),
-            "active_claims_for_actor_by_id": by_id,
-            "active_claims_for_actor_by_username": by_username,
-            "active_claims_healthy": active_claims_healthy,
-            "active_claims_with_error": active_claims_with_error,
-            "active_claims_stale": active_claims_stale,
-            "last_self_test_at": latest_self_test.ts_utc.isoformat() if latest_self_test is not None else None,
-            "last_self_test_total_targets": last_self_test_total_targets,
-            "last_self_test_sent": last_self_test_sent,
-            "last_self_test_failed": last_self_test_failed,
-            "last_self_test_success": bool(latest_self_test.success) if latest_self_test is not None else None,
-            "ready_for_receive": ready_for_receive,
-            "has_other_active_subscriptions": len(rows) > len(actor_rows),
-        },
-        request_id=getattr(request.state, "request_id", None),
-    )
-    return response
+        log_audit(
+            db,
+            actor_type=AuditActorType.ADMIN,
+            actor_id=actor_username,
+            action="ADMIN_PUSH_SELF_CHECK",
+            success=True,
+            entity_type="admin_push_subscription",
+            entity_id=None,
+            ip=_client_ip(request),
+            user_agent=_user_agent(request),
+            details={
+                "push_enabled": push_enabled,
+                "actor_admin_user_id": actor_admin_user_id,
+                "active_total_subscriptions": len(rows),
+                "active_claims_for_actor": len(actor_rows),
+                "active_claims_for_actor_by_id": by_id,
+                "active_claims_for_actor_by_username": by_username,
+                "active_claims_healthy": active_claims_healthy,
+                "active_claims_with_error": active_claims_with_error,
+                "active_claims_stale": active_claims_stale,
+                "last_self_test_at": latest_self_test.ts_utc.isoformat() if latest_self_test is not None else None,
+                "last_self_test_total_targets": last_self_test_total_targets,
+                "last_self_test_sent": last_self_test_sent,
+                "last_self_test_failed": last_self_test_failed,
+                "last_self_test_success": bool(latest_self_test.success) if latest_self_test is not None else None,
+                "ready_for_receive": ready_for_receive,
+                "has_other_active_subscriptions": len(rows) > len(actor_rows),
+                "self_check_ok": True,
+            },
+            request_id=request_id,
+        )
+        return response
+    except Exception as exc:
+        error_text = (str(exc) or exc.__class__.__name__).strip()[:500]
+        logger.exception(
+            "admin_push_self_check_failed",
+            extra={
+                "actor_username": actor_username,
+                "actor_admin_user_id": actor_admin_user_id,
+                "request_id": request_id,
+            },
+        )
+        try:
+            log_audit(
+                db,
+                actor_type=AuditActorType.ADMIN,
+                actor_id=actor_username,
+                action="ADMIN_PUSH_SELF_CHECK",
+                success=False,
+                entity_type="admin_push_subscription",
+                entity_id=None,
+                ip=_client_ip(request),
+                user_agent=_user_agent(request),
+                details={
+                    "push_enabled": push_enabled,
+                    "actor_admin_user_id": actor_admin_user_id,
+                    "self_check_ok": False,
+                    "self_check_error": error_text,
+                },
+                request_id=request_id,
+            )
+        except Exception:
+            logger.exception(
+                "admin_push_self_check_audit_failed",
+                extra={
+                    "actor_username": actor_username,
+                    "actor_admin_user_id": actor_admin_user_id,
+                    "request_id": request_id,
+                },
+            )
+
+        return AdminPushSelfCheckResponse(
+            push_enabled=push_enabled,
+            actor_username=actor_username,
+            actor_admin_user_id=actor_admin_user_id,
+            active_total_subscriptions=0,
+            active_claims_for_actor=0,
+            active_claims_for_actor_by_id=0,
+            active_claims_for_actor_by_username=0,
+            active_claims_healthy=0,
+            active_claims_with_error=0,
+            active_claims_stale=0,
+            latest_claim_seen_at=None,
+            latest_claim_error=None,
+            last_self_test_at=None,
+            last_self_test_total_targets=None,
+            last_self_test_sent=None,
+            last_self_test_failed=None,
+            last_self_test_success=None,
+            ready_for_receive=False,
+            has_other_active_subscriptions=False,
+            self_check_ok=False,
+            self_check_error=error_text,
+        )
 
 
 @router.post(

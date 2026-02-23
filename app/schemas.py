@@ -944,6 +944,8 @@ class AdminPushSelfCheckResponse(BaseModel):
     last_self_test_success: bool | None = None
     ready_for_receive: bool
     has_other_active_subscriptions: bool
+    self_check_ok: bool = True
+    self_check_error: str | None = None
 
 
 class AdminPushSelfTestResponse(BaseModel):

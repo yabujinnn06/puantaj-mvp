@@ -142,6 +142,7 @@ export function NotificationsPage() {
     queryKey: ['admin-push-self-check'],
     queryFn: getAdminPushSelfCheck,
     refetchInterval: 15000,
+    retry: false,
   })
   const jobsQuery = useQuery({
     queryKey: ['notification-jobs', jobsStatus],
@@ -258,11 +259,14 @@ export function NotificationsPage() {
     }
     return { total, byId, byUsername }
   }, [adminSubsQuery.data, currentAdminUserId, currentAdminUsername])
-  const currentAdminClaimCount = adminSelfCheckQuery.data?.active_claims_for_actor ?? fallbackCurrentAdminClaimBreakdown.total
+  const selfCheckData = adminSelfCheckQuery.data
+  const selfCheckOk = selfCheckData?.self_check_ok !== false
+  const effectiveSelfCheckData = selfCheckOk ? selfCheckData : undefined
+  const currentAdminClaimCount = effectiveSelfCheckData?.active_claims_for_actor ?? fallbackCurrentAdminClaimBreakdown.total
   const currentAdminClaimCountById =
-    adminSelfCheckQuery.data?.active_claims_for_actor_by_id ?? fallbackCurrentAdminClaimBreakdown.byId
+    effectiveSelfCheckData?.active_claims_for_actor_by_id ?? fallbackCurrentAdminClaimBreakdown.byId
   const currentAdminClaimCountByUsername =
-    adminSelfCheckQuery.data?.active_claims_for_actor_by_username ?? fallbackCurrentAdminClaimBreakdown.byUsername
+    effectiveSelfCheckData?.active_claims_for_actor_by_username ?? fallbackCurrentAdminClaimBreakdown.byUsername
   const currentAdminHasActiveClaim = currentAdminClaimCount > 0
 
   const inviteMutation = useMutation({
@@ -719,31 +723,31 @@ export function NotificationsPage() {
           </div>
           <div
             className={`rounded border p-3 text-sm ${
-              (adminSelfCheckQuery.data?.push_enabled ?? pushConfigQuery.data?.enabled)
+              (effectiveSelfCheckData?.push_enabled ?? pushConfigQuery.data?.enabled)
                 ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
                 : 'border-rose-200 bg-rose-50 text-rose-800'
             }`}
           >
             Push config:{' '}
-            <strong>{(adminSelfCheckQuery.data?.push_enabled ?? pushConfigQuery.data?.enabled) ? 'Aktif' : 'Pasif'}</strong>
+            <strong>{(effectiveSelfCheckData?.push_enabled ?? pushConfigQuery.data?.enabled) ? 'Aktif' : 'Pasif'}</strong>
           </div>
         </div>
         <div className="mt-2 grid gap-2 md:grid-cols-4">
           <div className="rounded border border-slate-200 p-3 text-sm">
-            Toplam aktif admin claim: <strong>{adminSelfCheckQuery.data?.active_total_subscriptions ?? activeAdminSubscriptionCount}</strong>
+            Toplam aktif admin claim: <strong>{effectiveSelfCheckData?.active_total_subscriptions ?? activeAdminSubscriptionCount}</strong>
           </div>
           <div className="rounded border border-slate-200 p-3 text-sm">
             Son claim gorulme:{' '}
-            <strong>{adminSelfCheckQuery.data?.latest_claim_seen_at ? dt(adminSelfCheckQuery.data.latest_claim_seen_at) : '-'}</strong>
+            <strong>{effectiveSelfCheckData?.latest_claim_seen_at ? dt(effectiveSelfCheckData.latest_claim_seen_at) : '-'}</strong>
           </div>
           <div className="rounded border border-slate-200 p-3 text-sm">
             Claim saglik:{' '}
             <strong>
-              saglikli {adminSelfCheckQuery.data?.active_claims_healthy ?? 0}
+              saglikli {effectiveSelfCheckData?.active_claims_healthy ?? 0}
               {' / '}
-              hatali {adminSelfCheckQuery.data?.active_claims_with_error ?? 0}
+              hatali {effectiveSelfCheckData?.active_claims_with_error ?? 0}
               {' / '}
-              stale {adminSelfCheckQuery.data?.active_claims_stale ?? 0}
+              stale {effectiveSelfCheckData?.active_claims_stale ?? 0}
             </strong>
           </div>
           <div className="flex items-end">
@@ -770,30 +774,35 @@ export function NotificationsPage() {
         <div className="mt-2 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
           Son self-test:{' '}
           <strong>
-            {adminSelfCheckQuery.data?.last_self_test_at ? dt(adminSelfCheckQuery.data.last_self_test_at) : '-'}
+            {effectiveSelfCheckData?.last_self_test_at ? dt(effectiveSelfCheckData.last_self_test_at) : '-'}
           </strong>
           {' | '}
           Durum:{' '}
           <strong>
-            {adminSelfCheckQuery.data?.last_self_test_success === null
+            {effectiveSelfCheckData?.last_self_test_success === null
               ? '-'
-              : adminSelfCheckQuery.data?.last_self_test_success
+              : effectiveSelfCheckData?.last_self_test_success
                 ? 'BASARILI'
                 : 'HATALI'}
           </strong>
           {' | '}
           Hedef:{' '}
-          <strong>{adminSelfCheckQuery.data?.last_self_test_total_targets ?? '-'}</strong>
+          <strong>{effectiveSelfCheckData?.last_self_test_total_targets ?? '-'}</strong>
           {' | '}
           Gonderilen:{' '}
-          <strong>{adminSelfCheckQuery.data?.last_self_test_sent ?? '-'}</strong>
+          <strong>{effectiveSelfCheckData?.last_self_test_sent ?? '-'}</strong>
           {' | '}
           Hata:{' '}
-          <strong>{adminSelfCheckQuery.data?.last_self_test_failed ?? '-'}</strong>
+          <strong>{effectiveSelfCheckData?.last_self_test_failed ?? '-'}</strong>
         </div>
         {adminSelfCheckQuery.isError ? (
           <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
             Self-check verisi alinamadi. Fallback olarak abonelik listesi kullaniliyor.
+          </p>
+        ) : null}
+        {adminSelfCheckQuery.data?.self_check_ok === false ? (
+          <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            Self-check degradasyona dustu: {adminSelfCheckQuery.data.self_check_error || 'bilinmeyen hata'}. Fallback olarak abonelik listesi kullaniliyor.
           </p>
         ) : null}
         {!currentAdminHasActiveClaim ? (
@@ -801,9 +810,9 @@ export function NotificationsPage() {
             Bu admin hesabinda aktif cihaz claim gorunmuyor. Bildirim almak icin telefonda claim linkini acip izin adimini tamamla.
           </p>
         ) : null}
-        {adminSelfCheckQuery.data?.latest_claim_error ? (
+        {effectiveSelfCheckData?.latest_claim_error ? (
           <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-            Son claim hatasi: {adminSelfCheckQuery.data.latest_claim_error}
+            Son claim hatasi: {effectiveSelfCheckData.latest_claim_error}
           </p>
         ) : null}
       </Panel>
