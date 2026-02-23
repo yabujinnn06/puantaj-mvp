@@ -20,11 +20,14 @@ from app.models import (
     AdminNotificationEmailTarget,
     AdminDailyReportArchive,
     AuditActorType,
+    AttendanceEventSource,
     AttendanceEvent,
     AttendanceType,
     Department,
     DepartmentShift,
+    Device,
     Employee,
+    LocationStatus,
     ManualDayOverride,
     NotificationJob,
     WorkRule,
@@ -44,10 +47,14 @@ except Exception:  # pragma: no cover - optional runtime guard
 DEFAULT_DAILY_MINUTES_PLANNED = 540
 DEFAULT_GRACE_MINUTES = 5
 DEFAULT_ESCALATION_DELAY_MINUTES = 30
+DEFAULT_MISSED_CHECKOUT_NIGHTLY_REMINDER_LOCAL_TIME = time(21, 30)
 MAX_NOTIFICATION_ATTEMPTS = 5
 JOB_TYPE_EMPLOYEE_MISSED_CHECKOUT = "EMPLOYEE_MISSED_CHECKOUT"
 JOB_TYPE_ADMIN_ESCALATION_MISSED_CHECKOUT = "ADMIN_ESCALATION_MISSED_CHECKOUT"
 JOB_TYPE_EMPLOYEE_OVERTIME_9H = "EMPLOYEE_OVERTIME_9H"
+JOB_TYPE_EMPLOYEE_MISSED_CHECKOUT_NIGHTLY = "EMPLOYEE_MISSED_CHECKOUT_NIGHTLY"
+JOB_TYPE_EMPLOYEE_AUTO_MIDNIGHT_CHECKOUT = "EMPLOYEE_AUTO_MIDNIGHT_CHECKOUT"
+JOB_TYPE_ADMIN_AUTO_MIDNIGHT_CHECKOUT = "ADMIN_AUTO_MIDNIGHT_CHECKOUT"
 JOB_TYPE_ADMIN_DAILY_REPORT_READY = "ADMIN_DAILY_REPORT_READY"
 
 logger = logging.getLogger("app.notifications")
@@ -230,7 +237,7 @@ def send_admin_notification_test_email(
         subject=(subject or "Puantaj test email bildirimi").strip() or "Puantaj test email bildirimi",
         body=(body or "Bu mesaj admin bildirim email testidir.").strip() or "Bu mesaj admin bildirim email testidir.",
     )
-    result = email_channel.send(message)
+    result = _safe_send_email(email_channel, message)
     sent_count = int(result.get("sent", 0) or 0)
     return {
         "ok": sent_count > 0,
@@ -238,7 +245,7 @@ def send_admin_notification_test_email(
         "mode": str(result.get("mode") or "unknown"),
         "recipients": resolved_recipients,
         "configured": bool(email_channel.configured),
-        "error": None if sent_count > 0 else str(result.get("mode") or "EMAIL_NOT_SENT"),
+        "error": None if sent_count > 0 else str(result.get("error") or result.get("mode") or "EMAIL_NOT_SENT"),
         "channel": email_channel.config_status(),
     }
 
@@ -317,6 +324,25 @@ class EmailChannel(NotificationChannel):
         }
 
 
+def _safe_send_email(channel: NotificationChannel, message: NotificationMessage) -> dict[str, Any]:
+    try:
+        return channel.send(message)
+    except Exception as exc:
+        logger.exception(
+            "notification_email_send_failed",
+            extra={
+                "subject": message.subject,
+                "recipients": list(message.recipients),
+            },
+        )
+        return {
+            "mode": "send_exception",
+            "sent": 0,
+            "recipients": list(message.recipients),
+            "error": str(exc)[:500],
+        }
+
+
 def _parse_shift_id_from_flags(flags: dict[str, Any] | None) -> int | None:
     if not flags:
         return None
@@ -328,6 +354,37 @@ def _parse_shift_id_from_flags(flags: dict[str, Any] | None) -> int | None:
         if value > 0:
             return value
     return None
+
+
+def _parse_hhmm_local_time(raw: str | None) -> time | None:
+    normalized = (raw or "").strip()
+    if not normalized:
+        return None
+    parts = normalized.split(":")
+    if len(parts) != 2:
+        return None
+    hour_text, minute_text = parts
+    if not hour_text.isdigit() or not minute_text.isdigit():
+        return None
+    hour = int(hour_text)
+    minute = int(minute_text)
+    if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+        return None
+    return time(hour=hour, minute=minute)
+
+
+def _nightly_missed_checkout_local_time() -> time:
+    settings = get_settings()
+    parsed = _parse_hhmm_local_time(settings.missed_checkout_nightly_reminder_local_time)
+    if parsed is not None:
+        return parsed
+    return DEFAULT_MISSED_CHECKOUT_NIGHTLY_REMINDER_LOCAL_TIME
+
+
+def _nightly_missed_checkout_scheduled_at_utc(local_day: date) -> datetime:
+    reminder_local = _nightly_missed_checkout_local_time()
+    reminder_local_dt = datetime.combine(local_day, reminder_local, tzinfo=_attendance_timezone())
+    return reminder_local_dt.astimezone(timezone.utc)
 
 
 def _resolve_shift_end_local_dt(
@@ -371,6 +428,90 @@ def _is_checkin_outside_shift(
     return not in_shift_window
 
 
+def _build_open_shift_record(
+    session: Session,
+    *,
+    employee: Employee,
+    local_day: date,
+    first_in_event: AttendanceEvent,
+) -> OpenShiftNotificationRecord | None:
+    manual_override = session.scalar(
+        select(ManualDayOverride).where(
+            ManualDayOverride.employee_id == employee.id,
+            ManualDayOverride.day_date == local_day,
+        )
+    )
+    if manual_override is not None and (manual_override.is_absent or manual_override.out_ts is not None):
+        return None
+
+    planned_minutes = DEFAULT_DAILY_MINUTES_PLANNED
+    grace_minutes = DEFAULT_GRACE_MINUTES
+    if employee.department_id is not None:
+        work_rule = session.scalar(
+            select(WorkRule).where(WorkRule.department_id == employee.department_id)
+        )
+        if work_rule is not None:
+            planned_minutes = work_rule.daily_minutes_planned
+            grace_minutes = work_rule.grace_minutes
+
+    plan = resolve_effective_plan_for_employee_day(
+        session,
+        employee=employee,
+        day_date=local_day,
+    )
+    if plan is not None:
+        if plan.daily_minutes_planned is not None:
+            planned_minutes = plan.daily_minutes_planned
+        if plan.grace_minutes is not None:
+            grace_minutes = plan.grace_minutes
+
+    shift: DepartmentShift | None = None
+    if plan is not None and plan.shift_id is not None:
+        shift = session.get(DepartmentShift, plan.shift_id)
+    if shift is None and employee.shift_id is not None:
+        shift = session.get(DepartmentShift, employee.shift_id)
+    if shift is None:
+        event_shift_id = _parse_shift_id_from_flags(first_in_event.flags)
+        if event_shift_id is not None:
+            shift = session.get(DepartmentShift, event_shift_id)
+
+    shift_end_local_dt = _resolve_shift_end_local_dt(
+        local_day=local_day,
+        shift=shift,
+        first_in_ts_utc=first_in_event.ts_utc,
+        planned_minutes=planned_minutes,
+    )
+    grace_deadline_utc = (
+        shift_end_local_dt + timedelta(minutes=max(0, grace_minutes))
+    ).astimezone(timezone.utc)
+    escalation_deadline_utc = grace_deadline_utc + timedelta(
+        minutes=DEFAULT_ESCALATION_DELAY_MINUTES
+    )
+    department_name: str | None = None
+    if employee.department_id is not None:
+        department = session.get(Department, employee.department_id)
+        if department is not None and department.name:
+            department_name = department.name
+    checkin_outside_shift = _is_checkin_outside_shift(
+        first_checkin_ts_utc=first_in_event.ts_utc,
+        shift=shift,
+    )
+
+    return OpenShiftNotificationRecord(
+        employee_id=employee.id,
+        local_day=local_day,
+        first_checkin_ts_utc=first_in_event.ts_utc,
+        shift_end_local=shift_end_local_dt.timetz().replace(tzinfo=None),
+        grace_deadline_utc=grace_deadline_utc,
+        escalation_deadline_utc=escalation_deadline_utc,
+        employee_full_name=(employee.full_name or "-"),
+        department_name=department_name,
+        shift_name=(shift.name if shift is not None else None),
+        shift_start_local=(shift.start_time_local if shift is not None else None),
+        checkin_outside_shift=checkin_outside_shift,
+    )
+
+
 def get_employees_with_open_shift(
     now_utc: datetime,
     db: Session | None = None,
@@ -395,15 +536,6 @@ def get_employees_with_open_shift(
 
     records: list[OpenShiftNotificationRecord] = []
     for employee in employees:
-        manual_override = session.scalar(
-            select(ManualDayOverride).where(
-                ManualDayOverride.employee_id == employee.id,
-                ManualDayOverride.day_date == local_day,
-            )
-        )
-        if manual_override is not None and (manual_override.is_absent or manual_override.out_ts is not None):
-            continue
-
         first_in = session.scalar(
             select(AttendanceEvent)
             .where(
@@ -432,76 +564,80 @@ def get_employees_with_open_shift(
         if last_out is not None:
             continue
 
-        planned_minutes = DEFAULT_DAILY_MINUTES_PLANNED
-        grace_minutes = DEFAULT_GRACE_MINUTES
-        if employee.department_id is not None:
-            work_rule = session.scalar(
-                select(WorkRule).where(WorkRule.department_id == employee.department_id)
-            )
-            if work_rule is not None:
-                planned_minutes = work_rule.daily_minutes_planned
-                grace_minutes = work_rule.grace_minutes
-
-        plan = resolve_effective_plan_for_employee_day(
+        record = _build_open_shift_record(
             session,
-            employee=employee,
-            day_date=local_day,
-        )
-        if plan is not None:
-            if plan.daily_minutes_planned is not None:
-                planned_minutes = plan.daily_minutes_planned
-            if plan.grace_minutes is not None:
-                grace_minutes = plan.grace_minutes
-
-        shift: DepartmentShift | None = None
-        if plan is not None and plan.shift_id is not None:
-            shift = session.get(DepartmentShift, plan.shift_id)
-        if shift is None and employee.shift_id is not None:
-            shift = session.get(DepartmentShift, employee.shift_id)
-        if shift is None:
-            event_shift_id = _parse_shift_id_from_flags(first_in.flags)
-            if event_shift_id is not None:
-                shift = session.get(DepartmentShift, event_shift_id)
-
-        shift_end_local_dt = _resolve_shift_end_local_dt(
             local_day=local_day,
-            shift=shift,
-            first_in_ts_utc=first_in.ts_utc,
-            planned_minutes=planned_minutes,
+            employee=employee,
+            first_in_event=first_in,
         )
-        grace_deadline_utc = (
-            shift_end_local_dt + timedelta(minutes=max(0, grace_minutes))
-        ).astimezone(timezone.utc)
-        escalation_deadline_utc = grace_deadline_utc + timedelta(
-            minutes=DEFAULT_ESCALATION_DELAY_MINUTES
-        )
-        department_name: str | None = None
-        if employee.department_id is not None:
-            department = session.get(Department, employee.department_id)
-            if department is not None and department.name:
-                department_name = department.name
-        checkin_outside_shift = _is_checkin_outside_shift(
-            first_checkin_ts_utc=first_in.ts_utc,
-            shift=shift,
-        )
-
-        records.append(
-            OpenShiftNotificationRecord(
-                employee_id=employee.id,
-                local_day=local_day,
-                first_checkin_ts_utc=first_in.ts_utc,
-                shift_end_local=shift_end_local_dt.timetz().replace(tzinfo=None),
-                grace_deadline_utc=grace_deadline_utc,
-                escalation_deadline_utc=escalation_deadline_utc,
-                employee_full_name=(employee.full_name or "-"),
-                department_name=department_name,
-                shift_name=(shift.name if shift is not None else None),
-                shift_start_local=(shift.start_time_local if shift is not None else None),
-                checkin_outside_shift=checkin_outside_shift,
-            )
-        )
+        if record is not None:
+            records.append(record)
 
     return records
+
+
+def get_employees_with_stale_open_shift(
+    now_utc: datetime,
+    db: Session | None = None,
+) -> list[OpenShiftNotificationRecord]:
+    if db is None:
+        with SessionLocal() as managed_db:
+            return get_employees_with_stale_open_shift(now_utc, db=managed_db)
+
+    session = db
+    reference_utc = _normalize_ts(now_utc)
+    tz = _attendance_timezone()
+    local_today = reference_utc.astimezone(tz).date()
+
+    employees = list(
+        session.scalars(
+            select(Employee)
+            .where(Employee.is_active.is_(True))
+            .order_by(Employee.id.asc())
+        ).all()
+    )
+
+    records: list[OpenShiftNotificationRecord] = []
+    for employee in employees:
+        latest_event = session.scalar(
+            select(AttendanceEvent)
+            .where(
+                AttendanceEvent.employee_id == employee.id,
+                AttendanceEvent.deleted_at.is_(None),
+            )
+            .order_by(AttendanceEvent.ts_utc.desc(), AttendanceEvent.id.desc())
+        )
+        if latest_event is None or latest_event.type != AttendanceType.IN:
+            continue
+
+        open_local_day = _normalize_ts(latest_event.ts_utc).astimezone(tz).date()
+        if open_local_day >= local_today:
+            continue
+
+        record = _build_open_shift_record(
+            session,
+            local_day=open_local_day,
+            employee=employee,
+            first_in_event=latest_event,
+        )
+        if record is not None:
+            records.append(record)
+
+    return records
+
+
+def _record_shift_covers_midnight(record: OpenShiftNotificationRecord) -> bool:
+    if record.shift_start_local is None:
+        return False
+    return record.shift_end_local <= record.shift_start_local
+
+
+def _resolve_device_for_auto_checkout(session: Session, *, employee_id: int) -> Device | None:
+    return session.scalar(
+        select(Device)
+        .where(Device.employee_id == employee_id)
+        .order_by(Device.is_active.desc(), Device.id.asc())
+    )
 
 
 def _build_idempotency_key(*, job_type: str, employee_id: int, local_day: date) -> str:
@@ -574,13 +710,14 @@ def _create_notification_job_if_needed(
     local_day: date,
     scheduled_at_utc: datetime,
     payload: dict[str, str],
+    idempotency_key: str | None = None,
 ) -> NotificationJob | None:
-    idempotency_key = _build_idempotency_key(
+    resolved_idempotency_key = idempotency_key or _build_idempotency_key(
         job_type=job_type,
         employee_id=employee_id,
         local_day=local_day,
     )
-    if _has_pending_or_sent_job(session, idempotency_key=idempotency_key):
+    if _has_pending_or_sent_job(session, idempotency_key=resolved_idempotency_key):
         return None
 
     job = NotificationJob(
@@ -592,7 +729,7 @@ def _create_notification_job_if_needed(
         status="PENDING",
         attempts=0,
         last_error=None,
-        idempotency_key=idempotency_key,
+        idempotency_key=resolved_idempotency_key,
     )
     session.add(job)
     return job
@@ -747,6 +884,43 @@ def _build_message_for_job(session: Session, job: NotificationJob) -> Notificati
             ),
         )
 
+    if job.job_type == JOB_TYPE_EMPLOYEE_MISSED_CHECKOUT_NIGHTLY:
+        recipients = _employee_notification_emails(session, job=job)
+        reminder_day = str(payload.get("nightly_reminder_local_day", "-"))
+        reminder_time = str(payload.get("nightly_reminder_local_time", "-"))
+        open_day_count = str(payload.get("open_day_count", "-"))
+        return NotificationMessage(
+            recipients=recipients,
+            subject="Puantaj Hatirlatma: Acik Mesai Kaydi",
+            body=(
+                f"Calisan: {employee_display}\n"
+                f"Vardiya gunu: {shift_date}\n"
+                f"Giris (yerel): {first_checkin_local}\n"
+                f"Cikis (yerel): {checkout_local}\n"
+                f"Acik kaldigi gun sayisi: {open_day_count}\n"
+                f"Gece hatirlatma tarihi: {reminder_day}\n"
+                f"Gece hatirlatma saati: {reminder_time}\n"
+                "Mesainizi kapatmayi unuttuysaniz lutfen hemen cikis yapin."
+            ),
+        )
+
+    if job.job_type == JOB_TYPE_EMPLOYEE_AUTO_MIDNIGHT_CHECKOUT:
+        recipients = _employee_notification_emails(session, job=job)
+        auto_checkout_local = str(payload.get("auto_checkout_local", "-"))
+        open_day_count = str(payload.get("open_day_count", "-"))
+        return NotificationMessage(
+            recipients=recipients,
+            subject="Puantaj Bilgi: Mesai otomatik kapatildi",
+            body=(
+                f"Calisan: {employee_display}\n"
+                f"Vardiya gunu: {shift_date}\n"
+                f"Giris (yerel): {first_checkin_local}\n"
+                f"Otomatik cikis (yerel): {auto_checkout_local}\n"
+                f"Acik kaldigi gun sayisi: {open_day_count}\n"
+                "Mesai kaydiniz gece 00:00 sonrasinda sistem tarafindan otomatik kapatildi."
+            ),
+        )
+
     if job.job_type == JOB_TYPE_ADMIN_ESCALATION_MISSED_CHECKOUT:
         recipients = _admin_notification_emails(session)
         return NotificationMessage(
@@ -765,6 +939,25 @@ def _build_message_for_job(session: Session, job: NotificationJob) -> Notificati
                 f"Grace deadline (UTC): {grace_deadline}\n"
                 f"Eskalasyon deadline (UTC): {escalation_deadline}\n"
                 "Aksiyon: Çalışanı kontrol edin ve gerekirse manuel çıkış kaydı oluşturun."
+            ),
+        )
+
+    if job.job_type == JOB_TYPE_ADMIN_AUTO_MIDNIGHT_CHECKOUT:
+        recipients = _admin_notification_emails(session)
+        auto_checkout_local = str(payload.get("auto_checkout_local", "-"))
+        auto_checkout_utc = str(payload.get("auto_checkout_utc", "-"))
+        return NotificationMessage(
+            recipients=recipients,
+            subject="Puantaj Uyari: Gece otomatik cikis uygulandi",
+            body=(
+                f"Calisan: {employee_display}\n"
+                f"Departman: {department_name}\n"
+                f"Vardiya: {shift_line}\n"
+                f"Vardiya gunu: {shift_date}\n"
+                f"Giris (yerel): {first_checkin_local}\n"
+                f"Otomatik cikis (yerel): {auto_checkout_local}\n"
+                f"Otomatik cikis (UTC): {auto_checkout_utc}\n"
+                "Neden: Cikis yapilmadan gece 00:00 sonrasi vardiya disi acik mesai algilandi."
             ),
         )
 
@@ -810,7 +1003,12 @@ def _send_push_for_job(
     job: NotificationJob,
     message: NotificationMessage,
 ) -> dict[str, Any]:
-    if job.job_type in {JOB_TYPE_EMPLOYEE_MISSED_CHECKOUT, JOB_TYPE_EMPLOYEE_OVERTIME_9H}:
+    if job.job_type in {
+        JOB_TYPE_EMPLOYEE_MISSED_CHECKOUT,
+        JOB_TYPE_EMPLOYEE_OVERTIME_9H,
+        JOB_TYPE_EMPLOYEE_MISSED_CHECKOUT_NIGHTLY,
+        JOB_TYPE_EMPLOYEE_AUTO_MIDNIGHT_CHECKOUT,
+    }:
         if job.employee_id is None:
             return {"total_targets": 0, "sent": 0, "failed": 0, "deactivated": 0, "failures": []}
         return send_push_to_employees(
@@ -842,6 +1040,25 @@ def _send_push_for_job(
                 "shift_date": payload.get("shift_date"),
                 "first_checkin_local": payload.get("first_checkin_local"),
                 "planned_checkout_time": payload.get("planned_checkout_time"),
+                "url": "/admin-panel/notifications",
+            },
+        )
+
+    if job.job_type == JOB_TYPE_ADMIN_AUTO_MIDNIGHT_CHECKOUT:
+        payload = job.payload or {}
+        return send_push_to_admins(
+            session,
+            admin_user_ids=None,
+            title=message.subject,
+            body=message.body,
+            data={
+                "job_id": job.id,
+                "job_type": job.job_type,
+                "employee_id": job.employee_id,
+                "employee_full_name": payload.get("employee_full_name"),
+                "department_name": payload.get("department_name"),
+                "shift_date": payload.get("shift_date"),
+                "auto_checkout_local": payload.get("auto_checkout_local"),
                 "url": "/admin-panel/notifications",
             },
         )
@@ -924,8 +1141,13 @@ def schedule_missed_checkout_notifications(
 
     session = db
     reference_utc = _normalize_ts(now_utc)
+    tz = _attendance_timezone()
+    local_today = reference_utc.astimezone(tz).date()
     open_shifts = get_employees_with_open_shift(reference_utc, db=session)
+    stale_open_shifts = get_employees_with_stale_open_shift(reference_utc, db=session)
     created_jobs: list[NotificationJob] = []
+    auto_closed_events: list[tuple[OpenShiftNotificationRecord, AttendanceEvent, datetime]] = []
+    auto_closed_keys: set[tuple[int, date]] = set()
 
     for record in open_shifts:
         overtime_alert_at_utc = _normalize_ts(record.first_checkin_ts_utc) + timedelta(hours=9)
@@ -944,46 +1166,232 @@ def schedule_missed_checkout_notifications(
             checkin_outside_shift=record.checkin_outside_shift,
         )
 
-        if reference_utc >= record.grace_deadline_utc:
-            employee_job = _create_notification_job_if_needed(
-                session,
-                job_type=JOB_TYPE_EMPLOYEE_MISSED_CHECKOUT,
-                employee_id=record.employee_id,
-                local_day=record.local_day,
-                scheduled_at_utc=record.grace_deadline_utc,
-                payload=payload,
-            )
-            if employee_job is not None:
-                created_jobs.append(employee_job)
+        employee_job = _create_notification_job_if_needed(
+            session,
+            job_type=JOB_TYPE_EMPLOYEE_MISSED_CHECKOUT,
+            employee_id=record.employee_id,
+            local_day=record.local_day,
+            scheduled_at_utc=record.grace_deadline_utc,
+            payload=payload,
+        )
+        if employee_job is not None:
+            created_jobs.append(employee_job)
 
-        if reference_utc >= record.escalation_deadline_utc:
-            escalation_job = _create_notification_job_if_needed(
-                session,
-                job_type=JOB_TYPE_ADMIN_ESCALATION_MISSED_CHECKOUT,
-                employee_id=record.employee_id,
-                local_day=record.local_day,
-                scheduled_at_utc=record.escalation_deadline_utc,
-                payload=payload,
-            )
-            if escalation_job is not None:
-                created_jobs.append(escalation_job)
+        escalation_job = _create_notification_job_if_needed(
+            session,
+            job_type=JOB_TYPE_ADMIN_ESCALATION_MISSED_CHECKOUT,
+            employee_id=record.employee_id,
+            local_day=record.local_day,
+            scheduled_at_utc=record.escalation_deadline_utc,
+            payload=payload,
+        )
+        if escalation_job is not None:
+            created_jobs.append(escalation_job)
 
-        if reference_utc >= overtime_alert_at_utc:
-            overtime_job = _create_notification_job_if_needed(
-                session,
-                job_type=JOB_TYPE_EMPLOYEE_OVERTIME_9H,
-                employee_id=record.employee_id,
-                local_day=record.local_day,
-                scheduled_at_utc=overtime_alert_at_utc,
-                payload=payload,
-            )
-            if overtime_job is not None:
-                created_jobs.append(overtime_job)
+        overtime_job = _create_notification_job_if_needed(
+            session,
+            job_type=JOB_TYPE_EMPLOYEE_OVERTIME_9H,
+            employee_id=record.employee_id,
+            local_day=record.local_day,
+            scheduled_at_utc=overtime_alert_at_utc,
+            payload=payload,
+        )
+        if overtime_job is not None:
+            created_jobs.append(overtime_job)
 
-    if not created_jobs:
+    for record in stale_open_shifts:
+        if _record_shift_covers_midnight(record):
+            continue
+
+        auto_checkout_local_dt = datetime.combine(
+            record.local_day + timedelta(days=1),
+            time.min,
+            tzinfo=tz,
+        )
+        auto_checkout_utc = auto_checkout_local_dt.astimezone(timezone.utc)
+        if auto_checkout_utc > reference_utc:
+            continue
+
+        latest_event = session.scalar(
+            select(AttendanceEvent)
+            .where(
+                AttendanceEvent.employee_id == record.employee_id,
+                AttendanceEvent.deleted_at.is_(None),
+            )
+            .order_by(AttendanceEvent.ts_utc.desc(), AttendanceEvent.id.desc())
+        )
+        if latest_event is None or latest_event.type != AttendanceType.IN:
+            continue
+
+        latest_local_day = _normalize_ts(latest_event.ts_utc).astimezone(tz).date()
+        if latest_local_day != record.local_day:
+            continue
+
+        device = _resolve_device_for_auto_checkout(session, employee_id=record.employee_id)
+        if device is None:
+            continue
+
+        flags: dict[str, Any] = {
+            "AUTO_CHECKOUT_AT_MIDNIGHT": True,
+            "AUTO_CHECKOUT_REASON": "OPEN_SHIFT_CROSSED_MIDNIGHT",
+            "SHIFT_DATE": record.local_day.isoformat(),
+            "AUTO_BY_WORKER": True,
+        }
+        inherited_shift_id = _parse_shift_id_from_flags(latest_event.flags)
+        if inherited_shift_id is not None:
+            flags["SHIFT_ID"] = inherited_shift_id
+        if record.shift_name:
+            flags["SHIFT_NAME"] = record.shift_name
+        if record.shift_start_local is not None:
+            flags["SHIFT_WINDOW_LOCAL"] = (
+                f"{record.shift_start_local.isoformat(timespec='minutes')}"
+                f"-{record.shift_end_local.isoformat(timespec='minutes')}"
+            )
+
+        auto_event = AttendanceEvent(
+            employee_id=record.employee_id,
+            device_id=device.id,
+            type=AttendanceType.OUT,
+            ts_utc=auto_checkout_utc,
+            lat=None,
+            lon=None,
+            accuracy_m=None,
+            location_status=LocationStatus.NO_LOCATION,
+            flags=flags,
+            source=AttendanceEventSource.MANUAL,
+            created_by_admin=True,
+            note="Sistem gece 00:00 otomatik cikis",
+        )
+        session.add(auto_event)
+        session.flush()
+        auto_closed_events.append((record, auto_event, auto_checkout_utc))
+        auto_closed_keys.add((record.employee_id, record.local_day))
+
+        overtime_alert_at_utc = _normalize_ts(record.first_checkin_ts_utc) + timedelta(hours=9)
+        auto_payload = _build_notification_payload(
+            local_day=record.local_day,
+            shift_end_local=record.shift_end_local,
+            grace_deadline_utc=record.grace_deadline_utc,
+            escalation_deadline_utc=record.escalation_deadline_utc,
+            overtime_alert_at_utc=overtime_alert_at_utc,
+            employee_id=record.employee_id,
+            employee_full_name=record.employee_full_name,
+            department_name=record.department_name,
+            shift_name=record.shift_name,
+            shift_start_local=record.shift_start_local,
+            first_checkin_ts_utc=record.first_checkin_ts_utc,
+            checkin_outside_shift=record.checkin_outside_shift,
+        )
+        auto_checkout_local_day = auto_checkout_utc.astimezone(tz).date()
+        auto_payload["auto_checkout_utc"] = auto_checkout_utc.isoformat()
+        auto_payload["auto_checkout_local"] = auto_checkout_utc.astimezone(tz).strftime("%Y-%m-%d %H:%M")
+        auto_payload["auto_checkout_local_day"] = auto_checkout_local_day.isoformat()
+        auto_payload["open_day_count"] = str(max(1, (auto_checkout_local_day - record.local_day).days + 1))
+
+        employee_auto_job = _create_notification_job_if_needed(
+            session,
+            job_type=JOB_TYPE_EMPLOYEE_AUTO_MIDNIGHT_CHECKOUT,
+            employee_id=record.employee_id,
+            local_day=record.local_day,
+            scheduled_at_utc=auto_checkout_utc,
+            payload=auto_payload,
+            idempotency_key=(
+                f"{JOB_TYPE_EMPLOYEE_AUTO_MIDNIGHT_CHECKOUT}:{record.employee_id}:{record.local_day.isoformat()}"
+            ),
+        )
+        if employee_auto_job is not None:
+            created_jobs.append(employee_auto_job)
+
+        admin_auto_job = _create_notification_job_if_needed(
+            session,
+            job_type=JOB_TYPE_ADMIN_AUTO_MIDNIGHT_CHECKOUT,
+            employee_id=record.employee_id,
+            local_day=record.local_day,
+            scheduled_at_utc=auto_checkout_utc,
+            payload=auto_payload,
+            idempotency_key=(
+                f"{JOB_TYPE_ADMIN_AUTO_MIDNIGHT_CHECKOUT}:{record.employee_id}:{record.local_day.isoformat()}"
+            ),
+        )
+        if admin_auto_job is not None:
+            created_jobs.append(admin_auto_job)
+
+    reminder_records_by_key: dict[tuple[int, date], OpenShiftNotificationRecord] = {}
+    for record in [*open_shifts, *stale_open_shifts]:
+        reminder_records_by_key[(record.employee_id, record.local_day)] = record
+
+    nightly_reminder_local_time = _nightly_missed_checkout_local_time()
+    nightly_reminder_scheduled_at_utc = _nightly_missed_checkout_scheduled_at_utc(local_today)
+
+    for record in reminder_records_by_key.values():
+        if (record.employee_id, record.local_day) in auto_closed_keys:
+            continue
+        if local_today < record.local_day:
+            continue
+        if nightly_reminder_scheduled_at_utc < record.grace_deadline_utc:
+            continue
+
+        overtime_alert_at_utc = _normalize_ts(record.first_checkin_ts_utc) + timedelta(hours=9)
+        payload = _build_notification_payload(
+            local_day=record.local_day,
+            shift_end_local=record.shift_end_local,
+            grace_deadline_utc=record.grace_deadline_utc,
+            escalation_deadline_utc=record.escalation_deadline_utc,
+            overtime_alert_at_utc=overtime_alert_at_utc,
+            employee_id=record.employee_id,
+            employee_full_name=record.employee_full_name,
+            department_name=record.department_name,
+            shift_name=record.shift_name,
+            shift_start_local=record.shift_start_local,
+            first_checkin_ts_utc=record.first_checkin_ts_utc,
+            checkin_outside_shift=record.checkin_outside_shift,
+        )
+        payload["nightly_reminder_local_day"] = local_today.isoformat()
+        payload["nightly_reminder_local_time"] = nightly_reminder_local_time.isoformat(timespec="minutes")
+        payload["open_day_count"] = str(max(1, (local_today - record.local_day).days + 1))
+
+        idempotency_key = (
+            f"{JOB_TYPE_EMPLOYEE_MISSED_CHECKOUT_NIGHTLY}:{record.employee_id}:"
+            f"{record.local_day.isoformat()}:{local_today.isoformat()}"
+        )
+        nightly_job = _create_notification_job_if_needed(
+            session,
+            job_type=JOB_TYPE_EMPLOYEE_MISSED_CHECKOUT_NIGHTLY,
+            employee_id=record.employee_id,
+            local_day=record.local_day,
+            scheduled_at_utc=nightly_reminder_scheduled_at_utc,
+            payload=payload,
+            idempotency_key=idempotency_key,
+        )
+        if nightly_job is not None:
+            created_jobs.append(nightly_job)
+
+    if not created_jobs and not auto_closed_events:
         return []
 
     session.commit()
+    for record, auto_event, auto_checkout_utc in auto_closed_events:
+        session.refresh(auto_event)
+        log_audit(
+            session,
+            actor_type=AuditActorType.SYSTEM,
+            actor_id="notification_scheduler",
+            action="ATTENDANCE_AUTO_MIDNIGHT_CHECKOUT",
+            success=True,
+            entity_type="attendance_event",
+            entity_id=str(auto_event.id),
+            details={
+                "employee_id": record.employee_id,
+                "shift_date": record.local_day.isoformat(),
+                "auto_checkout_utc": auto_checkout_utc.isoformat(),
+                "shift_name": record.shift_name,
+                "shift_start_local": record.shift_start_local.isoformat(timespec="minutes")
+                if record.shift_start_local is not None
+                else None,
+                "shift_end_local": record.shift_end_local.isoformat(timespec="minutes"),
+            },
+        )
+
     for job in created_jobs:
         session.refresh(job)
         log_audit(
@@ -1512,9 +1920,12 @@ def send_pending_notifications(
             }
 
             is_daily_report_job = current_job.job_type == JOB_TYPE_ADMIN_DAILY_REPORT_READY
+            is_admin_auto_midnight_job = (
+                current_job.job_type == JOB_TYPE_ADMIN_AUTO_MIDNIGHT_CHECKOUT
+            )
             if is_daily_report_job:
                 # Daily archive report mail is mandatory regardless of push status.
-                email_result = email_channel.send(message)
+                email_result = _safe_send_email(email_channel, message)
                 email_sent = _as_int(email_result.get("sent"), 0)
                 if email_sent <= 0:
                     raise RuntimeError(
@@ -1533,9 +1944,12 @@ def send_pending_notifications(
                     }
             else:
                 push_summary = _send_push_for_job(session, job=current_job, message=message)
-                push_sent = int(push_summary.get("sent", 0))
-                if push_sent <= 0:
-                    email_result = email_channel.send(message)
+                if is_admin_auto_midnight_job:
+                    email_result = _safe_send_email(email_channel, message)
+                else:
+                    push_sent = int(push_summary.get("sent", 0))
+                    if push_sent <= 0:
+                        email_result = _safe_send_email(email_channel, message)
 
             push_total_targets = int(push_summary.get("total_targets", 0))
             push_sent = int(push_summary.get("sent", 0))
@@ -1560,6 +1974,7 @@ def send_pending_notifications(
                     "email_mode": str(email_result.get("mode") or "unknown"),
                     "email_sent": email_sent,
                     "email_required": is_daily_report_job,
+                    "email_forced": (is_daily_report_job or is_admin_auto_midnight_job),
                     "push_error": push_summary.get("error"),
                 },
             )

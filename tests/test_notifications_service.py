@@ -17,12 +17,17 @@ from app.models import (
     WorkRule,
 )
 from app.services.notifications import (
+    JOB_TYPE_ADMIN_AUTO_MIDNIGHT_CHECKOUT,
     JOB_TYPE_ADMIN_ESCALATION_MISSED_CHECKOUT,
+    JOB_TYPE_EMPLOYEE_AUTO_MIDNIGHT_CHECKOUT,
+    JOB_TYPE_EMPLOYEE_MISSED_CHECKOUT_NIGHTLY,
     _ensure_daily_report_notification_job,
     _build_message_for_job,
     get_daily_report_job_health,
     get_notification_channel_health,
     get_employees_with_open_shift,
+    get_employees_with_stale_open_shift,
+    send_admin_notification_test_email,
 )
 
 
@@ -111,9 +116,9 @@ class NotificationServiceTests(unittest.TestCase):
         fake_db = _FakeNotificationDB(
             employees=[employee],
             scalar_values=[
-                None,      # manual override
                 first_in,  # first IN event
                 None,      # no OUT event -> open shift
+                None,      # no manual override
                 work_rule, # work rule
             ],
             get_map={(DepartmentShift, 100): shift},
@@ -163,7 +168,7 @@ class NotificationServiceTests(unittest.TestCase):
 
         fake_db = _FakeNotificationDB(
             employees=[employee],
-            scalar_values=[None, first_in, None, work_rule],
+            scalar_values=[first_in, None, None, work_rule],
             get_map={(DepartmentShift, 101): shift},
         )
 
@@ -182,6 +187,15 @@ class NotificationServiceTests(unittest.TestCase):
 
     def test_manual_override_with_checkout_finalizes_day(self) -> None:
         employee = Employee(id=3, full_name="Override User", department_id=12, shift_id=None, is_active=True)
+        first_in = AttendanceEvent(
+            id=3,
+            employee_id=3,
+            device_id=1,
+            type=AttendanceType.IN,
+            ts_utc=datetime(2026, 2, 9, 8, 0, tzinfo=timezone.utc),
+            location_status=LocationStatus.NO_LOCATION,
+            flags={},
+        )
         override = ManualDayOverride(
             id=1,
             employee_id=3,
@@ -194,7 +208,11 @@ class NotificationServiceTests(unittest.TestCase):
 
         fake_db = _FakeNotificationDB(
             employees=[employee],
-            scalar_values=[override],  # should short-circuit before IN/OUT checks
+            scalar_values=[
+                first_in,  # first IN
+                None,      # no OUT
+                override,  # manual override closes day
+            ],
             get_map={},
         )
 
@@ -205,6 +223,151 @@ class NotificationServiceTests(unittest.TestCase):
             )
 
         self.assertEqual(results, [])
+
+    def test_stale_open_shift_detected_for_previous_days(self) -> None:
+        employee = Employee(id=4, full_name="Stale User", department_id=13, shift_id=102, is_active=True)
+        shift = DepartmentShift(
+            id=102,
+            department_id=13,
+            name="Gunduz 09-17",
+            start_time_local=time(9, 0),
+            end_time_local=time(17, 0),
+            break_minutes=60,
+            is_active=True,
+        )
+        work_rule = WorkRule(
+            id=3,
+            department_id=13,
+            daily_minutes_planned=480,
+            break_minutes=60,
+            grace_minutes=10,
+        )
+        latest_open_in = AttendanceEvent(
+            id=44,
+            employee_id=4,
+            device_id=1,
+            type=AttendanceType.IN,
+            ts_utc=datetime(2026, 2, 12, 7, 10, tzinfo=timezone.utc),
+            location_status=LocationStatus.NO_LOCATION,
+            flags={},
+        )
+
+        fake_db = _FakeNotificationDB(
+            employees=[employee],
+            scalar_values=[
+                latest_open_in,  # latest event is open IN
+                None,            # no manual override
+                work_rule,       # work rule
+            ],
+            get_map={(DepartmentShift, 102): shift},
+        )
+
+        with patch("app.services.notifications.resolve_effective_plan_for_employee_day", return_value=None):
+            results = get_employees_with_stale_open_shift(
+                now_utc=datetime(2026, 2, 23, 9, 0, tzinfo=timezone.utc),
+                db=fake_db,
+            )
+
+        self.assertEqual(len(results), 1)
+        record = results[0]
+        self.assertEqual(record.employee_id, 4)
+        self.assertEqual(record.local_day, date(2026, 2, 12))
+        self.assertEqual(record.shift_end_local, time(17, 0))
+
+    def test_employee_nightly_message_contains_open_day_context(self) -> None:
+        employee = Employee(id=8, full_name="Open User", department_id=10, shift_id=100, is_active=True)
+        job = NotificationJob(
+            id=45,
+            employee_id=8,
+            admin_user_id=None,
+            job_type=JOB_TYPE_EMPLOYEE_MISSED_CHECKOUT_NIGHTLY,
+            payload={
+                "employee_id": "8",
+                "employee_full_name": "Open User",
+                "employee_email": "open.user@example.com",
+                "shift_date": "2026-02-12",
+                "first_checkin_local": "2026-02-12 09:02",
+                "planned_checkout_time": "18:00",
+                "grace_deadline_utc": "2026-02-12T15:05:00+00:00",
+                "escalation_deadline_utc": "2026-02-12T15:35:00+00:00",
+                "nightly_reminder_local_day": "2026-02-23",
+                "nightly_reminder_local_time": "21:30",
+                "open_day_count": "12",
+            },
+            scheduled_at_utc=datetime(2026, 2, 23, 18, 30, tzinfo=timezone.utc),
+            status="PENDING",
+            attempts=0,
+            idempotency_key="EMPLOYEE_MISSED_CHECKOUT_NIGHTLY:8:2026-02-12:2026-02-23",
+        )
+        fake_db = _FakeNotificationDB(
+            employees=[],
+            scalar_values=[],
+            get_map={(Employee, 8): employee},
+        )
+
+        message = _build_message_for_job(fake_db, job)
+
+        self.assertEqual(message.recipients, ["open.user@example.com"])
+        self.assertIn("Acik kaldigi gun sayisi: 12", message.body)
+        self.assertIn("Gece hatirlatma tarihi: 2026-02-23", message.body)
+        self.assertIn("Cikis (yerel): KAYIT YOK", message.body)
+
+    def test_auto_midnight_checkout_messages_include_auto_checkout_time(self) -> None:
+        employee = Employee(id=9, full_name="Auto User", department_id=10, shift_id=100, is_active=True)
+        employee_job = NotificationJob(
+            id=46,
+            employee_id=9,
+            admin_user_id=None,
+            job_type=JOB_TYPE_EMPLOYEE_AUTO_MIDNIGHT_CHECKOUT,
+            payload={
+                "employee_id": "9",
+                "employee_full_name": "Auto User",
+                "employee_email": "auto.user@example.com",
+                "shift_date": "2026-02-12",
+                "first_checkin_local": "2026-02-12 09:05",
+                "auto_checkout_local": "2026-02-13 00:00",
+                "open_day_count": "2",
+            },
+            scheduled_at_utc=datetime(2026, 2, 13, 0, 0, tzinfo=timezone.utc),
+            status="PENDING",
+            attempts=0,
+            idempotency_key="EMPLOYEE_AUTO_MIDNIGHT_CHECKOUT:9:2026-02-12",
+        )
+        admin_job = NotificationJob(
+            id=47,
+            employee_id=9,
+            admin_user_id=None,
+            job_type=JOB_TYPE_ADMIN_AUTO_MIDNIGHT_CHECKOUT,
+            payload={
+                "employee_id": "9",
+                "employee_full_name": "Auto User",
+                "department_name": "ARGE",
+                "shift_date": "2026-02-12",
+                "shift_name": "Gunduz",
+                "shift_window_local": "09:00-18:00",
+                "first_checkin_local": "2026-02-12 09:05",
+                "auto_checkout_local": "2026-02-13 00:00",
+                "auto_checkout_utc": "2026-02-12T21:00:00+00:00",
+            },
+            scheduled_at_utc=datetime(2026, 2, 13, 0, 0, tzinfo=timezone.utc),
+            status="PENDING",
+            attempts=0,
+            idempotency_key="ADMIN_AUTO_MIDNIGHT_CHECKOUT:9:2026-02-12",
+        )
+        fake_db = _FakeNotificationDB(
+            employees=[],
+            scalar_values=[],
+            get_map={(Employee, 9): employee},
+        )
+
+        employee_message = _build_message_for_job(fake_db, employee_job)
+        self.assertEqual(employee_message.recipients, ["auto.user@example.com"])
+        self.assertIn("Otomatik cikis (yerel): 2026-02-13 00:00", employee_message.body)
+
+        with patch("app.services.notifications._admin_notification_emails", return_value=["admin@example.com"]):
+            admin_message = _build_message_for_job(fake_db, admin_job)
+        self.assertEqual(admin_message.recipients, ["admin@example.com"])
+        self.assertIn("Otomatik cikis (UTC): 2026-02-12T21:00:00+00:00", admin_message.body)
 
     def test_admin_escalation_message_is_detailed(self) -> None:
         employee = Employee(id=7, full_name="Hüseyincan Orman", department_id=10, shift_id=100, is_active=True)
@@ -407,6 +570,25 @@ class NotificationServiceTests(unittest.TestCase):
         self.assertFalse(email["configured"])
         self.assertIn("SMTP_HOST", email["missing_fields"])
         self.assertIn("SMTP_FROM", email["missing_fields"])
+
+    def test_send_admin_notification_test_email_handles_channel_exception(self) -> None:
+        fake_db = _FakeNotificationDB(
+            employees=[],
+            scalar_values=[],
+            get_map={},
+        )
+        with patch("app.services.notifications.EmailChannel.send", side_effect=RuntimeError("smtp_down")):
+            result = send_admin_notification_test_email(
+                fake_db,  # type: ignore[arg-type]
+                recipients=["admin@example.com"],
+                subject="test",
+                body="body",
+            )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["sent"], 0)
+        self.assertEqual(result["mode"], "send_exception")
+        self.assertIn("smtp_down", str(result.get("error")))
 
 
 if __name__ == "__main__":

@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     notification_alarm_telegram_bot_token: str | None = None
     notification_alarm_telegram_chat_id: str | None = None
     notification_alarm_email_to: str | None = None
+    missed_checkout_nightly_reminder_local_time: str = "21:30"
     daily_report_archive_retention_days: int = 180
     schema_guard_strict: bool = True
     recovery_code_count: int = 8
