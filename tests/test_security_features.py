@@ -5,7 +5,14 @@ import unittest
 from datetime import datetime, timezone
 from unittest.mock import patch
 
-from app.services.admin_mfa import _hotp, _normalize_totp_secret, is_admin_mfa_enabled, verify_admin_totp_code
+from app.services.admin_mfa import (
+    _decrypt_secret,
+    _encrypt_secret,
+    _hotp,
+    _normalize_totp_secret,
+    is_admin_mfa_enabled,
+    verify_admin_totp_code,
+)
 from app.services.notifications import ARCHIVE_DATA_ENC_PREFIX, decrypt_archive_file_data, encrypt_archive_file_data
 from app.settings import get_settings
 
@@ -58,6 +65,33 @@ class SecurityFeatureTests(unittest.TestCase):
     def test_archive_decrypt_backward_compatible_plain_data(self) -> None:
         sample = b"legacy-plain-archive"
         self.assertEqual(decrypt_archive_file_data(sample), sample)
+
+    def test_admin_mfa_secret_decrypt_survives_key_priority_change(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "RECOVERY_ADMIN_VAULT_KEY": "",
+                "ARCHIVE_FILE_ENCRYPTION_KEY": "",
+                "JWT_SECRET": "jwt-old-key",
+            },
+            clear=False,
+        ):
+            get_settings.cache_clear()
+            encrypted_secret = _encrypt_secret("JBSWY3DPEHPK3PXP")
+            self.assertTrue(encrypted_secret.startswith("MFA1:"))
+
+        with patch.dict(
+            os.environ,
+            {
+                "RECOVERY_ADMIN_VAULT_KEY": "vault-new-key",
+                "ARCHIVE_FILE_ENCRYPTION_KEY": "",
+                "JWT_SECRET": "jwt-old-key",
+            },
+            clear=False,
+        ):
+            get_settings.cache_clear()
+            decrypted_secret = _decrypt_secret(encrypted_secret)
+            self.assertEqual(decrypted_secret, "JBSWY3DPEHPK3PXP")
 
 
 if __name__ == "__main__":

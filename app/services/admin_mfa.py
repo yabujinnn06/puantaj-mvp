@@ -71,28 +71,51 @@ def _generate_recovery_code() -> str:
     return "".join(secrets.choice(RECOVERY_CODE_ALPHABET) for _ in range(RECOVERY_CODE_RAW_LENGTH))
 
 
-def _mfa_cipher() -> Fernet | None:
+def _build_mfa_cipher(material: str) -> Fernet | None:
     if Fernet is None:
         return None
+    normalized_material = material.strip()
+    if not normalized_material:
+        return None
+    derived = base64.urlsafe_b64encode(hashlib.sha256(normalized_material.encode("utf-8")).digest())
+    try:
+        return Fernet(derived)
+    except Exception:  # pragma: no cover - defensive guard for unexpected crypto runtime issues
+        return None
+
+
+def _iter_mfa_cipher_materials() -> list[str]:
     settings = get_settings()
-    material = (
-        (settings.recovery_admin_vault_key or "").strip()
-        or (settings.archive_file_encryption_key or "").strip()
-        or (settings.jwt_secret or "").strip()
-        or "dev-admin-mfa-key"
-    )
-    derived = base64.urlsafe_b64encode(hashlib.sha256(material.encode("utf-8")).digest())
-    return Fernet(derived)
+    materials: list[str] = []
+    for candidate in (
+        settings.recovery_admin_vault_key,
+        settings.archive_file_encryption_key,
+        settings.jwt_secret,
+        "dev-admin-mfa-key",
+    ):
+        normalized = (candidate or "").strip()
+        if normalized and normalized not in materials:
+            materials.append(normalized)
+    return materials
+
+
+def _mfa_ciphers() -> list[Fernet]:
+    ciphers: list[Fernet] = []
+    for material in _iter_mfa_cipher_materials():
+        cipher = _build_mfa_cipher(material)
+        if cipher is not None:
+            ciphers.append(cipher)
+    return ciphers
 
 
 def _encrypt_secret(secret_key: str) -> str:
-    cipher = _mfa_cipher()
+    ciphers = _mfa_ciphers()
     payload = secret_key.strip()
     if not payload:
         return ""
-    if cipher is None:
+    if not ciphers:
         return payload
-    return MFA_SECRET_ENC_PREFIX + cipher.encrypt(payload.encode("utf-8")).decode("utf-8")
+    return MFA_SECRET_ENC_PREFIX + ciphers[0].encrypt(payload.encode("utf-8")).decode("utf-8")
 
 
 def _decrypt_secret(token: str | None) -> str | None:
@@ -101,16 +124,19 @@ def _decrypt_secret(token: str | None) -> str | None:
         return None
     if not raw.startswith(MFA_SECRET_ENC_PREFIX):
         return raw
-    cipher = _mfa_cipher()
-    if cipher is None:
+    ciphers = _mfa_ciphers()
+    if not ciphers:
         return None
     payload = raw[len(MFA_SECRET_ENC_PREFIX) :]
-    try:
-        decoded = cipher.decrypt(payload.encode("utf-8"))
-    except InvalidToken:
-        return None
-    secret_key = decoded.decode("utf-8").strip()
-    return secret_key or None
+    for cipher in ciphers:
+        try:
+            decoded = cipher.decrypt(payload.encode("utf-8"))
+        except InvalidToken:
+            continue
+        secret_key = decoded.decode("utf-8").strip()
+        if secret_key:
+            return secret_key
+    return None
 
 
 def is_admin_mfa_enabled() -> bool:
