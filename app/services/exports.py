@@ -8,9 +8,11 @@ from typing import Literal
 
 from fastapi import HTTPException, status
 from openpyxl import Workbook
+from openpyxl.formatting.rule import ColorScaleRule, DataBarRule, FormulaRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.utils.cell import quote_sheetname
+from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -56,6 +58,8 @@ WARNING_FILL = PatternFill(fill_type="solid", fgColor="FFF3CD")
 ALERT_FILL = PatternFill(fill_type="solid", fgColor="FDE2E4")
 SUCCESS_FILL = PatternFill(fill_type="solid", fgColor="E6F4EA")
 SUMMARY_FILL = PatternFill(fill_type="solid", fgColor="E9F1F7")
+README_PANEL_FILL = PatternFill(fill_type="solid", fgColor="F3F8FC")
+NEUTRAL_PANEL_FILL = PatternFill(fill_type="solid", fgColor="EEF2F7")
 
 HEADER_FONT = Font(bold=True, color="FFFFFF")
 BOLD_FONT = Font(bold=True, color="0F172A")
@@ -112,6 +116,12 @@ def _apply_print_layout(ws: Worksheet, *, header_row: int | None = None) -> None
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 0
+    ws.print_options.horizontalCentered = True
+    ws.page_margins.left = 0.25
+    ws.page_margins.right = 0.25
+    ws.page_margins.top = 0.5
+    ws.page_margins.bottom = 0.5
+    ws.sheet_view.zoomScale = 90
     if header_row is not None and header_row > 0:
         ws.print_title_rows = f"{header_row}:{header_row}"
 
@@ -356,6 +366,21 @@ def _style_table_region(
                 overtime_cell.fill = SUCCESS_FILL
                 overtime_cell.font = Font(bold=True, color="166534")
 
+    _apply_conditional_formatting(
+        ws,
+        header_row=header_row,
+        data_start_row=data_start_row,
+        data_end_row=data_end_row,
+        header_map=header_map,
+        status_col_name=status_col_name,
+        flags_col_name=flags_col_name,
+    )
+    _add_interactive_table(
+        ws,
+        header_row=header_row,
+        data_end_row=data_end_row,
+    )
+
 
 def _apply_duration_formats(
     ws: Worksheet,
@@ -407,6 +432,149 @@ def _set_internal_sheet_link(cell: object, sheet_title: str) -> None:
     target = f"#{quote_sheetname(sheet_title)}!A1"
     setattr(cell, "hyperlink", target)
     setattr(cell, "style", "Hyperlink")
+
+
+def _table_range_ref(ws: Worksheet, *, header_row: int, data_end_row: int) -> str:
+    return f"A{header_row}:{get_column_letter(ws.max_column)}{data_end_row}"
+
+
+def _existing_table_names(ws: Worksheet) -> set[str]:
+    names: set[str] = set()
+    workbook = ws.parent
+    for sheet in workbook.worksheets:
+        names.update(str(name) for name in sheet.tables.keys())
+    return names
+
+
+def _build_unique_table_name(ws: Worksheet, *, seed: str) -> str:
+    cleaned = "".join(ch if ch.isalnum() else "_" for ch in seed)
+    if not cleaned:
+        cleaned = "TABLE"
+    if cleaned[0].isdigit():
+        cleaned = f"T_{cleaned}"
+    base = cleaned[:48]
+    existing = _existing_table_names(ws)
+    candidate = base
+    counter = 1
+    while candidate in existing:
+        suffix = f"_{counter}"
+        candidate = f"{base[: max(1, 48 - len(suffix))]}{suffix}"
+        counter += 1
+    return candidate
+
+
+def _add_interactive_table(
+    ws: Worksheet,
+    *,
+    header_row: int,
+    data_end_row: int,
+) -> None:
+    if data_end_row <= header_row:
+        return
+    ref = _table_range_ref(ws, header_row=header_row, data_end_row=data_end_row)
+    table_name = _build_unique_table_name(ws, seed=f"{ws.title}_{header_row}")
+    try:
+        table = Table(displayName=table_name, ref=ref)
+        table.tableStyleInfo = TableStyleInfo(
+            name="TableStyleMedium2",
+            showFirstColumn=False,
+            showLastColumn=False,
+            showRowStripes=True,
+            showColumnStripes=False,
+        )
+        ws.add_table(table)
+    except ValueError:
+        # Fail-safe: export should still succeed even if a table cannot be created.
+        return
+
+
+def _apply_conditional_formatting(
+    ws: Worksheet,
+    *,
+    header_row: int,
+    data_start_row: int,
+    data_end_row: int,
+    header_map: dict[str, int],
+    status_col_name: str,
+    flags_col_name: str,
+) -> None:
+    if data_end_row < data_start_row:
+        return
+
+    for header_name, col_idx in header_map.items():
+        if "(dk)" not in header_name:
+            continue
+        col_letter = get_column_letter(col_idx)
+        col_range = f"{col_letter}{data_start_row}:{col_letter}{data_end_row}"
+        ws.conditional_formatting.add(
+            col_range,
+            DataBarRule(
+                start_type="num",
+                start_value=0,
+                end_type="max",
+                end_value=0,
+                color="4F81BD",
+                showValue=True,
+            ),
+        )
+
+    overtime_col = header_map.get("Yasal Fazla Mesai (dk)")
+    if overtime_col:
+        overtime_letter = get_column_letter(overtime_col)
+        overtime_range = f"{overtime_letter}{data_start_row}:{overtime_letter}{data_end_row}"
+        ws.conditional_formatting.add(
+            overtime_range,
+            ColorScaleRule(
+                start_type="num",
+                start_value=0,
+                start_color="E6F4EA",
+                mid_type="percentile",
+                mid_value=50,
+                mid_color="FFF3CD",
+                end_type="max",
+                end_value=0,
+                end_color="FDE2E4",
+            ),
+        )
+
+    status_col = header_map.get(status_col_name) if status_col_name else None
+    if status_col:
+        status_letter = get_column_letter(status_col)
+        status_range = f"{status_letter}{data_start_row}:{status_letter}{data_end_row}"
+        ws.conditional_formatting.add(
+            status_range,
+            FormulaRule(
+                formula=[f'UPPER({status_letter}{data_start_row})="INCOMPLETE"'],
+                fill=ALERT_FILL,
+            ),
+        )
+        ws.conditional_formatting.add(
+            status_range,
+            FormulaRule(
+                formula=[f'OR(UPPER({status_letter}{data_start_row})="LEAVE",UPPER({status_letter}{data_start_row})="OFF")'],
+                fill=WARNING_FILL,
+            ),
+        )
+        ws.conditional_formatting.add(
+            status_range,
+            FormulaRule(
+                formula=[f'OR(UPPER({status_letter}{data_start_row})="OK",UPPER({status_letter}{data_start_row})="FINISHED")'],
+                fill=SUCCESS_FILL,
+            ),
+        )
+
+    flags_col = header_map.get(flags_col_name) if flags_col_name else None
+    if flags_col:
+        flags_letter = get_column_letter(flags_col)
+        flags_range = f"{flags_letter}{data_start_row}:{flags_letter}{data_end_row}"
+        ws.conditional_formatting.add(
+            flags_range,
+            FormulaRule(
+                formula=[f'AND({flags_letter}{data_start_row}<>"",{flags_letter}{data_start_row}<>"-")'],
+                fill=ALERT_FILL,
+                font=Font(bold=True, color="9F1239"),
+            ),
+        )
 
 
 def _work_rule_minutes(db: Session, department_id: int | None, cache: dict[int | None, tuple[int, int]]) -> tuple[int, int]:
@@ -1552,6 +1720,101 @@ def _build_date_range_export(
     )
 
 
+def _sheet_purpose_text(sheet_name: str) -> str:
+    upper_name = sheet_name.upper()
+    if upper_name == "DASHBOARD":
+        return "Yonetim KPI ve hizli durum ozeti"
+    if upper_name.startswith("SUMMARY_EMPLOYEE"):
+        return "Calisan bazli toplu ozet tablosu"
+    if upper_name.startswith("SUMMARY_DEPARTMENT"):
+        return "Departman bazli toplu ozet tablosu"
+    if upper_name.startswith("RAW_EVENTS"):
+        return "Ham event kayitlari (denetim)"
+    if upper_name.startswith("DAILY_FACT"):
+        return "Gunluk mesai gerceklik tablosu"
+    if upper_name.startswith("EMP_") or upper_name.startswith("DEP_") or upper_name.startswith("DAILY_"):
+        return "Detay calisma sayfasi"
+    return "Rapor sayfasi"
+
+
+def _apply_workbook_branding(wb: Workbook) -> None:
+    for ws in wb.worksheets:
+        upper_name = ws.title.upper()
+        if upper_name == "README":
+            ws.sheet_properties.tabColor = "FFB91C1C"
+        elif upper_name == "DASHBOARD":
+            ws.sheet_properties.tabColor = "FF0B4F73"
+        elif upper_name.startswith("SUMMARY"):
+            ws.sheet_properties.tabColor = "FF2B6A99"
+        elif upper_name.startswith("RAW") or upper_name.startswith("DAILY"):
+            ws.sheet_properties.tabColor = "FF475569"
+        else:
+            ws.sheet_properties.tabColor = "FF64748B"
+
+
+def _build_readme_sheet(wb: Workbook, *, report_title: str) -> None:
+    if "README" in wb.sheetnames:
+        del wb["README"]
+    ws = wb.create_sheet("README", 0)
+
+    _merge_title(ws, 1, f"{report_title} - RAPOR KILAVUZU", end_col=4)
+    ws.append(["Rapor Uretim (UTC)", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")])
+    ws.append(["Toplam Sayfa", len(wb.sheetnames) - 1])
+    _append_spacer_row(ws)
+    _style_metadata_rows(ws, start_row=2, end_row=3)
+
+    guide_header = ws.max_row + 1
+    ws.append(["Adim", "Ne yapmali?", "Neden onemli?"])
+    _style_header(ws, guide_header)
+    guide_rows = [
+        ("1", "DASHBOARD sayfasindan baslayin.", "En kritik KPI metriklerini tek yerde gorursunuz."),
+        ("2", "Tablolarda filtreyi acip ihtiyaciniza gore daraltin.", "Buyuk veri setlerinde hizli analiz saglar."),
+        ("3", "Calisan satirlarindaki linklerle detay sayfalarina gecin.", "Kaynak veriye hizli inis yaparsiniz."),
+        ("4", "SUMMARY sayfalarindan aylik/departman karsilastirmasi yapin.", "Kurumsal kararlar icin toplu bakis verir."),
+    ]
+    guide_start = ws.max_row + 1
+    for row in guide_rows:
+        ws.append(list(row))
+    guide_end = ws.max_row
+    _style_table_region(
+        ws,
+        header_row=guide_header,
+        data_start_row=guide_start,
+        data_end_row=guide_end,
+        status_col_name="",
+        flags_col_name="",
+    )
+    for row_idx in range(guide_start, guide_end + 1):
+        ws.cell(row=row_idx, column=1).fill = README_PANEL_FILL
+        ws.cell(row=row_idx, column=1).font = BOLD_FONT
+
+    _append_spacer_row(ws)
+    nav_header = ws.max_row + 1
+    ws.append(["Sira", "Sayfa", "Kategori", "Aciklama"])
+    _style_header(ws, nav_header)
+    nav_start = ws.max_row + 1
+    sheet_order = [sheet for sheet in wb.sheetnames if sheet != "README"]
+    for idx, sheet_name in enumerate(sheet_order, start=1):
+        ws.append([idx, sheet_name, _sheet_purpose_text(sheet_name), "Ac"])
+        _set_internal_sheet_link(ws.cell(row=ws.max_row, column=2), sheet_name)
+        _set_internal_sheet_link(ws.cell(row=ws.max_row, column=4), sheet_name)
+    nav_end = ws.max_row
+    _style_table_region(
+        ws,
+        header_row=nav_header,
+        data_start_row=nav_start,
+        data_end_row=nav_end,
+        status_col_name="",
+        flags_col_name="",
+    )
+    for row_idx in range(nav_start, nav_end + 1):
+        ws.cell(row=row_idx, column=3).fill = NEUTRAL_PANEL_FILL
+
+    _auto_width(ws)
+    _finalize_visual_scope(ws, used_max_col=4)
+    _apply_print_layout(ws, header_row=nav_header)
+
+
 def build_puantaj_xlsx_bytes(
     db: Session,
     *,
@@ -1610,6 +1873,15 @@ def build_puantaj_xlsx_bytes(
         )
     else:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid export mode")
+
+    report_title_map: dict[ExportMode, str] = {
+        "employee": "Calisan Aylik Raporu",
+        "department": "Departman Aylik Raporu",
+        "all": "Genel Aylik Rapor",
+        "date_range": "Tarih Araligi Raporu",
+    }
+    _build_readme_sheet(wb, report_title=report_title_map.get(mode, "Puantaj Raporu"))
+    _apply_workbook_branding(wb)
 
     stream = BytesIO()
     wb.save(stream)
@@ -1757,6 +2029,8 @@ def build_puantaj_range_xlsx_bytes(
     )
 
     if mode == "consolidated":
+        _build_readme_sheet(wb, report_title="Tarih Araligi Raporu")
+        _apply_workbook_branding(wb)
         stream = BytesIO()
         wb.save(stream)
         return stream.getvalue()
@@ -1814,6 +2088,8 @@ def build_puantaj_range_xlsx_bytes(
             ws = wb.create_sheet(_safe_sheet_title(f"DEP_{dep_name}", "Departman"))
             _write_range_sheet_rows(ws, rows=group_rows)
 
+    _build_readme_sheet(wb, report_title="Tarih Araligi Raporu")
+    _apply_workbook_branding(wb)
     stream = BytesIO()
     wb.save(stream)
     return stream.getvalue()
