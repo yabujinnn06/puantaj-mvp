@@ -958,6 +958,33 @@ class AdminPushSelfTestResponse(BaseModel):
     admin_usernames: list[str] = Field(default_factory=list)
 
 
+class AdminDailyReportJobHealthResponse(BaseModel):
+    report_date: date
+    evaluated_at_utc: datetime | None = None
+    evaluated_local_time: datetime | None = None
+    idempotency_key: str
+    job_exists: bool
+    job_id: int | None = None
+    archive_exists: bool = False
+    archive_id: int | None = None
+    archive_created_at_utc: datetime | None = None
+    archive_employee_count: int = 0
+    archive_file_size_bytes: int = 0
+    status: str | None = None
+    scheduled_at_utc: datetime | None = None
+    job_created_at_utc: datetime | None = None
+    job_updated_at_utc: datetime | None = None
+    attempts: int = 0
+    last_error: str | None = None
+    push_total_targets: int = 0
+    push_sent: int = 0
+    push_failed: int = 0
+    email_sent: int = 0
+    delivery_succeeded: bool = False
+    target_zero: bool = False
+    alarms: list[str] = Field(default_factory=list)
+
+
 class AdminDailyReportArchiveRead(BaseModel):
     id: int
     report_date: date

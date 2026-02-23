@@ -26,6 +26,7 @@ const codeMessageMap: Record<string, string> = {
   INVITE_CONTEXT_MISMATCH: 'Davet linki ayni cihaz/tarayici baglaminda kullanilmalidir.',
   INVITE_RETRY_TOO_FAST: 'Cok hizli deneme yaptiniz. Birkac saniye bekleyip tekrar deneyin.',
   INVITE_TTL_TOO_LONG: 'Davet suresi izin verilen limiti asiyor.',
+  ADMIN_PUSH_SUBSCRIPTION_REQUIRED: 'Aktif admin push aboneligi yok. Once bir admin cihazi claim edilmelidir.',
 }
 
 export function parseApiError(error: unknown, fallback: string): ParsedApiError {

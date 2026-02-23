@@ -6,6 +6,7 @@ import {
   cancelNotificationJob,
   createAdminDeviceInvite,
   downloadDailyReportArchive,
+  getAdminDailyReportHealth,
   getAdminNotificationSubscriptions,
   getAdminPushConfig,
   getAdminPushSelfCheck,
@@ -28,7 +29,7 @@ import { Panel } from '../components/Panel'
 import { TableSearchInput } from '../components/TableSearchInput'
 import { useAuth } from '../hooks/useAuth'
 import { useToast } from '../hooks/useToast'
-import type { AdminDeviceInviteCreateResponse, NotificationDeliveryLog, NotificationJobStatus } from '../types/api'
+import type { AdminDailyReportJobHealth, AdminDeviceInviteCreateResponse, NotificationDeliveryLog, NotificationJobStatus } from '../types/api'
 import { urlBase64ToUint8Array } from '../utils/push'
 
 function dt(value: string): string {
@@ -53,6 +54,27 @@ function deliveryTargetLabel(value: string): string {
   if (value === 'employees') return 'CALISAN'
   if (value === 'both') return 'HER IKISI'
   return value.toUpperCase()
+}
+
+function dailyReportAlarmLabel(value: string): string {
+  if (value === 'DAILY_REPORT_JOB_MISSING') return 'Job olusmamis'
+  if (value === 'DAILY_REPORT_ARCHIVE_MISSING') return 'Arsiv olusmamis'
+  if (value === 'DAILY_REPORT_JOB_STUCK') return 'Job takilmis'
+  if (value === 'DAILY_REPORT_JOB_FAILED') return 'Job hatali'
+  if (value === 'DAILY_REPORT_DELIVERY_EMPTY') return 'Teslimat bos'
+  if (value === 'DAILY_REPORT_TARGET_ZERO') return 'Hedef 0'
+  if (value === 'DAILY_REPORT_ARCHIVE_MISMATCH') return 'Arsiv eslesmiyor'
+  if (value === 'DAILY_REPORT_HEALTH_QUERY_FAILED') return 'Health sorgusu hatali'
+  return value
+}
+
+function dailyReportStatusClass(health: AdminDailyReportJobHealth | undefined): string {
+  if (!health) return 'border-slate-200 bg-slate-50 text-slate-700'
+  if ((health.alarms ?? []).length > 0) return 'border-rose-200 bg-rose-50 text-rose-800'
+  if (!health.job_exists || !health.archive_exists) return 'border-amber-200 bg-amber-50 text-amber-800'
+  if (health.status === 'SENT' && health.delivery_succeeded) return 'border-emerald-200 bg-emerald-50 text-emerald-800'
+  if (health.status === 'FAILED') return 'border-rose-200 bg-rose-50 text-rose-800'
+  return 'border-sky-200 bg-sky-50 text-sky-800'
 }
 
 function downloadBlob(blob: Blob, name: string): void {
@@ -138,6 +160,12 @@ export function NotificationsPage() {
   const employeesQuery = useQuery({ queryKey: ['employees', 'notify'], queryFn: () => getEmployees({ status: 'active' }) })
   const adminsQuery = useQuery({ queryKey: ['admin-users', 'notify'], queryFn: getAdminUsers })
   const pushConfigQuery = useQuery({ queryKey: ['admin-push-config'], queryFn: getAdminPushConfig })
+  const dailyReportHealthQuery = useQuery({
+    queryKey: ['admin-daily-report-health'],
+    queryFn: getAdminDailyReportHealth,
+    refetchInterval: 30000,
+    retry: false,
+  })
   const adminSelfCheckQuery = useQuery({
     queryKey: ['admin-push-self-check'],
     queryFn: getAdminPushSelfCheck,
@@ -268,6 +296,15 @@ export function NotificationsPage() {
   const currentAdminClaimCountByUsername =
     effectiveSelfCheckData?.active_claims_for_actor_by_username ?? fallbackCurrentAdminClaimBreakdown.byUsername
   const currentAdminHasActiveClaim = currentAdminClaimCount > 0
+  const dailyReportHealth = dailyReportHealthQuery.data
+  const dailyReportAlarmCount = dailyReportHealth?.alarms?.length ?? 0
+  const dailyReportStatusText = dailyReportHealth?.status ?? (dailyReportHealth?.job_exists ? 'BILINMIYOR' : 'YOK')
+  const dailyReportIsHealthy =
+    dailyReportAlarmCount === 0
+    && !!dailyReportHealth?.job_exists
+    && !!dailyReportHealth?.archive_exists
+    && dailyReportHealth?.status === 'SENT'
+    && !!dailyReportHealth?.delivery_succeeded
 
   const inviteMutation = useMutation({
     mutationFn: createAdminDeviceInvite,
@@ -427,10 +464,20 @@ export function NotificationsPage() {
         }
       }
       void queryClient.invalidateQueries({ queryKey: ['notification-jobs'] })
+      void queryClient.invalidateQueries({ queryKey: ['admin-daily-report-health'] })
     },
     onError: (error) => {
       const parsed = parseApiError(error, 'Arsiv bildirimi gonderilemedi.')
-      pushToast({ variant: 'error', title: 'Arsiv bildirimi basarisiz', description: parsed.message })
+      if (parsed.code === 'ADMIN_PUSH_SUBSCRIPTION_REQUIRED') {
+        pushToast({
+          variant: 'error',
+          title: 'Admin hedefi 0',
+          description: 'Aktif admin push aboneligi yok. Once admin cihazini claim edip tekrar deneyin.',
+        })
+      } else {
+        pushToast({ variant: 'error', title: 'Arsiv bildirimi basarisiz', description: parsed.message })
+      }
+      void queryClient.invalidateQueries({ queryKey: ['admin-daily-report-health'] })
     },
   })
 
@@ -980,6 +1027,67 @@ export function NotificationsPage() {
 
       <Panel>
         <h4 className="text-base font-semibold text-slate-900">Gunluk Excel Arsivi</h4>
+        <div className="mt-2 grid gap-2 md:grid-cols-4">
+          <div className={`rounded border p-3 text-sm ${dailyReportStatusClass(dailyReportHealth)}`}>
+            Gece job durumu: <strong>{dailyReportStatusText}</strong>
+            <div className="mt-1 text-xs">
+              Alarm: <strong>{dailyReportAlarmCount}</strong>
+            </div>
+          </div>
+          <div className="rounded border border-slate-200 p-3 text-sm">
+            Rapor tarihi: <strong>{dailyReportHealth?.report_date ?? '-'}</strong>
+            <div className="mt-1 text-xs text-slate-600">
+              Son kontrol: {dailyReportHealth?.evaluated_at_utc ? dt(dailyReportHealth.evaluated_at_utc) : '-'}
+            </div>
+          </div>
+          <div className="rounded border border-slate-200 p-3 text-sm">
+            Teslimat: <strong>{dailyReportHealth?.push_sent ?? 0}</strong> / {dailyReportHealth?.push_total_targets ?? 0}
+            <div className="mt-1 text-xs text-slate-600">
+              Push hata: {dailyReportHealth?.push_failed ?? 0} | Email: {dailyReportHealth?.email_sent ?? 0}
+            </div>
+          </div>
+          <div className="rounded border border-slate-200 p-3 text-sm">
+            Arsiv: <strong>{dailyReportHealth?.archive_exists ? `#${dailyReportHealth.archive_id}` : 'YOK'}</strong>
+            <div className="mt-1 text-xs text-slate-600">
+              Calisan: {dailyReportHealth?.archive_employee_count ?? 0} | Boyut: {((dailyReportHealth?.archive_file_size_bytes ?? 0) / 1024).toFixed(1)} KB
+            </div>
+          </div>
+        </div>
+        {dailyReportHealthQuery.isError ? (
+          <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            Gece 00:00 job health verisi alinamadi.
+          </p>
+        ) : null}
+        {!dailyReportHealthQuery.isError && dailyReportHealth ? (
+          <div className="mt-2 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+            {dailyReportAlarmCount > 0 ? (
+              <div className="flex flex-wrap gap-1">
+                {dailyReportHealth.alarms.map((alarm) => (
+                  <span key={alarm} className="rounded border border-rose-300 bg-rose-100 px-2 py-0.5 text-rose-800">
+                    {dailyReportAlarmLabel(alarm)}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <span className="text-emerald-700">Alarm yok. Gece arsiv job durumu saglikli.</span>
+            )}
+          </div>
+        ) : null}
+        {dailyReportHealth?.target_zero ? (
+          <p className="mt-2 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+            Gece job hedefi 0 gorunuyor. Aktif admin push claim/abonelik zorunlu.
+          </p>
+        ) : null}
+        {dailyReportHealth?.last_error ? (
+          <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            Son job hatasi: {dailyReportHealth.last_error}
+          </p>
+        ) : null}
+        {dailyReportHealth && dailyReportIsHealthy ? (
+          <p className="mt-2 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+            Gece 00:00 job olustu, teslimat yapildi ve alarm bulunmuyor.
+          </p>
+        ) : null}
         <div className="mt-3 grid gap-2 md:grid-cols-4">
           <label className="text-xs text-slate-600">
             Baslangic

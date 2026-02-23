@@ -365,6 +365,33 @@ export interface AdminPushSelfTestResponse {
   admin_usernames: string[]
 }
 
+export interface AdminDailyReportJobHealth {
+  report_date: string
+  evaluated_at_utc: string | null
+  evaluated_local_time: string | null
+  idempotency_key: string
+  job_exists: boolean
+  job_id: number | null
+  archive_exists: boolean
+  archive_id: number | null
+  archive_created_at_utc: string | null
+  archive_employee_count: number
+  archive_file_size_bytes: number
+  status: string | null
+  scheduled_at_utc: string | null
+  job_created_at_utc: string | null
+  job_updated_at_utc: string | null
+  attempts: number
+  last_error: string | null
+  push_total_targets: number
+  push_sent: number
+  push_failed: number
+  email_sent: number
+  delivery_succeeded: boolean
+  target_zero: boolean
+  alarms: string[]
+}
+
 export interface AdminDailyReportArchive {
   id: number
   report_date: string

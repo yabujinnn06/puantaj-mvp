@@ -1,6 +1,7 @@
 import { apiClient, publicApiClient } from './client'
 import type {
   AdminDailyReportArchive,
+  AdminDailyReportJobHealth,
   AdminDailyReportArchivePasswordDownloadPayload,
   AdminDailyReportArchiveNotifyResponse,
   AdminDeviceClaimResponse,
@@ -856,6 +857,13 @@ export async function getAdminPushConfig(): Promise<{ enabled: boolean; vapid_pu
 export async function getAdminPushPublicConfig(): Promise<{ enabled: boolean; vapid_public_key: string | null }> {
   const response = await publicApiClient.get<{ enabled: boolean; vapid_public_key: string | null }>(
     '/api/admin/notifications/push/config/public',
+  )
+  return response.data
+}
+
+export async function getAdminDailyReportHealth(): Promise<AdminDailyReportJobHealth> {
+  const response = await apiClient.get<AdminDailyReportJobHealth>(
+    '/api/admin/notifications/daily-report-health',
   )
   return response.data
 }

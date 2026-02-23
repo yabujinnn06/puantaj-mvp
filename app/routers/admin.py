@@ -55,6 +55,7 @@ from app.schemas import (
     AdminDeviceClaimResponse,
     AdminPushSelfCheckResponse,
     AdminPushSelfTestResponse,
+    AdminDailyReportJobHealthResponse,
     AdminAuthResponse,
     AdminLoginRequest,
     AdminLogoutRequest,
@@ -198,7 +199,7 @@ from app.services.admin_mfa import (
 )
 from app.services.recovery_codes import get_admin_recovery_snapshot
 from app.services.schedule_plans import plan_applies_to_employee
-from app.services.notifications import decrypt_archive_file_data
+from app.services.notifications import decrypt_archive_file_data, get_daily_report_job_health
 
 router = APIRouter(tags=["admin"])
 logger = logging.getLogger("app.admin")
@@ -4361,6 +4362,16 @@ def list_admin_notification_subscriptions(
         request_id=getattr(request.state, "request_id", None),
     )
     return [_to_admin_device_push_subscription_read(row) for row in rows]
+
+
+@router.get(
+    "/api/admin/notifications/daily-report-health",
+    response_model=AdminDailyReportJobHealthResponse,
+)
+def admin_daily_report_health(
+    _claims: dict[str, Any] = Depends(require_admin),
+) -> AdminDailyReportJobHealthResponse:
+    return AdminDailyReportJobHealthResponse.model_validate(get_daily_report_job_health())
 
 
 @router.get(
