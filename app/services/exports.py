@@ -306,13 +306,14 @@ def _style_table_region(
         ws.freeze_panes = f"A{header_row + 1}"
         return
 
+    table_max_col = _resolve_table_max_col(ws, header_row=header_row)
     header_map: dict[str, int] = {}
-    for col_idx in range(1, ws.max_column + 1):
+    for col_idx in range(1, table_max_col + 1):
         header_value = ws.cell(row=header_row, column=col_idx).value
-        if isinstance(header_value, str):
+        if isinstance(header_value, str) and header_value.strip():
             header_map[header_value] = col_idx
 
-    ws.auto_filter.ref = f"A{header_row}:{get_column_letter(ws.max_column)}{data_end_row}"
+    ws.auto_filter.ref = f"A{header_row}:{get_column_letter(table_max_col)}{data_end_row}"
     ws.freeze_panes = f"A{header_row + 1}"
 
     status_col = header_map.get(status_col_name)
@@ -343,7 +344,7 @@ def _style_table_region(
         if row_fill.fill_type is None and row_idx % 2 == 0:
             row_fill = ZEBRA_FILL
 
-        for col_idx in range(1, ws.max_column + 1):
+        for col_idx in range(1, table_max_col + 1):
             cell = ws.cell(row=row_idx, column=col_idx)
             cell.border = THIN_BORDER
             if row_fill.fill_type:
@@ -379,6 +380,7 @@ def _style_table_region(
         ws,
         header_row=header_row,
         data_end_row=data_end_row,
+        max_col=table_max_col,
     )
 
 
@@ -434,8 +436,8 @@ def _set_internal_sheet_link(cell: object, sheet_title: str) -> None:
     setattr(cell, "style", "Hyperlink")
 
 
-def _table_range_ref(ws: Worksheet, *, header_row: int, data_end_row: int) -> str:
-    return f"A{header_row}:{get_column_letter(ws.max_column)}{data_end_row}"
+def _table_range_ref(ws: Worksheet, *, header_row: int, data_end_row: int, max_col: int) -> str:
+    return f"A{header_row}:{get_column_letter(max_col)}{data_end_row}"
 
 
 def _existing_table_names(ws: Worksheet) -> set[str]:
@@ -463,15 +465,45 @@ def _build_unique_table_name(ws: Worksheet, *, seed: str) -> str:
     return candidate
 
 
+def _resolve_table_max_col(ws: Worksheet, *, header_row: int) -> int:
+    last_non_empty_col = 0
+    for col_idx in range(1, ws.max_column + 1):
+        header_value = ws.cell(row=header_row, column=col_idx).value
+        if isinstance(header_value, str) and header_value.strip():
+            last_non_empty_col = col_idx
+    return max(1, last_non_empty_col)
+
+
+def _can_add_table(ws: Worksheet, *, header_row: int, max_col: int) -> bool:
+    if max_col < 1:
+        return False
+    seen: set[str] = set()
+    for col_idx in range(1, max_col + 1):
+        header_value = ws.cell(row=header_row, column=col_idx).value
+        if not isinstance(header_value, str):
+            return False
+        normalized = header_value.strip()
+        if not normalized:
+            return False
+        key = normalized.casefold()
+        if key in seen:
+            return False
+        seen.add(key)
+    return True
+
+
 def _add_interactive_table(
     ws: Worksheet,
     *,
     header_row: int,
     data_end_row: int,
+    max_col: int,
 ) -> None:
     if data_end_row <= header_row:
         return
-    ref = _table_range_ref(ws, header_row=header_row, data_end_row=data_end_row)
+    if not _can_add_table(ws, header_row=header_row, max_col=max_col):
+        return
+    ref = _table_range_ref(ws, header_row=header_row, data_end_row=data_end_row, max_col=max_col)
     table_name = _build_unique_table_name(ws, seed=f"{ws.title}_{header_row}")
     try:
         table = Table(displayName=table_name, ref=ref)
