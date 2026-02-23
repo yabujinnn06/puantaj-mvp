@@ -263,10 +263,9 @@ def _merge_title(ws: Worksheet, row: int, text: str, *, end_col: int | None = No
 
 def _finalize_visual_scope(ws: Worksheet, *, used_max_col: int) -> None:
     ws.sheet_view.showGridLines = False
-    max_excel_col = 16384  # XFD
-    if used_max_col < max_excel_col:
-        start_letter = get_column_letter(used_max_col + 1)
-        ws.column_dimensions.group(start_letter, "XFD", hidden=True)
+    safe_col = max(1, used_max_col)
+    safe_row = max(1, ws.max_row)
+    ws.print_area = f"A1:{get_column_letter(safe_col)}{safe_row}"
 
 
 def _style_metadata_rows(ws: Worksheet, *, start_row: int, end_row: int) -> None:
