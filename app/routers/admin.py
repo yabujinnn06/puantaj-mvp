@@ -1320,6 +1320,32 @@ def update_admin_user_claim_active_status(
         raise HTTPException(status_code=404, detail="Claim does not belong to selected admin user")
 
     previous_state = bool(claim_row.is_active)
+    if payload.is_active:
+        test_result = send_test_push_to_admin_subscription(
+            db,
+            subscription=claim_row,
+            title="Admin Claim Aktivasyon Testi",
+            body="Bu claim aktif edilmeden once test edildi.",
+            data={
+                "type": "ADMIN_CLAIM_ACTIVATION_TEST",
+                "silent": True,
+                "url": "/admin-panel/admin-users",
+            },
+        )
+        if not bool(test_result.get("ok")):
+            status_code_value = test_result.get("status_code")
+            if status_code_value in {404, 410}:
+                raise ApiError(
+                    status_code=409,
+                    code="ADMIN_CLAIM_RECLAIM_REQUIRED",
+                    message="Bu claim aboneligi suresi dolmus/iptal edilmis. Cihazdan yeniden claim yapin.",
+                )
+            raise ApiError(
+                status_code=409,
+                code="ADMIN_CLAIM_TEST_FAILED",
+                message=f"Claim test bildirimi basarisiz: {test_result.get('error') or 'unknown_error'}",
+            )
+
     if previous_state != payload.is_active:
         claim_row.is_active = payload.is_active
         db.commit()
