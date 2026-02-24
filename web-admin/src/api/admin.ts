@@ -19,6 +19,7 @@ import type {
   AdminMeResponse,
   AdminPermissions,
   AdminPushSubscription,
+  AdminPushClaimDetail,
   AdminUserClaimDetail,
   AdminUser,
   AdminUserMfaRecoveryRegenerateResponse,
@@ -102,6 +103,10 @@ export interface AdminUserMfaConfirmPayload {
 
 export interface AdminUserMfaCriticalActionPayload {
   current_password: string
+}
+
+export interface AdminUserClaimActiveUpdatePayload {
+  is_active: boolean
 }
 
 export interface CreateDepartmentPayload {
@@ -511,6 +516,18 @@ export async function getAdminUsers(): Promise<AdminUser[]> {
 export async function getAdminUserClaimDetail(adminUserId: number): Promise<AdminUserClaimDetail> {
   const response = await apiClient.get<AdminUserClaimDetail>(
     `/api/admin/admin-users/${adminUserId}/claim-detail`,
+  )
+  return response.data
+}
+
+export async function updateAdminUserClaimActive(
+  adminUserId: number,
+  claimId: number,
+  payload: AdminUserClaimActiveUpdatePayload,
+): Promise<AdminPushClaimDetail> {
+  const response = await apiClient.patch<AdminPushClaimDetail>(
+    `/api/admin/admin-users/${adminUserId}/claims/${claimId}/active`,
+    payload,
   )
   return response.data
 }

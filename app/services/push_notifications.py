@@ -474,8 +474,8 @@ def send_test_push_to_admin_subscription(
         subscription.last_error = None
     else:
         subscription.last_error = error_text
-        if status_code in {404, 410} and subscription.is_active:
-            subscription.is_active = False
+        # Admin claims are only deactivated by explicit admin action.
+        # We keep the row active and surface delivery errors for manual recovery.
     db.commit()
     return {
         "ok": ok,
@@ -559,9 +559,6 @@ def send_push_to_admin_subscriptions(
 
         failed += 1
         row.last_error = error_text
-        if status_code in {404, 410} and row.is_active:
-            row.is_active = False
-            deactivated += 1
         failures.append(
             {
                 "subscription_id": row.id,

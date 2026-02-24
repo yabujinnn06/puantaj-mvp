@@ -430,6 +430,10 @@ class AdminPushClaimDetailRead(BaseModel):
     last_seen_at: datetime
 
 
+class AdminPushClaimActiveUpdateRequest(BaseModel):
+    is_active: bool
+
+
 class AdminDeviceInviteDetailRead(BaseModel):
     id: int
     status: Literal["PENDING", "USED", "EXPIRED"]

@@ -77,6 +77,7 @@ from app.schemas import (
     AdminUserMfaStatusResponse,
     AdminUserClaimDetailResponse,
     AdminPushClaimDetailRead,
+    AdminPushClaimActiveUpdateRequest,
     AdminDeviceInviteDetailRead,
     AdminUserRead,
     AdminUserUpdateRequest,
@@ -1286,6 +1287,66 @@ def get_admin_user_claim_detail(
             for item in used_invites
         ],
     )
+
+
+@router.patch(
+    "/api/admin/admin-users/{admin_user_id}/claims/{claim_id}/active",
+    response_model=AdminPushClaimDetailRead,
+    dependencies=[Depends(require_admin_permission("admin_users", write=True))],
+)
+def update_admin_user_claim_active_status(
+    admin_user_id: int,
+    claim_id: int,
+    payload: AdminPushClaimActiveUpdateRequest,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> AdminPushClaimDetailRead:
+    _assert_super_admin(claims)
+
+    admin_user = db.get(AdminUser, admin_user_id)
+    if admin_user is None:
+        raise HTTPException(status_code=404, detail="Admin user not found")
+
+    claim_row = db.get(AdminPushSubscription, claim_id)
+    if claim_row is None:
+        raise HTTPException(status_code=404, detail="Admin push claim not found")
+
+    username_matches = (
+        (claim_row.admin_username or "").strip().casefold()
+        == (admin_user.username or "").strip().casefold()
+    )
+    if claim_row.admin_user_id != admin_user.id and not username_matches:
+        raise HTTPException(status_code=404, detail="Claim does not belong to selected admin user")
+
+    previous_state = bool(claim_row.is_active)
+    if previous_state != payload.is_active:
+        claim_row.is_active = payload.is_active
+        db.commit()
+        db.refresh(claim_row)
+
+    actor_id = str(claims.get("username") or claims.get("sub") or "admin")
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=actor_id,
+        action="ADMIN_PUSH_CLAIM_STATUS_UPDATED",
+        success=True,
+        entity_type="admin_push_subscription",
+        entity_id=str(claim_row.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "admin_user_id": admin_user.id,
+            "admin_username": admin_user.username,
+            "claim_id": claim_row.id,
+            "endpoint_fingerprint": _endpoint_fingerprint(claim_row.endpoint),
+            "previous_is_active": previous_state,
+            "next_is_active": bool(payload.is_active),
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return _to_admin_push_claim_detail_read(claim_row)
 
 
 @router.post(

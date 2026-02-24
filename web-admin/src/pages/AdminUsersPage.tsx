@@ -11,6 +11,7 @@ import {
   getAdminUsers,
   regenerateAdminUserMfaRecoveryCodes,
   resetAdminUserMfa,
+  updateAdminUserClaimActive,
   startAdminUserMfaSetup,
   updateAdminUser,
 } from '../api/admin'
@@ -243,6 +244,37 @@ export function AdminUsersPage() {
     queryKey: ['admin-user-claim-detail', detailUser?.id],
     queryFn: () => getAdminUserClaimDetail(detailUser!.id),
     enabled: Boolean(detailUser),
+  })
+
+  const claimActiveMutation = useMutation({
+    mutationFn: ({
+      adminUserId,
+      claimId,
+      nextActive,
+    }: {
+      adminUserId: number
+      claimId: number
+      nextActive: boolean
+    }) => updateAdminUserClaimActive(adminUserId, claimId, { is_active: nextActive }),
+    onSuccess: (_row, variables) => {
+      pushToast({
+        variant: 'success',
+        title: variables.nextActive ? 'Claim aktif edildi' : 'Claim pasife alindi',
+        description: variables.nextActive
+          ? 'Admin cihazi yeniden aktif edildi.'
+          : 'Admin cihazi manuel olarak pasife alindi.',
+      })
+      void queryClient.invalidateQueries({ queryKey: ['admin-user-claim-detail', variables.adminUserId] })
+      void queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+    },
+    onError: (error) => {
+      const parsed = parseApiError(error, 'Claim durumu guncellenemedi.')
+      pushToast({
+        variant: 'error',
+        title: 'Claim guncelleme hatasi',
+        description: parsed.message,
+      })
+    },
   })
 
   const createMutation = useMutation({
@@ -802,6 +834,7 @@ export function AdminUsersPage() {
                           <th className="px-2 py-2">Hata</th>
                           <th className="px-2 py-2">Tarayici</th>
                           <th className="px-2 py-2">Endpoint</th>
+                          <th className="px-2 py-2">Islem</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -827,6 +860,41 @@ export function AdminUsersPage() {
                             </td>
                             <td className="px-2 py-2 font-mono text-[11px]" title={claim.endpoint}>
                               {maskEndpoint(claim.endpoint)}
+                            </td>
+                            <td className="px-2 py-2">
+                              <button
+                                type="button"
+                                disabled={!canWrite || !isSuperAdmin || claimActiveMutation.isPending || !detailUser}
+                                onClick={() => {
+                                  if (!detailUser) {
+                                    return
+                                  }
+                                  if (!claim.is_active) {
+                                    claimActiveMutation.mutate({
+                                      adminUserId: detailUser.id,
+                                      claimId: claim.id,
+                                      nextActive: true,
+                                    })
+                                    return
+                                  }
+                                  const confirmed = window.confirm('Bu admin claim pasife alinsin mi?')
+                                  if (!confirmed) {
+                                    return
+                                  }
+                                  claimActiveMutation.mutate({
+                                    adminUserId: detailUser.id,
+                                    claimId: claim.id,
+                                    nextActive: false,
+                                  })
+                                }}
+                                className={`rounded-lg border px-2 py-1 text-[11px] font-semibold disabled:opacity-50 ${
+                                  claim.is_active
+                                    ? 'border-rose-300 text-rose-700 hover:bg-rose-50'
+                                    : 'border-emerald-300 text-emerald-700 hover:bg-emerald-50'
+                                }`}
+                              >
+                                {claim.is_active ? 'Pasife Al' : 'Aktif Et'}
+                              </button>
                             </td>
                           </tr>
                         ))}
