@@ -664,6 +664,7 @@ export function AdminUsersPage() {
                 <th className="py-2">Ad Soyad</th>
                 <th className="py-2">Durum</th>
                 <th className="py-2">Rol</th>
+                <th className="py-2">Bagli Cihaz</th>
                 <th className="py-2">MFA</th>
                 <th className="py-2">Islem</th>
               </tr>
@@ -686,6 +687,12 @@ export function AdminUsersPage() {
                     </span>
                   </td>
                   <td className="py-2">{user.is_super_admin ? 'Super Admin' : 'Yetkili Admin'}</td>
+                  <td className="py-2">
+                    <div className="text-xs text-slate-700">
+                      <span className="font-semibold text-emerald-700">{user.claim_active_total ?? 0}</span> aktif /{' '}
+                      <span className="font-semibold">{user.claim_total ?? 0}</span> toplam
+                    </div>
+                  </td>
                   <td className="py-2">
                     <span
                       className={`rounded-full px-2 py-1 text-xs font-semibold ${
@@ -767,7 +774,7 @@ export function AdminUsersPage() {
             ) : null}
             {detailQuery.data ? (
               <>
-                <div className="grid gap-2 md:grid-cols-3">
+                <div className="grid gap-2 md:grid-cols-4">
                   <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
                     Toplam claim: <strong>{detailQuery.data.claim_total}</strong>
                   </div>
@@ -776,6 +783,9 @@ export function AdminUsersPage() {
                   </div>
                   <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
                     Pasif claim: <strong>{detailQuery.data.claim_inactive_total}</strong>
+                  </div>
+                  <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+                    Benzersiz cihaz: <strong>{new Set(detailQuery.data.claims.map((item) => item.endpoint_fingerprint)).size}</strong>
                   </div>
                 </div>
 

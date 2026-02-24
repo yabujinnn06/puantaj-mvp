@@ -424,7 +424,14 @@ def _to_employee_read(employee: Employee) -> EmployeeRead:
     )
 
 
-def _to_admin_user_read(admin_user: AdminUser) -> AdminUserRead:
+def _to_admin_user_read(
+    admin_user: AdminUser,
+    *,
+    claim_total: int = 0,
+    claim_active_total: int = 0,
+) -> AdminUserRead:
+    claim_total_value = max(0, int(claim_total))
+    claim_active_value = max(0, int(claim_active_total))
     return AdminUserRead(
         id=admin_user.id,
         username=admin_user.username,
@@ -433,6 +440,9 @@ def _to_admin_user_read(admin_user: AdminUser) -> AdminUserRead:
         is_super_admin=admin_user.is_super_admin,
         mfa_enabled=bool(admin_user.mfa_enabled),
         mfa_secret_configured=bool((admin_user.mfa_secret_enc or "").strip()),
+        claim_total=claim_total_value,
+        claim_active_total=claim_active_value,
+        claim_inactive_total=max(0, claim_total_value - claim_active_value),
         permissions=normalize_permissions(admin_user.permissions),
         created_at=admin_user.created_at,
         updated_at=admin_user.updated_at,
@@ -1134,7 +1144,42 @@ def admin_me(
 )
 def list_admin_users(db: Session = Depends(get_db)) -> list[AdminUserRead]:
     rows = list(db.scalars(select(AdminUser).order_by(AdminUser.id)).all())
-    return [_to_admin_user_read(item) for item in rows]
+    if not rows:
+        return []
+
+    username_to_id = {item.username.casefold(): item.id for item in rows}
+    count_by_user_id: dict[int, dict[str, int]] = {
+        item.id: {"total": 0, "active": 0} for item in rows
+    }
+
+    subscription_rows = list(db.scalars(select(AdminPushSubscription)).all())
+    for subscription in subscription_rows:
+        sub_admin_user_id = subscription.admin_user_id
+        sub_admin_username = subscription.admin_username
+        sub_is_active = subscription.is_active
+        matched_user_ids: set[int] = set()
+        if isinstance(sub_admin_user_id, int) and sub_admin_user_id in count_by_user_id:
+            matched_user_ids.add(sub_admin_user_id)
+
+        username_key = (sub_admin_username or "").strip().casefold()
+        mapped_user_id = username_to_id.get(username_key)
+        if mapped_user_id is not None:
+            matched_user_ids.add(mapped_user_id)
+
+        for matched_user_id in matched_user_ids:
+            counters = count_by_user_id[matched_user_id]
+            counters["total"] += 1
+            if bool(sub_is_active):
+                counters["active"] += 1
+
+    return [
+        _to_admin_user_read(
+            item,
+            claim_total=count_by_user_id[item.id]["total"],
+            claim_active_total=count_by_user_id[item.id]["active"],
+        )
+        for item in rows
+    ]
 
 
 @router.get(
@@ -1223,7 +1268,11 @@ def get_admin_user_claim_detail(
     )
 
     return AdminUserClaimDetailResponse(
-        admin_user=_to_admin_user_read(admin_user),
+        admin_user=_to_admin_user_read(
+            admin_user,
+            claim_total=len(claim_rows),
+            claim_active_total=active_claim_total,
+        ),
         claim_total=len(claim_rows),
         claim_active_total=active_claim_total,
         claim_inactive_total=inactive_claim_total,

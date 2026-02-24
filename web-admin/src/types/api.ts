@@ -668,6 +668,9 @@ export interface AdminUser {
   is_super_admin: boolean
   mfa_enabled: boolean
   mfa_secret_configured: boolean
+  claim_total: number
+  claim_active_total: number
+  claim_inactive_total: number
   permissions: AdminPermissions
   created_at: string
   updated_at: string

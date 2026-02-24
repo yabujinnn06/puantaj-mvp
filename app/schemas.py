@@ -406,6 +406,9 @@ class AdminUserRead(BaseModel):
     is_super_admin: bool
     mfa_enabled: bool = False
     mfa_secret_configured: bool = False
+    claim_total: int = 0
+    claim_active_total: int = 0
+    claim_inactive_total: int = 0
     permissions: dict[str, AdminPermissionValue] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
