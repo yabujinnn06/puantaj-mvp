@@ -512,12 +512,15 @@ async def start_notification_worker() -> None:
     app.state.notification_worker_task = task
     notification_channel_health = await asyncio.to_thread(get_notification_channel_health)
     email_status = notification_channel_health.get("email", {}) if isinstance(notification_channel_health, dict) else {}
+    email_enabled = bool(email_status.get("enabled")) if isinstance(email_status, dict) else False
     missing_fields = email_status.get("missing_fields", []) if isinstance(email_status, dict) else []
-    if isinstance(missing_fields, list) and missing_fields:
+    if email_enabled and isinstance(missing_fields, list) and missing_fields:
         notification_worker_logger.warning(
             "notification_email_channel_not_configured",
             extra={"missing_fields": missing_fields},
         )
+    if not email_enabled:
+        notification_worker_logger.info("notification_email_channel_disabled")
     notification_worker_logger.info(
         "notification_worker_started",
         extra={

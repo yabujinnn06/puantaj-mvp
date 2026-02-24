@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     push_vapid_subject: str = "mailto:admin@example.com"
     notification_worker_enabled: bool = True
     notification_worker_interval_seconds: int = 60
+    notification_email_enabled: bool = False
     admin_push_healthcheck_enabled: bool = True
     admin_push_healthcheck_interval_seconds: int = 1800
     admin_push_healthcheck_stale_minutes: int = 720

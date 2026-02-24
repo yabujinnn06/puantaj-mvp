@@ -244,7 +244,7 @@ def send_admin_notification_test_email(
         "sent": sent_count,
         "mode": str(result.get("mode") or "unknown"),
         "recipients": resolved_recipients,
-        "configured": bool(email_channel.configured),
+        "configured": bool(email_channel.enabled and email_channel.configured),
         "error": None if sent_count > 0 else str(result.get("error") or result.get("mode") or "EMAIL_NOT_SENT"),
         "channel": email_channel.config_status(),
     }
@@ -252,6 +252,8 @@ def send_admin_notification_test_email(
 
 class EmailChannel(NotificationChannel):
     def __init__(self) -> None:
+        settings = get_settings()
+        self.enabled = bool(settings.notification_email_enabled)
         self.smtp_host = (os.getenv("SMTP_HOST") or "").strip()
         self.smtp_port = int((os.getenv("SMTP_PORT") or "587").strip() or "587")
         self.smtp_user = (os.getenv("SMTP_USER") or "").strip()
@@ -262,6 +264,19 @@ class EmailChannel(NotificationChannel):
 
     def send(self, message: NotificationMessage) -> dict[str, Any]:
         recipients = [item.strip() for item in message.recipients if item and item.strip()]
+        if not self.enabled:
+            logger.info(
+                "email_channel_disabled",
+                extra={
+                    "subject": message.subject,
+                    "recipient_count": len(recipients),
+                },
+            )
+            return {
+                "mode": "disabled",
+                "sent": 0,
+                "recipients": recipients,
+            }
         if not recipients:
             logger.info(
                 "email_channel_skip_no_recipients",
@@ -315,6 +330,7 @@ class EmailChannel(NotificationChannel):
         if not self.smtp_from:
             missing_fields.append("SMTP_FROM")
         return {
+            "enabled": bool(self.enabled),
             "configured": self.configured,
             "smtp_host_set": bool(self.smtp_host),
             "smtp_from_set": bool(self.smtp_from),
@@ -1585,6 +1601,7 @@ def get_notification_channel_health() -> dict[str, Any]:
         recipient_count = len(get_admin_notification_email_recipients(session))
     return {
         "push_enabled": push_enabled,
+        "email_enabled": bool(settings.notification_email_enabled),
         "email": email_channel.config_status(),
         "admin_email_target_count": recipient_count,
     }
@@ -1890,6 +1907,7 @@ def send_pending_notifications(
 
     session = db
     reference_utc = _normalize_ts(now_utc or datetime.now(timezone.utc))
+    email_enabled = bool(get_settings().notification_email_enabled)
     email_channel = channel or EmailChannel()
 
     claimed_jobs = _claim_due_pending_jobs(
@@ -1914,7 +1932,7 @@ def send_pending_notifications(
                 "deactivated": 0,
             }
             email_result: dict[str, Any] = {
-                "mode": "not_attempted",
+                "mode": "disabled" if not email_enabled else "not_attempted",
                 "sent": 0,
                 "recipients": [],
             }
@@ -1924,14 +1942,15 @@ def send_pending_notifications(
                 current_job.job_type == JOB_TYPE_ADMIN_AUTO_MIDNIGHT_CHECKOUT
             )
             if is_daily_report_job:
-                # Daily archive report mail is mandatory regardless of push status.
-                email_result = _safe_send_email(email_channel, message)
-                email_sent = _as_int(email_result.get("sent"), 0)
-                if email_sent <= 0:
-                    raise RuntimeError(
-                        "Nightly daily-report mail delivery is mandatory "
-                        f"(email_mode={email_result.get('mode')})"
-                    )
+                # Daily archive report mail is mandatory only when email channel is enabled.
+                if email_enabled:
+                    email_result = _safe_send_email(email_channel, message)
+                    email_sent = _as_int(email_result.get("sent"), 0)
+                    if email_sent <= 0:
+                        raise RuntimeError(
+                            "Nightly daily-report mail delivery is mandatory "
+                            f"(email_mode={email_result.get('mode')})"
+                        )
                 try:
                     push_summary = _send_push_for_job(session, job=current_job, message=message)
                 except Exception as push_exc:
@@ -1944,9 +1963,9 @@ def send_pending_notifications(
                     }
             else:
                 push_summary = _send_push_for_job(session, job=current_job, message=message)
-                if is_admin_auto_midnight_job:
+                if email_enabled and is_admin_auto_midnight_job:
                     email_result = _safe_send_email(email_channel, message)
-                else:
+                elif email_enabled:
                     push_sent = int(push_summary.get("sent", 0))
                     if push_sent <= 0:
                         email_result = _safe_send_email(email_channel, message)
@@ -1956,7 +1975,7 @@ def send_pending_notifications(
             push_failed = int(push_summary.get("failed", 0))
             push_deactivated = int(push_summary.get("deactivated", 0))
             email_sent = _as_int(email_result.get("sent"), 0)
-            delivery_ok = push_sent > 0 or email_sent > 0
+            delivery_ok = push_sent > 0 or (email_enabled and email_sent > 0)
             if not delivery_ok:
                 raise RuntimeError(
                     "Notification delivery failed on all channels "
@@ -1973,8 +1992,9 @@ def send_pending_notifications(
                     "push_deactivated": push_deactivated,
                     "email_mode": str(email_result.get("mode") or "unknown"),
                     "email_sent": email_sent,
-                    "email_required": is_daily_report_job,
-                    "email_forced": (is_daily_report_job or is_admin_auto_midnight_job),
+                    "email_enabled": email_enabled,
+                    "email_required": (is_daily_report_job and email_enabled),
+                    "email_forced": ((is_daily_report_job or is_admin_auto_midnight_job) and email_enabled),
                     "push_error": push_summary.get("error"),
                 },
             )

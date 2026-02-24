@@ -214,18 +214,25 @@ def dispatch_daily_report_alarm(
             **_post_json(url=telegram_url, payload=telegram_payload),
         }
 
-    email_targets = [
-        value.strip()
-        for value in (settings.notification_alarm_email_to or "").split(",")
-        if value.strip()
-    ]
+    email_targets = (
+        [
+            value.strip()
+            for value in (settings.notification_alarm_email_to or "").split(",")
+            if value.strip()
+        ]
+        if settings.notification_email_enabled
+        else []
+    )
     email_result = {
+        "enabled": bool(settings.notification_email_enabled),
         "configured": bool(email_targets),
         "ok": False,
         "sent": 0,
         "error": None,
     }
-    if email_targets:
+    if not settings.notification_email_enabled:
+        email_result["error"] = "EMAIL_DISABLED"
+    elif email_targets:
         try:
             email_result = _send_alarm_email(
                 recipients=email_targets,
