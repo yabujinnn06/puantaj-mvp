@@ -123,6 +123,8 @@ class EmployeeDetailResponse(BaseModel):
     ip_summary: list[EmployeeIpSummaryRead] = Field(default_factory=list)
     devices: list[EmployeeDeviceDetailRead] = Field(default_factory=list)
     latest_location: EmployeeLiveLocationRead | None = None
+    first_location: EmployeeLiveLocationRead | None = None
+    recent_locations: list[EmployeeLiveLocationRead] = Field(default_factory=list)
     home_location: "EmployeeLocationRead | None" = None
     recent_activity: list[EmployeePortalActivityRead] = Field(default_factory=list)
 

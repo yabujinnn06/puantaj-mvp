@@ -2024,33 +2024,57 @@ def get_employee_detail(
         for log_item in activity_logs[:20]
     ]
 
-    latest_location_event = db.scalar(
+    location_event_filters = (
+        AttendanceEvent.employee_id == employee_id,
+        AttendanceEvent.deleted_at.is_(None),
+        AttendanceEvent.lat.is_not(None),
+        AttendanceEvent.lon.is_not(None),
+    )
+
+    recent_location_events = list(
+        db.scalars(
+            select(AttendanceEvent)
+            .where(*location_event_filters)
+            .order_by(AttendanceEvent.ts_utc.desc(), AttendanceEvent.id.desc())
+            .limit(20)
+        ).all()
+    )
+    latest_location_event = recent_location_events[0] if recent_location_events else None
+    first_location_event = db.scalar(
         select(AttendanceEvent)
-        .where(
-            AttendanceEvent.employee_id == employee_id,
-            AttendanceEvent.deleted_at.is_(None),
-            AttendanceEvent.lat.is_not(None),
-            AttendanceEvent.lon.is_not(None),
-        )
-        .order_by(AttendanceEvent.ts_utc.desc(), AttendanceEvent.id.desc())
+        .where(*location_event_filters)
+        .order_by(AttendanceEvent.ts_utc.asc(), AttendanceEvent.id.asc())
         .limit(1)
     )
 
-    latest_location = (
-        EmployeeLiveLocationRead(
-            lat=latest_location_event.lat if latest_location_event.lat is not None else 0.0,
-            lon=latest_location_event.lon if latest_location_event.lon is not None else 0.0,
-            accuracy_m=latest_location_event.accuracy_m,
-            ts_utc=latest_location_event.ts_utc,
-            location_status=latest_location_event.location_status,
-            event_type=latest_location_event.type,
-            device_id=latest_location_event.device_id,
+    def _to_live_location(event: AttendanceEvent | None) -> EmployeeLiveLocationRead | None:
+        if event is None or event.lat is None or event.lon is None:
+            return None
+        return EmployeeLiveLocationRead(
+            lat=event.lat,
+            lon=event.lon,
+            accuracy_m=event.accuracy_m,
+            ts_utc=event.ts_utc,
+            location_status=event.location_status,
+            event_type=event.type,
+            device_id=event.device_id,
         )
-        if latest_location_event is not None
-        and latest_location_event.lat is not None
-        and latest_location_event.lon is not None
-        else None
-    )
+
+    latest_location = _to_live_location(latest_location_event)
+    first_location = _to_live_location(first_location_event)
+    recent_locations = [
+        EmployeeLiveLocationRead(
+            lat=event_item.lat if event_item.lat is not None else 0.0,
+            lon=event_item.lon if event_item.lon is not None else 0.0,
+            accuracy_m=event_item.accuracy_m,
+            ts_utc=event_item.ts_utc,
+            location_status=event_item.location_status,
+            event_type=event_item.type,
+            device_id=event_item.device_id,
+        )
+        for event_item in recent_location_events
+        if event_item.lat is not None and event_item.lon is not None
+    ]
 
     latest_ip_log = db.scalar(
         select(AuditLog)
@@ -2118,6 +2142,8 @@ def get_employee_detail(
         ip_summary=ip_summary_rows,
         devices=devices,
         latest_location=latest_location,
+        first_location=first_location,
+        recent_locations=recent_locations,
         home_location=home_location,
         recent_activity=recent_activity,
     )
@@ -4087,6 +4113,7 @@ def list_attendance_events(
     db: Session = Depends(get_db),
 ) -> list[AttendanceEventRead]:
     stmt = select(AttendanceEvent).order_by(AttendanceEvent.id.desc()).limit(limit)
+    attendance_tz = _attendance_timezone()
     employee_joined = False
     if not include_deleted:
         stmt = stmt.where(AttendanceEvent.deleted_at.is_(None))
@@ -4108,10 +4135,13 @@ def list_attendance_events(
             )
         )
     if start_date is not None:
-        start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
+        start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=attendance_tz).astimezone(timezone.utc)
         stmt = stmt.where(AttendanceEvent.ts_utc >= start_dt)
     if end_date is not None:
-        end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
+        end_dt = (
+            datetime.combine(end_date + timedelta(days=1), datetime.min.time(), tzinfo=attendance_tz)
+            .astimezone(timezone.utc)
+        )
         stmt = stmt.where(AttendanceEvent.ts_utc < end_dt)
     if event_type is not None:
         stmt = stmt.where(AttendanceEvent.type == event_type)

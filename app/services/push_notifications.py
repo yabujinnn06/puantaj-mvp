@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from pywebpush import WebPushException, webpush
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.db import SessionLocal
@@ -147,6 +147,20 @@ def upsert_device_push_subscription(
         row.last_error = None
         row.last_seen_at = now_utc
 
+    stale_rows = list(
+        db.scalars(
+            select(DevicePushSubscription).where(
+                DevicePushSubscription.device_id == device.id,
+                DevicePushSubscription.id != row.id,
+                DevicePushSubscription.is_active.is_(True),
+            )
+        ).all()
+    )
+    for stale_row in stale_rows:
+        stale_row.is_active = False
+        stale_row.last_error = "superseded_by_newer_subscription"
+        stale_row.last_seen_at = now_utc
+
     db.commit()
     db.refresh(row)
     return row
@@ -255,6 +269,31 @@ def upsert_admin_push_subscription(
         row.user_agent = user_agent
         row.last_error = None
         row.last_seen_at = now_utc
+
+    if user_agent:
+        stale_filters: list[Any] = [
+            AdminPushSubscription.id != row.id,
+            AdminPushSubscription.is_active.is_(True),
+            AdminPushSubscription.admin_username == normalized_username,
+            AdminPushSubscription.user_agent == user_agent,
+        ]
+        if admin_user_id is not None:
+            stale_filters.append(
+                or_(
+                    AdminPushSubscription.admin_user_id == admin_user_id,
+                    and_(
+                        AdminPushSubscription.admin_user_id.is_(None),
+                        AdminPushSubscription.admin_username == normalized_username,
+                    ),
+                )
+            )
+        stale_rows = list(
+            db.scalars(select(AdminPushSubscription).where(*stale_filters)).all()
+        )
+        for stale_row in stale_rows:
+            stale_row.is_active = False
+            stale_row.last_error = "superseded_by_newer_subscription"
+            stale_row.last_seen_at = now_utc
 
     db.commit()
     db.refresh(row)

@@ -861,6 +861,8 @@ export function EmployeeMonthlyReportPage() {
         open={isManualModalOpen}
         title={editingDay ? `${editingDay} - Manuel Duzeltme` : 'Manuel Duzeltme'}
         onClose={() => setManualModalOpen(false)}
+        placement="right"
+        maxWidthClass="max-w-2xl"
       >
         <form onSubmit={onSaveManual} className="space-y-3">
           <label className="text-sm text-slate-700">

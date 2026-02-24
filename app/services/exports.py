@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.models import AttendanceEvent, AttendanceType, Department, Employee, WorkRule
 from app.schemas import MonthlyEmployeeResponse
+from app.services.attendance import _attendance_timezone
 from app.services.monthly import calculate_employee_monthly
 from app.services.monthly_calc import calculate_work_and_overtime
 
@@ -76,6 +77,19 @@ def _to_excel_datetime(value: datetime | None) -> datetime | None:
     if value.tzinfo is None:
         return value
     return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _date_range_bounds_utc(start_date: date, end_date: date) -> tuple[datetime, datetime]:
+    tz = _attendance_timezone()
+    start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz).astimezone(timezone.utc)
+    end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time(), tzinfo=tz).astimezone(timezone.utc)
+    return start_dt, end_dt
+
+
+def _local_day_from_ts(value: datetime) -> date:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(_attendance_timezone()).date()
 
 
 def _minutes_to_hhmm(minutes: int) -> str:
@@ -1389,8 +1403,7 @@ def _build_date_range_export(
             detail="end_date must be >= start_date",
         )
 
-    start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
-    end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
+    start_dt, end_dt = _date_range_bounds_utc(start_date, end_date)
 
     stmt = (
         select(AttendanceEvent, Employee, Department)
@@ -1468,7 +1481,7 @@ def _build_date_range_export(
             ]
         )
 
-        key = (event.employee_id, event.ts_utc.date())
+        key = (event.employee_id, _local_day_from_ts(event.ts_utc))
         grouped[key]["employee_name"] = employee.full_name
         grouped[key]["department_name"] = department.name if department is not None else "-"
         grouped[key]["department_id"] = employee.department_id
@@ -1937,8 +1950,7 @@ def _fetch_date_range_rows(
             detail="end_date must be >= start_date",
         )
 
-    start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
-    end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
+    start_dt, end_dt = _date_range_bounds_utc(start_date, end_date)
 
     stmt = (
         select(AttendanceEvent, Employee, Department)

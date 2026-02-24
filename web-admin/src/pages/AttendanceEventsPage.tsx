@@ -67,6 +67,8 @@ const DEFAULT_FILTERS: EventFilters = {
   limit: '200',
 }
 
+const ATTENDANCE_TIMEZONE = 'Europe/Istanbul'
+
 function flagIsTrue(flags: Record<string, unknown>, key: string): boolean {
   return flags[key] === true
 }
@@ -88,6 +90,7 @@ function formatTs(ts: string): string {
   return new Intl.DateTimeFormat('tr-TR', {
     dateStyle: 'short',
     timeStyle: 'medium',
+    timeZone: ATTENDANCE_TIMEZONE,
   }).format(new Date(ts))
 }
 

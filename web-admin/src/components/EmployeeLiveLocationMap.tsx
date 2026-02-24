@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
-export type EmployeeLiveLocationMapMarkerKind = 'latest' | 'checkin' | 'checkout'
+export type EmployeeLiveLocationMapMarkerKind = 'latest' | 'first' | 'recent' | 'checkin' | 'checkout'
 
 export type EmployeeLiveLocationMapMarker = {
   id: string
@@ -23,6 +23,24 @@ function markerStyle(kind: EmployeeLiveLocationMapMarkerKind): {
   radius: number
   weight: number
 } {
+  if (kind === 'first') {
+    return {
+      radius: 10,
+      color: '#7c3aed',
+      fillColor: '#7c3aed',
+      fillOpacity: 0.85,
+      weight: 2,
+    }
+  }
+  if (kind === 'recent') {
+    return {
+      radius: 7,
+      color: '#1d4ed8',
+      fillColor: '#bfdbfe',
+      fillOpacity: 0.9,
+      weight: 2,
+    }
+  }
   if (kind === 'checkin') {
     return {
       radius: 8,

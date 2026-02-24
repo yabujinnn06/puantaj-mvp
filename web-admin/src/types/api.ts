@@ -78,6 +78,8 @@ export interface EmployeeDetail {
   ip_summary: EmployeeIpSummary[]
   devices: EmployeeDeviceDetail[]
   latest_location: EmployeeLiveLocation | null
+  first_location: EmployeeLiveLocation | null
+  recent_locations: EmployeeLiveLocation[]
   home_location: EmployeeLocation | null
   recent_activity: EmployeePortalActivity[]
 }

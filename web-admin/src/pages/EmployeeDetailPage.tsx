@@ -102,6 +102,8 @@ export function EmployeeDetailPage() {
   const [visibleMarkerKinds, setVisibleMarkerKinds] = useState<Record<EmployeeLiveLocationMapMarkerKind, boolean>>({
     checkin: true,
     checkout: true,
+    first: true,
+    recent: true,
     latest: true,
   })
 
@@ -426,6 +428,10 @@ export function EmployeeDetailPage() {
 
   const mapMarkers = useMemo<EmployeeLiveLocationMapMarker[]>(() => {
     const markers: EmployeeLiveLocationMapMarker[] = []
+    const latestLocation = detailQuery.data?.latest_location ?? null
+    const firstLocation = detailQuery.data?.first_location ?? null
+    const recentLocations = detailQuery.data?.recent_locations ?? []
+
     if (selectedMapDayRow) {
       if (selectedMapDayRow.in_lat !== null && selectedMapDayRow.in_lon !== null) {
         markers.push({
@@ -447,17 +453,48 @@ export function EmployeeDetailPage() {
       }
     }
 
-    if (detailQuery.data?.latest_location) {
+    if (firstLocation) {
+      markers.push({
+        id: 'first',
+        lat: firstLocation.lat,
+        lon: firstLocation.lon,
+        label: `Ilk konum kaydi - ${formatDateTime(firstLocation.ts_utc)}`,
+        kind: 'first',
+      })
+    }
+
+    recentLocations.slice(0, 12).forEach((locationItem, index) => {
+      const isLatest =
+        latestLocation !== null &&
+        latestLocation.ts_utc === locationItem.ts_utc &&
+        latestLocation.device_id === locationItem.device_id
+      const isFirst =
+        firstLocation !== null &&
+        firstLocation.ts_utc === locationItem.ts_utc &&
+        firstLocation.device_id === locationItem.device_id
+      if (isLatest || isFirst) {
+        return
+      }
+      markers.push({
+        id: `recent-${locationItem.ts_utc}-${locationItem.device_id}-${index}`,
+        lat: locationItem.lat,
+        lon: locationItem.lon,
+        label: `Konum kaydi - ${formatDateTime(locationItem.ts_utc)}`,
+        kind: 'recent',
+      })
+    })
+
+    if (latestLocation) {
       markers.push({
         id: 'latest',
-        lat: detailQuery.data.latest_location.lat,
-        lon: detailQuery.data.latest_location.lon,
+        lat: latestLocation.lat,
+        lon: latestLocation.lon,
         label: 'Son bildirilen konum',
         kind: 'latest',
       })
     }
     return markers
-  }, [detailQuery.data?.latest_location, selectedMapDayRow])
+  }, [detailQuery.data?.first_location, detailQuery.data?.latest_location, detailQuery.data?.recent_locations, selectedMapDayRow])
 
   const filteredMapMarkers = useMemo(
     () => mapMarkers.filter((item) => visibleMarkerKinds[item.kind]),
@@ -474,6 +511,8 @@ export function EmployeeDetailPage() {
     setVisibleMarkerKinds({
       checkin: true,
       checkout: true,
+      first: true,
+      recent: true,
       latest: true,
     })
   }, [filteredMapMarkers.length, mapMarkers.length])
@@ -494,6 +533,8 @@ export function EmployeeDetailPage() {
       setVisibleMarkerKinds({
         checkin: true,
         checkout: true,
+        first: true,
+        recent: true,
         latest: true,
       })
       return
@@ -501,6 +542,8 @@ export function EmployeeDetailPage() {
     setVisibleMarkerKinds({
       checkin: kind === 'checkin',
       checkout: kind === 'checkout',
+      first: kind === 'first',
+      recent: kind === 'recent',
       latest: kind === 'latest',
     })
   }
@@ -509,6 +552,8 @@ export function EmployeeDetailPage() {
     setVisibleMarkerKinds({
       checkin: true,
       checkout: true,
+      first: true,
+      recent: true,
       latest: true,
     })
   }
@@ -529,6 +574,8 @@ export function EmployeeDetailPage() {
     setVisibleMarkerKinds({
       checkin: true,
       checkout: true,
+      first: true,
+      recent: true,
       latest: true,
     })
   }
@@ -537,6 +584,8 @@ export function EmployeeDetailPage() {
     const count = detailQuery.data?.devices.length ?? 0
     return `${count} cihaz`
   }, [detailQuery.data?.devices.length])
+
+  const recentLocationRows = detailQuery.data?.recent_locations ?? []
 
   if (!Number.isFinite(employeeId)) {
     return <ErrorBlock message="Gecersiz calisan id degeri." />
@@ -984,6 +1033,8 @@ export function EmployeeDetailPage() {
                 setVisibleMarkerKinds({
                   checkin: true,
                   checkout: true,
+                  first: true,
+                  recent: true,
                   latest: true,
                 })
               }}
@@ -1006,6 +1057,32 @@ export function EmployeeDetailPage() {
           <div className="mt-3 space-y-3">
             <EmployeeLiveLocationMap markers={filteredMapMarkers} />
             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-700">
+              <button
+                type="button"
+                onClick={() => focusLegendKind('first')}
+                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 ${
+                  visibleMarkerKinds.first
+                    ? 'border-violet-300 bg-violet-50 text-violet-800'
+                    : 'border-slate-300 bg-white text-slate-500'
+                }`}
+                title="Yalnizca ilk konum noktasini goster"
+              >
+                <span className="h-2 w-2 rounded-full bg-violet-600" />
+                Ilk konum
+              </button>
+              <button
+                type="button"
+                onClick={() => focusLegendKind('recent')}
+                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 ${
+                  visibleMarkerKinds.recent
+                    ? 'border-blue-300 bg-blue-50 text-blue-800'
+                    : 'border-slate-300 bg-white text-slate-500'
+                }`}
+                title="Diger konum noktalarini goster"
+              >
+                <span className="h-2 w-2 rounded-full bg-blue-600" />
+                Diger konumlar
+              </button>
               <button
                 type="button"
                 onClick={() => focusLegendKind('checkin')}
@@ -1057,6 +1134,39 @@ export function EmployeeDetailPage() {
         ) : (
           <p className="mt-2 text-sm text-slate-500">Secili filtrede gosterilecek konum noktasi yok.</p>
         )}
+        <div className="mt-4 rounded-lg border border-slate-200">
+          <div className="border-b border-slate-200 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Konum Gecmisi (son 20)
+          </div>
+          {recentLocationRows.length ? (
+            <div className="max-h-64 overflow-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead className="text-xs uppercase text-slate-500">
+                  <tr>
+                    <th className="py-2 pl-3">Zaman</th>
+                    <th className="py-2">Tip</th>
+                    <th className="py-2">Durum</th>
+                    <th className="py-2">Cihaz</th>
+                    <th className="py-2 pr-3">Koordinat</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentLocationRows.map((item, index) => (
+                    <tr key={`${item.ts_utc}-${item.device_id}-${index}`} className="border-t border-slate-100">
+                      <td className="py-2 pl-3">{formatDateTime(item.ts_utc)}</td>
+                      <td className="py-2">{item.event_type}</td>
+                      <td className="py-2">{item.location_status}</td>
+                      <td className="py-2">#{item.device_id}</td>
+                      <td className="py-2 pr-3">{formatCoordinate(item.lat, item.lon)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="p-3 text-sm text-slate-500">Konum gecmisi bulunamadi.</div>
+          )}
+        </div>
       </Panel>
 
       <Panel>
