@@ -55,21 +55,81 @@ function parsePushPayload(event: PushEvent): {
   }
 }
 
-self.addEventListener('push', (event) => {
-  const payload = parsePushPayload(event)
-  const options: NotificationOptions = {
+function coerceBoolean(value: unknown, fallback = false): boolean {
+  if (typeof value === 'boolean') {
+    return value
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'evet') {
+      return true
+    }
+    if (normalized === 'false' || normalized === '0' || normalized === 'no' || normalized === 'hayir') {
+      return false
+    }
+  }
+  return fallback
+}
+
+function parseVibratePattern(value: unknown): number[] | undefined {
+  if (Array.isArray(value)) {
+    const parsed = value
+      .map((item) => Number(item))
+      .filter((item) => Number.isFinite(item) && item >= 0)
+      .slice(0, 8)
+      .map((item) => Math.trunc(item))
+    return parsed.length > 0 ? parsed : undefined
+  }
+  if (typeof value === 'string') {
+    const parsed = value
+      .split(',')
+      .map((item) => Number(item.trim()))
+      .filter((item) => Number.isFinite(item) && item >= 0)
+      .slice(0, 8)
+      .map((item) => Math.trunc(item))
+    return parsed.length > 0 ? parsed : undefined
+  }
+  return undefined
+}
+
+function buildNotificationOptions(payload: {
+  title: string
+  body: string
+  data: Record<string, unknown>
+}): NotificationOptions {
+  const now = Date.now()
+  const rawTag = typeof payload.data.tag === 'string' ? payload.data.tag.trim() : ''
+  const vibrate = parseVibratePattern(payload.data.vibrate) ?? [240, 120, 240, 120, 320]
+
+  return {
     body: payload.body,
     icon: '/employee/icons/icon-192.png',
     badge: '/employee/icons/icon-192.png',
     data: payload.data,
-    requireInteraction: false,
-  }
+    requireInteraction: coerceBoolean(payload.data.requireInteraction, true),
+    tag: rawTag || `employee-push-${now}`,
+    vibrate,
+    silent: false,
+    timestamp: now,
+    actions: [
+      { action: 'open', title: 'Ac' },
+      { action: 'dismiss', title: 'Kapat' },
+    ],
+  } as NotificationOptions
+}
+
+self.addEventListener('push', (event) => {
+  const payload = parsePushPayload(event)
+  const options = buildNotificationOptions(payload)
 
   event.waitUntil(self.registration.showNotification(payload.title, options))
 })
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
+  if (event.action === 'dismiss') {
+    return
+  }
 
   const rawUrl = event.notification.data?.url
   const targetUrl =

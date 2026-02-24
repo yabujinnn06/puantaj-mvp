@@ -52,6 +52,67 @@ function isSilentPayload(payload) {
   return false
 }
 
+function asBoolean(value, fallback = false) {
+  if (typeof value === 'boolean') {
+    return value
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'evet') {
+      return true
+    }
+    if (normalized === 'false' || normalized === '0' || normalized === 'no' || normalized === 'hayir') {
+      return false
+    }
+  }
+  return fallback
+}
+
+function parseVibrate(value) {
+  if (Array.isArray(value)) {
+    const parsed = value
+      .map((item) => Number(item))
+      .filter((item) => Number.isFinite(item) && item >= 0)
+      .slice(0, 8)
+      .map((item) => Math.trunc(item))
+    return parsed.length > 0 ? parsed : undefined
+  }
+  if (typeof value === 'string') {
+    const parsed = value
+      .split(',')
+      .map((item) => Number(item.trim()))
+      .filter((item) => Number.isFinite(item) && item >= 0)
+      .slice(0, 8)
+      .map((item) => Math.trunc(item))
+    return parsed.length > 0 ? parsed : undefined
+  }
+  return undefined
+}
+
+function buildNotificationOptions(payload) {
+  const data = payload?.data && typeof payload.data === 'object' ? payload.data : {}
+  const now = Date.now()
+  const rawTag = typeof data.tag === 'string' ? data.tag.trim() : ''
+  const vibrate = parseVibrate(data.vibrate) || [240, 120, 240, 120, 320]
+
+  return {
+    body: payload.body,
+    data,
+    icon: '/admin-panel/vite.svg',
+    badge: '/admin-panel/vite.svg',
+    tag: rawTag || `admin-push-${now}`,
+    renotify: true,
+    requireInteraction: asBoolean(data.requireInteraction, true),
+    vibrate,
+    silent: false,
+    timestamp: now,
+    actions: [
+      { action: 'open', title: 'Ac' },
+      { action: 'dismiss', title: 'Kapat' },
+    ],
+  }
+}
+
 self.addEventListener('push', (event) => {
   const payload = parsePayload(event)
   if (isSilentPayload(payload)) {
@@ -60,16 +121,15 @@ self.addEventListener('push', (event) => {
   }
 
   event.waitUntil(
-    self.registration.showNotification(payload.title, {
-      body: payload.body,
-      data: payload.data,
-      requireInteraction: false,
-    }),
+    self.registration.showNotification(payload.title, buildNotificationOptions(payload)),
   )
 })
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
+  if (event.action === 'dismiss') {
+    return
+  }
   const rawUrl = event.notification?.data?.url
   const targetUrl = typeof rawUrl === 'string' && rawUrl.trim() ? rawUrl.trim() : '/admin-panel/notifications'
 

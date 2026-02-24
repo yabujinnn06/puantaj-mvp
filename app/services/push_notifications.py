@@ -47,6 +47,17 @@ def _resolve_vapid_subject(raw_subject: str | None) -> str:
     return "mailto:admin@localhost"
 
 
+def _with_push_delivery_defaults(data: dict[str, Any] | None) -> dict[str, Any]:
+    payload_data: dict[str, Any] = dict(data or {})
+    if "requireInteraction" not in payload_data:
+        payload_data["requireInteraction"] = True
+    if "vibrate" not in payload_data:
+        payload_data["vibrate"] = [240, 120, 240, 120, 320]
+    if "priority" not in payload_data:
+        payload_data["priority"] = "high"
+    return payload_data
+
+
 def get_push_public_config() -> dict[str, Any]:
     settings = get_settings()
     enabled = is_push_enabled()
@@ -311,7 +322,7 @@ def _send_to_subscription_row(
     payload = {
         "title": title,
         "body": body,
-        "data": data or {},
+        "data": _with_push_delivery_defaults(data),
         "ts_utc": _utcnow().isoformat(),
     }
     try:
