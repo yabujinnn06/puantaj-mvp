@@ -592,24 +592,26 @@ export function NotificationsPage() {
   }, [jobsStatus])
 
   useEffect(() => {
+    if (!jobsQuery.data) return
     setJobsPage((prev) => {
       if (prev < 1) return 1
       if (prev > jobsTotalPages) return jobsTotalPages
       return prev
     })
-  }, [jobsTotalPages])
+  }, [jobsQuery.data, jobsTotalPages])
 
   useEffect(() => {
     setDeliveryPage(1)
   }, [deliverySearch])
 
   useEffect(() => {
+    if (!deliveryLogsQuery.data) return
     setDeliveryPage((prev) => {
       if (prev < 1) return 1
       if (prev > deliveryTotalPages) return deliveryTotalPages
       return prev
     })
-  }, [deliveryTotalPages])
+  }, [deliveryLogsQuery.data, deliveryTotalPages])
 
   useEffect(() => {
     setArchivePage(1)
@@ -626,12 +628,13 @@ export function NotificationsPage() {
   }, [filteredDeliveryLogs, selectedDeliveryAuditId])
 
   useEffect(() => {
+    if (!archivesQuery.data) return
     setArchivePage((prev) => {
       if (prev < 1) return 1
       if (prev > archiveTotalPages) return archiveTotalPages
       return prev
     })
-  }, [archiveTotalPages])
+  }, [archivesQuery.data, archiveTotalPages])
 
   return (
     <div className="space-y-4">

@@ -204,12 +204,13 @@ export function SystemLogsPage() {
   }, [selectedLog, selectedLogId])
 
   useEffect(() => {
+    if (!logsQuery.data) return
     setLogsPage((prev) => {
       if (prev < 1) return 1
       if (prev > logsTotalPages) return logsTotalPages
       return prev
     })
-  }, [logsTotalPages])
+  }, [logsQuery.data, logsTotalPages])
 
   useEffect(() => {
     if (!followLogs || terminalScrollRef.current === null) {
