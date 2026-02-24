@@ -693,19 +693,10 @@ def run_admin_push_claim_health_check(
         "deactivated": 0,
     }
     if checked_rows:
-        ping_summary = send_push_to_admin_subscriptions(
-            db,
-            subscriptions=checked_rows,
-            title="Admin Claim Health Check",
-            body="Silent health ping for admin claim validation.",
-            data={
-                "type": "ADMIN_CLAIM_HEALTH_PING",
-                "silent": True,
-                "url": "/admin-panel/notifications",
-                "source": "notification_worker",
-                "ts_utc": now_utc.isoformat(),
-            },
-        )
+        # Passive health mode: do not emit silent push pings.
+        # Browsers may penalize subscriptions that receive background pushes
+        # without a user-visible notification, which hurts reliability on mobile.
+        ping_summary["total_targets"] = len(checked_rows)
 
     healthy_active = 0
     with_error_active = 0

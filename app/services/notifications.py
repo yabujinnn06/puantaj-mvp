@@ -1942,15 +1942,9 @@ def send_pending_notifications(
                 current_job.job_type == JOB_TYPE_ADMIN_AUTO_MIDNIGHT_CHECKOUT
             )
             if is_daily_report_job:
-                # Daily archive report mail is mandatory only when email channel is enabled.
+                # Daily archive mail is best-effort; push should continue even if mail fails.
                 if email_enabled:
                     email_result = _safe_send_email(email_channel, message)
-                    email_sent = _as_int(email_result.get("sent"), 0)
-                    if email_sent <= 0:
-                        raise RuntimeError(
-                            "Nightly daily-report mail delivery is mandatory "
-                            f"(email_mode={email_result.get('mode')})"
-                        )
                 try:
                     push_summary = _send_push_for_job(session, job=current_job, message=message)
                 except Exception as push_exc:
@@ -1993,7 +1987,7 @@ def send_pending_notifications(
                     "email_mode": str(email_result.get("mode") or "unknown"),
                     "email_sent": email_sent,
                     "email_enabled": email_enabled,
-                    "email_required": (is_daily_report_job and email_enabled),
+                    "email_required": False,
                     "email_forced": ((is_daily_report_job or is_admin_auto_midnight_job) and email_enabled),
                     "push_error": push_summary.get("error"),
                 },

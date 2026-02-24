@@ -963,7 +963,7 @@ export function NotificationsPage() {
       <Panel>
         <h4 className="text-base font-semibold text-slate-900">Mail Bildirim Ayarlari</h4>
         <p className="mt-1 text-xs text-slate-500">
-          Gece gunluk Excel arsiv job&apos;unda mail gonderimi zorunludur. Alicilari burada yonetin.
+          Gece gunluk Excel arsiv job&apos;unda mail gonderimi best-effort calisir; push teslimati onceliklidir.
         </p>
 
         <div className="mt-3 grid gap-2 md:grid-cols-3">
@@ -988,8 +988,8 @@ export function NotificationsPage() {
           </p>
         ) : null}
         {configuredEmailTargetCount <= 0 ? (
-          <p className="mt-2 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
-            Aktif mail alicisi yok. Gece rapor maili zorunlu oldugu icin job hata verir.
+          <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            Aktif mail alicisi yok. Mail kanali devre disi kalir, push bildirimi calismaya devam eder.
           </p>
         ) : null}
 
