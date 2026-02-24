@@ -29,7 +29,7 @@ import { PageHeader } from '../components/PageHeader'
 import { Panel } from '../components/Panel'
 import { StatusBadge } from '../components/StatusBadge'
 import { useToast } from '../hooks/useToast'
-import type { EmployeeLiveLocation, MonthlyEmployeeDay } from '../types/api'
+import type { EmployeeLiveLocation, LocationStatus, MonthlyEmployeeDay } from '../types/api'
 import { buildMonthlyAttendanceInsight, getAttendanceDayType } from '../utils/attendanceInsights'
 import { getFlagMeta } from '../utils/flagDictionary'
 
@@ -101,6 +101,8 @@ function recentLocationMarkerId(item: EmployeeLiveLocation): string {
   return `recent-${item.ts_utc}-${item.device_id}-${item.event_type}-${item.lat.toFixed(6)}-${item.lon.toFixed(6)}`
 }
 
+const LOCATION_HISTORY_PAGE_SIZE_OPTIONS = [10, 20, 35, 50] as const
+
 export function EmployeeDetailPage() {
   const params = useParams()
   const navigate = useNavigate()
@@ -126,6 +128,15 @@ export function EmployeeDetailPage() {
   const [selectedMonth, setSelectedMonth] = useState(String(now.getMonth() + 1))
   const [selectedMapDay, setSelectedMapDay] = useState<string | null>(null)
   const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null)
+  const [locationHistorySearch, setLocationHistorySearch] = useState('')
+  const [locationHistoryEventType, setLocationHistoryEventType] = useState<'all' | 'IN' | 'OUT'>('all')
+  const [locationHistoryStatus, setLocationHistoryStatus] = useState<'all' | LocationStatus>('all')
+  const [locationHistoryDeviceId, setLocationHistoryDeviceId] = useState<'all' | string>('all')
+  const [locationHistoryDateFrom, setLocationHistoryDateFrom] = useState('')
+  const [locationHistoryDateTo, setLocationHistoryDateTo] = useState('')
+  const [locationHistoryPage, setLocationHistoryPage] = useState(1)
+  const [locationHistoryPageSize, setLocationHistoryPageSize] =
+    useState<(typeof LOCATION_HISTORY_PAGE_SIZE_OPTIONS)[number]>(20)
   const [visibleMarkerKinds, setVisibleMarkerKinds] = useState<Record<EmployeeLiveLocationMapMarkerKind, boolean>>({
     checkin: true,
     checkout: true,
@@ -438,6 +449,97 @@ export function EmployeeDetailPage() {
   const monthlyInsight = useMemo(() => buildMonthlyAttendanceInsight(monthlyRows), [monthlyRows])
   const ipSummaryRows = detailQuery.data?.ip_summary ?? []
   const recentLocationRows = detailQuery.data?.recent_locations ?? []
+  const locationHistoryDeviceOptions = useMemo(
+    () =>
+      Array.from(new Set(recentLocationRows.map((item) => item.device_id)))
+        .filter((item) => Number.isFinite(item))
+        .sort((a, b) => a - b),
+    [recentLocationRows],
+  )
+
+  const filteredRecentLocationRows = useMemo(() => {
+    const normalizedSearch = locationHistorySearch.trim().toLowerCase()
+    return recentLocationRows.filter((item) => {
+      const rowDay = toIstanbulDay(item.ts_utc)
+      if (locationHistoryDateFrom && rowDay && rowDay < locationHistoryDateFrom) {
+        return false
+      }
+      if (locationHistoryDateTo && rowDay && rowDay > locationHistoryDateTo) {
+        return false
+      }
+      if (locationHistoryEventType !== 'all' && item.event_type !== locationHistoryEventType) {
+        return false
+      }
+      if (locationHistoryStatus !== 'all' && item.location_status !== locationHistoryStatus) {
+        return false
+      }
+      if (locationHistoryDeviceId !== 'all' && String(item.device_id) !== locationHistoryDeviceId) {
+        return false
+      }
+      if (!normalizedSearch) {
+        return true
+      }
+      const haystack = [
+        formatDateTime(item.ts_utc),
+        rowDay ?? '',
+        item.event_type,
+        item.location_status,
+        String(item.device_id),
+        formatCoordinate(item.lat, item.lon),
+      ]
+        .join(' ')
+        .toLowerCase()
+      return haystack.includes(normalizedSearch)
+    })
+  }, [
+    locationHistoryDateFrom,
+    locationHistoryDateTo,
+    locationHistoryDeviceId,
+    locationHistoryEventType,
+    locationHistorySearch,
+    locationHistoryStatus,
+    recentLocationRows,
+  ])
+
+  useEffect(() => {
+    setLocationHistoryPage(1)
+  }, [
+    locationHistorySearch,
+    locationHistoryEventType,
+    locationHistoryStatus,
+    locationHistoryDeviceId,
+    locationHistoryDateFrom,
+    locationHistoryDateTo,
+    locationHistoryPageSize,
+  ])
+
+  const locationHistoryTotalPages = useMemo(() => {
+    if (!filteredRecentLocationRows.length) {
+      return 1
+    }
+    return Math.max(1, Math.ceil(filteredRecentLocationRows.length / locationHistoryPageSize))
+  }, [filteredRecentLocationRows.length, locationHistoryPageSize])
+
+  useEffect(() => {
+    if (locationHistoryPage <= locationHistoryTotalPages) {
+      return
+    }
+    setLocationHistoryPage(locationHistoryTotalPages)
+  }, [locationHistoryPage, locationHistoryTotalPages])
+
+  const pagedRecentLocationRows = useMemo(() => {
+    const start = (locationHistoryPage - 1) * locationHistoryPageSize
+    return filteredRecentLocationRows.slice(start, start + locationHistoryPageSize)
+  }, [filteredRecentLocationRows, locationHistoryPage, locationHistoryPageSize])
+
+  const locationHistoryShownRange = useMemo(() => {
+    if (!filteredRecentLocationRows.length) {
+      return { start: 0, end: 0 }
+    }
+    const start = (locationHistoryPage - 1) * locationHistoryPageSize + 1
+    const end = Math.min(locationHistoryPage * locationHistoryPageSize, filteredRecentLocationRows.length)
+    return { start, end }
+  }, [filteredRecentLocationRows.length, locationHistoryPage, locationHistoryPageSize])
 
   const defaultMapDay = useMemo(() => {
     for (const item of recentLocationRows) {
@@ -1253,58 +1355,183 @@ export function EmployeeDetailPage() {
           <p className="mt-2 text-sm text-slate-500">Secili filtrede gosterilecek konum noktasi yok.</p>
         )}
         <div className="mt-4 rounded-lg border border-slate-200">
-          <div className="border-b border-slate-200 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Konum Gecmisi (satira tiklayinca haritada odaklar)
-          </div>
-          {recentLocationRows.length ? (
-            <div className="list-scroll-area-compact">
-              <table className="min-w-full text-left text-sm">
-                <thead className="text-xs uppercase text-slate-500">
-                  <tr>
-                    <th className="py-2 pl-3">Zaman</th>
-                    <th className="py-2">Gun</th>
-                    <th className="py-2">Tip</th>
-                    <th className="py-2">Durum</th>
-                    <th className="py-2">Cihaz</th>
-                    <th className="py-2 pr-3">Koordinat</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recentLocationRows.map((item, index) => {
-                    const markerId = recentLocationMarkerId(item)
-                    const rowDay = toIstanbulDay(item.ts_utc) ?? '-'
-                    const isSelectedRow = selectedMarkerId === markerId
-                    return (
-                      <tr
-                        key={`${markerId}-${index}`}
-                        className={`border-t border-slate-100 transition-colors ${
-                          isSelectedRow ? 'bg-sky-100/60' : 'cursor-pointer hover:bg-sky-50/70'
-                        }`}
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => focusRecentLocationOnMap(item)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter' || event.key === ' ') {
-                            event.preventDefault()
-                            focusRecentLocationOnMap(item)
-                          }
-                        }}
-                        title="Haritada bu konumu odakla"
-                      >
-                        <td className="py-2 pl-3">{formatDateTime(item.ts_utc)}</td>
-                        <td className="py-2 font-mono text-xs text-slate-600">{rowDay}</td>
-                        <td className="py-2">{item.event_type}</td>
-                        <td className="py-2">{item.location_status}</td>
-                        <td className="py-2">#{item.device_id}</td>
-                        <td className="py-2 pr-3">{formatCoordinate(item.lat, item.lon)}</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+          <div className="border-b border-slate-200 px-3 py-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Konum Gecmisi (satira tiklayinca haritada odaklar)
+            </p>
+            <div className="mt-2 grid gap-2 md:grid-cols-7">
+              <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:col-span-2">
+                Ara
+                <input
+                  value={locationHistorySearch}
+                  onChange={(event) => setLocationHistorySearch(event.target.value)}
+                  placeholder="Tarih, koordinat, cihaz, durum..."
+                  className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-slate-800"
+                />
+              </label>
+              <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Tip
+                <select
+                  value={locationHistoryEventType}
+                  onChange={(event) => setLocationHistoryEventType(event.target.value as 'all' | 'IN' | 'OUT')}
+                  className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-slate-800"
+                >
+                  <option value="all">Tum tipler</option>
+                  <option value="IN">IN</option>
+                  <option value="OUT">OUT</option>
+                </select>
+              </label>
+              <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Durum
+                <select
+                  value={locationHistoryStatus}
+                  onChange={(event) =>
+                    setLocationHistoryStatus(event.target.value as 'all' | LocationStatus)
+                  }
+                  className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-slate-800"
+                >
+                  <option value="all">Tum durumlar</option>
+                  <option value="VERIFIED_HOME">VERIFIED_HOME</option>
+                  <option value="UNVERIFIED_LOCATION">UNVERIFIED_LOCATION</option>
+                  <option value="NO_LOCATION">NO_LOCATION</option>
+                </select>
+              </label>
+              <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Cihaz
+                <select
+                  value={locationHistoryDeviceId}
+                  onChange={(event) => setLocationHistoryDeviceId(event.target.value)}
+                  className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-slate-800"
+                >
+                  <option value="all">Tum cihazlar</option>
+                  {locationHistoryDeviceOptions.map((deviceId) => (
+                    <option key={deviceId} value={String(deviceId)}>
+                      #{deviceId}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Baslangic Tarihi
+                <input
+                  type="date"
+                  value={locationHistoryDateFrom}
+                  onChange={(event) => setLocationHistoryDateFrom(event.target.value)}
+                  className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-slate-800"
+                />
+              </label>
+              <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Bitis Tarihi
+                <input
+                  type="date"
+                  value={locationHistoryDateTo}
+                  min={locationHistoryDateFrom || undefined}
+                  onChange={(event) => setLocationHistoryDateTo(event.target.value)}
+                  className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-slate-800"
+                />
+              </label>
             </div>
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[11px] text-slate-500">
+                Gosterilen satir: {locationHistoryShownRange.start}-{locationHistoryShownRange.end} /{' '}
+                {filteredRecentLocationRows.length}
+              </p>
+              <label className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Sayfa basi
+                <select
+                  value={locationHistoryPageSize}
+                  onChange={(event) =>
+                    setLocationHistoryPageSize(Number(event.target.value) as (typeof LOCATION_HISTORY_PAGE_SIZE_OPTIONS)[number])
+                  }
+                  className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-800"
+                >
+                  {LOCATION_HISTORY_PAGE_SIZE_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </div>
+          {filteredRecentLocationRows.length ? (
+            <>
+              <div className="list-scroll-area-compact">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="text-xs uppercase text-slate-500">
+                    <tr>
+                      <th className="py-2 pl-3">Zaman</th>
+                      <th className="py-2">Gun</th>
+                      <th className="py-2">Tip</th>
+                      <th className="py-2">Durum</th>
+                      <th className="py-2">Cihaz</th>
+                      <th className="py-2 pr-3">Koordinat</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pagedRecentLocationRows.map((item, index) => {
+                      const markerId = recentLocationMarkerId(item)
+                      const rowDay = toIstanbulDay(item.ts_utc) ?? '-'
+                      const isSelectedRow = selectedMarkerId === markerId
+                      return (
+                        <tr
+                          key={`${markerId}-${index}`}
+                          className={`border-t border-slate-100 transition-colors ${
+                            isSelectedRow ? 'bg-sky-100/60' : 'cursor-pointer hover:bg-sky-50/70'
+                          }`}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => focusRecentLocationOnMap(item)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault()
+                              focusRecentLocationOnMap(item)
+                            }
+                          }}
+                          title="Haritada bu konumu odakla"
+                        >
+                          <td className="py-2 pl-3">{formatDateTime(item.ts_utc)}</td>
+                          <td className="py-2 font-mono text-xs text-slate-600">{rowDay}</td>
+                          <td className="py-2">{item.event_type}</td>
+                          <td className="py-2">{item.location_status}</td>
+                          <td className="py-2">#{item.device_id}</td>
+                          <td className="py-2 pr-3">{formatCoordinate(item.lat, item.lon)}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex items-center justify-between border-t border-slate-200 px-3 py-2">
+                <p className="text-xs text-slate-500">
+                  Sayfa {locationHistoryPage} / {locationHistoryTotalPages}
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setLocationHistoryPage((current) => Math.max(1, current - 1))}
+                    disabled={locationHistoryPage <= 1}
+                    className="rounded-md border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                  >
+                    Onceki
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setLocationHistoryPage((current) =>
+                        Math.min(locationHistoryTotalPages, current + 1),
+                      )
+                    }
+                    disabled={locationHistoryPage >= locationHistoryTotalPages}
+                    className="rounded-md border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                  >
+                    Sonraki
+                  </button>
+                </div>
+              </div>
+            </>
           ) : (
-            <div className="p-3 text-sm text-slate-500">Konum gecmisi bulunamadi.</div>
+            <div className="p-3 text-sm text-slate-500">Filtreye uygun konum gecmisi bulunamadi.</div>
           )}
         </div>
       </Panel>
