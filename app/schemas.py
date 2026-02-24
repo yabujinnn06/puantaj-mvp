@@ -820,6 +820,13 @@ class AuditLogRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class AuditLogPageResponse(BaseModel):
+    items: list[AuditLogRead] = Field(default_factory=list)
+    total: int = 0
+    offset: int = 0
+    limit: int = 0
+
+
 class NotificationJobRead(BaseModel):
     id: int
     employee_id: int | None
@@ -835,6 +842,13 @@ class NotificationJobRead(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class NotificationJobPageResponse(BaseModel):
+    items: list[NotificationJobRead] = Field(default_factory=list)
+    total: int = 0
+    offset: int = 0
+    limit: int = 0
 
 
 class EmployeePushConfigResponse(BaseModel):
@@ -1045,6 +1059,13 @@ class AdminDailyReportArchiveRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class AdminDailyReportArchivePageResponse(BaseModel):
+    items: list[AdminDailyReportArchiveRead] = Field(default_factory=list)
+    total: int = 0
+    offset: int = 0
+    limit: int = 0
+
+
 class AdminDailyReportArchiveNotifyRequest(BaseModel):
     admin_user_ids: list[int] | None = None
 
@@ -1139,6 +1160,13 @@ class NotificationDeliveryLogRead(BaseModel):
     ip: str | None = None
     status: Literal["SENT", "FAILED"]
     error: str | None = None
+
+
+class NotificationDeliveryLogPageResponse(BaseModel):
+    items: list[NotificationDeliveryLogRead] = Field(default_factory=list)
+    total: int = 0
+    offset: int = 0
+    limit: int = 0
 
 
 class CheckinQrPayload(BaseModel):

@@ -6,7 +6,7 @@ from math import ceil
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -84,6 +84,7 @@ from app.schemas import (
     AdminDevicePushSubscriptionRead,
     AdminPushSubscriptionRead,
     AdminDailyReportArchiveRead,
+    AdminDailyReportArchivePageResponse,
     AdminDailyReportArchiveNotifyRequest,
     AdminDailyReportArchiveNotifyResponse,
     AdminDailyReportArchivePasswordDownloadRequest,
@@ -91,6 +92,7 @@ from app.schemas import (
     AdminAttendanceExtraCheckinApprovalApproveResponse,
     AdminAttendanceExtraCheckinApprovalRead,
     AuditLogRead,
+    AuditLogPageResponse,
     AttendanceEventRead,
     AttendanceEventManualCreateRequest,
     AttendanceEventManualUpdateRequest,
@@ -137,7 +139,9 @@ from app.schemas import (
     ManualDayOverrideUpsertRequest,
     MonthlyEmployeeResponse,
     NotificationJobRead,
+    NotificationJobPageResponse,
     NotificationDeliveryLogRead,
+    NotificationDeliveryLogPageResponse,
     RegionCreate,
     RegionRead,
     RegionUpdate,
@@ -4425,7 +4429,7 @@ def soft_delete_attendance_event_endpoint(
 
 @router.get(
     "/api/admin/audit-logs",
-    response_model=list[AuditLogRead],
+    response_model=AuditLogPageResponse,
     dependencies=[Depends(require_admin_permission("audit"))],
 )
 def list_audit_logs(
@@ -4433,38 +4437,59 @@ def list_audit_logs(
     entity_type: str | None = Query(default=None),
     entity_id: str | None = Query(default=None),
     success: bool | None = Query(default=None),
-    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=35, ge=1, le=500),
     db: Session = Depends(get_db),
-) -> list[AuditLogRead]:
-    stmt = select(AuditLog).order_by(AuditLog.id.desc()).limit(limit)
+) -> AuditLogPageResponse:
+    conditions: list[Any] = []
     if action:
-        stmt = stmt.where(AuditLog.action == action)
+        conditions.append(AuditLog.action == action)
     if entity_type:
-        stmt = stmt.where(AuditLog.entity_type == entity_type)
+        conditions.append(AuditLog.entity_type == entity_type)
     if entity_id:
-        stmt = stmt.where(AuditLog.entity_id == entity_id)
+        conditions.append(AuditLog.entity_id == entity_id)
     if success is not None:
-        stmt = stmt.where(AuditLog.success.is_(success))
-    return list(db.scalars(stmt).all())
+        conditions.append(AuditLog.success.is_(success))
+
+    total_stmt = select(func.count(AuditLog.id))
+    data_stmt = select(AuditLog)
+    if conditions:
+        total_stmt = total_stmt.where(*conditions)
+        data_stmt = data_stmt.where(*conditions)
+
+    total = int(db.scalar(total_stmt) or 0)
+    rows = list(
+        db.scalars(
+            data_stmt.order_by(AuditLog.id.desc()).offset(offset).limit(limit)
+        ).all()
+    )
+    return AuditLogPageResponse(items=rows, total=total, offset=offset, limit=limit)
 
 
 @router.get(
     "/api/admin/notifications/jobs",
-    response_model=list[NotificationJobRead],
+    response_model=NotificationJobPageResponse,
 )
 def list_notification_jobs(
     request: Request,
     status: Literal["PENDING", "SENDING", "SENT", "CANCELED", "FAILED"] | None = Query(default=None),
     offset: int = Query(default=0, ge=0),
-    limit: int = Query(default=100, ge=1, le=500),
+    limit: int = Query(default=35, ge=1, le=500),
     claims: dict[str, Any] = Depends(require_admin_permission("audit")),
     db: Session = Depends(get_db),
-) -> list[NotificationJobRead]:
-    stmt = select(NotificationJob).order_by(NotificationJob.id.desc()).offset(offset).limit(limit)
+) -> NotificationJobPageResponse:
+    data_stmt = select(NotificationJob)
+    total_stmt = select(func.count(NotificationJob.id))
     if status is not None:
-        stmt = stmt.where(NotificationJob.status == status)
+        data_stmt = data_stmt.where(NotificationJob.status == status)
+        total_stmt = total_stmt.where(NotificationJob.status == status)
 
-    jobs = list(db.scalars(stmt).all())
+    total = int(db.scalar(total_stmt) or 0)
+    jobs = list(
+        db.scalars(
+            data_stmt.order_by(NotificationJob.id.desc()).offset(offset).limit(limit)
+        ).all()
+    )
     actor_id = str(claims.get("username") or claims.get("sub") or "admin")
     log_audit(
         db,
@@ -4480,11 +4505,12 @@ def list_notification_jobs(
             "status": status,
             "offset": offset,
             "limit": limit,
+            "total": total,
             "count": len(jobs),
         },
         request_id=getattr(request.state, "request_id", None),
     )
-    return jobs
+    return NotificationJobPageResponse(items=jobs, total=total, offset=offset, limit=limit)
 
 
 @router.get(
@@ -4995,19 +5021,29 @@ def admin_push_self_test(
 
 @router.get(
     "/api/admin/notifications/delivery-logs",
-    response_model=list[NotificationDeliveryLogRead],
+    response_model=NotificationDeliveryLogPageResponse,
 )
 def list_notification_delivery_logs(
     request: Request,
-    limit: int = Query(default=200, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=35, ge=1, le=500),
     claims: dict[str, Any] = Depends(require_admin_permission("audit")),
     db: Session = Depends(get_db),
-) -> list[NotificationDeliveryLogRead]:
+) -> NotificationDeliveryLogPageResponse:
+    total = int(
+        db.scalar(
+            select(func.count(AuditLog.id)).where(
+                AuditLog.action == "ADMIN_MANUAL_PUSH_SENT"
+            )
+        )
+        or 0
+    )
     audit_rows = list(
         db.scalars(
             select(AuditLog)
             .where(AuditLog.action == "ADMIN_MANUAL_PUSH_SENT")
             .order_by(AuditLog.id.desc())
+            .offset(offset)
             .limit(limit)
         ).all()
     )
@@ -5308,14 +5344,21 @@ def list_notification_delivery_logs(
         ip=_client_ip(request),
         user_agent=_user_agent(request),
         details={
+            "offset": offset,
             "limit": limit,
+            "total": total,
             "audit_count": len(audit_rows),
             "row_count": len(result_rows),
         },
         request_id=getattr(request.state, "request_id", None),
     )
 
-    return result_rows
+    return NotificationDeliveryLogPageResponse(
+        items=result_rows,
+        total=total,
+        offset=offset,
+        limit=limit,
+    )
 
 
 @router.get(
@@ -5744,7 +5787,7 @@ def heal_admin_device_push(
 
 @router.get(
     "/api/admin/daily-report-archives",
-    response_model=list[AdminDailyReportArchiveRead],
+    response_model=AdminDailyReportArchivePageResponse,
 )
 def list_daily_report_archives(
     request: Request,
@@ -5754,52 +5797,68 @@ def list_daily_report_archives(
     region_id: int | None = Query(default=None, ge=1),
     employee_id: int | None = Query(default=None, ge=1),
     employee_query: str | None = Query(default=None, min_length=1, max_length=255),
-    limit: int = Query(default=60, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=35, ge=1, le=500),
     claims: dict[str, Any] = Depends(require_admin_permission("reports")),
     db: Session = Depends(get_db),
-) -> list[AdminDailyReportArchiveRead]:
-    stmt = select(AdminDailyReportArchive).order_by(
+) -> AdminDailyReportArchivePageResponse:
+    stmt = select(AdminDailyReportArchive)
+    count_stmt = select(func.count(AdminDailyReportArchive.id))
+    stmt = stmt.order_by(
         AdminDailyReportArchive.report_date.desc(),
         AdminDailyReportArchive.id.desc(),
     )
     if start_date is not None:
         stmt = stmt.where(AdminDailyReportArchive.report_date >= start_date)
+        count_stmt = count_stmt.where(AdminDailyReportArchive.report_date >= start_date)
     if end_date is not None:
         stmt = stmt.where(AdminDailyReportArchive.report_date <= end_date)
+        count_stmt = count_stmt.where(AdminDailyReportArchive.report_date <= end_date)
     if department_id is not None:
         stmt = stmt.where(AdminDailyReportArchive.department_id == department_id)
+        count_stmt = count_stmt.where(AdminDailyReportArchive.department_id == department_id)
     if region_id is not None:
         stmt = stmt.where(AdminDailyReportArchive.region_id == region_id)
+        count_stmt = count_stmt.where(AdminDailyReportArchive.region_id == region_id)
     if employee_id is not None:
-        stmt = stmt.where(
+        employee_condition = and_(
             AdminDailyReportArchive.employee_ids_index.is_not(None),
             AdminDailyReportArchive.employee_ids_index.like(f"%,{employee_id},%"),
         )
+        stmt = stmt.where(
+            employee_condition,
+        )
+        count_stmt = count_stmt.where(employee_condition)
     normalized_query = _normalize_query_text(employee_query).lower()
     if normalized_query:
         name_expr = AdminDailyReportArchive.employee_names_index
         file_expr = AdminDailyReportArchive.file_name
         if normalized_query.isdigit():
             query_id = int(normalized_query)
-            stmt = stmt.where(
-                or_(
-                    and_(
-                        AdminDailyReportArchive.employee_ids_index.is_not(None),
-                        AdminDailyReportArchive.employee_ids_index.like(f"%,{query_id},%"),
-                    ),
-                    name_expr.ilike(f"%{normalized_query}%"),
-                    file_expr.ilike(f"%{normalized_query}%"),
-                )
+            query_condition = or_(
+                and_(
+                    AdminDailyReportArchive.employee_ids_index.is_not(None),
+                    AdminDailyReportArchive.employee_ids_index.like(f"%,{query_id},%"),
+                ),
+                name_expr.ilike(f"%{normalized_query}%"),
+                file_expr.ilike(f"%{normalized_query}%"),
             )
+            stmt = stmt.where(
+                query_condition
+            )
+            count_stmt = count_stmt.where(query_condition)
         else:
-            stmt = stmt.where(
-                or_(
-                    name_expr.ilike(f"%{normalized_query}%"),
-                    file_expr.ilike(f"%{normalized_query}%"),
-                )
+            query_condition = or_(
+                name_expr.ilike(f"%{normalized_query}%"),
+                file_expr.ilike(f"%{normalized_query}%"),
             )
-    stmt = stmt.limit(limit)
+            stmt = stmt.where(
+                query_condition
+            )
+            count_stmt = count_stmt.where(query_condition)
+    stmt = stmt.offset(offset).limit(limit)
 
+    total = int(db.scalar(count_stmt) or 0)
     rows = list(db.scalars(stmt).all())
     actor_id = str(claims.get("username") or claims.get("sub") or "admin")
     log_audit(
@@ -5819,12 +5878,19 @@ def list_daily_report_archives(
             "region_id": region_id,
             "employee_id": employee_id,
             "employee_query": normalized_query or None,
+            "offset": offset,
             "limit": limit,
+            "total": total,
             "count": len(rows),
         },
         request_id=getattr(request.state, "request_id", None),
     )
-    return rows
+    return AdminDailyReportArchivePageResponse(
+        items=rows,
+        total=total,
+        offset=offset,
+        limit=limit,
+    )
 
 
 @router.get(

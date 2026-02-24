@@ -809,7 +809,7 @@ export function AttendanceEventsPage() {
                 </tr>
               </thead>
               <tbody>
-                {(auditLogsQuery.data ?? []).map((item) => (
+                {(auditLogsQuery.data?.items ?? []).map((item) => (
                   <tr key={item.id} className="border-t border-slate-100">
                     <td className="py-2">{formatTs(item.ts_utc)}</td>
                     <td className="py-2">{item.action}</td>

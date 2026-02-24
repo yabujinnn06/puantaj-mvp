@@ -91,8 +91,7 @@ function downloadBlob(blob: Blob, name: string): void {
   window.URL.revokeObjectURL(url)
 }
 
-const JOBS_PAGE_SIZE = 25
-const ARCHIVE_PAGE_SIZE = 50
+const LIST_PAGE_SIZE = 35
 const PUSH_VAPID_KEY_STORAGE = 'pf_admin_push_vapid_public_key'
 
 async function ensureAdminPushSubscription(vapidPublicKey: string): Promise<PushSubscription> {
@@ -147,6 +146,7 @@ export function NotificationsPage() {
   const [expiresIn, setExpiresIn] = useState(15)
   const [jobsStatus, setJobsStatus] = useState<'' | NotificationJobStatus>('')
   const [jobsPage, setJobsPage] = useState(1)
+  const [deliveryPage, setDeliveryPage] = useState(1)
   const [searchEmployee, setSearchEmployee] = useState('')
   const [searchAdmin, setSearchAdmin] = useState('')
   const [selectedEmployees, setSelectedEmployees] = useState<number[]>([])
@@ -185,13 +185,22 @@ export function NotificationsPage() {
     retry: false,
   })
   const jobsQuery = useQuery({
-    queryKey: ['notification-jobs', jobsStatus],
-    queryFn: () => getNotificationJobs({ status: jobsStatus || undefined, limit: 100 }),
+    queryKey: ['notification-jobs', jobsStatus, jobsPage],
+    queryFn: () =>
+      getNotificationJobs({
+        status: jobsStatus || undefined,
+        offset: (jobsPage - 1) * LIST_PAGE_SIZE,
+        limit: LIST_PAGE_SIZE,
+      }),
     refetchInterval: 10000,
   })
   const deliveryLogsQuery = useQuery({
-    queryKey: ['notification-delivery-logs'],
-    queryFn: () => getNotificationDeliveryLogs({ limit: 400 }),
+    queryKey: ['notification-delivery-logs', deliveryPage],
+    queryFn: () =>
+      getNotificationDeliveryLogs({
+        offset: (deliveryPage - 1) * LIST_PAGE_SIZE,
+        limit: LIST_PAGE_SIZE,
+      }),
     refetchInterval: 15000,
   })
   const employeeSubsQuery = useQuery({
@@ -205,10 +214,11 @@ export function NotificationsPage() {
     refetchInterval: 15000,
   })
   const archivesQuery = useQuery({
-    queryKey: ['daily-archives', archiveStartDate, archiveEndDate, archiveEmployeeQuery],
+    queryKey: ['daily-archives', archiveStartDate, archiveEndDate, archiveEmployeeQuery, archivePage],
     queryFn: () =>
       getDailyReportArchives({
-        limit: 180,
+        offset: (archivePage - 1) * LIST_PAGE_SIZE,
+        limit: LIST_PAGE_SIZE,
         start_date: archiveStartDate || undefined,
         end_date: archiveEndDate || undefined,
         employee_query: archiveEmployeeQuery.trim() || undefined,
@@ -229,7 +239,7 @@ export function NotificationsPage() {
 
   const filteredDeliveryLogs = useMemo(() => {
     const q = deliverySearch.trim().toLowerCase()
-    const rows = deliveryLogsQuery.data ?? []
+    const rows = deliveryLogsQuery.data?.items ?? []
     if (!q) return rows
     return rows.filter((row) => {
       const parts = [
@@ -258,28 +268,23 @@ export function NotificationsPage() {
     () => filteredDeliveryLogs.find((row) => row.audit_id === selectedDeliveryAuditId) ?? null,
     [filteredDeliveryLogs, selectedDeliveryAuditId],
   )
-  const jobsRows = jobsQuery.data ?? []
-  const jobsTotalPages = useMemo(
-    () => Math.max(1, Math.ceil(jobsRows.length / JOBS_PAGE_SIZE)),
-    [jobsRows.length],
-  )
-  const pagedJobs = useMemo(() => {
-    const startIndex = (jobsPage - 1) * JOBS_PAGE_SIZE
-    return jobsRows.slice(startIndex, startIndex + JOBS_PAGE_SIZE)
-  }, [jobsPage, jobsRows])
-  const jobsRangeStart = jobsRows.length === 0 ? 0 : (jobsPage - 1) * JOBS_PAGE_SIZE + 1
-  const jobsRangeEnd = Math.min(jobsPage * JOBS_PAGE_SIZE, jobsRows.length)
-  const archiveRows = archivesQuery.data ?? []
-  const archiveTotalPages = useMemo(
-    () => Math.max(1, Math.ceil(archiveRows.length / ARCHIVE_PAGE_SIZE)),
-    [archiveRows.length],
-  )
-  const pagedArchives = useMemo(() => {
-    const startIndex = (archivePage - 1) * ARCHIVE_PAGE_SIZE
-    return archiveRows.slice(startIndex, startIndex + ARCHIVE_PAGE_SIZE)
-  }, [archivePage, archiveRows])
-  const archiveRangeStart = archiveRows.length === 0 ? 0 : (archivePage - 1) * ARCHIVE_PAGE_SIZE + 1
-  const archiveRangeEnd = Math.min(archivePage * ARCHIVE_PAGE_SIZE, archiveRows.length)
+
+  const jobsRows = jobsQuery.data?.items ?? []
+  const jobsTotal = jobsQuery.data?.total ?? 0
+  const jobsTotalPages = Math.max(1, Math.ceil(jobsTotal / LIST_PAGE_SIZE))
+  const jobsRangeStart = jobsTotal === 0 ? 0 : (jobsPage - 1) * LIST_PAGE_SIZE + 1
+  const jobsRangeEnd = jobsRows.length === 0 ? 0 : jobsRangeStart + jobsRows.length - 1
+
+  const deliveryTotal = deliveryLogsQuery.data?.total ?? 0
+  const deliveryTotalPages = Math.max(1, Math.ceil(deliveryTotal / LIST_PAGE_SIZE))
+  const deliveryRangeStart = deliveryTotal === 0 ? 0 : (deliveryPage - 1) * LIST_PAGE_SIZE + 1
+  const deliveryRangeEnd = filteredDeliveryLogs.length === 0 ? 0 : deliveryRangeStart + filteredDeliveryLogs.length - 1
+
+  const archiveRows = archivesQuery.data?.items ?? []
+  const archiveTotal = archivesQuery.data?.total ?? 0
+  const archiveTotalPages = Math.max(1, Math.ceil(archiveTotal / LIST_PAGE_SIZE))
+  const archiveRangeStart = archiveTotal === 0 ? 0 : (archivePage - 1) * LIST_PAGE_SIZE + 1
+  const archiveRangeEnd = archiveRows.length === 0 ? 0 : archiveRangeStart + archiveRows.length - 1
   const activeAdminSubscriptionCount = (adminSubsQuery.data ?? []).length
   const canNotifyAdmins = activeAdminSubscriptionCount > 0
   const currentAdminUsername = (user?.username ?? '').trim().toLowerCase()
@@ -511,7 +516,7 @@ export function NotificationsPage() {
   const downloadMutation = useMutation({
     mutationFn: downloadDailyReportArchive,
     onSuccess: (blob, id) => {
-      const item = (archivesQuery.data ?? []).find((x) => x.id === id)
+      const item = (archivesQuery.data?.items ?? []).find((x) => x.id === id)
       downloadBlob(blob, item?.file_name ?? `arsiv-${id}.xlsx`)
     },
   })
@@ -566,7 +571,7 @@ export function NotificationsPage() {
       setArchiveAutoHandled(true)
       return
     }
-    const archiveRow = (archivesQuery.data ?? []).find((x) => x.id === archiveId)
+    const archiveRow = (archivesQuery.data?.items ?? []).find((x) => x.id === archiveId)
     if (!archiveRow) return
 
     setArchiveAutoHandled(true)
@@ -593,6 +598,18 @@ export function NotificationsPage() {
       return prev
     })
   }, [jobsTotalPages])
+
+  useEffect(() => {
+    setDeliveryPage(1)
+  }, [deliverySearch])
+
+  useEffect(() => {
+    setDeliveryPage((prev) => {
+      if (prev < 1) return 1
+      if (prev > deliveryTotalPages) return deliveryTotalPages
+      return prev
+    })
+  }, [deliveryTotalPages])
 
   useEffect(() => {
     setArchivePage(1)
@@ -747,7 +764,7 @@ export function NotificationsPage() {
         {!jobsQuery.isLoading && !jobsQuery.isError ? (
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
             <span>
-              Gosterilen satir: {jobsRangeStart}-{jobsRangeEnd} / {jobsRows.length}
+              Gosterilen satir: {jobsRangeStart}-{jobsRangeEnd} / {jobsTotal}
             </span>
             <div className="flex items-center gap-2">
               <button
@@ -785,7 +802,7 @@ export function NotificationsPage() {
               </tr>
             </thead>
             <tbody>
-              {pagedJobs.map((job, index) => (
+              {jobsRows.map((job, index) => (
                 <tr key={job.id} className="border-t border-slate-100">
                   <td className="px-2 py-2 text-slate-500">{jobsRangeStart + index}</td>
                   <td className="px-2 py-2">{job.id}</td>
@@ -808,7 +825,7 @@ export function NotificationsPage() {
             </tbody>
           </table>
         </div>
-        {!jobsQuery.isLoading && !jobsQuery.isError && jobsRows.length === 0 ? (
+        {!jobsQuery.isLoading && !jobsQuery.isError && jobsTotal === 0 ? (
           <p className="mt-3 text-sm text-slate-500">Filtreye uygun bildirim isi bulunamadi.</p>
         ) : null}
       </Panel>
@@ -818,8 +835,8 @@ export function NotificationsPage() {
         <div className="grid gap-2 md:grid-cols-4">
           <div className="rounded border border-slate-200 p-3 text-sm">Calisan abonelik: {(employeeSubsQuery.data ?? []).length}</div>
           <div className="rounded border border-slate-200 p-3 text-sm">Admin abonelik: {(adminSubsQuery.data ?? []).length}</div>
-          <div className="rounded border border-slate-200 p-3 text-sm">Arsiv dosyasi: {(archivesQuery.data ?? []).length}</div>
-          <div className="rounded border border-slate-200 p-3 text-sm">Teslimat log satiri: {(deliveryLogsQuery.data ?? []).length}</div>
+          <div className="rounded border border-slate-200 p-3 text-sm">Arsiv dosyasi: {archiveTotal}</div>
+          <div className="rounded border border-slate-200 p-3 text-sm">Teslimat log satiri: {deliveryTotal}</div>
         </div>
         {!canNotifyAdmins ? (
           <p className="mt-2 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
@@ -1053,7 +1070,7 @@ export function NotificationsPage() {
 
         <div className="mt-3 grid gap-2 md:grid-cols-4">
           <div className="rounded border border-slate-200 p-3 text-sm">
-            Toplam satir: {filteredDeliveryLogs.length}
+            Toplam satir: {deliveryTotal}
           </div>
           <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
             Gonderildi: {deliverySentCount}
@@ -1078,6 +1095,35 @@ export function NotificationsPage() {
           />
         </div>
 
+        {!deliveryLogsQuery.isLoading && !deliveryLogsQuery.isError ? (
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            <span>
+              Gosterilen satir: {deliveryRangeStart}-{deliveryRangeEnd} / {deliveryTotal}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setDeliveryPage((prev) => Math.max(1, prev - 1))}
+                disabled={deliveryPage <= 1}
+                className="rounded border border-slate-300 px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Onceki
+              </button>
+              <span>
+                Sayfa {deliveryPage} / {deliveryTotalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setDeliveryPage((prev) => Math.min(deliveryTotalPages, prev + 1))}
+                disabled={deliveryPage >= deliveryTotalPages}
+                className="rounded border border-slate-300 px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Sonraki
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         {deliveryLogsQuery.isLoading ? <LoadingBlock label="Teslimat logu yukleniyor..." /> : null}
         {deliveryLogsQuery.isError ? <ErrorBlock message="Teslimat logu alinamadi." /> : null}
         {!deliveryLogsQuery.isLoading && !deliveryLogsQuery.isError ? (
@@ -1090,7 +1136,7 @@ export function NotificationsPage() {
                   <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
                   <span className="ml-2 text-xs font-semibold text-slate-300">delivery-terminal</span>
                 </div>
-                <span className="text-[11px] text-slate-400">{filteredDeliveryLogs.length} kayit</span>
+                <span className="text-[11px] text-slate-400">{deliveryRangeStart}-{deliveryRangeEnd} / {deliveryTotal}</span>
               </div>
 
               <div className="max-h-[520px] overflow-auto">
@@ -1313,7 +1359,7 @@ export function NotificationsPage() {
         {!archivesQuery.isLoading && !archivesQuery.isError ? (
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
             <span>
-              Gosterilen satir: {archiveRangeStart}-{archiveRangeEnd} / {archiveRows.length}
+              Gosterilen satir: {archiveRangeStart}-{archiveRangeEnd} / {archiveTotal}
             </span>
             <div className="flex items-center gap-2">
               <button
@@ -1353,7 +1399,7 @@ export function NotificationsPage() {
               </tr>
             </thead>
             <tbody>
-              {pagedArchives.map((item, index) => (
+              {archiveRows.map((item, index) => (
                 <tr key={item.id} className="border-t border-slate-100">
                   <td className="px-2 py-2 text-slate-500">{archiveRangeStart + index}</td>
                   <td className="px-2 py-2">{item.id}</td>
@@ -1382,7 +1428,7 @@ export function NotificationsPage() {
             </tbody>
           </table>
         </div>
-        {!archivesQuery.isLoading && !archivesQuery.isError && archiveRows.length === 0 ? (
+        {!archivesQuery.isLoading && !archivesQuery.isError && archiveTotal === 0 ? (
           <p className="mt-3 text-sm text-slate-500">Filtreye uygun arsiv kaydi bulunamadi.</p>
         ) : null}
       </Panel>

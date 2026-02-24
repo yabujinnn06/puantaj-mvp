@@ -59,6 +59,13 @@ import type {
   WorkRule,
 } from '../types/api'
 
+export interface PaginatedResponse<T> {
+  items: T[]
+  total: number
+  offset: number
+  limit: number
+}
+
 export interface ArchivePasswordDownloadResult {
   blob: Blob
   file_name: string | null
@@ -255,6 +262,7 @@ export interface AuditLogParams {
   entity_type?: string
   entity_id?: string
   success?: boolean
+  offset?: number
   limit?: number
 }
 
@@ -265,6 +273,7 @@ export interface NotificationJobsParams {
 }
 
 export interface NotificationDeliveryLogsParams {
+  offset?: number
   limit?: number
 }
 
@@ -323,6 +332,7 @@ export interface DailyReportArchivesParams {
   region_id?: number
   employee_id?: number
   employee_query?: string
+  offset?: number
   limit?: number
 }
 
@@ -832,22 +842,22 @@ export async function softDeleteAttendanceEvent(eventId: number, force = false):
   return response.data
 }
 
-export async function getAuditLogs(params: AuditLogParams = {}): Promise<AuditLog[]> {
-  const response = await apiClient.get<AuditLog[]>('/api/admin/audit-logs', { params })
+export async function getAuditLogs(params: AuditLogParams = {}): Promise<PaginatedResponse<AuditLog>> {
+  const response = await apiClient.get<PaginatedResponse<AuditLog>>('/api/admin/audit-logs', { params })
   return response.data
 }
 
 export async function getNotificationJobs(
   params: NotificationJobsParams = {},
-): Promise<NotificationJob[]> {
-  const response = await apiClient.get<NotificationJob[]>('/api/admin/notifications/jobs', { params })
+): Promise<PaginatedResponse<NotificationJob>> {
+  const response = await apiClient.get<PaginatedResponse<NotificationJob>>('/api/admin/notifications/jobs', { params })
   return response.data
 }
 
 export async function getNotificationDeliveryLogs(
   params: NotificationDeliveryLogsParams = {},
-): Promise<NotificationDeliveryLog[]> {
-  const response = await apiClient.get<NotificationDeliveryLog[]>('/api/admin/notifications/delivery-logs', { params })
+): Promise<PaginatedResponse<NotificationDeliveryLog>> {
+  const response = await apiClient.get<PaginatedResponse<NotificationDeliveryLog>>('/api/admin/notifications/delivery-logs', { params })
   return response.data
 }
 
@@ -990,8 +1000,8 @@ export async function sendManualNotification(
 
 export async function getDailyReportArchives(
   params: DailyReportArchivesParams = {},
-): Promise<AdminDailyReportArchive[]> {
-  const response = await apiClient.get<AdminDailyReportArchive[]>('/api/admin/daily-report-archives', {
+): Promise<PaginatedResponse<AdminDailyReportArchive>> {
+  const response = await apiClient.get<PaginatedResponse<AdminDailyReportArchive>>('/api/admin/daily-report-archives', {
     params,
   })
   return response.data
