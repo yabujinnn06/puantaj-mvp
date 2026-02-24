@@ -1,49 +1,99 @@
-import { useEffect, useRef, useState } from 'react'
+﻿import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 
+import { getAdminPushConfig, healAdminDevice } from '../api/admin'
 import { UI_BRANDING } from '../config/ui'
 import { useAuth } from '../hooks/useAuth'
+import { urlBase64ToUint8Array } from '../utils/push'
 
 const navItems = [
-  { to: '/management-console', label: 'Yönetim Konsolu' },
-  { to: '/dashboard', label: 'Genel Bakış' },
-  { to: '/regions', label: 'Bölgeler', permission: 'regions' },
+  { to: '/management-console', label: 'YÃ¶netim Konsolu' },
+  { to: '/dashboard', label: 'Genel BakÄ±ÅŸ' },
+  { to: '/regions', label: 'BÃ¶lgeler', permission: 'regions' },
   { to: '/departments', label: 'Departmanlar', permission: 'departments' },
-  { to: '/employees', label: 'Çalışanlar', permission: 'employees' },
-  { to: '/quick-setup', label: 'Hızlı Ayarlar', permission: 'schedule' },
-  { to: '/work-rules', label: 'Mesai Kuralları', permission: 'work_rules' },
-  { to: '/attendance-events', label: 'Yoklama Kayıtları', permission: 'attendance_events' },
+  { to: '/employees', label: 'Ã‡alÄ±ÅŸanlar', permission: 'employees' },
+  { to: '/quick-setup', label: 'HÄ±zlÄ± Ayarlar', permission: 'schedule' },
+  { to: '/work-rules', label: 'Mesai KurallarÄ±', permission: 'work_rules' },
+  { to: '/attendance-events', label: 'Yoklama KayÄ±tlarÄ±', permission: 'attendance_events' },
   { to: '/devices', label: 'Cihazlar', permission: 'devices' },
-  { to: '/compliance-settings', label: 'Uyumluluk Ayarları', permission: 'compliance' },
+  { to: '/compliance-settings', label: 'Uyumluluk AyarlarÄ±', permission: 'compliance' },
   { to: '/qr-kodlar', label: 'QR Kodlar' },
-  { to: '/leaves', label: 'İzinler', permission: 'leaves' },
-  { to: '/reports/employee-monthly', label: 'Aylık Çalışan Raporu', permission: 'reports' },
-  { to: '/reports/department-summary', label: 'Departman Özeti', permission: 'reports' },
-  { to: '/reports/excel-export', label: 'Excel Dışa Aktar', permission: 'reports' },
+  { to: '/leaves', label: 'Ä°zinler', permission: 'leaves' },
+  { to: '/reports/employee-monthly', label: 'AylÄ±k Ã‡alÄ±ÅŸan Raporu', permission: 'reports' },
+  { to: '/reports/department-summary', label: 'Departman Ã–zeti', permission: 'reports' },
+  { to: '/reports/excel-export', label: 'Excel DÄ±ÅŸa Aktar', permission: 'reports' },
   { to: '/notifications', label: 'Bildirimler', permission: 'audit' },
-  { to: '/audit-logs', label: 'Sistem Logları', permission: 'audit' },
-  { to: '/admin-users', label: 'Admin Kullanıcıları', permission: 'admin_users' },
+  { to: '/audit-logs', label: 'Sistem LoglarÄ±', permission: 'audit' },
+  { to: '/admin-users', label: 'Admin KullanÄ±cÄ±larÄ±', permission: 'admin_users' },
 ]
 
 const pageTitles: Record<string, string> = {
-  '/management-console': 'Yönetim Konsolu',
-  '/dashboard': 'Genel Bakış',
-  '/regions': 'Bölgeler',
+  '/management-console': 'YÃ¶netim Konsolu',
+  '/dashboard': 'Genel BakÄ±ÅŸ',
+  '/regions': 'BÃ¶lgeler',
   '/departments': 'Departmanlar',
-  '/employees': 'Çalışanlar',
-  '/quick-setup': 'Hızlı Ayarlar',
-  '/work-rules': 'Mesai Kuralları',
-  '/attendance-events': 'Yoklama Kayıtları',
+  '/employees': 'Ã‡alÄ±ÅŸanlar',
+  '/quick-setup': 'HÄ±zlÄ± Ayarlar',
+  '/work-rules': 'Mesai KurallarÄ±',
+  '/attendance-events': 'Yoklama KayÄ±tlarÄ±',
   '/devices': 'Cihazlar',
-  '/compliance-settings': 'Uyumluluk Ayarları',
+  '/compliance-settings': 'Uyumluluk AyarlarÄ±',
   '/qr-kodlar': 'QR Kodlar',
-  '/leaves': 'İzinler',
-  '/reports/employee-monthly': 'Aylık Çalışan Raporu',
-  '/reports/department-summary': 'Departman Özeti',
-  '/reports/excel-export': 'Excel Dışa Aktar',
+  '/leaves': 'Ä°zinler',
+  '/reports/employee-monthly': 'AylÄ±k Ã‡alÄ±ÅŸan Raporu',
+  '/reports/department-summary': 'Departman Ã–zeti',
+  '/reports/excel-export': 'Excel DÄ±ÅŸa Aktar',
   '/notifications': 'Bildirimler',
-  '/audit-logs': 'Sistem Logları',
-  '/admin-users': 'Admin Kullanıcıları',
+  '/audit-logs': 'Sistem LoglarÄ±',
+  '/admin-users': 'Admin KullanÄ±cÄ±larÄ±',
+}
+
+const PUSH_VAPID_KEY_STORAGE = 'pf_admin_push_vapid_public_key'
+const ADMIN_AUTO_HEAL_TS_STORAGE = 'pf_admin_push_auto_heal_ts'
+const ADMIN_AUTO_HEAL_INTERVAL_MS = 10 * 60 * 1000
+
+async function autoHealAdminPushClaim(): Promise<void> {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    return
+  }
+  if (Notification.permission !== 'granted') {
+    return
+  }
+
+  const pushConfig = await getAdminPushConfig()
+  if (!pushConfig.enabled || !pushConfig.vapid_public_key) {
+    return
+  }
+
+  const swUrl = `${import.meta.env.BASE_URL}admin-sw.js`
+  const registration = await navigator.serviceWorker.register(swUrl, {
+    scope: import.meta.env.BASE_URL,
+  })
+
+  let subscription = await registration.pushManager.getSubscription()
+  const savedVapidKey = window.localStorage.getItem(PUSH_VAPID_KEY_STORAGE)
+  if (subscription && savedVapidKey && savedVapidKey !== pushConfig.vapid_public_key) {
+    try {
+      await subscription.unsubscribe()
+    } catch {
+      // best effort
+    }
+    subscription = null
+  }
+
+  if (!subscription) {
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(pushConfig.vapid_public_key) as unknown as BufferSource,
+    })
+  }
+
+  await healAdminDevice({
+    subscription: subscription.toJSON() as Record<string, unknown>,
+    send_test: false,
+  })
+  window.localStorage.setItem(PUSH_VAPID_KEY_STORAGE, pushConfig.vapid_public_key)
+  window.sessionStorage.setItem(ADMIN_AUTO_HEAL_TS_STORAGE, String(Date.now()))
 }
 
 export function AppLayout() {
@@ -54,13 +104,14 @@ export function AppLayout() {
   const mobileNavPendingRef = useRef(false)
   const mobileLoaderTimerRef = useRef<number | null>(null)
   const [showMobileNavLoader, setShowMobileNavLoader] = useState(false)
-  const [mobileLoaderMessage, setMobileLoaderMessage] = useState('İçeriğe geçiliyor...')
+  const [mobileLoaderMessage, setMobileLoaderMessage] = useState('Ä°Ã§eriÄŸe geÃ§iliyor...')
+  const canWriteAudit = hasPermission('audit', 'write')
 
   const visibleNavItems = navItems.filter((item) => !item.permission || hasPermission(item.permission))
 
   const title =
     pageTitles[location.pathname] ??
-    (location.pathname.startsWith('/employees/') ? 'Çalışan Detayı' : 'Admin Panel')
+    (location.pathname.startsWith('/employees/') ? 'Ã‡alÄ±ÅŸan DetayÄ±' : 'Admin Panel')
 
   const isMobileViewport = () => typeof window !== 'undefined' && window.innerWidth < 1024
 
@@ -93,12 +144,12 @@ export function AppLayout() {
 
     if (location.pathname === targetPath) {
       window.requestAnimationFrame(() => {
-        runMobileTransition('content', 'İçeriğe geçiliyor...')
+        runMobileTransition('content', 'Ä°Ã§eriÄŸe geÃ§iliyor...')
       })
       return
     }
 
-    setMobileLoaderMessage('İçeriğe geçiliyor...')
+    setMobileLoaderMessage('Ä°Ã§eriÄŸe geÃ§iliyor...')
     setShowMobileNavLoader(true)
     mobileNavPendingRef.current = true
   }
@@ -108,7 +159,7 @@ export function AppLayout() {
       return
     }
     window.requestAnimationFrame(() => {
-      runMobileTransition('sidebar', "Sidebar'a dönülüyor...")
+      runMobileTransition('sidebar', "Sidebar'a dÃ¶nÃ¼lÃ¼yor...")
     })
   }
 
@@ -120,12 +171,29 @@ export function AppLayout() {
   }, [])
 
   useEffect(() => {
+    if (!canWriteAudit) {
+      return
+    }
+    const lastAttemptRaw = window.sessionStorage.getItem(ADMIN_AUTO_HEAL_TS_STORAGE)
+    const lastAttempt = lastAttemptRaw ? Number(lastAttemptRaw) : 0
+    if (Number.isFinite(lastAttempt) && lastAttempt > 0) {
+      const elapsedMs = Date.now() - lastAttempt
+      if (elapsedMs < ADMIN_AUTO_HEAL_INTERVAL_MS) {
+        return
+      }
+    }
+    void autoHealAdminPushClaim().catch(() => {
+      // silent fallback: explicit heal action is still available in notifications page
+    })
+  }, [canWriteAudit, user?.admin_user_id, user?.username])
+
+  useEffect(() => {
     if (!mobileNavPendingRef.current) {
       return
     }
     mobileNavPendingRef.current = false
     window.requestAnimationFrame(() => {
-      runMobileTransition('content', 'İçeriğe geçiliyor...')
+      runMobileTransition('content', 'Ä°Ã§eriÄŸe geÃ§iliyor...')
     })
   }, [location.pathname])
 
@@ -138,7 +206,7 @@ export function AppLayout() {
   return (
     <div className="admin-shell min-h-screen bg-slate-100 lg:grid lg:grid-cols-[260px_1fr]">
       {showMobileNavLoader ? (
-        <div className="mobile-nav-loader lg:hidden" role="status" aria-live="polite" aria-label="Sayfa geçişi">
+        <div className="mobile-nav-loader lg:hidden" role="status" aria-live="polite" aria-label="Sayfa geÃ§iÅŸi">
           <div className="mobile-nav-loader-logo" aria-hidden="true">
             <div className="mobile-nav-loader-halo" />
             <div className="mobile-nav-loader-ring" />
@@ -154,7 +222,7 @@ export function AppLayout() {
 
       <aside ref={sidebarRef} className="admin-sidebar flex flex-col px-4 py-6 text-slate-100 shadow-panel">
         <h1 className="px-2 text-xl font-bold tracking-tight">Puantaj Admin</h1>
-        <p className="px-2 pt-1 text-xs text-slate-400">FastAPI Yönetim Paneli</p>
+        <p className="px-2 pt-1 text-xs text-slate-400">FastAPI YÃ¶netim Paneli</p>
         <nav className="mt-6 flex flex-col gap-1">
           {visibleNavItems.map((item) => (
             <NavLink
@@ -203,7 +271,7 @@ export function AppLayout() {
                 onClick={() => void logout()}
                 className="btn-animated rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
               >
-                Çıkış
+                Ã‡Ä±kÄ±ÅŸ
               </button>
             </div>
           </div>
