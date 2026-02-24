@@ -14,6 +14,7 @@ export type EmployeeLiveLocationMapMarker = {
 
 type EmployeeLiveLocationMapProps = {
   markers: EmployeeLiveLocationMapMarker[]
+  focusedMarkerId?: string | null
 }
 
 function markerStyle(kind: EmployeeLiveLocationMapMarkerKind): {
@@ -68,10 +69,11 @@ function markerStyle(kind: EmployeeLiveLocationMapMarkerKind): {
   }
 }
 
-export function EmployeeLiveLocationMap({ markers }: EmployeeLiveLocationMapProps) {
+export function EmployeeLiveLocationMap({ markers, focusedMarkerId = null }: EmployeeLiveLocationMapProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<L.Map | null>(null)
   const layerRef = useRef<L.LayerGroup | null>(null)
+  const renderedMarkersRef = useRef<Map<string, L.CircleMarker>>(new Map())
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) {
@@ -112,6 +114,7 @@ export function EmployeeLiveLocationMap({ markers }: EmployeeLiveLocationMapProp
     const map = mapRef.current
     const layer = layerRef.current
     layer.clearLayers()
+    renderedMarkersRef.current.clear()
 
     if (!markers.length) {
       return
@@ -141,11 +144,12 @@ export function EmployeeLiveLocationMap({ markers }: EmployeeLiveLocationMapProp
       }
 
       const style = markerStyle(marker.kind)
-      L.circleMarker([displayLat, displayLon], style)
+      const circleMarker = L.circleMarker([displayLat, displayLon], style)
         .bindPopup(
           `${marker.label}<br/>${marker.lat.toFixed(6)}, ${marker.lon.toFixed(6)}`,
         )
         .addTo(layer)
+      renderedMarkersRef.current.set(marker.id, circleMarker)
       latLngs.push([displayLat, displayLon])
     }
 
@@ -160,6 +164,19 @@ export function EmployeeLiveLocationMap({ markers }: EmployeeLiveLocationMapProp
       animate: true,
     })
   }, [markers])
+
+  useEffect(() => {
+    if (!focusedMarkerId || !mapRef.current) {
+      return
+    }
+    const marker = renderedMarkersRef.current.get(focusedMarkerId)
+    if (!marker) {
+      return
+    }
+    const markerLatLng = marker.getLatLng()
+    mapRef.current.setView(markerLatLng, Math.max(mapRef.current.getZoom(), 16), { animate: true })
+    marker.openPopup()
+  }, [focusedMarkerId, markers])
 
   return (
     <div

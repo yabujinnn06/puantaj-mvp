@@ -737,18 +737,59 @@ table tbody tr:hover {
   font-weight: 600;
 }
 
+button {
+  position: relative;
+  isolation: isolate;
+  transition:
+    transform 140ms ease,
+    box-shadow 180ms ease,
+    filter 180ms ease,
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease;
+  box-shadow: 0 1px 0 rgba(15, 44, 61, 0.08);
+}
+
+button:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px -18px rgba(8, 32, 46, 0.68);
+}
+
+button:not(:disabled):active {
+  transform: translateY(0);
+  box-shadow: 0 8px 16px -14px rgba(8, 32, 46, 0.55);
+}
+
+button:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 3px rgba(127, 193, 220, 0.42),
+    0 8px 20px -15px rgba(10, 51, 72, 0.55);
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
 .btn-primary,
 button[class*='bg-brand-600'] {
   border-radius: 10px;
   background: linear-gradient(180deg, #16728a 0%, var(--cr-primary) 100%);
+  border: 1px solid rgba(8, 59, 80, 0.22);
   color: #f7fbfd;
   min-height: 2.35rem;
+  box-shadow:
+    inset 0 1px 0 rgba(235, 249, 255, 0.26),
+    0 14px 24px -20px rgba(10, 57, 80, 0.9);
 }
 
 .btn-secondary,
 button[class*='border border-slate-300'] {
   border-radius: 10px;
   min-height: 2.35rem;
+  border-color: rgba(138, 169, 187, 0.7);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(244, 250, 253, 0.95));
+  color: #294254;
 }
 
 .btn-danger,
@@ -756,6 +797,51 @@ button[class*='bg-rose-600'],
 button[class*='border border-rose-300'] {
   border-radius: 10px;
   min-height: 2.35rem;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 223, 231, 0.38),
+    0 14px 24px -20px rgba(107, 24, 41, 0.7);
+}
+
+.list-scroll-area {
+  max-height: min(52vh, 30rem);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.list-scroll-area-compact {
+  max-height: min(42vh, 20rem);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.list-scroll-area,
+.list-scroll-area-compact {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(82, 126, 148, 0.62) rgba(223, 236, 244, 0.7);
+}
+
+.list-scroll-area::-webkit-scrollbar,
+.list-scroll-area-compact::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.list-scroll-area::-webkit-scrollbar-track,
+.list-scroll-area-compact::-webkit-scrollbar-track {
+  background: rgba(220, 236, 244, 0.85);
+  border-radius: 999px;
+}
+
+.list-scroll-area::-webkit-scrollbar-thumb,
+.list-scroll-area-compact::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(66, 116, 140, 0.88), rgba(55, 99, 121, 0.88));
+  border-radius: 999px;
+  border: 2px solid rgba(220, 236, 244, 0.85);
+}
+
+.list-scroll-area::-webkit-scrollbar-thumb:hover,
+.list-scroll-area-compact::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(41, 92, 117, 0.95), rgba(31, 76, 99, 0.95));
 }
 
 .status-badge {
