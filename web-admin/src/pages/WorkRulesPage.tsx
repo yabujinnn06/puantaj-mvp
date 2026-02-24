@@ -686,7 +686,7 @@ export function WorkRulesPage() {
           </div>
         </form>
 
-        <div className="mt-4 overflow-x-auto">
+        <div className="mt-4 list-scroll-area">
           <table className="min-w-full text-left text-sm">
             <thead className="text-xs uppercase text-slate-500">
               <tr>
@@ -815,7 +815,7 @@ export function WorkRulesPage() {
           </div>
         </form>
 
-        <div className="mt-4 overflow-x-auto">
+        <div className="mt-4 list-scroll-area">
           <table className="min-w-full text-left text-sm">
             <thead className="text-xs uppercase text-slate-500">
               <tr>

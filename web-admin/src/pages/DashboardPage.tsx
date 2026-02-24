@@ -291,7 +291,7 @@ export function DashboardPage() {
 
       <Panel>
         <h4 className="text-base font-semibold text-slate-900">Son Attendance Eventleri</h4>
-        <div className="mt-4 overflow-x-auto">
+        <div className="mt-4 list-scroll-area">
           <table className="min-w-full text-left text-sm">
             <thead className="text-xs uppercase text-slate-500">
               <tr>

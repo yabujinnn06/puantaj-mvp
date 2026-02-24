@@ -574,7 +574,7 @@ export function ManagementConsolePage() {
           <p className="management-console-subtitle">
             Çalışan bazında cihaz yoğunluğu ve aktif cihaz oranı.
           </p>
-          <div className="management-console-table-wrap mt-3">
+          <div className="management-console-table-wrap list-scroll-area mt-3">
             <table className="min-w-full text-left text-sm">
               <thead>
                 <tr>
@@ -607,7 +607,7 @@ export function ManagementConsolePage() {
           <p className="management-console-subtitle">
             Son giriş-çıkış olayları ile gün tipi, günlük çalışma, plan üstü süre ve yasal fazla mesai görünümü.
           </p>
-          <div className="management-console-table-wrap mt-3">
+          <div className="management-console-table-wrap list-scroll-area mt-3">
             <table className="min-w-full text-left text-sm">
               <thead>
                 <tr>
