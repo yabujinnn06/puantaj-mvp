@@ -28,6 +28,35 @@
   --cr-space-4: 1rem;
   --cr-space-5: 1.25rem;
   --cr-space-6: 1.5rem;
+  --btn-ring: rgba(104, 183, 218, 0.42);
+  --btn-primary-start: #1a88a7;
+  --btn-primary-end: #0f6a8c;
+  --btn-primary-border: #0c4f67;
+  --btn-primary-text: #f4fbfe;
+  --btn-secondary-start: #ffffff;
+  --btn-secondary-end: #ebf4f9;
+  --btn-secondary-border: #8eaebe;
+  --btn-secondary-text: #214456;
+  --btn-success-start: #2ea276;
+  --btn-success-end: #1f7f5d;
+  --btn-success-border: #186448;
+  --btn-success-text: #f3fffa;
+  --btn-warning-start: #d29f2b;
+  --btn-warning-end: #b37e15;
+  --btn-warning-border: #8c5f08;
+  --btn-warning-text: #fffaf0;
+  --btn-danger-start: #c24366;
+  --btn-danger-end: #a22c4b;
+  --btn-danger-border: #7e1e38;
+  --btn-danger-text: #fff4f7;
+  --btn-info-start: #eaf6fd;
+  --btn-info-end: #d6edf9;
+  --btn-info-border: #73aeca;
+  --btn-info-text: #0f465c;
+  --btn-dark-start: #27384b;
+  --btn-dark-end: #182434;
+  --btn-dark-border: #121c29;
+  --btn-dark-text: #f4f8fc;
 
   color: var(--cr-text);
   background-color: var(--cr-bg);
@@ -764,7 +793,7 @@ button:not(:disabled):active {
 button:focus-visible {
   outline: none;
   box-shadow:
-    0 0 0 3px rgba(127, 193, 220, 0.42),
+    0 0 0 3px var(--btn-ring),
     0 8px 20px -15px rgba(10, 51, 72, 0.55);
 }
 
@@ -772,47 +801,115 @@ button:disabled {
   cursor: not-allowed;
 }
 
-.btn-primary,
-button[class*='bg-brand-600'] {
+button,
+.btn-animated,
+.management-console-action-button,
+.management-console-send-button,
+.employee-action-btn {
   border-radius: 10px;
-  background: linear-gradient(180deg, #16728a 0%, var(--cr-primary) 100%);
-  border: 1px solid rgba(8, 59, 80, 0.22);
-  color: #f7fbfd;
-  min-height: 2.35rem;
+  border: 1px solid transparent;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+/* Primary role: create/save/submit */
+.btn-primary,
+.management-console-send-button,
+button[class*='bg-brand-600'],
+button[class*='bg-brand-700'] {
+  border-color: var(--btn-primary-border);
+  background: linear-gradient(180deg, var(--btn-primary-start) 0%, var(--btn-primary-end) 100%);
+  color: var(--btn-primary-text);
   box-shadow:
-    inset 0 1px 0 rgba(235, 249, 255, 0.26),
+    inset 0 1px 0 rgba(233, 248, 255, 0.25),
     0 14px 24px -20px rgba(10, 57, 80, 0.9);
 }
 
-.btn-secondary,
-button[class*='border border-slate-300'] {
-  border-radius: 10px;
-  min-height: 2.35rem;
-  border-color: rgba(138, 169, 187, 0.7);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(244, 250, 253, 0.95));
-  color: #294254;
+.btn-primary:not(:disabled):hover,
+.management-console-send-button:not(:disabled):hover,
+button[class*='bg-brand-600']:not(:disabled):hover,
+button[class*='bg-brand-700']:not(:disabled):hover {
+  filter: brightness(1.04) saturate(1.03);
 }
 
+/* Secondary role: neutral actions */
+.btn-secondary,
+button[class*='border border-slate-300'] {
+  border-color: var(--btn-secondary-border);
+  background: linear-gradient(180deg, var(--btn-secondary-start), var(--btn-secondary-end));
+  color: var(--btn-secondary-text);
+}
+
+/* Success role: activate/approve */
+.btn-success,
+.employee-action-restore,
+button[class*='bg-emerald-600'],
+button[class*='border border-emerald-300'] {
+  border-color: var(--btn-success-border);
+  background: linear-gradient(180deg, var(--btn-success-start), var(--btn-success-end));
+  color: var(--btn-success-text);
+  box-shadow:
+    inset 0 1px 0 rgba(213, 249, 232, 0.3),
+    0 14px 24px -20px rgba(24, 95, 69, 0.72);
+}
+
+/* Warning role: caution/attention */
+.btn-warning,
+button[class*='bg-amber-600'],
+button[class*='border border-amber-300'] {
+  border-color: var(--btn-warning-border);
+  background: linear-gradient(180deg, var(--btn-warning-start), var(--btn-warning-end));
+  color: var(--btn-warning-text);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 245, 213, 0.28),
+    0 14px 24px -20px rgba(119, 82, 20, 0.7);
+}
+
+/* Danger role: delete/archive/block */
 .btn-danger,
+.employee-action-archive,
 button[class*='bg-rose-600'],
 button[class*='border border-rose-300'] {
-  border-radius: 10px;
-  min-height: 2.35rem;
+  border-color: var(--btn-danger-border);
+  background: linear-gradient(180deg, var(--btn-danger-start), var(--btn-danger-end));
+  color: var(--btn-danger-text);
   box-shadow:
-    inset 0 1px 0 rgba(255, 223, 231, 0.38),
-    0 14px 24px -20px rgba(107, 24, 41, 0.7);
+    inset 0 1px 0 rgba(255, 220, 231, 0.28),
+    0 14px 24px -20px rgba(107, 24, 41, 0.76);
+}
+
+/* Info role: edit/open/details */
+.btn-info,
+.management-console-action-button,
+.employee-action-edit,
+button[class*='border border-brand-300'],
+button[class*='border border-sky-300'],
+button[class*='bg-sky-600'] {
+  border-color: var(--btn-info-border);
+  background: linear-gradient(180deg, var(--btn-info-start), var(--btn-info-end));
+  color: var(--btn-info-text);
+}
+
+/* Dark role: dense/terminal-style actions */
+.btn-dark,
+button[class*='bg-slate-900'] {
+  border-color: var(--btn-dark-border);
+  background: linear-gradient(180deg, var(--btn-dark-start), var(--btn-dark-end));
+  color: var(--btn-dark-text);
+  box-shadow:
+    inset 0 1px 0 rgba(219, 233, 248, 0.16),
+    0 14px 24px -20px rgba(14, 22, 33, 0.85);
 }
 
 .employee-action-btn {
   position: relative;
   overflow: hidden;
-  border-radius: 999px;
   min-height: 2rem;
   padding: 0.42rem 0.88rem;
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.02em;
-  border: 1px solid transparent;
+  border-radius: 999px;
   transition:
     transform 140ms ease,
     box-shadow 180ms ease,
@@ -841,27 +938,18 @@ button[class*='border border-rose-300'] {
 }
 
 .employee-action-edit {
-  color: #133c50;
-  border-color: rgba(119, 160, 182, 0.72);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(236, 247, 252, 0.98));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.92),
     0 10px 16px -14px rgba(36, 76, 96, 0.62);
 }
 
 .employee-action-archive {
-  color: #fff4f6;
-  border-color: rgba(139, 30, 54, 0.62);
-  background: linear-gradient(180deg, rgba(182, 44, 76, 0.98), rgba(143, 28, 56, 0.98));
   box-shadow:
     inset 0 1px 0 rgba(255, 207, 220, 0.28),
     0 12px 18px -14px rgba(97, 20, 39, 0.7);
 }
 
 .employee-action-restore {
-  color: #f4fffa;
-  border-color: rgba(16, 117, 80, 0.58);
-  background: linear-gradient(180deg, rgba(31, 145, 103, 0.98), rgba(20, 115, 83, 0.98));
   box-shadow:
     inset 0 1px 0 rgba(205, 247, 227, 0.3),
     0 12px 18px -14px rgba(19, 89, 65, 0.66);
