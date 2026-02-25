@@ -1071,7 +1071,7 @@ def _build_department_summary_sheet(
     title: str,
     rows: list[dict[str, object]],
 ) -> None:
-    _merge_title(ws, 1, f"{title} - DEPARTMAN KPI", end_col=9)
+    _merge_title(ws, 1, f"{title} - DEPARTMAN KPI", end_col=11)
     ws.append(["Rapor Üretim (UTC)", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")])
     ws.append(["Departman Sayısı", len(rows)])
     _append_spacer_row(ws)
@@ -1089,6 +1089,8 @@ def _build_department_summary_sheet(
             "Eksik Gün",
             "Pazar Çalışılan Gün",
             "Özel Gün Çalışılan Gün",
+            "Pazar Net Süre",
+            "Özel Gün Net Süre",
         ]
     )
     _style_header(ws, header_row)
@@ -1102,6 +1104,8 @@ def _build_department_summary_sheet(
     total_incomplete = 0
     total_sunday_days = 0
     total_special_days = 0
+    total_sunday_minutes = 0
+    total_special_minutes = 0
     for row in rows:
         employee_count = int(row["employee_count"])
         worked_minutes = int(row["worked_minutes"])
@@ -1111,6 +1115,8 @@ def _build_department_summary_sheet(
         incomplete_days = int(row["incomplete_days"])
         sunday_days = int(row.get("sunday_worked_days", 0))
         special_days = int(row.get("special_worked_days", 0))
+        sunday_minutes = int(row.get("sunday_worked_minutes", 0))
+        special_minutes = int(row.get("special_worked_minutes", 0))
 
         total_employee_count += employee_count
         total_worked += worked_minutes
@@ -1120,6 +1126,8 @@ def _build_department_summary_sheet(
         total_incomplete += incomplete_days
         total_sunday_days += sunday_days
         total_special_days += special_days
+        total_sunday_minutes += sunday_minutes
+        total_special_minutes += special_minutes
 
         ws.append(
             [
@@ -1132,6 +1140,8 @@ def _build_department_summary_sheet(
                 incomplete_days,
                 sunday_days,
                 special_days,
+                _minutes_to_excel_duration(sunday_minutes),
+                _minutes_to_excel_duration(special_minutes),
             ]
         )
 
@@ -1157,6 +1167,8 @@ def _build_department_summary_sheet(
             total_incomplete,
             total_sunday_days,
             total_special_days,
+            _minutes_to_excel_duration(total_sunday_minutes),
+            _minutes_to_excel_duration(total_special_minutes),
         ]
     )
     for cell in ws[total_row]:
@@ -1175,10 +1187,12 @@ def _build_department_summary_sheet(
             "Toplam Plan Üstü Süre",
             "Toplam Fazla Sürelerle Çalışma",
             "Toplam Yasal Fazla Mesai",
+            "Pazar Net Süre",
+            "Özel Gün Net Süre",
         ],
     )
     _auto_width(ws)
-    _finalize_visual_scope(ws, used_max_col=9)
+    _finalize_visual_scope(ws, used_max_col=11)
     _apply_print_layout(ws, header_row=header_row)
 
 
@@ -1201,6 +1215,10 @@ def _build_dashboard_sheet(
     total_extra = sum(int(row["extra_work_minutes"]) for row in summary_rows)
     total_overtime = sum(int(row["overtime_minutes"]) for row in summary_rows)
     total_incomplete = sum(int(row["incomplete_days"]) for row in summary_rows)
+    total_sunday_days = sum(int(row.get("sunday_worked_days", 0)) for row in summary_rows)
+    total_special_days = sum(int(row.get("special_worked_days", 0)) for row in summary_rows)
+    total_sunday_minutes = sum(int(row.get("sunday_worked_minutes", 0)) for row in summary_rows)
+    total_special_minutes = sum(int(row.get("special_worked_minutes", 0)) for row in summary_rows)
 
     kpi_row = ws.max_row + 1
     ws.append(["KPI", "Değer"])
@@ -1212,6 +1230,10 @@ def _build_dashboard_sheet(
         ("Toplam Fazla Sürelerle Çalışma", _minutes_to_excel_duration(total_extra), True),
         ("Toplam Yasal Fazla Mesai", _minutes_to_excel_duration(total_overtime), True),
         ("Toplam Eksik Gün", total_incomplete, False),
+        ("Toplam Pazar Çalışılan Gün", total_sunday_days, False),
+        ("Toplam Özel Gün Çalışılan Gün", total_special_days, False),
+        ("Toplam Pazar Net Süre", _minutes_to_excel_duration(total_sunday_minutes), True),
+        ("Toplam Özel Gün Net Süre", _minutes_to_excel_duration(total_special_minutes), True),
     ]
     for label, value, _ in kpi_rows:
         ws.append([label, value])
