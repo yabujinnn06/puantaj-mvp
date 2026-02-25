@@ -14,7 +14,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.utils.cell import quote_sheetname
 from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.worksheet.worksheet import Worksheet
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.models import AttendanceEvent, AttendanceType, Department, Employee, WorkRule
@@ -1331,6 +1331,7 @@ def _build_department_or_all_export(
     year: int,
     month: int,
     department_id: int | None,
+    region_id: int | None,
     include_daily_sheet: bool,
     include_inactive: bool,
 ) -> None:
@@ -1339,6 +1340,13 @@ def _build_department_or_all_export(
         employee_stmt = employee_stmt.where(Employee.is_active.is_(True))
     if department_id is not None:
         employee_stmt = employee_stmt.where(Employee.department_id == department_id)
+    if region_id is not None:
+        employee_stmt = employee_stmt.outerjoin(Department, Department.id == Employee.department_id).where(
+            or_(
+                Employee.region_id == region_id,
+                and_(Employee.region_id.is_(None), Department.region_id == region_id),
+            )
+        )
     employees = list(db.scalars(employee_stmt).all())
 
     ws_dashboard = wb.active
@@ -1429,6 +1437,7 @@ def _build_date_range_export(
     end_date: date,
     employee_id: int | None,
     department_id: int | None,
+    region_id: int | None,
 ) -> None:
     if end_date < start_date:
         raise HTTPException(
@@ -1453,6 +1462,13 @@ def _build_date_range_export(
         stmt = stmt.where(AttendanceEvent.employee_id == employee_id)
     if department_id is not None:
         stmt = stmt.where(Employee.department_id == department_id)
+    if region_id is not None:
+        stmt = stmt.where(
+            or_(
+                Employee.region_id == region_id,
+                and_(Employee.region_id.is_(None), Department.region_id == region_id),
+            )
+        )
 
     rows = list(db.execute(stmt).all())
 
@@ -1462,9 +1478,10 @@ def _build_date_range_export(
     ws_events.append(["Tarih Aral\u0131\u011f\u0131", f"{start_date.isoformat()} - {end_date.isoformat()}"])
     ws_events.append(["Filtre - \u00c7al\u0131\u015fan ID", employee_id if employee_id is not None else "T\u00fcm\u00fc"])
     ws_events.append(["Filtre - Departman ID", department_id if department_id is not None else "T\u00fcm\u00fc"])
+    ws_events.append(["Filtre - B\u00f6lge ID", region_id if region_id is not None else "T\u00fcm\u00fc"])
     ws_events.append(["Kay\u0131t Say\u0131s\u0131", len(rows)])
     ws_events.append([])
-    _style_metadata_rows(ws_events, start_row=2, end_row=5)
+    _style_metadata_rows(ws_events, start_row=2, end_row=6)
 
     events_header_row = ws_events.max_row + 1
     ws_events.append(
@@ -1553,8 +1570,9 @@ def _build_date_range_export(
     ws_daily.append(["Tarih Aral\u0131\u011f\u0131", f"{start_date.isoformat()} - {end_date.isoformat()}"])
     ws_daily.append(["Filtre - \u00c7al\u0131\u015fan ID", employee_id if employee_id is not None else "T\u00fcm\u00fc"])
     ws_daily.append(["Filtre - Departman ID", department_id if department_id is not None else "T\u00fcm\u00fc"])
+    ws_daily.append(["Filtre - B\u00f6lge ID", region_id if region_id is not None else "T\u00fcm\u00fc"])
     ws_daily.append([])
-    _style_metadata_rows(ws_daily, start_row=2, end_row=4)
+    _style_metadata_rows(ws_daily, start_row=2, end_row=5)
 
     daily_header_row = ws_daily.max_row + 1
     ws_daily.append(
@@ -1912,6 +1930,7 @@ def build_puantaj_xlsx_bytes(
     month: int | None = None,
     employee_id: int | None = None,
     department_id: int | None = None,
+    region_id: int | None = None,
     start_date: date | None = None,
     end_date: date | None = None,
     include_daily_sheet: bool = True,
@@ -1943,6 +1962,7 @@ def build_puantaj_xlsx_bytes(
             year=year,
             month=month,
             department_id=department_id if mode == "department" else None,
+            region_id=region_id,
             include_daily_sheet=include_daily_sheet,
             include_inactive=include_inactive,
         )
@@ -1959,6 +1979,7 @@ def build_puantaj_xlsx_bytes(
             end_date=end_date,
             employee_id=employee_id,
             department_id=department_id,
+            region_id=region_id,
         )
     else:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid export mode")
@@ -1984,6 +2005,7 @@ def _fetch_date_range_rows(
     end_date: date,
     employee_id: int | None,
     department_id: int | None,
+    region_id: int | None,
 ) -> list[tuple[AttendanceEvent, Employee, Department | None]]:
     if end_date < start_date:
         raise HTTPException(
@@ -2008,6 +2030,13 @@ def _fetch_date_range_rows(
         stmt = stmt.where(AttendanceEvent.employee_id == employee_id)
     if department_id is not None:
         stmt = stmt.where(Employee.department_id == department_id)
+    if region_id is not None:
+        stmt = stmt.where(
+            or_(
+                Employee.region_id == region_id,
+                and_(Employee.region_id.is_(None), Department.region_id == region_id),
+            )
+        )
 
     return list(db.execute(stmt).all())
 
@@ -2099,6 +2128,7 @@ def build_puantaj_range_xlsx_bytes(
     mode: RangeSheetMode,
     department_id: int | None = None,
     employee_id: int | None = None,
+    region_id: int | None = None,
 ) -> bytes:
     if mode not in {"consolidated", "employee_sheets", "department_sheets"}:
         raise HTTPException(
@@ -2114,6 +2144,7 @@ def build_puantaj_range_xlsx_bytes(
         end_date=end_date,
         employee_id=employee_id,
         department_id=department_id,
+        region_id=region_id,
     )
 
     if mode == "consolidated":
@@ -2129,6 +2160,7 @@ def build_puantaj_range_xlsx_bytes(
         end_date=end_date,
         employee_id=employee_id,
         department_id=department_id,
+        region_id=region_id,
     )
 
     if mode == "employee_sheets":

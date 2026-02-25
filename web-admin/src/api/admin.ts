@@ -413,6 +413,7 @@ export interface PuantajExportParams {
   month?: number
   employee_id?: number
   department_id?: number
+  region_id?: number
   start_date?: string
   end_date?: string
   include_daily_sheet?: boolean
@@ -424,6 +425,7 @@ export interface PuantajRangeExportParams {
   end_date: string
   mode: 'consolidated' | 'employee_sheets' | 'department_sheets'
   department_id?: number
+  region_id?: number
   employee_id?: number
 }
 
@@ -1240,6 +1242,7 @@ export async function downloadDateRangeExport(params: {
   start: string
   end: string
   department_id?: number
+  region_id?: number
   employee_id?: number
 }): Promise<Blob> {
   const response = await apiClient.get<Blob>('/api/admin/export/date-range', {

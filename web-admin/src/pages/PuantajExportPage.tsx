@@ -6,6 +6,7 @@ import {
   downloadPuantajRangeExport,
   getDepartments,
   getEmployees,
+  getRegions,
   type PuantajExportParams,
   type PuantajRangeExportParams,
 } from '../api/admin'
@@ -38,6 +39,7 @@ export function PuantajExportPage() {
   const [mode, setMode] = useState<ExportMode>('employee')
   const [employeeId, setEmployeeId] = useState('')
   const [departmentId, setDepartmentId] = useState('')
+  const [regionId, setRegionId] = useState('')
   const [year, setYear] = useState(String(now.getFullYear()))
   const [month, setMonth] = useState(String(now.getMonth() + 1))
   const [startDate, setStartDate] = useState('')
@@ -49,6 +51,7 @@ export function PuantajExportPage() {
   const [rangeEndDate, setRangeEndDate] = useState('')
   const [rangeMode, setRangeMode] = useState<RangeMode>('consolidated')
   const [rangeDepartmentId, setRangeDepartmentId] = useState('')
+  const [rangeRegionId, setRangeRegionId] = useState('')
   const [rangeEmployeeId, setRangeEmployeeId] = useState('')
 
   const employeesQuery = useQuery({
@@ -56,6 +59,10 @@ export function PuantajExportPage() {
     queryFn: () => getEmployees({ status: 'all', include_inactive: true }),
   })
   const departmentsQuery = useQuery({ queryKey: ['departments'], queryFn: getDepartments })
+  const regionsQuery = useQuery({
+    queryKey: ['regions', 'all', 'for-export'],
+    queryFn: () => getRegions({ include_inactive: true }),
+  })
 
   const exportMutation = useMutation({
     mutationFn: downloadPuantajExport,
@@ -100,6 +107,7 @@ export function PuantajExportPage() {
     const parsedMonth = Number(month)
     const parsedEmployeeId = Number(employeeId)
     const parsedDepartmentId = Number(departmentId)
+    const parsedRegionId = Number(regionId)
 
     if (mode === 'employee') {
       if (!parsedEmployeeId || !parsedYear || !parsedMonth) return null
@@ -129,6 +137,7 @@ export function PuantajExportPage() {
         mode,
         year: parsedYear,
         month: parsedMonth,
+        region_id: parsedRegionId || undefined,
         include_daily_sheet: includeDailySheet,
         include_inactive: includeInactive,
       }
@@ -141,12 +150,14 @@ export function PuantajExportPage() {
       end_date: endDate,
       employee_id: parsedEmployeeId || undefined,
       department_id: parsedDepartmentId || undefined,
+      region_id: parsedRegionId || undefined,
       include_inactive: includeInactive,
     }
   }, [
     mode,
     employeeId,
     departmentId,
+    regionId,
     year,
     month,
     startDate,
@@ -158,6 +169,7 @@ export function PuantajExportPage() {
   const rangeFilters = useMemo<PuantajRangeExportParams | null>(() => {
     const parsedEmployeeId = Number(rangeEmployeeId)
     const parsedDepartmentId = Number(rangeDepartmentId)
+    const parsedRegionId = Number(rangeRegionId)
     if (!rangeStartDate || !rangeEndDate) return null
     return {
       start_date: rangeStartDate,
@@ -165,8 +177,9 @@ export function PuantajExportPage() {
       mode: rangeMode,
       employee_id: parsedEmployeeId > 0 ? parsedEmployeeId : undefined,
       department_id: parsedDepartmentId > 0 ? parsedDepartmentId : undefined,
+      region_id: parsedRegionId > 0 ? parsedRegionId : undefined,
     }
-  }, [rangeStartDate, rangeEndDate, rangeMode, rangeEmployeeId, rangeDepartmentId])
+  }, [rangeStartDate, rangeEndDate, rangeMode, rangeEmployeeId, rangeDepartmentId, rangeRegionId])
 
   const onDownload = () => {
     if (!filters) {
@@ -192,16 +205,27 @@ export function PuantajExportPage() {
     rangeExportMutation.mutate(rangeFilters)
   }
 
-  if (employeesQuery.isLoading || departmentsQuery.isLoading) {
+  if (employeesQuery.isLoading || departmentsQuery.isLoading || regionsQuery.isLoading) {
     return <LoadingBlock />
   }
 
-  if (employeesQuery.isError || departmentsQuery.isError) {
-    return <ErrorBlock message="Çalışan/departman bilgileri alınamadı." />
+  if (employeesQuery.isError || departmentsQuery.isError || regionsQuery.isError) {
+    return <ErrorBlock message="Çalışan/departman/bölge bilgileri alınamadı." />
   }
 
   const employees = employeesQuery.data ?? []
   const departments = departmentsQuery.data ?? []
+  const regions = regionsQuery.data ?? []
+  const activeRegionId = regionId ? Number(regionId) : null
+  const activeRangeRegionId = rangeRegionId ? Number(rangeRegionId) : null
+  const filteredDepartments =
+    activeRegionId && Number.isFinite(activeRegionId)
+      ? departments.filter((department) => department.region_id === activeRegionId)
+      : departments
+  const filteredRangeDepartments =
+    activeRangeRegionId && Number.isFinite(activeRangeRegionId)
+      ? departments.filter((department) => department.region_id === activeRangeRegionId)
+      : departments
 
   return (
     <div className="space-y-4">
@@ -247,9 +271,30 @@ export function PuantajExportPage() {
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
               >
                 <option value="">Seçiniz</option>
-                {departments.map((department) => (
+                {filteredDepartments.map((department) => (
                   <option key={department.id} value={department.id}>
                     #{department.id} - {department.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          {(mode === 'all' || mode === 'date_range') && (
+            <label className="text-sm text-slate-700">
+              Bölge (opsiyonel)
+              <select
+                value={regionId}
+                onChange={(e) => {
+                  setRegionId(e.target.value)
+                  setDepartmentId('')
+                }}
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+              >
+                <option value="">Tümü</option>
+                {regions.map((region) => (
+                  <option key={region.id} value={region.id}>
+                    #{region.id} - {region.name}
                   </option>
                 ))}
               </select>
@@ -390,9 +435,28 @@ export function PuantajExportPage() {
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
             >
               <option value="">Tümü</option>
-              {departments.map((department) => (
+              {filteredRangeDepartments.map((department) => (
                 <option key={department.id} value={department.id}>
                   #{department.id} - {department.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="text-sm text-slate-700">
+            Bölge (opsiyonel)
+            <select
+              value={rangeRegionId}
+              onChange={(e) => {
+                setRangeRegionId(e.target.value)
+                setRangeDepartmentId('')
+              }}
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+            >
+              <option value="">Tümü</option>
+              {regions.map((region) => (
+                <option key={region.id} value={region.id}>
+                  #{region.id} - {region.name}
                 </option>
               ))}
             </select>

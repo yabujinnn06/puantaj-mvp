@@ -6656,6 +6656,7 @@ def export_puantaj_xlsx(
     month: int | None = Query(default=None, ge=1, le=12),
     employee_id: int | None = Query(default=None, ge=1),
     department_id: int | None = Query(default=None, ge=1),
+    region_id: int | None = Query(default=None, ge=1),
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
     include_daily_sheet: bool = Query(default=True),
@@ -6669,6 +6670,7 @@ def export_puantaj_xlsx(
         month=month,
         employee_id=employee_id,
         department_id=department_id,
+        region_id=region_id,
         start_date=start_date,
         end_date=end_date,
         include_daily_sheet=include_daily_sheet,
@@ -6691,6 +6693,7 @@ def export_puantaj_xlsx(
             "month": month,
             "employee_id": employee_id,
             "department_id": department_id,
+            "region_id": region_id,
             "start_date": start_date.isoformat() if start_date else None,
             "end_date": end_date.isoformat() if end_date else None,
             "include_inactive": include_inactive,
@@ -6814,6 +6817,7 @@ def export_all_monthly(
     request: Request,
     year: int = Query(..., ge=1970),
     month: int = Query(..., ge=1, le=12),
+    region_id: int | None = Query(default=None, ge=1),
     include_inactive: bool = Query(default=False),
     db: Session = Depends(get_db),
 ) -> Response:
@@ -6822,6 +6826,7 @@ def export_all_monthly(
         mode="all",
         year=year,
         month=month,
+        region_id=region_id,
         include_inactive=include_inactive,
     )
     log_audit(
@@ -6838,6 +6843,7 @@ def export_all_monthly(
             "mode": "all",
             "year": year,
             "month": month,
+            "region_id": region_id,
             "include_inactive": include_inactive,
         },
         request_id=getattr(request.state, "request_id", None),
@@ -6860,6 +6866,7 @@ def export_date_range(
     start: date = Query(...),
     end: date = Query(...),
     department_id: int | None = Query(default=None, ge=1),
+    region_id: int | None = Query(default=None, ge=1),
     employee_id: int | None = Query(default=None, ge=1),
     db: Session = Depends(get_db),
 ) -> Response:
@@ -6869,6 +6876,7 @@ def export_date_range(
         start_date=start,
         end_date=end,
         department_id=department_id,
+        region_id=region_id,
         employee_id=employee_id,
     )
     log_audit(
@@ -6886,6 +6894,7 @@ def export_date_range(
             "start": start.isoformat(),
             "end": end.isoformat(),
             "department_id": department_id,
+            "region_id": region_id,
             "employee_id": employee_id,
         },
         request_id=getattr(request.state, "request_id", None),
@@ -6909,6 +6918,7 @@ def export_puantaj_range(
     end_date: date = Query(...),
     mode: Literal["consolidated", "employee_sheets", "department_sheets"] = Query(default="consolidated"),
     department_id: int | None = Query(default=None, ge=1),
+    region_id: int | None = Query(default=None, ge=1),
     employee_id: int | None = Query(default=None, ge=1),
     db: Session = Depends(get_db),
 ) -> Response:
@@ -6918,6 +6928,7 @@ def export_puantaj_range(
         end_date=end_date,
         mode=mode,
         department_id=department_id,
+        region_id=region_id,
         employee_id=employee_id,
     )
     log_audit(
@@ -6935,6 +6946,7 @@ def export_puantaj_range(
             "start_date": start_date.isoformat(),
             "end_date": end_date.isoformat(),
             "department_id": department_id,
+            "region_id": region_id,
             "employee_id": employee_id,
         },
         request_id=getattr(request.state, "request_id", None),
