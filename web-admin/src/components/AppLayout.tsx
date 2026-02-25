@@ -204,7 +204,7 @@ export function AppLayout() {
   }, [])
 
   return (
-    <div className="admin-shell min-h-screen bg-slate-100 lg:grid lg:grid-cols-[260px_1fr]">
+    <div className="admin-shell min-h-screen bg-slate-100 lg:grid lg:grid-cols-[228px_minmax(0,1fr)]">
       {showMobileNavLoader ? (
         <div className="mobile-nav-loader lg:hidden" role="status" aria-live="polite" aria-label="Sayfa geçişi">
           <div className="mobile-nav-loader-logo" aria-hidden="true">
@@ -220,7 +220,7 @@ export function AppLayout() {
         </div>
       ) : null}
 
-      <aside ref={sidebarRef} className="admin-sidebar flex flex-col px-4 py-6 text-slate-100 shadow-panel">
+      <aside ref={sidebarRef} className="admin-sidebar flex flex-col px-3 py-6 text-slate-100 shadow-panel xl:px-4">
         <h1 className="px-2 text-xl font-bold tracking-tight">Puantaj Admin</h1>
         <p className="px-2 pt-1 text-xs text-slate-400">FastAPI Yönetim Paneli</p>
         <nav className="mt-6 flex flex-col gap-1">
@@ -249,7 +249,7 @@ export function AppLayout() {
         ) : null}
       </aside>
 
-      <div ref={contentRef} className="flex min-h-screen flex-col">
+      <div ref={contentRef} className="flex min-h-screen min-w-0 flex-col">
         <header className="admin-topbar border-b border-slate-200 bg-white/90 px-4 py-4 backdrop-blur sm:px-6">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -277,7 +277,7 @@ export function AppLayout() {
           </div>
         </header>
 
-        <main className="admin-main flex-1 p-4 sm:p-6">
+        <main className="admin-main min-w-0 flex-1 p-4 sm:p-6">
           <Outlet />
         </main>
         {UI_BRANDING.showSignature ? (
