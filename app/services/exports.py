@@ -452,6 +452,13 @@ def _set_internal_sheet_link(cell: object, sheet_title: str) -> None:
     setattr(cell, "style", "Hyperlink")
 
 
+def _add_dashboard_back_link(ws: Worksheet, *, dashboard_sheet_title: str) -> None:
+    if ws.title.upper() == dashboard_sheet_title.upper():
+        return
+    link_cell = ws.cell(row=2, column=3, value="Dashboard'a Dön")
+    _set_internal_sheet_link(link_cell, dashboard_sheet_title)
+
+
 def _table_range_ref(ws: Worksheet, *, header_row: int, data_end_row: int, max_col: int) -> str:
     return f"A{header_row}:{get_column_letter(max_col)}{data_end_row}"
 
@@ -912,12 +919,12 @@ def _build_employee_export(
         employee_sheet_map={employee.id: ws_daily.title},
     )
     _build_summary_sheet(
-        wb.create_sheet("SUMMARY_EMPLOYEE"),
+        wb.create_sheet("SUMMARY_EMPLOYEE", 1),
         title="Çalışan Aylık Özeti",
         rows=summary_rows,
     )
     _build_department_summary_sheet(
-        wb.create_sheet("SUMMARY_DEPARTMENT"),
+        wb.create_sheet("SUMMARY_DEPARTMENT", 2),
         title="Çalışan Aylık Özeti",
         rows=_group_summary_rows_by_department(summary_rows),
     )
@@ -1402,9 +1409,13 @@ def _build_department_or_all_export(
         summary_rows=summary_rows,
         employee_sheet_map=employee_sheet_map if employee_sheet_map else None,
     )
-    _build_summary_sheet(wb.create_sheet("SUMMARY_EMPLOYEE"), title=summary_title, rows=summary_rows)
+    _build_summary_sheet(
+        wb.create_sheet("SUMMARY_EMPLOYEE", 1),
+        title=summary_title,
+        rows=summary_rows,
+    )
     _build_department_summary_sheet(
-        wb.create_sheet("SUMMARY_DEPARTMENT"),
+        wb.create_sheet("SUMMARY_DEPARTMENT", 2),
         title=summary_title,
         rows=_group_summary_rows_by_department(summary_rows),
     )
@@ -1779,12 +1790,12 @@ def _build_date_range_export(
         summary_rows=summary_rows,
     )
     _build_summary_sheet(
-        wb.create_sheet("SUMMARY_EMPLOYEE"),
+        wb.create_sheet("SUMMARY_EMPLOYEE", 1),
         title=summary_title,
         rows=summary_rows,
     )
     _build_department_summary_sheet(
-        wb.create_sheet("SUMMARY_DEPARTMENT"),
+        wb.create_sheet("SUMMARY_DEPARTMENT", 2),
         title=summary_title,
         rows=_group_summary_rows_by_department(summary_rows),
     )
@@ -1808,6 +1819,11 @@ def _sheet_purpose_text(sheet_name: str) -> str:
 
 
 def _apply_workbook_branding(wb: Workbook) -> None:
+    dashboard_sheet = next(
+        (sheet.title for sheet in wb.worksheets if sheet.title.upper() == "DASHBOARD"),
+        None,
+    )
+
     for ws in wb.worksheets:
         upper_name = ws.title.upper()
         if upper_name == "README":
@@ -1820,6 +1836,9 @@ def _apply_workbook_branding(wb: Workbook) -> None:
             ws.sheet_properties.tabColor = "FF475569"
         else:
             ws.sheet_properties.tabColor = "FF64748B"
+
+        if dashboard_sheet is not None:
+            _add_dashboard_back_link(ws, dashboard_sheet_title=dashboard_sheet)
 
 
 def _build_readme_sheet(wb: Workbook, *, report_title: str) -> None:
