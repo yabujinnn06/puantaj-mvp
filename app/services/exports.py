@@ -8,6 +8,7 @@ from typing import Literal
 
 from fastapi import HTTPException, status
 from openpyxl import Workbook
+from openpyxl.chart import BarChart, Reference
 from openpyxl.formatting.rule import ColorScaleRule, DataBarRule, FormulaRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
@@ -928,6 +929,11 @@ def _build_employee_export(
         title="Çalışan Aylık Özeti",
         rows=_group_summary_rows_by_department(summary_rows),
     )
+    _build_analytics_sheet(
+        wb.create_sheet("ANALYTICS", 3),
+        title="Çalışan Aylık Özeti",
+        summary_rows=summary_rows,
+    )
 
 
 def _build_summary_sheet(
@@ -1324,6 +1330,237 @@ def _build_dashboard_sheet(
     _apply_print_layout(ws)
 
 
+def _build_analytics_sheet(
+    ws: Worksheet,
+    *,
+    title: str,
+    summary_rows: list[dict[str, object]],
+) -> None:
+    _merge_title(ws, 1, f"{title} - ANALİZ PANELİ", end_col=10)
+    ws.append(["Rapor Üretim (UTC)", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")])
+    ws.append(["Çalışan Kayıt Sayısı", len(summary_rows)])
+    _append_spacer_row(ws)
+    _style_metadata_rows(ws, start_row=2, end_row=3)
+
+    total_worked = sum(int(row.get("worked_minutes", 0)) for row in summary_rows)
+    total_plan_overtime = sum(int(row.get("plan_overtime_minutes", 0)) for row in summary_rows)
+    total_overtime = sum(int(row.get("overtime_minutes", 0)) for row in summary_rows)
+    total_incomplete = sum(int(row.get("incomplete_days", 0)) for row in summary_rows)
+    total_sunday_minutes = sum(int(row.get("sunday_worked_minutes", 0)) for row in summary_rows)
+    total_special_minutes = sum(int(row.get("special_worked_minutes", 0)) for row in summary_rows)
+    total_sunday_days = sum(int(row.get("sunday_worked_days", 0)) for row in summary_rows)
+    total_special_days = sum(int(row.get("special_worked_days", 0)) for row in summary_rows)
+    avg_worked_per_employee = int(total_worked / len(summary_rows)) if summary_rows else 0
+    avg_overtime_per_employee = int(total_overtime / len(summary_rows)) if summary_rows else 0
+    risk_employee_count = sum(
+        1
+        for row in summary_rows
+        if int(row.get("incomplete_days", 0)) > 0 or int(row.get("overtime_minutes", 0)) >= 600
+    )
+
+    kpi_header_row = ws.max_row + 1
+    ws.append(["KPI", "Değer"])
+    _style_header(ws, kpi_header_row)
+    kpi_rows: list[tuple[str, object, bool]] = [
+        ("Toplam Net Süre", _minutes_to_excel_duration(total_worked), True),
+        ("Toplam Plan Üstü Süre", _minutes_to_excel_duration(total_plan_overtime), True),
+        ("Toplam Yasal Fazla Mesai", _minutes_to_excel_duration(total_overtime), True),
+        ("Toplam Eksik Gün", total_incomplete, False),
+        ("Toplam Pazar Çalışılan Gün", total_sunday_days, False),
+        ("Toplam Özel Gün Çalışılan Gün", total_special_days, False),
+        ("Toplam Pazar Net Süre", _minutes_to_excel_duration(total_sunday_minutes), True),
+        ("Toplam Özel Gün Net Süre", _minutes_to_excel_duration(total_special_minutes), True),
+        ("Kişi Başı Ortalama Net Süre", _minutes_to_excel_duration(avg_worked_per_employee), True),
+        ("Kişi Başı Ortalama Yasal Fazla Mesai", _minutes_to_excel_duration(avg_overtime_per_employee), True),
+        ("Riskli Çalışan Sayısı", risk_employee_count, False),
+    ]
+    for label, value, _is_duration in kpi_rows:
+        ws.append([label, value])
+    _style_metadata_rows(ws, start_row=kpi_header_row + 1, end_row=ws.max_row)
+    for offset, (_, _, is_duration) in enumerate(kpi_rows, start=1):
+        value_cell = ws.cell(row=kpi_header_row + offset, column=2)
+        value_cell.number_format = DURATION_NUMBER_FORMAT if is_duration else "0"
+
+    _append_spacer_row(ws)
+    employee_header_row = ws.max_row + 1
+    ws.append(
+        [
+            "Sıra",
+            "Çalışan",
+            "Departman",
+            "Net Süre [h:mm]",
+            "Yasal Fazla Mesai [h:mm]",
+            "Eksik Gün",
+            "Pazar Net Süre [h:mm]",
+            "Özel Gün Net Süre [h:mm]",
+            "Risk Skoru",
+        ]
+    )
+    _style_header(ws, employee_header_row)
+    ranked_rows = sorted(
+        summary_rows,
+        key=lambda row: (
+            int(row.get("incomplete_days", 0)) * 400
+            + int(row.get("overtime_minutes", 0)) * 3
+            + int(row.get("special_worked_minutes", 0)) * 2
+            + int(row.get("sunday_worked_minutes", 0))
+        ),
+        reverse=True,
+    )
+    employee_data_start = ws.max_row + 1
+    max_employee_rows = min(20, len(ranked_rows))
+    for idx, row in enumerate(ranked_rows[:max_employee_rows], start=1):
+        worked_minutes = int(row.get("worked_minutes", 0))
+        overtime_minutes = int(row.get("overtime_minutes", 0))
+        incomplete_days = int(row.get("incomplete_days", 0))
+        sunday_minutes = int(row.get("sunday_worked_minutes", 0))
+        special_minutes = int(row.get("special_worked_minutes", 0))
+        risk_score = (incomplete_days * 4.0) + (overtime_minutes / 60.0) + (special_minutes / 600.0) + (
+            sunday_minutes / 900.0
+        )
+        ws.append(
+            [
+                idx,
+                f"#{row['employee_id']} - {row['employee_name']}",
+                row["department_name"],
+                _minutes_to_excel_duration(worked_minutes),
+                _minutes_to_excel_duration(overtime_minutes),
+                incomplete_days,
+                _minutes_to_excel_duration(sunday_minutes),
+                _minutes_to_excel_duration(special_minutes),
+                round(risk_score, 2),
+            ]
+        )
+    employee_data_end = ws.max_row
+    _style_table_region(
+        ws,
+        header_row=employee_header_row,
+        data_start_row=employee_data_start,
+        data_end_row=employee_data_end,
+        status_col_name="",
+        flags_col_name="",
+    )
+    _apply_duration_formats(
+        ws,
+        header_row=employee_header_row,
+        data_start_row=employee_data_start,
+        data_end_row=employee_data_end,
+        header_names=[
+            "Net Süre [h:mm]",
+            "Yasal Fazla Mesai [h:mm]",
+            "Pazar Net Süre [h:mm]",
+            "Özel Gün Net Süre [h:mm]",
+        ],
+    )
+    if employee_data_end >= employee_data_start:
+        risk_col = get_column_letter(9)
+        risk_range = f"{risk_col}{employee_data_start}:{risk_col}{employee_data_end}"
+        ws.conditional_formatting.add(
+            risk_range,
+            ColorScaleRule(
+                start_type="num",
+                start_value=0,
+                start_color="E6F4EA",
+                mid_type="percentile",
+                mid_value=50,
+                mid_color="FFF3CD",
+                end_type="max",
+                end_value=0,
+                end_color="FDE2E4",
+            ),
+        )
+
+    _append_spacer_row(ws)
+    department_header_row = ws.max_row + 1
+    ws.append(
+        [
+            "Departman",
+            "Çalışan Sayısı",
+            "Net Süre [h:mm]",
+            "Yasal Fazla Mesai [h:mm]",
+            "Eksik Gün",
+            "Kişi Başı Ortalama Net Süre [h:mm]",
+        ]
+    )
+    _style_header(ws, department_header_row)
+    department_rows = _group_summary_rows_by_department(summary_rows)
+    department_data_start = ws.max_row + 1
+    for row in sorted(department_rows, key=lambda item: int(item.get("overtime_minutes", 0)), reverse=True):
+        employee_count = max(1, int(row.get("employee_count", 0)))
+        worked_minutes = int(row.get("worked_minutes", 0))
+        overtime_minutes = int(row.get("overtime_minutes", 0))
+        ws.append(
+            [
+                row["department_name"],
+                int(row.get("employee_count", 0)),
+                _minutes_to_excel_duration(worked_minutes),
+                _minutes_to_excel_duration(overtime_minutes),
+                int(row.get("incomplete_days", 0)),
+                _minutes_to_excel_duration(int(worked_minutes / employee_count)),
+            ]
+        )
+    department_data_end = ws.max_row
+    _style_table_region(
+        ws,
+        header_row=department_header_row,
+        data_start_row=department_data_start,
+        data_end_row=department_data_end,
+        status_col_name="",
+        flags_col_name="",
+    )
+    _apply_duration_formats(
+        ws,
+        header_row=department_header_row,
+        data_start_row=department_data_start,
+        data_end_row=department_data_end,
+        header_names=[
+            "Net Süre [h:mm]",
+            "Yasal Fazla Mesai [h:mm]",
+            "Kişi Başı Ortalama Net Süre [h:mm]",
+        ],
+    )
+
+    if employee_data_end >= employee_data_start:
+        employee_chart = BarChart()
+        employee_chart.type = "col"
+        employee_chart.style = 10
+        employee_chart.title = "Riskli Çalışanlar - Yasal Fazla Mesai"
+        employee_chart.y_axis.title = "Süre"
+        employee_chart.x_axis.title = "Çalışan"
+        employee_data_ref = Reference(ws, min_col=5, min_row=employee_data_start, max_row=employee_data_end)
+        employee_cats_ref = Reference(ws, min_col=2, min_row=employee_data_start, max_row=employee_data_end)
+        employee_chart.add_data(employee_data_ref, titles_from_data=False)
+        employee_chart.set_categories(employee_cats_ref)
+        employee_chart.height = 7
+        employee_chart.width = 14
+        ws.add_chart(employee_chart, "K5")
+
+    if department_data_end >= department_data_start:
+        department_chart = BarChart()
+        department_chart.type = "col"
+        department_chart.style = 11
+        department_chart.title = "Departman Bazlı Net Süre ve Yasal Fazla Mesai"
+        department_chart.y_axis.title = "Süre"
+        department_chart.x_axis.title = "Departman"
+        department_data_ref = Reference(
+            ws,
+            min_col=3,
+            max_col=4,
+            min_row=department_header_row,
+            max_row=department_data_end,
+        )
+        department_cats_ref = Reference(ws, min_col=1, min_row=department_data_start, max_row=department_data_end)
+        department_chart.add_data(department_data_ref, titles_from_data=True)
+        department_chart.set_categories(department_cats_ref)
+        department_chart.height = 7
+        department_chart.width = 14
+        ws.add_chart(department_chart, "K24")
+
+    _auto_width(ws)
+    _finalize_visual_scope(ws, used_max_col=10)
+    _apply_print_layout(ws, header_row=employee_header_row)
+
+
 def _build_department_or_all_export(
     db: Session,
     wb: Workbook,
@@ -1426,6 +1663,11 @@ def _build_department_or_all_export(
         wb.create_sheet("SUMMARY_DEPARTMENT", 2),
         title=summary_title,
         rows=_group_summary_rows_by_department(summary_rows),
+    )
+    _build_analytics_sheet(
+        wb.create_sheet("ANALYTICS", 3),
+        title=summary_title,
+        summary_rows=summary_rows,
     )
 
 
@@ -1817,23 +2059,30 @@ def _build_date_range_export(
         title=summary_title,
         rows=_group_summary_rows_by_department(summary_rows),
     )
+    _build_analytics_sheet(
+        wb.create_sheet("ANALYTICS", 3),
+        title=summary_title,
+        summary_rows=summary_rows,
+    )
 
 
 def _sheet_purpose_text(sheet_name: str) -> str:
     upper_name = sheet_name.upper()
     if upper_name == "DASHBOARD":
-        return "Yonetim KPI ve hizli durum ozeti"
+        return "Yönetim KPI ve hızlı durum özeti"
+    if upper_name.startswith("ANALYTICS"):
+        return "Gelişmiş risk, verimlilik ve trend analizi"
     if upper_name.startswith("SUMMARY_EMPLOYEE"):
-        return "Calisan bazli toplu ozet tablosu"
+        return "Çalışan bazlı toplu özet tablosu"
     if upper_name.startswith("SUMMARY_DEPARTMENT"):
-        return "Departman bazli toplu ozet tablosu"
+        return "Departman bazlı toplu özet tablosu"
     if upper_name.startswith("RAW_EVENTS"):
-        return "Ham event kayitlari (denetim)"
+        return "Ham event kayıtları (denetim)"
     if upper_name.startswith("DAILY_FACT"):
-        return "Gunluk mesai gerceklik tablosu"
+        return "Günlük mesai gerçeklik tablosu"
     if upper_name.startswith("EMP_") or upper_name.startswith("DEP_") or upper_name.startswith("DAILY_"):
-        return "Detay calisma sayfasi"
-    return "Rapor sayfasi"
+        return "Detay çalışma sayfası"
+    return "Rapor sayfası"
 
 
 def _apply_workbook_branding(wb: Workbook) -> None:
@@ -1848,6 +2097,8 @@ def _apply_workbook_branding(wb: Workbook) -> None:
             ws.sheet_properties.tabColor = "FFB91C1C"
         elif upper_name == "DASHBOARD":
             ws.sheet_properties.tabColor = "FF0B4F73"
+        elif upper_name.startswith("ANALYTICS"):
+            ws.sheet_properties.tabColor = "FF7C3AED"
         elif upper_name.startswith("SUMMARY"):
             ws.sheet_properties.tabColor = "FF2B6A99"
         elif upper_name.startswith("RAW") or upper_name.startswith("DAILY"):
@@ -1865,7 +2116,7 @@ def _build_readme_sheet(wb: Workbook, *, report_title: str) -> None:
     ws = wb.create_sheet("README", 0)
 
     _merge_title(ws, 1, f"{report_title} - RAPOR KILAVUZU", end_col=4)
-    ws.append(["Rapor Uretim (UTC)", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")])
+    ws.append(["Rapor Üretim (UTC)", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")])
     ws.append(["Toplam Sayfa", len(wb.sheetnames) - 1])
     _append_spacer_row(ws)
     _style_metadata_rows(ws, start_row=2, end_row=3)
@@ -1874,10 +2125,11 @@ def _build_readme_sheet(wb: Workbook, *, report_title: str) -> None:
     ws.append(["Adim", "Ne yapmali?", "Neden onemli?"])
     _style_header(ws, guide_header)
     guide_rows = [
-        ("1", "DASHBOARD sayfasindan baslayin.", "En kritik KPI metriklerini tek yerde gorursunuz."),
-        ("2", "Tablolarda filtreyi acip ihtiyaciniza gore daraltin.", "Buyuk veri setlerinde hizli analiz saglar."),
-        ("3", "Calisan satirlarindaki linklerle detay sayfalarina gecin.", "Kaynak veriye hizli inis yaparsiniz."),
-        ("4", "SUMMARY sayfalarindan aylik/departman karsilastirmasi yapin.", "Kurumsal kararlar icin toplu bakis verir."),
+        ("1", "DASHBOARD sayfasından başlayın.", "En kritik KPI metriklerini tek yerde görürsünüz."),
+        ("2", "ANALYTICS sayfasından risk ve verimlilik trendlerini okuyun.", "Operasyonel kararları hızlandırır."),
+        ("3", "Tablolarda filtreyi açıp ihtiyaca göre daraltın.", "Büyük veri setlerinde hızlı analiz sağlar."),
+        ("4", "Çalışan satırlarındaki linklerle detay sayfalara geçin.", "Kaynak veriye hızlı iniş yaparsınız."),
+        ("5", "Tüm sayfalardaki 'Dashboard'a Dön' bağlantısını kullanın.", "Rapor içinde kaybolmadan gezinirsiniz."),
     ]
     guide_start = ws.max_row + 1
     for row in guide_rows:
@@ -1985,10 +2237,10 @@ def build_puantaj_xlsx_bytes(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid export mode")
 
     report_title_map: dict[ExportMode, str] = {
-        "employee": "Calisan Aylik Raporu",
-        "department": "Departman Aylik Raporu",
-        "all": "Genel Aylik Rapor",
-        "date_range": "Tarih Araligi Raporu",
+        "employee": "Çalışan Aylık Raporu",
+        "department": "Departman Aylık Raporu",
+        "all": "Genel Aylık Rapor",
+        "date_range": "Tarih Aralığı Raporu",
     }
     _build_readme_sheet(wb, report_title=report_title_map.get(mode, "Puantaj Raporu"))
     _apply_workbook_branding(wb)
@@ -2148,7 +2400,7 @@ def build_puantaj_range_xlsx_bytes(
     )
 
     if mode == "consolidated":
-        _build_readme_sheet(wb, report_title="Tarih Araligi Raporu")
+        _build_readme_sheet(wb, report_title="Tarih Aralığı Raporu")
         _apply_workbook_branding(wb)
         stream = BytesIO()
         wb.save(stream)
@@ -2208,7 +2460,7 @@ def build_puantaj_range_xlsx_bytes(
             ws = wb.create_sheet(_safe_sheet_title(f"DEP_{dep_name}", "Departman"))
             _write_range_sheet_rows(ws, rows=group_rows)
 
-    _build_readme_sheet(wb, report_title="Tarih Araligi Raporu")
+    _build_readme_sheet(wb, report_title="Tarih Aralığı Raporu")
     _apply_workbook_branding(wb)
     stream = BytesIO()
     wb.save(stream)
