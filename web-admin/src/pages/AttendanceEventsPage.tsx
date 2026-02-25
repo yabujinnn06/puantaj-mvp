@@ -1,4 +1,4 @@
-﻿import { useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import {
@@ -68,6 +68,7 @@ const DEFAULT_FILTERS: EventFilters = {
 }
 
 const ATTENDANCE_TIMEZONE = 'Europe/Istanbul'
+const LIST_PAGE_SIZE_OPTIONS = [20, 35, 50, 100]
 
 function flagIsTrue(flags: Record<string, unknown>, key: string): boolean {
   return flags[key] === true
@@ -159,6 +160,10 @@ export function AttendanceEventsPage() {
 
   const [deletingEvent, setDeletingEvent] = useState<AttendanceEvent | null>(null)
   const [deleteForce, setDeleteForce] = useState(false)
+  const [summaryPageSize, setSummaryPageSize] = useState(35)
+  const [summaryPage, setSummaryPage] = useState(1)
+  const [auditPageSize, setAuditPageSize] = useState(35)
+  const [auditPage, setAuditPage] = useState(1)
 
   const employeesQuery = useQuery({
     queryKey: ['employees', 'all'],
@@ -191,9 +196,15 @@ export function AttendanceEventsPage() {
     queryKey: ['attendance-events', eventParams],
     queryFn: () => getAttendanceEvents(eventParams),
   })
+  const auditOffset = (auditPage - 1) * auditPageSize
   const auditLogsQuery = useQuery({
-    queryKey: ['audit-logs', 'attendance-events'],
-    queryFn: () => getAuditLogs({ entity_type: 'attendance_event', limit: 50 }),
+    queryKey: ['audit-logs', 'attendance-events', auditPage, auditPageSize],
+    queryFn: () =>
+      getAuditLogs({
+        entity_type: 'attendance_event',
+        offset: auditOffset,
+        limit: auditPageSize,
+      }),
   })
 
   const selectedSummaryEmployeeId = Number(appliedFilters.employeeId)
@@ -308,6 +319,16 @@ export function AttendanceEventsPage() {
     () => buildMonthlyAttendanceInsight(monthlySummaryRows),
     [monthlySummaryRows],
   )
+  const summaryTotalPages = Math.max(1, Math.ceil(monthlySummaryRows.length / summaryPageSize))
+  const summaryStartIndex = (summaryPage - 1) * summaryPageSize
+  const pagedMonthlySummaryRows = useMemo(
+    () => monthlySummaryRows.slice(summaryStartIndex, summaryStartIndex + summaryPageSize),
+    [monthlySummaryRows, summaryStartIndex, summaryPageSize],
+  )
+  const summaryRangeStart = monthlySummaryRows.length === 0 ? 0 : summaryStartIndex + 1
+  const summaryRangeEnd = monthlySummaryRows.length === 0
+    ? 0
+    : Math.min(summaryStartIndex + summaryPageSize, monthlySummaryRows.length)
 
   const employeeById = useMemo(() => new Map(employees.map((item) => [item.id, item])), [employees])
   const employeeNameById = useMemo(() => new Map(employees.map((item) => [item.id, item.full_name])), [employees])
@@ -335,6 +356,28 @@ export function AttendanceEventsPage() {
     if (!appliedFilters.suspiciousOnly) return events
     return events.filter((item) => suspiciousReasons(item).length > 0)
   }, [events, appliedFilters.suspiciousOnly])
+
+  const auditRows = auditLogsQuery.data?.items ?? []
+  const auditTotal = auditLogsQuery.data?.total ?? auditRows.length
+  const auditTotalPages = Math.max(1, Math.ceil(auditTotal / auditPageSize))
+  const auditRangeStart = auditTotal === 0 ? 0 : auditOffset + 1
+  const auditRangeEnd = auditTotal === 0 ? 0 : Math.min(auditOffset + auditRows.length, auditTotal)
+
+  useEffect(() => {
+    setSummaryPage(1)
+  }, [selectedSummaryEmployeeId, appliedFilters.dateFrom, appliedFilters.dateTo, summaryPageSize])
+
+  useEffect(() => {
+    setSummaryPage((prev) => Math.min(prev, summaryTotalPages))
+  }, [summaryTotalPages])
+
+  useEffect(() => {
+    setAuditPage(1)
+  }, [auditPageSize])
+
+  useEffect(() => {
+    setAuditPage((prev) => Math.min(prev, auditTotalPages))
+  }, [auditTotalPages])
 
   const applyFilters = () => setAppliedFilters({ ...draftFilters })
   const clearFilters = () => {
@@ -662,7 +705,27 @@ export function AttendanceEventsPage() {
               </div>
             </div>
 
-            <div className="max-h-[44vh] overflow-auto overscroll-contain">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
+              <p>
+                Gosterilen satir: {summaryRangeStart}-{summaryRangeEnd} / {monthlySummaryRows.length}
+              </p>
+              <label className="inline-flex items-center gap-2">
+                Sayfa basi
+                <select
+                  value={summaryPageSize}
+                  onChange={(event) => setSummaryPageSize(Number(event.target.value))}
+                  className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-800"
+                >
+                  {LIST_PAGE_SIZE_OPTIONS.map((size) => (
+                    <option key={size} value={size}>
+                      {size}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="list-scroll-area w-full max-w-full overflow-x-auto">
               <table className="min-w-[1100px] text-left text-sm">
                 <thead className="text-xs uppercase text-slate-500">
                   <tr>
@@ -679,7 +742,7 @@ export function AttendanceEventsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {monthlySummaryRows.map((day) => (
+                  {pagedMonthlySummaryRows.map((day) => (
                     <tr key={day.date} className="border-t border-slate-100">
                       <td className="py-2">{day.date}</td>
                       <td className="py-2">{getAttendanceDayType(day).label}</td>
@@ -695,10 +758,35 @@ export function AttendanceEventsPage() {
                   ))}
                 </tbody>
               </table>
-              {monthlySummaryRows.length === 0 ? (
-                <p className="mt-3 text-sm text-slate-500">Secili aralikta puantaj gun kaydi bulunamadi.</p>
-              ) : null}
             </div>
+
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-slate-500">
+                Sayfa {summaryPage} / {summaryTotalPages}
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSummaryPage((prev) => Math.max(1, prev - 1))}
+                  disabled={summaryPage <= 1}
+                  className="rounded-md border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                >
+                  Onceki
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSummaryPage((prev) => Math.min(summaryTotalPages, prev + 1))}
+                  disabled={summaryPage >= summaryTotalPages}
+                  className="rounded-md border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                >
+                  Sonraki
+                </button>
+              </div>
+            </div>
+
+            {monthlySummaryRows.length === 0 ? (
+              <p className="text-sm text-slate-500">Secili aralikta puantaj gun kaydi bulunamadi.</p>
+            ) : null}
           </div>
         )}
       </Panel>
@@ -793,33 +881,80 @@ export function AttendanceEventsPage() {
       </Panel>
 
       <Panel>
-        <h4 className="text-base font-semibold text-slate-900">Audit Log</h4>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h4 className="text-base font-semibold text-slate-900">Audit Log</h4>
+          <label className="inline-flex items-center gap-2 text-xs text-slate-600">
+            Sayfa basi
+            <select
+              value={auditPageSize}
+              onChange={(event) => setAuditPageSize(Number(event.target.value))}
+              className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-800"
+            >
+              {LIST_PAGE_SIZE_OPTIONS.map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         {auditLogsQuery.isLoading ? <LoadingBlock /> : null}
         {auditLogsQuery.isError ? <ErrorBlock message={parseApiError(auditLogsQuery.error, 'Audit loglar alınamadı.').message} /> : null}
         {!auditLogsQuery.isLoading && !auditLogsQuery.isError ? (
-          <div className="mt-3 max-h-[40vh] overflow-auto overscroll-contain">
-            <table className="min-w-[980px] text-left text-sm">
-              <thead className="text-xs uppercase text-slate-500">
-                <tr>
-                  <th className="py-2">Zaman</th>
-                  <th className="py-2">Aksiyon</th>
-                  <th className="py-2">Kullanıcı</th>
-                  <th className="py-2">Entity</th>
-                  <th className="py-2">Durum</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(auditLogsQuery.data?.items ?? []).map((item) => (
-                  <tr key={item.id} className="border-t border-slate-100">
-                    <td className="py-2">{formatTs(item.ts_utc)}</td>
-                    <td className="py-2">{item.action}</td>
-                    <td className="py-2">{item.actor_type}:{item.actor_id}</td>
-                    <td className="py-2">{item.entity_type ?? '-'} {item.entity_id ? `#${item.entity_id}` : ''}</td>
-                    <td className="py-2">{item.success ? 'Başarılı' : 'Hatalı'}</td>
+          <div className="mt-3 space-y-3">
+            <p className="text-xs text-slate-600">
+              Gosterilen satir: {auditRangeStart}-{auditRangeEnd} / {auditTotal}
+            </p>
+            <div className="list-scroll-area w-full max-w-full overflow-x-auto">
+              <table className="min-w-[980px] text-left text-sm">
+                <thead className="text-xs uppercase text-slate-500">
+                  <tr>
+                    <th className="py-2">Zaman</th>
+                    <th className="py-2">Aksiyon</th>
+                    <th className="py-2">Kullanıcı</th>
+                    <th className="py-2">Entity</th>
+                    <th className="py-2">Durum</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {auditRows.map((item) => (
+                    <tr key={item.id} className="border-t border-slate-100">
+                      <td className="py-2">{formatTs(item.ts_utc)}</td>
+                      <td className="py-2">{item.action}</td>
+                      <td className="py-2">{item.actor_type}:{item.actor_id}</td>
+                      <td className="py-2">{item.entity_type ?? '-'} {item.entity_id ? `#${item.entity_id}` : ''}</td>
+                      <td className="py-2">{item.success ? 'Başarılı' : 'Hatalı'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-slate-500">
+                Sayfa {auditPage} / {auditTotalPages}
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAuditPage((prev) => Math.max(1, prev - 1))}
+                  disabled={auditPage <= 1}
+                  className="rounded-md border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                >
+                  Onceki
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAuditPage((prev) => Math.min(auditTotalPages, prev + 1))}
+                  disabled={auditPage >= auditTotalPages}
+                  className="rounded-md border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                >
+                  Sonraki
+                </button>
+              </div>
+            </div>
+            {auditRows.length === 0 ? (
+              <p className="text-sm text-slate-500">Audit kaydi bulunamadi.</p>
+            ) : null}
           </div>
         ) : null}
       </Panel>

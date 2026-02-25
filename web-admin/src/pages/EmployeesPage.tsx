@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { z } from 'zod'
@@ -26,6 +26,8 @@ const employeeSchema = z.object({
   is_active: z.boolean(),
 })
 
+const EMPLOYEE_LIST_PAGE_SIZES = [20, 35, 50, 100]
+
 export function EmployeesPage() {
   const queryClient = useQueryClient()
   const { pushToast } = useToast()
@@ -39,6 +41,8 @@ export function EmployeesPage() {
   const [showInactive, setShowInactive] = useState(false)
   const [regionFilterId, setRegionFilterId] = useState('')
   const [departmentFilterId, setDepartmentFilterId] = useState('')
+  const [employeeListPageSize, setEmployeeListPageSize] = useState(35)
+  const [employeeListPage, setEmployeeListPage] = useState(1)
   const [error, setError] = useState<string | null>(null)
 
   const employeesQuery = useQuery({
@@ -160,6 +164,25 @@ export function EmployeesPage() {
     }
     return employees.filter((employee) => employee.full_name.toLowerCase().includes(normalized))
   }, [employees, searchTerm])
+
+  const employeeListTotalPages = Math.max(1, Math.ceil(filteredEmployees.length / employeeListPageSize))
+  const employeeListStartIndex = (employeeListPage - 1) * employeeListPageSize
+  const pagedEmployees = useMemo(
+    () => filteredEmployees.slice(employeeListStartIndex, employeeListStartIndex + employeeListPageSize),
+    [filteredEmployees, employeeListStartIndex, employeeListPageSize],
+  )
+  const employeeListRangeStart = filteredEmployees.length === 0 ? 0 : employeeListStartIndex + 1
+  const employeeListRangeEnd = filteredEmployees.length === 0
+    ? 0
+    : Math.min(employeeListStartIndex + employeeListPageSize, filteredEmployees.length)
+
+  useEffect(() => {
+    setEmployeeListPage(1)
+  }, [searchTerm, showInactive, regionFilterId, departmentFilterId, employeeListPageSize])
+
+  useEffect(() => {
+    setEmployeeListPage((prev) => Math.min(prev, employeeListTotalPages))
+  }, [employeeListTotalPages])
 
   if (employeesQuery.isLoading || departmentsQuery.isLoading || regionsQuery.isLoading) {
     return <LoadingBlock />
@@ -316,7 +339,27 @@ export function EmployeesPage() {
           </label>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
+          <p>
+            Gosterilen satir: {employeeListRangeStart}-{employeeListRangeEnd} / {filteredEmployees.length}
+          </p>
+          <label className="inline-flex items-center gap-2">
+            Sayfa basi
+            <select
+              value={employeeListPageSize}
+              onChange={(event) => setEmployeeListPageSize(Number(event.target.value))}
+              className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-800"
+            >
+              {EMPLOYEE_LIST_PAGE_SIZES.map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="list-scroll-area w-full max-w-full overflow-x-auto">
           <table className="min-w-full text-left text-sm">
             <thead className="text-xs uppercase text-slate-500">
               <tr>
@@ -329,7 +372,7 @@ export function EmployeesPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredEmployees.map((employee) => (
+              {pagedEmployees.map((employee) => (
                 <tr key={employee.id} className="border-t border-slate-100">
                   <td className="py-2">{employee.id}</td>
                   <td className="py-2">{employee.full_name}</td>
@@ -350,7 +393,7 @@ export function EmployeesPage() {
                           sessionStorage.setItem('employee-detail-origin', 'employees')
                           sessionStorage.setItem('employee-detail-id', String(employee.id))
                         }}
-                        className="btn-secondary inline-flex rounded-lg border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        className="employee-action-btn employee-action-edit"
                       >
                         Duzenle
                       </Link>
@@ -372,10 +415,10 @@ export function EmployeesPage() {
                             nextStatus,
                           })
                         }}
-                        className={`inline-flex rounded-lg px-3 py-1 text-xs font-medium text-white ${
+                        className={`employee-action-btn ${
                           employee.is_active
-                            ? 'btn-danger bg-rose-600 hover:bg-rose-700'
-                            : 'bg-emerald-600 hover:bg-emerald-700'
+                            ? 'employee-action-archive'
+                            : 'employee-action-restore'
                         }`}
                       >
                         {employee.is_active ? 'Arsivle' : 'Arsivden Cikar'}
@@ -387,6 +430,31 @@ export function EmployeesPage() {
             </tbody>
           </table>
         </div>
+
+        <div className="mt-3 flex items-center justify-between">
+          <p className="text-xs text-slate-500">
+            Sayfa {employeeListPage} / {employeeListTotalPages}
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setEmployeeListPage((prev) => Math.max(1, prev - 1))}
+              disabled={employeeListPage <= 1}
+              className="rounded-md border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+            >
+              Onceki
+            </button>
+            <button
+              type="button"
+              onClick={() => setEmployeeListPage((prev) => Math.min(employeeListTotalPages, prev + 1))}
+              disabled={employeeListPage >= employeeListTotalPages}
+              className="rounded-md border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+            >
+              Sonraki
+            </button>
+          </div>
+        </div>
+
         {filteredEmployees.length === 0 ? (
           <p className="mt-3 text-sm text-slate-500">Arama kriterine uygun calisan bulunamadi.</p>
         ) : null}
