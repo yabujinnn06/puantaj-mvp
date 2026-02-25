@@ -1101,8 +1101,8 @@ export function EmployeeDetailPage() {
               Satir renklendirmesi: kirmizi = eksik gun, amber = bayrakli gun, gri = izin/tatil.
             </div>
 
-            <div className="list-scroll-area overflow-x-auto">
-              <table className="min-w-[1500px] text-left text-sm">
+            <div className="list-scroll-area w-full max-w-full overflow-x-auto">
+              <table className="w-full min-w-[1240px] text-left text-sm">
                 <thead className="text-xs uppercase text-slate-500">
                   <tr>
                     <th className="py-2">Tarih</th>

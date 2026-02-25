@@ -839,8 +839,8 @@ export function EmployeeMonthlyReportPage() {
                   İpucu: satıra göre renk tonu kayıt riskini gösterir (kırmızı: eksik, amber: şüpheli).
                 </p>
               </div>
-              <div className="list-scroll-area overflow-x-auto">
-                <table className="min-w-[1480px] text-left text-sm">
+              <div className="list-scroll-area w-full max-w-full overflow-x-auto">
+                <table className="w-full min-w-[1220px] text-left text-sm">
                   <thead className="text-xs uppercase text-slate-500">
                     <tr>
                       <th className="py-2">Tarih</th>
