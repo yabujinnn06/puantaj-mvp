@@ -1556,6 +1556,8 @@ def _build_analytics_sheet(
         department_chart.width = 14
         ws.add_chart(department_chart, "K24")
 
+    # Analytics sayfasında satır sabitleme istemiyoruz; alt bölümlere rahat inilebilsin.
+    ws.freeze_panes = None
     _auto_width(ws)
     _finalize_visual_scope(ws, used_max_col=10)
     _apply_print_layout(ws, header_row=employee_header_row)
