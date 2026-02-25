@@ -315,9 +315,11 @@ def _style_table_region(
     data_end_row: int,
     status_col_name: str = "Durum",
     flags_col_name: str = "Bayraklar",
+    freeze_top_rows: bool = True,
 ) -> None:
     if data_end_row < data_start_row:
-        ws.freeze_panes = f"A{header_row + 1}"
+        if freeze_top_rows:
+            ws.freeze_panes = f"A{header_row + 1}"
         return
 
     table_max_col = _resolve_table_max_col(ws, header_row=header_row)
@@ -327,7 +329,8 @@ def _style_table_region(
         if isinstance(header_value, str) and header_value.strip():
             header_map[header_value] = col_idx
 
-    ws.freeze_panes = f"A{header_row + 1}"
+    if freeze_top_rows:
+        ws.freeze_panes = f"A{header_row + 1}"
 
     status_col = header_map.get(status_col_name)
     flags_col = header_map.get(flags_col_name)
@@ -1439,6 +1442,7 @@ def _build_analytics_sheet(
         data_end_row=employee_data_end,
         status_col_name="",
         flags_col_name="",
+        freeze_top_rows=False,
     )
     _apply_duration_formats(
         ws,
@@ -1507,6 +1511,7 @@ def _build_analytics_sheet(
         data_end_row=department_data_end,
         status_col_name="",
         flags_col_name="",
+        freeze_top_rows=False,
     )
     _apply_duration_formats(
         ws,
@@ -1556,8 +1561,6 @@ def _build_analytics_sheet(
         department_chart.width = 14
         ws.add_chart(department_chart, "K24")
 
-    # Analytics sayfasında satır sabitleme istemiyoruz; alt bölümlere rahat inilebilsin.
-    ws.freeze_panes = None
     _auto_width(ws)
     _finalize_visual_scope(ws, used_max_col=10)
     _apply_print_layout(ws, header_row=employee_header_row)
