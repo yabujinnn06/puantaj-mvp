@@ -707,6 +707,70 @@ textarea:focus {
   border: 1px solid transparent;
 }
 
+.employee-profile-card {
+  margin-top: 10px;
+  border: 1px solid rgba(112, 166, 189, 0.35);
+  border-radius: 13px;
+  padding: 11px 12px;
+  background:
+    linear-gradient(130deg, rgba(233, 247, 255, 0.78), rgba(246, 252, 255, 0.72)),
+    rgba(255, 255, 255, 0.84);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.74);
+  display: grid;
+  gap: 0.52rem;
+}
+
+.employee-profile-head {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.employee-profile-kicker {
+  margin: 0;
+  font-size: 0.64rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  color: #2f6078;
+}
+
+.employee-profile-name {
+  margin: 0;
+  font-size: 0.96rem;
+  color: #17445d;
+}
+
+.employee-profile-grid {
+  margin: 0;
+  display: grid;
+  gap: 0.44rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.employee-profile-item {
+  border: 1px solid rgba(135, 180, 202, 0.28);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.66);
+  padding: 0.42rem 0.5rem;
+  display: grid;
+  gap: 0.12rem;
+}
+
+.employee-profile-item dt {
+  margin: 0;
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #4a7085;
+}
+
+.employee-profile-item dd {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #173f56;
+  overflow-wrap: anywhere;
+}
+
 .status-grid {
   margin-top: 10px;
   display: grid;
@@ -1815,6 +1879,10 @@ textarea:focus {
   }
 
   .status-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .employee-profile-grid {
     grid-template-columns: 1fr;
   }
 

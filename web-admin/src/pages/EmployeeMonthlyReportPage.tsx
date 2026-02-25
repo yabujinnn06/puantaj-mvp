@@ -107,6 +107,40 @@ function formatLocalDateTime(value: string | null): string {
   }).format(date)
 }
 
+function formatLocalTime(value: string | null): string {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('tr-TR', {
+    timeZone: ATTENDANCE_TIMEZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date)
+}
+
+function formatDayLabel(dateValue: string): string {
+  const date = new Date(`${dateValue}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return '-'
+  return new Intl.DateTimeFormat('tr-TR', {
+    timeZone: ATTENDANCE_TIMEZONE,
+    weekday: 'short',
+  }).format(date)
+}
+
+function resolveDayRowTone(day: MonthlyEmployeeDay, suspicious: boolean): string {
+  if (day.status === 'INCOMPLETE') {
+    return 'bg-rose-50/70'
+  }
+  if (suspicious) {
+    return 'bg-amber-50/55'
+  }
+  if (day.status === 'LEAVE' || day.status === 'OFF') {
+    return 'bg-slate-50/70'
+  }
+  return ''
+}
+
 function decodeManualOverrideStatus(override: ManualDayOverride | undefined): {
   status: ManualDayStatus
   reason: string
@@ -324,6 +358,20 @@ export function EmployeeMonthlyReportPage() {
   const legalOvertimeDayCount = useMemo(
     () => days.filter((day) => day.legal_overtime_minutes > 0).length,
     [days],
+  )
+  const leaveDayCount = useMemo(() => days.filter((day) => day.status === 'LEAVE').length, [days])
+  const offDayCount = useMemo(() => days.filter((day) => day.status === 'OFF').length, [days])
+  const workingDayCount = useMemo(
+    () => days.filter((day) => day.status === 'OK' || day.status === 'INCOMPLETE').length,
+    [days],
+  )
+  const suspiciousRatioText = useMemo(() => {
+    if (!days.length) return '%0'
+    return `%${Math.round((suspiciousDayCount / days.length) * 100)}`
+  }, [days.length, suspiciousDayCount])
+  const reportPeriodLabel = useMemo(
+    () => `${appliedFilters.year}-${String(appliedFilters.month).padStart(2, '0')}`,
+    [appliedFilters.month, appliedFilters.year],
   )
 
   const conflictSummary = useMemo(() => {
@@ -616,24 +664,53 @@ export function EmployeeMonthlyReportPage() {
           <Panel>
             <h4 className="text-base font-semibold text-slate-900">Toplamlar</h4>
             <p className="mt-2 text-sm text-slate-600">
-              Calisan: {employeeName ?? reportQuery.data.employee_id} | Donem:{' '}
-              {reportQuery.data.year}-{reportQuery.data.month}
+              Çalışan: {employeeName ?? `#${reportQuery.data.employee_id}`} | Dönem: {reportPeriodLabel}
             </p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs text-slate-500">İşlenen Gün</p>
+                <p className="text-lg font-semibold">{workingDayCount}</p>
+                <p className="text-xs text-slate-500">İzin: {leaveDayCount} | Tatil: {offDayCount}</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs text-slate-500">Şüpheli Oran</p>
+                <p className="text-lg font-semibold">{suspiciousRatioText}</p>
+                <p className="text-xs text-slate-500">{suspiciousDayCount} / {days.length} gün</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs text-slate-500">Filtrelenen Gün</p>
+                <p className="text-lg font-semibold">{shownDays.length}</p>
+                <p className="text-xs text-slate-500">
+                  {selectedConflictFlag ? `Çakışma: ${getFlagMeta(selectedConflictFlag).label}` : 'Tüm günler'}
+                </p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs text-slate-500">Vardiya Kaynağı</p>
+                <p className="text-lg font-semibold">SHIFT &gt; WEEKLY &gt; WORK_RULE</p>
+                <p className="text-xs text-slate-500">Otomatik öncelik zinciri</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs text-slate-500">Saat Dilimi</p>
+                <p className="text-lg font-semibold">{ATTENDANCE_TIMEZONE}</p>
+                <p className="text-xs text-slate-500">Tüm saatler yerel zamanda gösterilir</p>
+              </div>
+            </div>
+
             <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-7">
               <div className="rounded-lg border border-slate-200 p-3">
-                <p className="text-xs text-slate-500">Toplam Calisma</p>
+                <p className="text-xs text-slate-500">Toplam Çalışma</p>
                 <p className="text-lg font-semibold">
                   <MinuteDisplay minutes={reportQuery.data.totals.worked_minutes} />
                 </p>
               </div>
               <div className="rounded-lg border border-slate-200 p-3">
-                <p className="text-xs text-slate-500">Plan Ustu Sure</p>
+                <p className="text-xs text-slate-500">Plan Üstü Süre</p>
                 <p className="text-lg font-semibold">
                   <MinuteDisplay minutes={reportQuery.data.totals.plan_overtime_minutes} />
                 </p>
               </div>
               <div className="rounded-lg border border-slate-200 p-3">
-                <p className="text-xs text-slate-500">Yasal Fazla Sure</p>
+                <p className="text-xs text-slate-500">Yasal Fazla Süre</p>
                 <p className="text-lg font-semibold">
                   <MinuteDisplay minutes={reportQuery.data.totals.legal_extra_work_minutes} />
                 </p>
@@ -643,18 +720,18 @@ export function EmployeeMonthlyReportPage() {
                 <p className="text-lg font-semibold">
                   <MinuteDisplay minutes={reportQuery.data.totals.legal_overtime_minutes} />
                 </p>
-                <p className="text-xs text-slate-500">{legalOvertimeDayCount} gun</p>
+                <p className="text-xs text-slate-500">{legalOvertimeDayCount} gün</p>
               </div>
               <div className="rounded-lg border border-slate-200 p-3">
-                <p className="text-xs text-slate-500">Eksik Gun</p>
+                <p className="text-xs text-slate-500">Eksik Gün</p>
                 <p className="text-lg font-semibold">{reportQuery.data.totals.incomplete_days}</p>
               </div>
               <div className="rounded-lg border border-slate-200 p-3">
-                <p className="text-xs text-slate-500">Supheli Gun</p>
+                <p className="text-xs text-slate-500">Şüpheli Gün</p>
                 <p className="text-lg font-semibold">{suspiciousDayCount}</p>
               </div>
               <div className="rounded-lg border border-slate-200 p-3">
-                <p className="text-xs text-slate-500">Toplam Eksik Sure</p>
+                <p className="text-xs text-slate-500">Toplam Eksik Süre</p>
                 <p className="text-lg font-semibold">
                   <MinuteDisplay minutes={totalMissingMinutes} />
                 </p>
@@ -754,11 +831,20 @@ export function EmployeeMonthlyReportPage() {
             </Panel>
           ) : (
             <Panel>
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-left text-sm">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-slate-500">
+                  Gösterilen satır: {shownDays.length} / {days.length}
+                </p>
+                <p className="text-xs text-slate-500">
+                  İpucu: satıra göre renk tonu kayıt riskini gösterir (kırmızı: eksik, amber: şüpheli).
+                </p>
+              </div>
+              <div className="list-scroll-area overflow-x-auto">
+                <table className="min-w-[1480px] text-left text-sm">
                   <thead className="text-xs uppercase text-slate-500">
                     <tr>
                       <th className="py-2">Tarih</th>
+                      <th className="py-2">Gün</th>
                       <th className="py-2">Durum</th>
                       <th className="py-2">Giris</th>
                       <th className="py-2">Cikis</th>
@@ -783,10 +869,12 @@ export function EmployeeMonthlyReportPage() {
                       const decodedOverride = decodeManualOverrideStatus(override)
                       const hasManual = day.flags.includes('MANUAL_OVERRIDE') || day.flags.includes('MANUAL_EVENT') || Boolean(override)
                       const showManualStatusBadge = decodedOverride.status !== 'NORMAL'
+                      const dayRowTone = resolveDayRowTone(day, suspicious)
 
                       return (
-                        <tr key={day.date} className={`border-t border-slate-100 ${suspicious ? 'bg-amber-50/40' : ''}`}>
-                          <td className="py-2">{day.date}</td>
+                        <tr key={day.date} className={`border-t border-slate-100 ${dayRowTone}`}>
+                          <td className="py-2 font-medium text-slate-800">{day.date}</td>
+                          <td className="py-2 text-xs uppercase text-slate-600">{formatDayLabel(day.date)}</td>
                           <td className="py-2">
                             <StatusBadge value={day.status} />
                             {hasManual ? (
@@ -804,10 +892,16 @@ export function EmployeeMonthlyReportPage() {
                             </span>
                           </td>
                           <td className="py-2" title={day.in ?? undefined}>
-                            {formatLocalDateTime(day.in)}
+                            <div className="flex flex-col">
+                              <span>{formatLocalDateTime(day.in)}</span>
+                              <span className="text-[11px] text-slate-500">{formatLocalTime(day.in)}</span>
+                            </div>
                           </td>
                           <td className="py-2" title={day.out ?? undefined}>
-                            {formatLocalDateTime(day.out)}
+                            <div className="flex flex-col">
+                              <span>{formatLocalDateTime(day.out)}</span>
+                              <span className="text-[11px] text-slate-500">{formatLocalTime(day.out)}</span>
+                            </div>
                           </td>
                           <td className="py-2">
                             <MinuteDisplay minutes={day.worked_minutes} />

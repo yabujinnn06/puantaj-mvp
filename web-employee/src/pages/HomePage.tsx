@@ -1702,6 +1702,33 @@ export function HomePage() {
     return 'state-err'
   }, [todayStatus])
 
+  const employeeDisplayName = useMemo(() => {
+    const normalized = statusSnapshot?.employee_name?.trim()
+    if (normalized) {
+      return normalized
+    }
+    if (statusSnapshot?.employee_id) {
+      return `Çalışan #${statusSnapshot.employee_id}`
+    }
+    return 'Çalışan bilgisi bekleniyor'
+  }, [statusSnapshot?.employee_id, statusSnapshot?.employee_name])
+
+  const employeeShiftSummary = useMemo(() => {
+    const shiftName = statusSnapshot?.shift_name?.trim()
+    const shiftStart = statusSnapshot?.shift_start_local?.trim()
+    const shiftEnd = statusSnapshot?.shift_end_local?.trim()
+    if (shiftName && shiftStart && shiftEnd) {
+      return `${shiftName} (${shiftStart}-${shiftEnd})`
+    }
+    if (shiftName) {
+      return shiftName
+    }
+    if (shiftStart && shiftEnd) {
+      return `${shiftStart}-${shiftEnd}`
+    }
+    return 'Atanmamış'
+  }, [statusSnapshot?.shift_end_local, statusSnapshot?.shift_name, statusSnapshot?.shift_start_local])
+
   return (
     <main className="phone-shell employee-shell">
       <div className="employee-layout">
@@ -1838,6 +1865,31 @@ export function HomePage() {
               </div>
               <span className={`employee-hero-indicator ${todayStatusClass}`}>Canlı</span>
             </div>
+
+            <section className="employee-profile-card" aria-label="Çalışan kimlik bilgileri">
+              <div className="employee-profile-head">
+                <p className="employee-profile-kicker">ÇALIŞAN KİMLİĞİ</p>
+                <h3 className="employee-profile-name">{employeeDisplayName}</h3>
+              </div>
+              <dl className="employee-profile-grid">
+                <div className="employee-profile-item">
+                  <dt>Çalışan No</dt>
+                  <dd>{statusSnapshot?.employee_id ? `#${statusSnapshot.employee_id}` : '-'}</dd>
+                </div>
+                <div className="employee-profile-item">
+                  <dt>Bölge</dt>
+                  <dd>{statusSnapshot?.region_name ?? 'Atanmamış'}</dd>
+                </div>
+                <div className="employee-profile-item">
+                  <dt>Departman</dt>
+                  <dd>{statusSnapshot?.department_name ?? 'Atanmamış'}</dd>
+                </div>
+                <div className="employee-profile-item">
+                  <dt>Atanan Vardiya</dt>
+                  <dd>{employeeShiftSummary}</dd>
+                </div>
+              </dl>
+            </section>
 
             <div className="status-grid">
               <article className="status-card">

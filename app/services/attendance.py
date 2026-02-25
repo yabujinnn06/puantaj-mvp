@@ -1347,9 +1347,18 @@ def get_employee_status_by_device(
         if has_open_shift
         else ("CHECKIN" if today_status == "NOT_STARTED" else "WAIT_NEXT_DAY")
     )
+    assigned_shift = employee.shift
+    shift_start_local = assigned_shift.start_time_local.strftime("%H:%M") if assigned_shift else None
+    shift_end_local = assigned_shift.end_time_local.strftime("%H:%M") if assigned_shift else None
 
     return {
         "employee_id": employee.id,
+        "employee_name": employee.full_name,
+        "region_name": employee.region.name if employee.region is not None else None,
+        "department_name": employee.department.name if employee.department is not None else None,
+        "shift_name": assigned_shift.name if assigned_shift is not None else None,
+        "shift_start_local": shift_start_local,
+        "shift_end_local": shift_end_local,
         "today_status": today_status,
         "last_in_ts": last_in_event.ts_utc if last_in_event is not None else None,
         "last_out_ts": last_out_event.ts_utc if last_out_event is not None else None,

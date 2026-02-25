@@ -61,6 +61,30 @@ function formatDayStatus(status: MonthlyEmployeeDay['status']): string {
   return 'Tatilde'
 }
 
+function formatDayShortLabel(value: string): string {
+  const parsed = new Date(`${value}T00:00:00`)
+  if (Number.isNaN(parsed.getTime())) {
+    return '-'
+  }
+  return new Intl.DateTimeFormat('tr-TR', {
+    timeZone: 'Europe/Istanbul',
+    weekday: 'short',
+  }).format(parsed)
+}
+
+function resolveMonthlyRowTone(day: MonthlyEmployeeDay): string {
+  if (day.status === 'INCOMPLETE') {
+    return 'bg-rose-50/70'
+  }
+  if (day.flags.length > 0) {
+    return 'bg-amber-50/45'
+  }
+  if (day.status === 'LEAVE' || day.status === 'OFF') {
+    return 'bg-slate-50/70'
+  }
+  return ''
+}
+
 function formatCoordinate(lat: number | null, lon: number | null): string {
   if (lat === null || lon === null) {
     return '-'
@@ -447,6 +471,16 @@ export function EmployeeDetailPage() {
 
   const monthlyRows = monthlyQuery.data?.days ?? []
   const monthlyInsight = useMemo(() => buildMonthlyAttendanceInsight(monthlyRows), [monthlyRows])
+  const monthlyFlaggedDayCount = useMemo(
+    () => monthlyRows.filter((day) => day.flags.length > 0).length,
+    [monthlyRows],
+  )
+  const monthlyIncompleteRatio = useMemo(() => {
+    if (!monthlyRows.length) {
+      return '%0'
+    }
+    return `%${Math.round(((monthlyQuery.data?.totals.incomplete_days ?? 0) / monthlyRows.length) * 100)}`
+  }, [monthlyQuery.data?.totals.incomplete_days, monthlyRows.length])
   const ipSummaryRows = detailQuery.data?.ip_summary ?? []
   const recentLocationRows = detailQuery.data?.recent_locations ?? []
   const locationHistoryDeviceOptions = useMemo(
@@ -1050,13 +1084,29 @@ export function EmployeeDetailPage() {
                   <MinuteDisplay minutes={monthlyInsight.specialWorkedMinutes} />
                 </p>
               </div>
+              <div className="rounded-lg border border-slate-200 p-3">
+                <p className="text-xs text-slate-500">Bayrakli gun</p>
+                <p className="text-lg font-semibold text-slate-900">{monthlyFlaggedDayCount}</p>
+                <p className="text-xs text-slate-500">Riskli veya kontrol gerektiren satir sayisi</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 p-3">
+                <p className="text-xs text-slate-500">Eksik gun orani</p>
+                <p className="text-lg font-semibold text-slate-900">{monthlyIncompleteRatio}</p>
+                <p className="text-xs text-slate-500">{monthlyQuery.data?.totals.incomplete_days ?? 0} / {monthlyRows.length} gun</p>
+              </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-left text-sm">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+              Ayni tabloda giris-cikis saatleri, konum koordinatlari ve bayraklar birlikte gosterilir.
+              Satir renklendirmesi: kirmizi = eksik gun, amber = bayrakli gun, gri = izin/tatil.
+            </div>
+
+            <div className="list-scroll-area overflow-x-auto">
+              <table className="min-w-[1500px] text-left text-sm">
                 <thead className="text-xs uppercase text-slate-500">
                   <tr>
                     <th className="py-2">Tarih</th>
+                    <th className="py-2">Gun</th>
                     <th className="py-2">Durum</th>
                     <th className="py-2">Gun Tipi</th>
                     <th className="py-2">Giris</th>
@@ -1071,58 +1121,62 @@ export function EmployeeDetailPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {monthlyRows.map((day) => (
-                    <tr key={day.date} className="border-t border-slate-100">
-                      <td className="py-2">{day.date}</td>
-                      <td className="py-2">{formatDayStatus(day.status)}</td>
-                      <td className="py-2">{getAttendanceDayType(day).label}</td>
-                      <td className="py-2">{formatDateTime(day.in)}</td>
-                      <td className="py-2">{formatDateTime(day.out)}</td>
-                      <td className="py-2">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-xs">{formatCoordinate(day.in_lat, day.in_lon)}</span>
-                          {day.in_lat !== null && day.in_lon !== null ? (
-                            <button
-                              type="button"
-                              className="rounded-md border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
-                              onClick={() => focusDayOnMap(day, 'in')}
-                              title="Mesai baslangic konumunu haritada goster"
-                            >
-                              Check
-                            </button>
-                          ) : null}
-                        </div>
-                      </td>
-                      <td className="py-2">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-xs">{formatCoordinate(day.out_lat, day.out_lon)}</span>
-                          {day.out_lat !== null && day.out_lon !== null ? (
-                            <button
-                              type="button"
-                              className="rounded-md border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
-                              onClick={() => focusDayOnMap(day, 'out')}
-                              title="Mesai bitis konumunu haritada goster"
-                            >
-                              Check
-                            </button>
-                          ) : null}
-                        </div>
-                      </td>
-                      <td className="py-2">
-                        <MinuteDisplay minutes={day.worked_minutes} />
-                      </td>
-                      <td className="py-2">
-                        <MinuteDisplay minutes={day.plan_overtime_minutes} />
-                      </td>
-                      <td className="py-2">
-                        <MinuteDisplay minutes={day.legal_extra_work_minutes} />
-                      </td>
-                      <td className="py-2">
-                        <MinuteDisplay minutes={day.legal_overtime_minutes} />
-                      </td>
-                      <td className="py-2 text-xs text-slate-600">{formatFlagList(day.flags)}</td>
-                    </tr>
-                  ))}
+                  {monthlyRows.map((day) => {
+                    const rowTone = resolveMonthlyRowTone(day)
+                    return (
+                      <tr key={day.date} className={`border-t border-slate-100 ${rowTone}`}>
+                        <td className="py-2 font-medium text-slate-800">{day.date}</td>
+                        <td className="py-2 text-xs uppercase text-slate-600">{formatDayShortLabel(day.date)}</td>
+                        <td className="py-2">{formatDayStatus(day.status)}</td>
+                        <td className="py-2">{getAttendanceDayType(day).label}</td>
+                        <td className="py-2">{formatDateTime(day.in)}</td>
+                        <td className="py-2">{formatDateTime(day.out)}</td>
+                        <td className="py-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-xs">{formatCoordinate(day.in_lat, day.in_lon)}</span>
+                            {day.in_lat !== null && day.in_lon !== null ? (
+                              <button
+                                type="button"
+                                className="rounded-md border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
+                                onClick={() => focusDayOnMap(day, 'in')}
+                                title="Mesai baslangic konumunu haritada goster"
+                              >
+                                Harita
+                              </button>
+                            ) : null}
+                          </div>
+                        </td>
+                        <td className="py-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-xs">{formatCoordinate(day.out_lat, day.out_lon)}</span>
+                            {day.out_lat !== null && day.out_lon !== null ? (
+                              <button
+                                type="button"
+                                className="rounded-md border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
+                                onClick={() => focusDayOnMap(day, 'out')}
+                                title="Mesai bitis konumunu haritada goster"
+                              >
+                                Harita
+                              </button>
+                            ) : null}
+                          </div>
+                        </td>
+                        <td className="py-2">
+                          <MinuteDisplay minutes={day.worked_minutes} />
+                        </td>
+                        <td className="py-2">
+                          <MinuteDisplay minutes={day.plan_overtime_minutes} />
+                        </td>
+                        <td className="py-2">
+                          <MinuteDisplay minutes={day.legal_extra_work_minutes} />
+                        </td>
+                        <td className="py-2">
+                          <MinuteDisplay minutes={day.legal_overtime_minutes} />
+                        </td>
+                        <td className="py-2 text-xs text-slate-600">{formatFlagList(day.flags)}</td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

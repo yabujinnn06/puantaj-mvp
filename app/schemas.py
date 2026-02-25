@@ -1217,6 +1217,12 @@ class AttendanceActionResponse(BaseModel):
 
 class EmployeeStatusResponse(BaseModel):
     employee_id: int
+    employee_name: str | None = None
+    region_name: str | None = None
+    department_name: str | None = None
+    shift_name: str | None = None
+    shift_start_local: str | None = None
+    shift_end_local: str | None = None
     today_status: Literal["NOT_STARTED", "IN_PROGRESS", "FINISHED"]
     last_in_ts: datetime | None = None
     last_out_ts: datetime | None = None

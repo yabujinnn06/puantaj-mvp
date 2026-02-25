@@ -72,6 +72,12 @@ export interface EmployeeHomeLocationSetResponse {
 
 export interface EmployeeStatusResponse {
   employee_id: number
+  employee_name?: string | null
+  region_name?: string | null
+  department_name?: string | null
+  shift_name?: string | null
+  shift_start_local?: string | null
+  shift_end_local?: string | null
   today_status: 'NOT_STARTED' | 'IN_PROGRESS' | 'FINISHED'
   last_in_ts: string | null
   last_out_ts: string | null
