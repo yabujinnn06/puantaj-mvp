@@ -146,19 +146,19 @@ class EmployeeQrScanServiceTests(unittest.TestCase):
         code = _build_qr_code(QRCodeType.BOTH)
         point = _build_point(401, 41.0002, 29.0000, 90)
 
-        for last_event, expected_type in (
+        for open_shift_event, expected_type in (
             (SimpleNamespace(type=AttendanceType.IN), AttendanceType.OUT),
             (None, AttendanceType.IN),
         ):
             fake_event = object()
-            with self.subTest(last_event_type=getattr(last_event, "type", None)):
+            with self.subTest(open_shift_event_type=getattr(open_shift_event, "type", None)):
                 with (
                     patch("app.services.attendance._resolve_active_device", return_value=device),
                     patch("app.services.attendance._resolve_qr_code_by_value", return_value=code),
                     patch("app.services.attendance._load_active_qr_points_for_code", return_value=[point]),
                     patch(
-                        "app.services.attendance._resolve_latest_event_for_employee",
-                        return_value=last_event,
+                        "app.services.attendance._resolve_active_open_shift_event",
+                        return_value=open_shift_event,
                     ),
                     patch("app.services.attendance._build_attendance_event", return_value=fake_event) as build_event_mock,
                 ):

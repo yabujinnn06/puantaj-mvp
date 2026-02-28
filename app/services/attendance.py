@@ -224,10 +224,50 @@ def _resolve_recent_qr_scan_event(
     return None
 
 
+def _shift_crosses_midnight(shift: DepartmentShift | None) -> bool:
+    if shift is None:
+        return False
+    return shift.end_time_local <= shift.start_time_local
+
+
+def _resolve_active_open_shift_event(
+    db: Session,
+    *,
+    employee: Employee,
+    reference_ts_utc: datetime,
+) -> AttendanceEvent | None:
+    reference_ts = _normalize_ts(reference_ts_utc)
+    latest_event = _resolve_latest_event_for_employee(
+        db,
+        employee_id=employee.id,
+        reference_ts_utc=reference_ts,
+    )
+    if latest_event is None or latest_event.type != AttendanceType.IN:
+        return None
+
+    latest_local_day = _local_day_from_utc(latest_event.ts_utc)
+    reference_local_day = _local_day_from_utc(reference_ts)
+    if latest_local_day == reference_local_day:
+        return latest_event
+
+    inherited_shift = _resolve_shift_from_last_checkin(
+        db,
+        employee=employee,
+        reference_ts_utc=reference_ts,
+    )
+    if not _shift_crosses_midnight(inherited_shift):
+        return None
+
+    if reference_local_day == latest_local_day + timedelta(days=1):
+        return latest_event
+
+    return None
+
+
 def _resolve_qr_scan_event_type(
     db: Session,
     *,
-    employee_id: int,
+    employee: Employee,
     code_type: QRCodeType,
 ) -> AttendanceType:
     if code_type == QRCodeType.CHECKIN:
@@ -235,12 +275,12 @@ def _resolve_qr_scan_event_type(
     if code_type == QRCodeType.CHECKOUT:
         return AttendanceType.OUT
 
-    last_event = _resolve_latest_event_for_employee(
+    active_open_event = _resolve_active_open_shift_event(
         db,
-        employee_id=employee_id,
+        employee=employee,
         reference_ts_utc=datetime.now(timezone.utc),
     )
-    if last_event is not None and last_event.type == AttendanceType.IN:
+    if active_open_event is not None:
         return AttendanceType.OUT
     return AttendanceType.IN
 
@@ -315,7 +355,7 @@ def create_employee_qr_scan_event(
 
     event_type = _resolve_qr_scan_event_type(
         db,
-        employee_id=employee.id,
+        employee=employee,
         code_type=qr_code.code_type,
     )
     qr_flags = {
@@ -836,6 +876,11 @@ def _build_attendance_event(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Employee is not active")
 
     ts_utc = datetime.now(timezone.utc)
+    active_open_event = _resolve_active_open_shift_event(
+        db,
+        employee=employee,
+        reference_ts_utc=ts_utc,
+    )
     latest_event = _resolve_latest_event_for_employee(
         db,
         employee_id=employee.id,
@@ -843,7 +888,7 @@ def _build_attendance_event(
     )
     approved_extra_checkin: AttendanceExtraCheckinApproval | None = None
     if event_type == AttendanceType.IN:
-        if latest_event is not None and latest_event.type == AttendanceType.IN:
+        if active_open_event is not None:
             raise ApiError(
                 status_code=409,
                 code="ALREADY_CHECKED_IN",
@@ -874,17 +919,23 @@ def _build_attendance_event(
                     message="Bugunku ikinci giris icin admin onayi gerekiyor. Onaydan sonra tekrar deneyin.",
                 )
     if event_type == AttendanceType.OUT:
-        if latest_event is None:
+        if active_open_event is None:
+            if latest_event is None:
+                raise ApiError(
+                    status_code=409,
+                    code="CHECKIN_REQUIRED",
+                    message="Cikis icin once giris kaydi gereklidir.",
+                )
+            if latest_event.type == AttendanceType.OUT:
+                raise ApiError(
+                    status_code=409,
+                    code="ALREADY_CHECKED_OUT",
+                    message="Acik bir mesai bulunamadi. Cikis zaten yapilmis gorunuyor.",
+                )
             raise ApiError(
                 status_code=409,
                 code="CHECKIN_REQUIRED",
-                message="Cikis icin once giris kaydi gereklidir.",
-            )
-        if latest_event.type == AttendanceType.OUT:
-            raise ApiError(
-                status_code=409,
-                code="ALREADY_CHECKED_OUT",
-                message="Acik bir mesai bulunamadi. Cikis zaten yapilmis gorunuyor.",
+                message="Aktif bir giris kaydi bulunamadi. Lutfen once bugun icin giris yapin.",
             )
 
     employee_location = db.scalar(

@@ -44,6 +44,7 @@ class AttendanceSequenceTests(unittest.TestCase):
 
         with (
             patch("app.services.attendance._resolve_active_device", return_value=device),
+            patch("app.services.attendance._resolve_active_open_shift_event", return_value=None),
             patch("app.services.attendance._resolve_latest_event_for_employee", return_value=finished_last_event),
             patch("app.services.attendance._has_reached_daily_shift_limit", return_value=True),
             patch("app.services.attendance._resolve_approved_extra_checkin_approval", return_value=None),
@@ -72,6 +73,7 @@ class AttendanceSequenceTests(unittest.TestCase):
 
         with (
             patch("app.services.attendance._resolve_active_device", return_value=device),
+            patch("app.services.attendance._resolve_active_open_shift_event", return_value=None),
             patch("app.services.attendance._resolve_latest_event_for_employee", return_value=finished_last_event),
             patch("app.services.attendance._has_reached_daily_shift_limit", return_value=False),
             patch("app.services.attendance.evaluate_location", return_value=(LocationStatus.NO_LOCATION, {})),
@@ -99,6 +101,7 @@ class AttendanceSequenceTests(unittest.TestCase):
 
         with (
             patch("app.services.attendance._resolve_active_device", return_value=device),
+            patch("app.services.attendance._resolve_active_open_shift_event", return_value=None),
             patch("app.services.attendance._resolve_latest_event_for_employee", return_value=finished_last_event),
             patch("app.services.attendance._has_reached_daily_shift_limit", return_value=True),
             patch("app.services.attendance._resolve_approved_extra_checkin_approval", return_value=approved_override),
@@ -129,6 +132,7 @@ class AttendanceSequenceTests(unittest.TestCase):
 
         with (
             patch("app.services.attendance._resolve_active_device", return_value=device),
+            patch("app.services.attendance._resolve_active_open_shift_event", return_value=open_last_event),
             patch("app.services.attendance._resolve_latest_event_for_employee", return_value=open_last_event),
             patch("app.services.attendance.evaluate_location", return_value=(LocationStatus.NO_LOCATION, {})),
             patch("app.services.attendance.resolve_effective_plan_for_employee_day", return_value=None),
@@ -147,6 +151,55 @@ class AttendanceSequenceTests(unittest.TestCase):
 
         self.assertEqual(event.type, AttendanceType.OUT)
         self.assertEqual(len(db.added), 1)
+
+    def test_previous_day_stale_checkin_does_not_block_new_checkin(self) -> None:
+        db = _DummyDB()
+        device = _build_device()
+        stale_last_event = SimpleNamespace(type=AttendanceType.IN)
+
+        with (
+            patch("app.services.attendance._resolve_active_device", return_value=device),
+            patch("app.services.attendance._resolve_active_open_shift_event", return_value=None),
+            patch("app.services.attendance._resolve_latest_event_for_employee", return_value=stale_last_event),
+            patch("app.services.attendance._has_reached_daily_shift_limit", return_value=False),
+            patch("app.services.attendance.evaluate_location", return_value=(LocationStatus.NO_LOCATION, {})),
+            patch("app.services.attendance.resolve_effective_plan_for_employee_day", return_value=None),
+            patch("app.services.attendance._infer_shift_from_checkin_time", return_value=(None, None)),
+            patch("app.services.attendance._resolve_fallback_shift", return_value=None),
+            patch("app.services.attendance._duplicate_event_id", return_value=None),
+        ):
+            event = create_checkin_event(
+                db,
+                device_fingerprint="seq-fp",
+                lat=None,
+                lon=None,
+                accuracy_m=None,
+            )
+
+        self.assertEqual(event.type, AttendanceType.IN)
+        self.assertEqual(len(db.added), 1)
+
+    def test_checkout_requires_active_open_shift_when_previous_checkin_is_stale(self) -> None:
+        db = _DummyDB()
+        device = _build_device()
+        stale_last_event = SimpleNamespace(type=AttendanceType.IN)
+
+        with (
+            patch("app.services.attendance._resolve_active_device", return_value=device),
+            patch("app.services.attendance._resolve_active_open_shift_event", return_value=None),
+            patch("app.services.attendance._resolve_latest_event_for_employee", return_value=stale_last_event),
+        ):
+            with self.assertRaises(ApiError) as exc:
+                create_checkout_event(
+                    db,
+                    device_fingerprint="seq-fp",
+                    lat=None,
+                    lon=None,
+                    accuracy_m=None,
+                    manual=False,
+                )
+
+        self.assertEqual(exc.exception.code, "CHECKIN_REQUIRED")
 
 
 if __name__ == "__main__":

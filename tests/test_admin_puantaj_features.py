@@ -367,6 +367,11 @@ class AdminPuantajFeatureTests(unittest.TestCase):
         for col_idx in (8, 10, 13):
             self.assertNotEqual(daily_sheet.cell(row=day_row, column=col_idx).number_format, "[h]:mm")
 
+        self.assertEqual(daily_sheet.cell(row=day_row, column=2).value.hour, 13)
+        self.assertEqual(daily_sheet.cell(row=day_row, column=2).value.minute, 47)
+        self.assertEqual(daily_sheet.cell(row=day_row, column=3).value.hour, 19)
+        self.assertEqual(daily_sheet.cell(row=day_row, column=3).value.minute, 42)
+
     def test_xlsx_export_all_mode_uses_clean_turkish_labels(self) -> None:
         department = Department(id=1, name="ARGE")
         employee_1 = Employee(id=1, full_name="Hüseyincan Orman", department_id=1, is_active=True)
@@ -416,8 +421,8 @@ class AdminPuantajFeatureTests(unittest.TestCase):
 
         self.assertEqual(dashboard["A1"].value, "Tüm Çalışanlar Özeti - YÖNETİM DASHBOARD")
         self.assertEqual(dashboard["A2"].value, "Rapor Üretim (UTC)")
-        self.assertEqual(dashboard["A12"].value, "Sıra")
-        self.assertEqual(dashboard["B12"].value, "Çalışan Navigasyon")
+        self.assertEqual(dashboard["A16"].value, "Sıra")
+        self.assertEqual(dashboard["B16"].value, "Çalışan Navigasyon")
 
         daily_sheet = wb["Hüseyincan Orman (1)"]
         self.assertEqual(daily_sheet["E7"].value, "Çalışma Süresi")

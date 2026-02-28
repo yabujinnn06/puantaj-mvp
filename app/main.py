@@ -21,7 +21,9 @@ from app.settings import get_cors_origins, get_settings
 from app.services.notifications import (
     get_daily_report_job_health,
     get_notification_channel_health,
+    repair_auto_midnight_checkout_events,
     schedule_daily_admin_report_archive_notifications,
+    schedule_missing_checkin_notifications,
     schedule_missed_checkout_notifications,
     send_pending_notifications,
 )
@@ -330,11 +332,17 @@ async def _notification_worker_loop(stop_event: asyncio.Event) -> None:
     while not stop_event.is_set():
         created_jobs_count = 0
         processed_jobs_count = 0
+        repaired_auto_checkout_events = 0
         daily_report_health: dict[str, Any] | None = None
         admin_claim_health_summary: dict[str, Any] | None = None
         try:
             now_utc = datetime.now(timezone.utc)
+            repaired_auto_checkout_events = await asyncio.to_thread(
+                repair_auto_midnight_checkout_events,
+                now_utc,
+            )
             created_jobs = await asyncio.to_thread(schedule_missed_checkout_notifications, now_utc)
+            missing_checkin_jobs = await asyncio.to_thread(schedule_missing_checkin_notifications, now_utc)
             daily_jobs = await asyncio.to_thread(schedule_daily_admin_report_archive_notifications, now_utc)
             processed_jobs = await asyncio.to_thread(send_pending_notifications, 100, now_utc=now_utc)
             daily_report_health = await asyncio.to_thread(get_daily_report_job_health, now_utc)
@@ -361,7 +369,7 @@ async def _notification_worker_loop(stop_event: asyncio.Event) -> None:
                         "notification_admin_claim_health_check",
                         extra=admin_claim_health_summary,
                     )
-            created_jobs_count = len(created_jobs) + len(daily_jobs)
+            created_jobs_count = len(created_jobs) + len(missing_checkin_jobs) + len(daily_jobs)
             processed_jobs_count = len(processed_jobs)
         except Exception:
             notification_worker_logger.exception("notification_worker_tick_failed")
@@ -462,12 +470,13 @@ async def _notification_worker_loop(stop_event: asyncio.Event) -> None:
                     last_daily_health_signature = health_signature
                     last_daily_health_logged_ts = now_utc
 
-            if created_jobs_count or processed_jobs_count:
+            if created_jobs_count or processed_jobs_count or repaired_auto_checkout_events:
                 notification_worker_logger.info(
                     "notification_worker_tick",
                     extra={
                         "created_jobs": created_jobs_count,
                         "processed_jobs": processed_jobs_count,
+                        "repaired_auto_checkout_events": repaired_auto_checkout_events,
                         "daily_report_health": daily_report_health or {},
                         "admin_claim_health": admin_claim_health_summary or {},
                     },

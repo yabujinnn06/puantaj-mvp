@@ -77,7 +77,7 @@ def _to_excel_datetime(value: datetime | None) -> datetime | None:
         return None
     if value.tzinfo is None:
         return value
-    return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value.astimezone(_attendance_timezone()).replace(tzinfo=None)
 
 
 def _date_range_bounds_utc(start_date: date, end_date: date) -> tuple[datetime, datetime]:
