@@ -183,6 +183,18 @@ function riskClass(value: ControlRoomRiskStatus) {
   return 'is-normal'
 }
 
+function systemStatusLabel(value: 'HEALTHY' | 'ATTENTION' | 'CRITICAL') {
+  if (value === 'CRITICAL') return 'Kritik'
+  if (value === 'ATTENTION') return 'Izlemeli'
+  return 'Stabil'
+}
+
+function systemStatusClass(value: 'HEALTHY' | 'ATTENTION' | 'CRITICAL') {
+  if (value === 'CRITICAL') return 'is-critical'
+  if (value === 'ATTENTION') return 'is-watch'
+  return 'is-normal'
+}
+
 function tooltipText(item: ControlRoomEmployeeState) {
   if (!item.tooltip_items.length) return 'Ek aciklama yok.'
   return item.tooltip_items.map((entry) => `${entry.title}: ${entry.body}`).join('\n')
@@ -462,14 +474,41 @@ export function ControlRoomPage() {
   return (
     <div className="ops-matrix-page">
       <PageHeader
-        title="Operasyonel Güvenlik Matrisi"
-        description="Calisan davranisi, vardiya uyumu ve operasyonel risk akisini tek panelde izleyin."
+        title="Ana Panel"
+        description="Yonetim Konsolu. Operasyonel Guvenlik Matrisi, risk analizi, mesai takibi ve mudahale araclari bu ekranin merkezinde birlesir."
         action={
-          <button type="button" className="ops-button ops-button-secondary" onClick={() => void overviewQuery.refetch()}>
-            Yenile
-          </button>
+          <div className="ops-filter-action-group">
+            <Link to="/notifications" className="ops-button ops-button-ghost">
+              Bildirimler
+            </Link>
+            <Link to="/attendance-events" className="ops-button ops-button-ghost">
+              Yoklama Kayitlari
+            </Link>
+            <button type="button" className="ops-button ops-button-secondary" onClick={() => void overviewQuery.refetch()}>
+              Yenile
+            </button>
+          </div>
         }
       />
+
+      <section className="ops-panel">
+        <div className="ops-panel-head">
+          <div>
+            <p className="ops-panel-kicker">YONETIM KONSOLU</p>
+            <h3>Canli operasyon akisi, risk yogunlugu ve mudahale katmani tek merkezde.</h3>
+          </div>
+          <div className="ops-filter-summary-text">
+            Sistem durumu:
+            {' '}
+            <span className={`ops-status-pill ${systemStatusClass(summary?.system_status ?? 'HEALTHY')}`}>
+              {systemStatusLabel(summary?.system_status ?? 'HEALTHY')}
+            </span>
+          </div>
+        </div>
+        <div className="ops-filter-summary-text">
+          Son guncelleme: {formatDateTime(overviewQuery.data.generated_at_utc)}. Filtrelenen kapsam icinde departman, ihlal, risk ve fazla mesai gorunumu ayni panelde izlenir.
+        </div>
+      </section>
 
       <section className="ops-filter-panel">
         <div className="ops-panel-head">
@@ -576,14 +615,14 @@ export function ControlRoomPage() {
       </section>
 
       <section className="ops-kpi-grid">
-        <MetricCard label="Izlenen personel" value={summary?.total_employees ?? 0} meta="Filtre sonucundaki toplam kayit" />
-        <MetricCard label="Kritik personel" value={summary?.critical_count ?? 0} meta="Risk skoru 70 ve uzeri" />
-        <MetricCard label="Izlemeli personel" value={summary?.watch_count ?? 0} meta="Risk skoru 35-69 arasi" />
+        <MetricCard label="Toplam aktif calisan" value={summary?.active_employees ?? 0} meta={`${summary?.total_employees ?? 0} kayit icinde`} />
+        <MetricCard label="Kritik riskli calisan" value={summary?.critical_count ?? 0} meta="Anlik kritik seviye" />
+        <MetricCard label="Izlemeli calisan" value={summary?.watch_count ?? 0} meta="Yakindan takip gereken" />
+        <MetricCard label="Ortalama risk skoru" value={summary?.average_risk_score ?? 0} meta="Filtrelenen evren ortalamasi" />
+        <MetricCard label="Aktif mesai sayisi" value={summary?.active_overtime_count ?? 0} meta="Planli sureyi asan acik vardiya" />
+        <MetricCard label="Gunluk ihlal sayisi" value={summary?.daily_violation_count ?? 0} meta="Bugun olusan toplam ihlal" />
         <MetricCard label="Aktif vardiya" value={summary?.in_progress_count ?? 0} meta="Bugun acik vardiyasi olanlar" />
-        <MetricCard label="Ort. giris saati" value={formatClockMinutes(summary?.average_checkin_minutes)} meta="Secili analiz araliginda" />
-        <MetricCard label="Gec kalma orani" value={`${summary?.late_rate_percent ?? 0}%`} meta="Toplam gozlem icinde" />
-        <MetricCard label="Ort. aktif sure" value={formatClockMinutes(summary?.average_active_minutes)} meta="Personel basina ortalama" />
-        <MetricCard label="En riskli zaman" value={summary?.most_common_violation_window ?? '-'} meta="Ihlallerin yogunlastigi saat" />
+        <MetricCard label="Sistem durumu" value={systemStatusLabel(summary?.system_status ?? 'HEALTHY')} meta={`En riskli zaman: ${summary?.most_common_violation_window ?? '-'}`} />
       </section>
 
       <section className="ops-analytics-grid">
@@ -703,8 +742,8 @@ export function ControlRoomPage() {
       <section className="ops-panel ops-table-panel">
         <div className="ops-panel-head">
           <div>
-            <p className="ops-panel-kicker">PERSONEL VARDIYA MATRISI</p>
-            <h3>Risk bazli davranis ve operasyon tablosu</h3>
+            <p className="ops-panel-kicker">OPERASYONEL GUVENLIK MATRISI</p>
+            <h3>Risk bazli davranis, ihlal ve mesai tablosu</h3>
           </div>
           <div className="ops-pagination-head">
             <span>{overviewQuery.data.total} kayit</span>

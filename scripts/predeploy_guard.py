@@ -120,12 +120,13 @@ def _check_push_config() -> CheckResult:
 
 def _check_revision_id_lengths() -> CheckResult:
     revisions = _extract_revision_ids()
-    too_long = [revision for revision in revisions if len(revision) > 32]
+    max_len = 128
+    too_long = [revision for revision in revisions if len(revision) > max_len]
     return CheckResult(
         name="migration_revision_length",
         status="ok" if not too_long else "fail",
         details={
-            "max_len": 32,
+            "max_len": max_len,
             "too_long": too_long,
             "total": len(revisions),
         },

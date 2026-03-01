@@ -7,8 +7,7 @@ import { useAuth } from '../hooks/useAuth'
 import { urlBase64ToUint8Array } from '../utils/push'
 
 const navItems = [
-  { to: '/management-console', label: 'Yönetim Konsolu' },
-  { to: '/control-room', label: 'Operasyonel Güvenlik Matrisi' },
+  { to: '/management-console', label: 'Ana Panel' },
   { to: '/dashboard', label: 'Genel Bakış' },
   { to: '/regions', label: 'Bölgeler', permission: 'regions' },
   { to: '/departments', label: 'Departmanlar', permission: 'departments' },
@@ -29,8 +28,8 @@ const navItems = [
 ]
 
 const pageTitles: Record<string, string> = {
-  '/management-console': 'Yönetim Konsolu',
-  '/control-room': 'Operasyonel Güvenlik Matrisi',
+  '/management-console': 'Ana Panel',
+  '/control-room': 'Ana Panel',
   '/dashboard': 'Genel Bakış',
   '/regions': 'Bölgeler',
   '/departments': 'Departmanlar',

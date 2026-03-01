@@ -701,6 +701,8 @@ export interface ControlRoomHistogramBucket {
   count: number
 }
 
+export type ControlRoomSystemStatus = 'HEALTHY' | 'ATTENTION' | 'CRITICAL'
+
 export interface ControlRoomDepartmentMetric {
   department_name: string
   employee_count: number
@@ -742,6 +744,10 @@ export interface ControlRoomSummary {
   normal_count: number
   watch_count: number
   critical_count: number
+  average_risk_score: number
+  active_overtime_count: number
+  daily_violation_count: number
+  system_status: ControlRoomSystemStatus
   average_checkin_minutes: number | null
   late_rate_percent: number
   average_active_minutes: number

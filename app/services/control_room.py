@@ -729,6 +729,20 @@ def build_control_room_overview(
             window_start_utc=analysis_start_utc,
             window_end_utc=min(analysis_end_utc, now_utc),
         )
+        today_schedule = _resolve_shift_context(
+            employee=employee,
+            day_date=today_local_date,
+            work_rule_map=work_rule_map,
+            weekly_rule_map=weekly_rule_map,
+            shift_map=shift_map,
+            plan_map=plan_map,
+        )
+        active_overtime = (
+            employee_today_status == "IN_PROGRESS"
+            and today_schedule.is_workday
+            and today_schedule.planned_minutes > 0
+            and worked_today_minutes > today_schedule.planned_minutes
+        )
 
         risk_daily_events: dict[date, list[AttendanceEvent]] = defaultdict(list)
         analysis_has_activity = False
@@ -746,6 +760,7 @@ def build_control_room_overview(
         off_hours_days = 0
         location_deviation_days = 0
         violation_count_7d = 0
+        today_violation_count = 0
         absence_minutes_7d = 0
         late_observations = 0
         checkin_minutes_samples: list[int] = []
@@ -890,6 +905,8 @@ def build_control_room_overview(
                 add_tooltip("Kural uyarisi", f"{day_date:%d.%m.%Y} tarihinde kural veya olay bayragi uretildi.")
 
             if day_violation_count:
+                if day_date == today_local_date:
+                    today_violation_count = day_violation_count
                 risk_trend_counter[day_date] += day_violation_count
 
         if total_devices == 0:
@@ -1008,6 +1025,8 @@ def build_control_room_overview(
             "weekly_total_minutes": weekly_total_minutes,
             "analysis_total_minutes": analysis_total_minutes,
             "violation_count_7d": violation_count_7d,
+            "today_violation_count": today_violation_count,
+            "active_overtime": active_overtime,
             "risk_score": risk_score,
             "risk_status": risk_status_value,
             "absence_minutes_7d": absence_minutes_7d,
@@ -1191,6 +1210,19 @@ def build_control_room_overview(
     checkin_values = [row["average_checkin_minutes"] for row in filtered_rows if row["average_checkin_minutes"] is not None]
     late_observation_total = sum(row["late_observations"] for row in filtered_rows)
     late_day_total = sum(row["late_days"] for row in filtered_rows)
+    average_risk_score = round(mean([row["risk_score"] for row in filtered_rows]), 1) if filtered_rows else 0
+    active_overtime_count = sum(1 for row in filtered_rows if row["active_overtime"])
+    daily_violation_count = sum(int(row["today_violation_count"]) for row in filtered_rows)
+    if sum(1 for row in filtered_rows if row["risk_status"] == "CRITICAL") > 0 or daily_violation_count >= 10:
+        system_status = "CRITICAL"
+    elif (
+        sum(1 for row in filtered_rows if row["risk_status"] == "WATCH") > 0
+        or daily_violation_count > 0
+        or active_overtime_count > 0
+    ):
+        system_status = "ATTENTION"
+    else:
+        system_status = "HEALTHY"
     summary = ControlRoomSummaryRead(
         total_employees=total_filtered,
         active_employees=sum(1 for row in filtered_rows if row["employee"].is_active),
@@ -1200,6 +1232,10 @@ def build_control_room_overview(
         normal_count=sum(1 for row in filtered_rows if row["risk_status"] == "NORMAL"),
         watch_count=sum(1 for row in filtered_rows if row["risk_status"] == "WATCH"),
         critical_count=sum(1 for row in filtered_rows if row["risk_status"] == "CRITICAL"),
+        average_risk_score=average_risk_score,
+        active_overtime_count=active_overtime_count,
+        daily_violation_count=daily_violation_count,
+        system_status=system_status,
         average_checkin_minutes=int(round(mean(checkin_values))) if checkin_values else None,
         late_rate_percent=round((late_day_total / late_observation_total) * 100, 1) if late_observation_total else 0,
         average_active_minutes=int(round(mean([row["analysis_total_minutes"] for row in filtered_rows]))) if filtered_rows else 0,

@@ -323,6 +323,10 @@ class ControlRoomSummaryRead(BaseModel):
     normal_count: int = 0
     watch_count: int = 0
     critical_count: int = 0
+    average_risk_score: float = 0
+    active_overtime_count: int = 0
+    daily_violation_count: int = 0
+    system_status: Literal["HEALTHY", "ATTENTION", "CRITICAL"] = "HEALTHY"
     average_checkin_minutes: int | None = None
     late_rate_percent: float = 0
     average_active_minutes: int = 0
