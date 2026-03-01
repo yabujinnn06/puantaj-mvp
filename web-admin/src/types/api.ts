@@ -559,6 +559,80 @@ export interface DashboardEmployeeSnapshot {
   generated_at_utc: string
 }
 
+export type ControlRoomLocationState = 'LIVE' | 'STALE' | 'DORMANT' | 'NONE'
+export type ControlRoomAlertSeverity = 'info' | 'warning' | 'critical'
+
+export interface ControlRoomEmployeeAlert {
+  code: string
+  label: string
+  severity: ControlRoomAlertSeverity
+}
+
+export interface ControlRoomEmployeeState {
+  employee: Employee
+  department_name: string | null
+  shift_name: string | null
+  shift_window_label: string | null
+  today_status: 'NOT_STARTED' | 'IN_PROGRESS' | 'FINISHED'
+  location_state: ControlRoomLocationState
+  last_event: DashboardEmployeeLastEvent | null
+  latest_location: EmployeeLiveLocation | null
+  last_portal_seen_utc: string | null
+  recent_ip: string | null
+  active_devices: number
+  total_devices: number
+  current_month: DashboardEmployeeMonthMetrics
+  attention_flags: ControlRoomEmployeeAlert[]
+}
+
+export interface ControlRoomMapPoint {
+  employee_id: number
+  employee_name: string
+  department_name: string | null
+  lat: number
+  lon: number
+  ts_utc: string
+  accuracy_m: number | null
+  today_status: 'NOT_STARTED' | 'IN_PROGRESS' | 'FINISHED'
+  location_state: ControlRoomLocationState
+  label: string
+}
+
+export interface ControlRoomRecentEvent {
+  event_id: number
+  employee_id: number
+  employee_name: string
+  department_name: string | null
+  event_type: AttendanceType
+  ts_utc: string
+  location_status: LocationStatus
+  device_id: number
+  lat: number | null
+  lon: number | null
+  accuracy_m: number | null
+}
+
+export interface ControlRoomSummary {
+  total_employees: number
+  active_employees: number
+  not_started_count: number
+  in_progress_count: number
+  finished_count: number
+  attention_on_page_count: number
+  live_location_on_page_count: number
+}
+
+export interface ControlRoomOverview {
+  generated_at_utc: string
+  total: number
+  offset: number
+  limit: number
+  summary: ControlRoomSummary
+  items: ControlRoomEmployeeState[]
+  map_points: ControlRoomMapPoint[]
+  recent_events: ControlRoomRecentEvent[]
+}
+
 export interface MonthlyEmployeeDay {
   date: string
   status: 'OK' | 'INCOMPLETE' | 'LEAVE' | 'OFF'

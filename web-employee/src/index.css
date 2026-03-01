@@ -1179,6 +1179,12 @@ textarea:focus {
 
 .scanner-modal-backdrop {
   z-index: 52;
+  min-height: 100svh;
+  padding:
+    max(1rem, env(safe-area-inset-top))
+    max(1rem, env(safe-area-inset-right))
+    max(1rem, env(safe-area-inset-bottom))
+    max(1rem, env(safe-area-inset-left));
   background:
     radial-gradient(circle at 50% 12%, rgba(92, 170, 209, 0.24), rgba(9, 28, 39, 0.82) 58%),
     rgba(8, 22, 31, 0.72);
@@ -1187,6 +1193,8 @@ textarea:focus {
 
 .scanner-modal {
   width: min(100%, 420px);
+  max-height: calc(100svh - 2rem);
+  overflow: auto;
   border-radius: 16px;
   border: 1px solid rgba(143, 194, 218, 0.5);
   background:

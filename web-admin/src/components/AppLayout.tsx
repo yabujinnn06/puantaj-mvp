@@ -8,6 +8,7 @@ import { urlBase64ToUint8Array } from '../utils/push'
 
 const navItems = [
   { to: '/management-console', label: 'Yönetim Konsolu' },
+  { to: '/control-room', label: 'Kontrol Odası' },
   { to: '/dashboard', label: 'Genel Bakış' },
   { to: '/regions', label: 'Bölgeler', permission: 'regions' },
   { to: '/departments', label: 'Departmanlar', permission: 'departments' },
@@ -29,6 +30,7 @@ const navItems = [
 
 const pageTitles: Record<string, string> = {
   '/management-console': 'Yönetim Konsolu',
+  '/control-room': 'Kontrol Odası',
   '/dashboard': 'Genel Bakış',
   '/regions': 'Bölgeler',
   '/departments': 'Departmanlar',

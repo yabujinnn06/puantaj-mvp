@@ -10,6 +10,7 @@ import { DepartmentSummaryReportPage } from './pages/DepartmentSummaryReportPage
 import { DepartmentsPage } from './pages/DepartmentsPage'
 import { DevicesPage } from './pages/DevicesPage'
 import { ComplianceSettingsPage } from './pages/ComplianceSettingsPage'
+import { ControlRoomPage } from './pages/ControlRoomPage'
 import { ArchivePasswordDownloadPage } from './pages/ArchivePasswordDownloadPage'
 import { AttendanceExtraCheckinApprovalPage } from './pages/AttendanceExtraCheckinApprovalPage'
 import { AdminUsersPage } from './pages/AdminUsersPage'
@@ -43,6 +44,7 @@ function App() {
         <Route element={<AppLayout />}>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/management-console" element={<ManagementConsolePage />} />
+          <Route path="/control-room" element={<ControlRoomPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/regions" element={<RegionsPage />} />
           <Route path="/departments" element={<DepartmentsPage />} />

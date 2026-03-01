@@ -33,6 +33,8 @@ import type {
   DepartmentShift,
   DepartmentSummaryItem,
   DepartmentWeeklyRule,
+  ControlRoomOverview,
+  ControlRoomLocationState,
   DashboardEmployeeSnapshot,
   Device,
   EmployeeDeviceOverview,
@@ -370,6 +372,17 @@ export interface DeviceInvitePayload {
 export interface DashboardEmployeeSnapshotParams {
   employee_id?: number
   employee_name?: string
+}
+
+export interface ControlRoomOverviewParams {
+  q?: string
+  region_id?: number
+  department_id?: number
+  today_status?: 'NOT_STARTED' | 'IN_PROGRESS' | 'FINISHED'
+  location_state?: ControlRoomLocationState
+  include_inactive?: boolean
+  offset?: number
+  limit?: number
 }
 
 export interface MonthlyEmployeeParams {
@@ -1102,6 +1115,15 @@ export async function getDashboardEmployeeSnapshot(
   params: DashboardEmployeeSnapshotParams,
 ): Promise<DashboardEmployeeSnapshot> {
   const response = await apiClient.get<DashboardEmployeeSnapshot>('/api/admin/dashboard/employee-snapshot', {
+    params,
+  })
+  return response.data
+}
+
+export async function getControlRoomOverview(
+  params: ControlRoomOverviewParams = {},
+): Promise<ControlRoomOverview> {
+  const response = await apiClient.get<ControlRoomOverview>('/api/admin/control-room/overview', {
     params,
   })
   return response.data

@@ -163,6 +163,77 @@ class DashboardEmployeeSnapshotRead(BaseModel):
     generated_at_utc: datetime
 
 
+class ControlRoomEmployeeAlertRead(BaseModel):
+    code: str
+    label: str
+    severity: Literal["info", "warning", "critical"] = "info"
+
+
+class ControlRoomEmployeeStateRead(BaseModel):
+    employee: EmployeeRead
+    department_name: str | None = None
+    shift_name: str | None = None
+    shift_window_label: str | None = None
+    today_status: Literal["NOT_STARTED", "IN_PROGRESS", "FINISHED"] = "NOT_STARTED"
+    location_state: Literal["LIVE", "STALE", "DORMANT", "NONE"] = "NONE"
+    last_event: DashboardEmployeeLastEventRead | None = None
+    latest_location: EmployeeLiveLocationRead | None = None
+    last_portal_seen_utc: datetime | None = None
+    recent_ip: str | None = None
+    active_devices: int = 0
+    total_devices: int = 0
+    current_month: DashboardEmployeeMonthMetricsRead
+    attention_flags: list[ControlRoomEmployeeAlertRead] = Field(default_factory=list)
+
+
+class ControlRoomMapPointRead(BaseModel):
+    employee_id: int
+    employee_name: str
+    department_name: str | None = None
+    lat: float
+    lon: float
+    ts_utc: datetime
+    accuracy_m: float | None = None
+    today_status: Literal["NOT_STARTED", "IN_PROGRESS", "FINISHED"] = "NOT_STARTED"
+    location_state: Literal["LIVE", "STALE", "DORMANT", "NONE"] = "NONE"
+    label: str
+
+
+class ControlRoomRecentEventRead(BaseModel):
+    event_id: int
+    employee_id: int
+    employee_name: str
+    department_name: str | None = None
+    event_type: AttendanceType
+    ts_utc: datetime
+    location_status: LocationStatus
+    device_id: int
+    lat: float | None = None
+    lon: float | None = None
+    accuracy_m: float | None = None
+
+
+class ControlRoomSummaryRead(BaseModel):
+    total_employees: int = 0
+    active_employees: int = 0
+    not_started_count: int = 0
+    in_progress_count: int = 0
+    finished_count: int = 0
+    attention_on_page_count: int = 0
+    live_location_on_page_count: int = 0
+
+
+class ControlRoomOverviewResponse(BaseModel):
+    generated_at_utc: datetime
+    total: int = 0
+    offset: int = 0
+    limit: int = 0
+    summary: ControlRoomSummaryRead
+    items: list[ControlRoomEmployeeStateRead] = Field(default_factory=list)
+    map_points: list[ControlRoomMapPointRead] = Field(default_factory=list)
+    recent_events: list[ControlRoomRecentEventRead] = Field(default_factory=list)
+
+
 class EmployeeActiveUpdateRequest(BaseModel):
     is_active: bool
 

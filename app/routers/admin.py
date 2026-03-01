@@ -112,6 +112,12 @@ from app.schemas import (
     DeviceRead,
     DepartmentShiftRead,
     DepartmentShiftUpsert,
+    ControlRoomEmployeeAlertRead,
+    ControlRoomEmployeeStateRead,
+    ControlRoomMapPointRead,
+    ControlRoomOverviewResponse,
+    ControlRoomRecentEventRead,
+    ControlRoomSummaryRead,
     SchedulePlanRead,
     SchedulePlanUpsertRequest,
     DepartmentWeeklyRuleRead,
@@ -2825,6 +2831,139 @@ def list_employee_device_overview(
     return rows
 
 
+def _dashboard_month_metrics_from_report(report: MonthlyEmployeeResponse) -> DashboardEmployeeMonthMetricsRead:
+    return DashboardEmployeeMonthMetricsRead(
+        year=report.year,
+        month=report.month,
+        worked_minutes=report.totals.worked_minutes,
+        plan_overtime_minutes=report.totals.plan_overtime_minutes,
+        extra_work_minutes=report.totals.legal_extra_work_minutes,
+        overtime_minutes=report.totals.legal_overtime_minutes,
+        incomplete_days=report.totals.incomplete_days,
+    )
+
+
+def _today_status_from_events(
+    today_events: list[AttendanceEvent],
+) -> Literal["NOT_STARTED", "IN_PROGRESS", "FINISHED"]:
+    today_last_in: datetime | None = None
+    today_last_out: datetime | None = None
+    for event in today_events:
+        if event.type == AttendanceType.IN:
+            today_last_in = event.ts_utc
+        elif event.type == AttendanceType.OUT:
+            today_last_out = event.ts_utc
+
+    if today_last_in is None and today_last_out is None:
+        return "NOT_STARTED"
+    if today_last_in is not None and (today_last_out is None or today_last_out < today_last_in):
+        return "IN_PROGRESS"
+    return "FINISHED"
+
+
+def _attendance_event_to_dashboard_last_event(
+    event: AttendanceEvent | None,
+) -> DashboardEmployeeLastEventRead | None:
+    if event is None:
+        return None
+    return DashboardEmployeeLastEventRead(
+        event_id=event.id,
+        event_type=event.type,
+        ts_utc=event.ts_utc,
+        location_status=event.location_status,
+        device_id=event.device_id,
+        lat=event.lat,
+        lon=event.lon,
+        accuracy_m=event.accuracy_m,
+    )
+
+
+def _attendance_event_to_live_location(
+    event: AttendanceEvent | None,
+) -> EmployeeLiveLocationRead | None:
+    if event is None or event.lat is None or event.lon is None:
+        return None
+    return EmployeeLiveLocationRead(
+        lat=event.lat,
+        lon=event.lon,
+        accuracy_m=event.accuracy_m,
+        ts_utc=event.ts_utc,
+        location_status=event.location_status,
+        event_type=event.type,
+        device_id=event.device_id,
+    )
+
+
+def _control_room_location_state(
+    latest_location_event: AttendanceEvent | None,
+    *,
+    now_utc: datetime,
+) -> Literal["LIVE", "STALE", "DORMANT", "NONE"]:
+    if latest_location_event is None or latest_location_event.lat is None or latest_location_event.lon is None:
+        return "NONE"
+    location_ts = _as_utc_datetime(latest_location_event.ts_utc)
+    if location_ts is None:
+        return "NONE"
+    age = now_utc - location_ts
+    if age <= timedelta(minutes=30):
+        return "LIVE"
+    if age <= timedelta(hours=6):
+        return "STALE"
+    return "DORMANT"
+
+
+def _control_room_attention_flags(
+    *,
+    employee: Employee,
+    today_status: Literal["NOT_STARTED", "IN_PROGRESS", "FINISHED"],
+    today_events: list[AttendanceEvent],
+    last_event: AttendanceEvent | None,
+    latest_location_event: AttendanceEvent | None,
+    active_devices: int,
+    total_devices: int,
+    now_utc: datetime,
+    now_local: datetime,
+) -> list[ControlRoomEmployeeAlertRead]:
+    flags: list[ControlRoomEmployeeAlertRead] = []
+    seen_codes: set[str] = set()
+
+    def push_alert(code: str, label: str, severity: Literal["info", "warning", "critical"]) -> None:
+        if code in seen_codes:
+            return
+        seen_codes.add(code)
+        flags.append(ControlRoomEmployeeAlertRead(code=code, label=label, severity=severity))
+
+    if total_devices == 0:
+        push_alert("NO_DEVICE", "Kayıtlı cihaz yok", "critical")
+    elif active_devices == 0:
+        push_alert("NO_ACTIVE_DEVICE", "Aktif cihaz görünmüyor", "warning")
+
+    if today_status == "NOT_STARTED" and employee.is_active and now_local.hour >= 10:
+        push_alert("MISSING_TODAY_CHECKIN", "Bugün giriş görünmüyor", "warning")
+
+    if today_status == "IN_PROGRESS" and last_event is not None:
+        last_event_ts = _as_utc_datetime(last_event.ts_utc)
+        if last_event_ts is not None:
+            last_event_age = now_utc - last_event_ts
+            if last_event.type == AttendanceType.IN and last_event_age >= timedelta(hours=10):
+                push_alert("LONG_OPEN_SHIFT", "Açık vardiya 10 saati aştı", "critical")
+        if latest_location_event is None:
+            push_alert("IN_PROGRESS_NO_LOCATION", "Açık vardiyada güncel konum yok", "warning")
+
+    if latest_location_event is not None and latest_location_event.location_status == LocationStatus.UNVERIFIED_LOCATION:
+        push_alert("UNVERIFIED_LOCATION", "Son konum doğrulanamadı", "warning")
+
+    has_today_in = any(item.type == AttendanceType.IN for item in today_events)
+    has_today_out = any(item.type == AttendanceType.OUT for item in today_events)
+    if has_today_out and not has_today_in:
+        push_alert("MISSING_CHECKIN_PATTERN", "Çıkış var, giriş görünmüyor", "critical")
+
+    if any(bool(item.flags) for item in today_events):
+        push_alert("RULE_OR_EVENT_FLAG", "Gün içinde kural veya olay uyarısı oluştu", "info")
+
+    return flags
+
+
 @router.get(
     "/api/admin/dashboard/employee-snapshot",
     response_model=DashboardEmployeeSnapshotRead,
@@ -2892,17 +3031,6 @@ def get_dashboard_employee_snapshot(
         month=previous_month,
     )
 
-    def _to_month_metrics(report: MonthlyEmployeeResponse) -> DashboardEmployeeMonthMetricsRead:
-        return DashboardEmployeeMonthMetricsRead(
-            year=report.year,
-            month=report.month,
-            worked_minutes=report.totals.worked_minutes,
-            plan_overtime_minutes=report.totals.plan_overtime_minutes,
-            extra_work_minutes=report.totals.legal_extra_work_minutes,
-            overtime_minutes=report.totals.legal_overtime_minutes,
-            incomplete_days=report.totals.incomplete_days,
-        )
-
     today_local = now_local.date()
     today_start_local = datetime.combine(today_local, time.min, tzinfo=tz)
     today_end_local = today_start_local + timedelta(days=1)
@@ -2921,21 +3049,7 @@ def get_dashboard_employee_snapshot(
             .order_by(AttendanceEvent.ts_utc.asc(), AttendanceEvent.id.asc())
         ).all()
     )
-
-    today_last_in = None
-    today_last_out = None
-    for event in today_events:
-        if event.type == AttendanceType.IN:
-            today_last_in = event.ts_utc
-        elif event.type == AttendanceType.OUT:
-            today_last_out = event.ts_utc
-
-    if today_last_in is None and today_last_out is None:
-        today_status: Literal["NOT_STARTED", "IN_PROGRESS", "FINISHED"] = "NOT_STARTED"
-    elif today_last_in is not None and (today_last_out is None or today_last_out < today_last_in):
-        today_status = "IN_PROGRESS"
-    else:
-        today_status = "FINISHED"
+    today_status = _today_status_from_events(today_events)
 
     last_event = db.scalar(
         select(AttendanceEvent)
@@ -2954,25 +3068,10 @@ def get_dashboard_employee_snapshot(
             AttendanceEvent.lat.is_not(None),
             AttendanceEvent.lon.is_not(None),
         )
-        .order_by(AttendanceEvent.ts_utc.desc(), AttendanceEvent.id.desc())
-        .limit(1)
+            .order_by(AttendanceEvent.ts_utc.desc(), AttendanceEvent.id.desc())
+            .limit(1)
     )
-
-    latest_location = (
-        EmployeeLiveLocationRead(
-            lat=latest_location_event.lat if latest_location_event and latest_location_event.lat is not None else 0.0,
-            lon=latest_location_event.lon if latest_location_event and latest_location_event.lon is not None else 0.0,
-            accuracy_m=latest_location_event.accuracy_m if latest_location_event else None,
-            ts_utc=latest_location_event.ts_utc if latest_location_event else now_utc,
-            location_status=latest_location_event.location_status if latest_location_event else LocationStatus.NO_LOCATION,
-            event_type=latest_location_event.type if latest_location_event else AttendanceType.IN,
-            device_id=latest_location_event.device_id if latest_location_event else 0,
-        )
-        if latest_location_event is not None
-        and latest_location_event.lat is not None
-        and latest_location_event.lon is not None
-        else None
-    )
+    latest_location = _attendance_event_to_live_location(latest_location_event)
 
     sorted_devices = sorted(
         list(employee.devices or []),
@@ -3009,24 +3108,380 @@ def get_dashboard_employee_snapshot(
         total_devices=len(sorted_devices),
         active_devices=sum(1 for item in sorted_devices if item.is_active),
         devices=device_rows,
-        current_month=_to_month_metrics(current_report),
-        previous_month=_to_month_metrics(previous_report),
-        last_event=(
-            DashboardEmployeeLastEventRead(
-                event_id=last_event.id,
-                event_type=last_event.type,
-                ts_utc=last_event.ts_utc,
-                location_status=last_event.location_status,
-                device_id=last_event.device_id,
-                lat=last_event.lat,
-                lon=last_event.lon,
-                accuracy_m=last_event.accuracy_m,
-            )
-            if last_event is not None
-            else None
-        ),
+        current_month=_dashboard_month_metrics_from_report(current_report),
+        previous_month=_dashboard_month_metrics_from_report(previous_report),
+        last_event=_attendance_event_to_dashboard_last_event(last_event),
         latest_location=latest_location,
         generated_at_utc=now_utc,
+    )
+
+
+@router.get(
+    "/api/admin/control-room/overview",
+    response_model=ControlRoomOverviewResponse,
+    dependencies=[Depends(require_admin)],
+)
+def get_control_room_overview(
+    q: str | None = Query(default=None, max_length=255),
+    region_id: int | None = Query(default=None, ge=1),
+    department_id: int | None = Query(default=None, ge=1),
+    today_status: Literal["NOT_STARTED", "IN_PROGRESS", "FINISHED"] | None = Query(default=None),
+    location_state: Literal["LIVE", "STALE", "DORMANT", "NONE"] | None = Query(default=None),
+    include_inactive: bool = Query(default=False),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=24, ge=1, le=50),
+    db: Session = Depends(get_db),
+) -> ControlRoomOverviewResponse:
+    normalized_q = _normalize_query_text(q)
+    employee_filters: list[Any] = []
+    if not include_inactive:
+        employee_filters.append(Employee.is_active.is_(True))
+    if region_id is not None:
+        employee_filters.append(Employee.region_id == region_id)
+    if department_id is not None:
+        employee_filters.append(Employee.department_id == department_id)
+    if normalized_q:
+        search_filters = [Employee.full_name.ilike(f"%{normalized_q}%")]
+        normalized_numeric = normalized_q.replace("#", "").strip()
+        if normalized_numeric.isdigit():
+            search_filters.append(Employee.id == int(normalized_numeric))
+        employee_filters.append(or_(*search_filters))
+
+    candidate_employees = list(
+        db.scalars(
+            select(Employee)
+            .options(
+                selectinload(Employee.region),
+                selectinload(Employee.department),
+                selectinload(Employee.shift),
+                selectinload(Employee.devices),
+            )
+            .where(*employee_filters)
+            .order_by(Employee.is_active.desc(), Employee.full_name.asc(), Employee.id.asc())
+        ).all()
+    )
+
+    now_utc = datetime.now(timezone.utc)
+    tz = _attendance_timezone()
+    now_local = now_utc.astimezone(tz)
+    current_year = now_local.year
+    current_month = now_local.month
+
+    if not candidate_employees:
+        return ControlRoomOverviewResponse(
+            generated_at_utc=now_utc,
+            total=0,
+            offset=offset,
+            limit=limit,
+            summary=ControlRoomSummaryRead(),
+            items=[],
+            map_points=[],
+            recent_events=[],
+        )
+
+    candidate_ids = [employee.id for employee in candidate_employees]
+    employee_ids_as_actor = [str(employee_id) for employee_id in candidate_ids]
+    employees_by_id = {employee.id: employee for employee in candidate_employees}
+
+    today_local_date = now_local.date()
+    today_start_local = datetime.combine(today_local_date, time.min, tzinfo=tz)
+    today_end_local = today_start_local + timedelta(days=1)
+    today_start_utc = today_start_local.astimezone(timezone.utc)
+    today_end_utc = today_end_local.astimezone(timezone.utc)
+
+    today_events_rows = list(
+        db.scalars(
+            select(AttendanceEvent)
+            .where(
+                AttendanceEvent.employee_id.in_(candidate_ids),
+                AttendanceEvent.deleted_at.is_(None),
+                AttendanceEvent.ts_utc >= today_start_utc,
+                AttendanceEvent.ts_utc < today_end_utc,
+            )
+            .order_by(AttendanceEvent.employee_id.asc(), AttendanceEvent.ts_utc.asc(), AttendanceEvent.id.asc())
+        ).all()
+    )
+    today_events_by_employee: dict[int, list[AttendanceEvent]] = {}
+    for event in today_events_rows:
+        today_events_by_employee.setdefault(event.employee_id, []).append(event)
+
+    last_event_ts_subq = (
+        select(
+            AttendanceEvent.employee_id.label("employee_id"),
+            func.max(AttendanceEvent.ts_utc).label("max_ts"),
+        )
+        .where(
+            AttendanceEvent.employee_id.in_(candidate_ids),
+            AttendanceEvent.deleted_at.is_(None),
+        )
+        .group_by(AttendanceEvent.employee_id)
+        .subquery()
+    )
+    last_event_candidates = list(
+        db.scalars(
+            select(AttendanceEvent)
+            .join(
+                last_event_ts_subq,
+                and_(
+                    AttendanceEvent.employee_id == last_event_ts_subq.c.employee_id,
+                    AttendanceEvent.ts_utc == last_event_ts_subq.c.max_ts,
+                ),
+            )
+            .where(AttendanceEvent.deleted_at.is_(None))
+            .order_by(AttendanceEvent.employee_id.asc(), AttendanceEvent.id.desc())
+        ).all()
+    )
+    last_event_by_employee: dict[int, AttendanceEvent] = {}
+    for event in last_event_candidates:
+        current = last_event_by_employee.get(event.employee_id)
+        if current is None or (event.ts_utc, event.id) > (current.ts_utc, current.id):
+            last_event_by_employee[event.employee_id] = event
+
+    last_location_ts_subq = (
+        select(
+            AttendanceEvent.employee_id.label("employee_id"),
+            func.max(AttendanceEvent.ts_utc).label("max_ts"),
+        )
+        .where(
+            AttendanceEvent.employee_id.in_(candidate_ids),
+            AttendanceEvent.deleted_at.is_(None),
+            AttendanceEvent.lat.is_not(None),
+            AttendanceEvent.lon.is_not(None),
+        )
+        .group_by(AttendanceEvent.employee_id)
+        .subquery()
+    )
+    last_location_candidates = list(
+        db.scalars(
+            select(AttendanceEvent)
+            .join(
+                last_location_ts_subq,
+                and_(
+                    AttendanceEvent.employee_id == last_location_ts_subq.c.employee_id,
+                    AttendanceEvent.ts_utc == last_location_ts_subq.c.max_ts,
+                ),
+            )
+            .where(
+                AttendanceEvent.deleted_at.is_(None),
+                AttendanceEvent.lat.is_not(None),
+                AttendanceEvent.lon.is_not(None),
+            )
+            .order_by(AttendanceEvent.employee_id.asc(), AttendanceEvent.id.desc())
+        ).all()
+    )
+    latest_location_by_employee: dict[int, AttendanceEvent] = {}
+    for event in last_location_candidates:
+        current = latest_location_by_employee.get(event.employee_id)
+        if current is None or (event.ts_utc, event.id) > (current.ts_utc, current.id):
+            latest_location_by_employee[event.employee_id] = event
+
+    last_activity_ts_subq = (
+        select(
+            AuditLog.actor_id.label("actor_id"),
+            func.max(AuditLog.ts_utc).label("max_ts"),
+        )
+        .where(
+            AuditLog.actor_type == AuditActorType.SYSTEM,
+            AuditLog.actor_id.in_(employee_ids_as_actor),
+        )
+        .group_by(AuditLog.actor_id)
+        .subquery()
+    )
+    last_activity_candidates = list(
+        db.scalars(
+            select(AuditLog)
+            .join(
+                last_activity_ts_subq,
+                and_(
+                    AuditLog.actor_id == last_activity_ts_subq.c.actor_id,
+                    AuditLog.ts_utc == last_activity_ts_subq.c.max_ts,
+                ),
+            )
+            .where(AuditLog.actor_type == AuditActorType.SYSTEM)
+            .order_by(AuditLog.actor_id.asc(), AuditLog.id.desc())
+        ).all()
+    )
+    last_activity_by_actor_id: dict[str, AuditLog] = {}
+    for log_item in last_activity_candidates:
+        current = last_activity_by_actor_id.get(log_item.actor_id)
+        if current is None or (log_item.ts_utc, log_item.id) > (current.ts_utc, current.id):
+            last_activity_by_actor_id[log_item.actor_id] = log_item
+
+    row_meta: list[dict[str, Any]] = []
+    for employee in candidate_employees:
+        employee_today_events = today_events_by_employee.get(employee.id, [])
+        employee_last_event = last_event_by_employee.get(employee.id)
+        employee_latest_location = latest_location_by_employee.get(employee.id)
+        employee_last_activity = last_activity_by_actor_id.get(str(employee.id))
+        employee_today_status = _today_status_from_events(employee_today_events)
+        employee_location_state = _control_room_location_state(employee_latest_location, now_utc=now_utc)
+        employee_total_devices = len(employee.devices or [])
+        employee_active_devices = sum(1 for item in employee.devices or [] if item.is_active)
+        attention_flags = _control_room_attention_flags(
+            employee=employee,
+            today_status=employee_today_status,
+            today_events=employee_today_events,
+            last_event=employee_last_event,
+            latest_location_event=employee_latest_location,
+            active_devices=employee_active_devices,
+            total_devices=employee_total_devices,
+            now_utc=now_utc,
+            now_local=now_local,
+        )
+        row_meta.append(
+            {
+                "employee": employee,
+                "today_status": employee_today_status,
+                "location_state": employee_location_state,
+                "last_event": employee_last_event,
+                "latest_location": employee_latest_location,
+                "last_portal_seen_utc": employee_last_activity.ts_utc if employee_last_activity else None,
+                "recent_ip": employee_last_activity.ip if employee_last_activity else None,
+                "total_devices": employee_total_devices,
+                "active_devices": employee_active_devices,
+                "attention_flags": attention_flags,
+                "last_event_sort_value": (
+                    employee_last_event.ts_utc.timestamp() if employee_last_event is not None else 0.0
+                ),
+            }
+        )
+
+    filtered_row_meta = [
+        row
+        for row in row_meta
+        if (today_status is None or row["today_status"] == today_status)
+        and (location_state is None or row["location_state"] == location_state)
+    ]
+
+    status_priority = {"IN_PROGRESS": 0, "NOT_STARTED": 1, "FINISHED": 2}
+    location_priority = {"LIVE": 0, "STALE": 1, "DORMANT": 2, "NONE": 3}
+
+    def _alert_score(item: dict[str, Any]) -> tuple[int, int, int]:
+        critical = sum(1 for flag in item["attention_flags"] if flag.severity == "critical")
+        warning = sum(1 for flag in item["attention_flags"] if flag.severity == "warning")
+        info = sum(1 for flag in item["attention_flags"] if flag.severity == "info")
+        return critical, warning, info
+
+    filtered_row_meta.sort(
+        key=lambda item: (
+            -_alert_score(item)[0],
+            -_alert_score(item)[1],
+            -_alert_score(item)[2],
+            status_priority[item["today_status"]],
+            location_priority[item["location_state"]],
+            -item["last_event_sort_value"],
+            item["employee"].full_name.lower(),
+            item["employee"].id,
+        )
+    )
+
+    total_filtered = len(filtered_row_meta)
+    paged_row_meta = filtered_row_meta[offset : offset + limit]
+
+    items: list[ControlRoomEmployeeStateRead] = []
+    for row in paged_row_meta:
+        employee = row["employee"]
+        current_month_report = calculate_employee_monthly(
+            db,
+            employee_id=employee.id,
+            year=current_year,
+            month=current_month,
+        )
+        items.append(
+            ControlRoomEmployeeStateRead(
+                employee=_to_employee_read(employee),
+                department_name=employee.department.name if employee.department else None,
+                shift_name=employee.shift.name if employee.shift else None,
+                shift_window_label=(
+                    f"{_format_hhmm(employee.shift.start_time_local)} - {_format_hhmm(employee.shift.end_time_local)}"
+                    if employee.shift is not None
+                    else None
+                ),
+                today_status=row["today_status"],
+                location_state=row["location_state"],
+                last_event=_attendance_event_to_dashboard_last_event(row["last_event"]),
+                latest_location=_attendance_event_to_live_location(row["latest_location"]),
+                last_portal_seen_utc=row["last_portal_seen_utc"],
+                recent_ip=row["recent_ip"],
+                active_devices=row["active_devices"],
+                total_devices=row["total_devices"],
+                current_month=_dashboard_month_metrics_from_report(current_month_report),
+                attention_flags=row["attention_flags"],
+            )
+        )
+
+    map_points = [
+        ControlRoomMapPointRead(
+            employee_id=item.employee.id,
+            employee_name=item.employee.full_name,
+            department_name=item.department_name,
+            lat=item.latest_location.lat,
+            lon=item.latest_location.lon,
+            ts_utc=item.latest_location.ts_utc,
+            accuracy_m=item.latest_location.accuracy_m,
+            today_status=item.today_status,
+            location_state=item.location_state,
+            label=f"{item.employee.full_name} / {item.department_name or 'Departman yok'}",
+        )
+        for item in items
+        if item.latest_location is not None
+    ]
+
+    filtered_ids = {row["employee"].id for row in filtered_row_meta}
+    recent_events_rows: list[AttendanceEvent] = []
+    if filtered_ids:
+        recent_events_rows = list(
+            db.scalars(
+                select(AttendanceEvent)
+                .where(
+                    AttendanceEvent.employee_id.in_(list(filtered_ids)),
+                    AttendanceEvent.deleted_at.is_(None),
+                )
+                .order_by(AttendanceEvent.ts_utc.desc(), AttendanceEvent.id.desc())
+                .limit(18)
+            ).all()
+        )
+
+    recent_events = [
+        ControlRoomRecentEventRead(
+            event_id=event.id,
+            employee_id=event.employee_id,
+            employee_name=employees_by_id[event.employee_id].full_name,
+            department_name=(
+                employees_by_id[event.employee_id].department.name
+                if employees_by_id[event.employee_id].department
+                else None
+            ),
+            event_type=event.type,
+            ts_utc=event.ts_utc,
+            location_status=event.location_status,
+            device_id=event.device_id,
+            lat=event.lat,
+            lon=event.lon,
+            accuracy_m=event.accuracy_m,
+        )
+        for event in recent_events_rows
+    ]
+
+    summary = ControlRoomSummaryRead(
+        total_employees=total_filtered,
+        active_employees=sum(1 for row in filtered_row_meta if row["employee"].is_active),
+        not_started_count=sum(1 for row in filtered_row_meta if row["today_status"] == "NOT_STARTED"),
+        in_progress_count=sum(1 for row in filtered_row_meta if row["today_status"] == "IN_PROGRESS"),
+        finished_count=sum(1 for row in filtered_row_meta if row["today_status"] == "FINISHED"),
+        attention_on_page_count=sum(1 for row in paged_row_meta if row["attention_flags"]),
+        live_location_on_page_count=sum(1 for row in paged_row_meta if row["location_state"] == "LIVE"),
+    )
+
+    return ControlRoomOverviewResponse(
+        generated_at_utc=now_utc,
+        total=total_filtered,
+        offset=offset,
+        limit=limit,
+        summary=summary,
+        items=items,
+        map_points=map_points,
+        recent_events=recent_events,
     )
 
 

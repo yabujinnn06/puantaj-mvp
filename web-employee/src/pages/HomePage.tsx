@@ -1,4 +1,5 @@
-ï»¿import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 
 import {
@@ -207,23 +208,23 @@ function nextInstallFunnelSnapshot(
 }
 
 function eventTypeLabel(eventType: 'IN' | 'OUT'): string {
-  return eventType === 'IN' ? 'GiriÅŸ' : 'Ã‡Ä±kÄ±ÅŸ'
+  return eventType === 'IN' ? 'Giriþ' : 'Çýkýþ'
 }
 
 function todayStatusLabel(status: TodayStatus): string {
   if (status === 'IN_PROGRESS') return 'Mesai Devam Ediyor'
-  if (status === 'FINISHED') return 'BugÃ¼n TamamlandÄ±'
-  return 'HenÃ¼z BaÅŸlamadÄ±'
+  if (status === 'FINISHED') return 'Bugün Tamamlandý'
+  return 'Henüz Baþlamadý'
 }
 
 function todayStatusHint(status: TodayStatus): string {
   if (status === 'IN_PROGRESS') {
-    return 'Mesaiyi bitirerek bugÃ¼nkÃ¼ kaydÄ± tamamlayÄ±n.'
+    return 'Mesaiyi bitirerek bugünkü kaydý tamamlayýn.'
   }
   if (status === 'FINISHED') {
-    return 'BugÃ¼nkÃ¼ giriÅŸ/Ã§Ä±kÄ±ÅŸ tamamlandÄ±. Yeni bir vardiya iÃ§in yarÄ±nÄ± bekleyin.'
+    return 'Bugünkü giriþ/çýkýþ tamamlandý. Yeni bir vardiya için yarýný bekleyin.'
   }
-  return 'QR ile giriÅŸ yaparak mesaiyi baÅŸlatÄ±n.'
+  return 'QR ile giriþ yaparak mesaiyi baþlatýn.'
 }
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
@@ -311,7 +312,7 @@ function detectIosBrowserContext(): IosBrowserContext {
     isIos: true,
     isSafari: false,
     isInAppBrowser,
-    browserLabel: isInAppBrowser ? 'Uygulama iÃ§i tarayÄ±cÄ±' : 'iOS tarayÄ±cÄ±',
+    browserLabel: isInAppBrowser ? 'Uygulama içi tarayýcý' : 'iOS tarayýcý',
   }
 }
 
@@ -349,11 +350,11 @@ function formatPushTestFailureMessage(
   rawError: string | null | undefined,
 ): string {
   if (statusCode === 410 || statusCode === 404) {
-    return 'Bildirim aboneliÄŸi sÃ¼resi dolmuÅŸ. Abonelik otomatik yenilenirken hata oluÅŸtu, lÃ¼tfen tekrar deneyin.'
+    return 'Bildirim aboneliði süresi dolmuþ. Abonelik otomatik yenilenirken hata oluþtu, lütfen tekrar deneyin.'
   }
   const statusPart = typeof statusCode === 'number' ? ` (status ${statusCode})` : ''
   const errorPart = rawError?.trim() ? ` ${rawError.trim()}` : ''
-  return `Sunucu push testi baÅŸarÄ±sÄ±z${statusPart}.${errorPart}`.trim()
+  return `Sunucu push testi baþarýsýz${statusPart}.${errorPart}`.trim()
 }
 
 function getInstallBannerDismissUntil(): number {
@@ -440,7 +441,7 @@ function playQrSuccessTone() {
       void audioContext.close()
     }
   } catch {
-    // Sessiz fallback: ses desteÄŸi yoksa iÅŸlem normal devam eder.
+    // Sessiz fallback: ses desteði yoksa iþlem normal devam eder.
   }
 }
 
@@ -759,7 +760,7 @@ export function HomePage() {
           setTodayStatus(statusData.today_status)
         }
       } catch (error) {
-        const parsed = parseApiError(error, 'Durum alÄ±namadÄ±.')
+        const parsed = parseApiError(error, 'Durum alýnamadý.')
         if (!cancelled) {
           handleDeviceNotClaimed(parsed)
         }
@@ -1033,7 +1034,7 @@ export function HomePage() {
       return
     }
     if (isIosFamilyDevice() && !activePrompt) {
-      setInstallNotice('Kurulum iÃ§in Safari paylaÅŸ menÃ¼sÃ¼nden "Ana Ekrana Ekle" adÄ±mÄ±nÄ± kullanÄ±n.')
+      setInstallNotice('Kurulum için Safari paylaþ menüsünden "Ana Ekrana Ekle" adýmýný kullanýn.')
       openIosInstallOnboarding()
       return
     }
@@ -1044,7 +1045,7 @@ export function HomePage() {
         )
         openAndroidInstallOnboarding()
       } else {
-        setInstallNotice('Bu tarayÄ±cÄ± otomatik kurulum penceresi sunmuyor.')
+        setInstallNotice('Bu tarayýcý otomatik kurulum penceresi sunmuyor.')
       }
       return
     }
@@ -1066,7 +1067,7 @@ export function HomePage() {
         trackInstallFunnel('install_prompt_dismissed')
       }
     } catch {
-      setInstallNotice('Kurulum penceresi aÃ§Ä±lamadÄ±. TarayÄ±cÄ± menÃ¼sÃ¼nden Ana Ekrana Ekle deneyin.')
+      setInstallNotice('Kurulum penceresi açýlamadý. Tarayýcý menüsünden Ana Ekrana Ekle deneyin.')
     } finally {
       setDeferredInstallPromptOnWindow(null)
       setInstallPromptEvent(null)
@@ -1098,7 +1099,7 @@ export function HomePage() {
         return
       }
       setInstallNotice(
-        'Bu tarayÄ±cÄ± otomatik kurulum penceresi sunmuyor. TarayÄ±cÄ± menÃ¼sÃ¼nden "Ana Ekrana Ekle" adÄ±mÄ±nÄ± kullanÄ±n.',
+        'Bu tarayýcý otomatik kurulum penceresi sunmuyor. Tarayýcý menüsünden "Ana Ekrana Ekle" adýmýný kullanýn.',
       )
       return
     }
@@ -1138,29 +1139,29 @@ export function HomePage() {
     isIosFamilyDevice() && !installPromptEvent
       ? 'Ana Ekrana Ekle'
       : installPromptEvent && isAndroidDevice()
-        ? 'Tek DokunuÅŸla Ekle'
+        ? 'Tek Dokunuþla Ekle'
         : isAndroidDevice()
           ? 'Kurulum Adimlarini Gor'
-        : 'UygulamayÄ± YÃ¼kle'
+        : 'Uygulamayý Yükle'
   const installBannerHint =
     iosInAppBrowserBlocked
       ? 'Kurulum icin bu sayfayi Safari ile acin. Uygulama ici tarayicilar iOS kurulumunu engeller.'
       : isIosFamilyDevice() && !installPromptEvent
-        ? 'Safari alt menÃ¼den PaylaÅŸ > Ana Ekrana Ekle adÄ±mÄ±yla kurulumu tamamlayÄ±n.'
+        ? 'Safari alt menüden Paylaþ > Ana Ekrana Ekle adýmýyla kurulumu tamamlayýn.'
       : installPromptEvent && isAndroidDevice()
-        ? 'Android cihazlarda tek dokunuÅŸla kurulum penceresi aÃ§Ä±lÄ±r.'
+        ? 'Android cihazlarda tek dokunuþla kurulum penceresi açýlýr.'
         : isAndroidDevice()
-          ? 'Android kurulum penceresi hazÄ±r deÄŸilse Chrome menÃ¼sÃ¼nden Ana ekrana ekle adÄ±mÄ±nÄ± kullanÄ±n.'
-          : 'UygulamayÄ± ana ekrana ekleyerek daha stabil ve hÄ±zlÄ± kullanÄ±n.'
+          ? 'Android kurulum penceresi hazýr deðilse Chrome menüsünden Ana ekrana ekle adýmýný kullanýn.'
+          : 'Uygulamayý ana ekrana ekleyerek daha stabil ve hýzlý kullanýn.'
   const showInstallPromotions = !isStandaloneApp
   const installRailPrimaryLabel = useMemo(() => {
     if (isStandaloneApp) return 'Uygulama Kurulu'
-    if (isInstallPromptBusy) return 'HazÄ±rlanÄ±yor...'
+    if (isInstallPromptBusy) return 'Hazýrlanýyor...'
     if (isIosFamilyDevice() && !installPromptEvent) return 'Ana Ekrana Ekle'
     if (isAndroidDevice() && !installPromptEvent) return 'Kurulum Adimlari'
     if (!installPromptEvent) return 'Ana Ekrana Ekle'
-    if (isAndroidDevice()) return 'Tek DokunuÅŸla Ekle'
-    return 'UygulamayÄ± Ä°ndir'
+    if (isAndroidDevice()) return 'Tek Dokunuþla Ekle'
+    return 'Uygulamayý Ýndir'
   }, [installPromptEvent, isInstallPromptBusy, isStandaloneApp])
 
   const installFunnelSteps = useMemo(() => {
@@ -1211,7 +1212,7 @@ export function HomePage() {
 
   const installLastAttemptLabel = useMemo(() => {
     if (!installFunnelSnapshot.lastAttemptAt) {
-      return 'HenÃ¼z kurulum denemesi yok.'
+      return 'Henüz kurulum denemesi yok.'
     }
     return new Date(installFunnelSnapshot.lastAttemptAt).toLocaleString('tr-TR', {
       hour: '2-digit',
@@ -1281,7 +1282,7 @@ export function HomePage() {
 
   const runPasskeyRegistration = async () => {
     if (!deviceFingerprint) {
-      setErrorMessage('Cihaz baÄŸlÄ± deÄŸil. Davet linkine tÄ±klayÄ±n.')
+      setErrorMessage('Cihaz baðlý deðil. Davet linkine týklayýn.')
       return
     }
 
@@ -1292,7 +1293,7 @@ export function HomePage() {
 
     try {
       if (!window.PublicKeyCredential) {
-        throw new Error('Bu tarayÄ±cÄ± passkey (WebAuthn) desteklemiyor.')
+        throw new Error('Bu tarayýcý passkey (WebAuthn) desteklemiyor.')
       }
 
       const optionsData = await getPasskeyRegisterOptions({
@@ -1309,9 +1310,9 @@ export function HomePage() {
       })
 
       setStatusSnapshot((prev) => (prev ? { ...prev, passkey_registered: true } : prev))
-      setPasskeyNotice('Passkey baÅŸarÄ±yla kaydedildi. Bu cihazÄ± daha gÃ¼venli kurtarabilirsin.')
+      setPasskeyNotice('Passkey baþarýyla kaydedildi. Bu cihazý daha güvenli kurtarabilirsin.')
     } catch (error) {
-      const parsed = parseApiError(error, 'Passkey kaydÄ± baÅŸarÄ±sÄ±z oldu.')
+      const parsed = parseApiError(error, 'Passkey kaydý baþarýsýz oldu.')
       handleDeviceNotClaimed(parsed)
       setErrorMessage(parsed.message)
       setRequestId(parsed.requestId ?? null)
@@ -1373,20 +1374,20 @@ export function HomePage() {
 
   const runPushSubscription = async (isSecondAttempt = false) => {
     if (!deviceFingerprint) {
-      setErrorMessage('Cihaz baÄŸlÄ± deÄŸil. Davet linkine tÄ±klayÄ±n.')
+      setErrorMessage('Cihaz baðlý deðil. Davet linkine týklayýn.')
       return
     }
     if (pushRequiresStandalone) {
-      setErrorMessage('iPhone/iPad iÃ§in bildirim sadece Ana Ekran uygulamasÄ±nda Ã§alÄ±ÅŸÄ±r. PortalÄ± ana ekran ikonundan aÃ§Ä±n.')
+      setErrorMessage('iPhone/iPad için bildirim sadece Ana Ekran uygulamasýnda çalýþýr. Portalý ana ekran ikonundan açýn.')
       return
     }
 
     if (!pushEnabled) {
-      setErrorMessage('Bildirim servisi ÅŸu anda aktif deÄŸil. Ä°K yÃ¶neticisiyle iletiÅŸime geÃ§in.')
+      setErrorMessage('Bildirim servisi þu anda aktif deðil. ÝK yöneticisiyle iletiþime geçin.')
       return
     }
     if (!pushRuntimeSupported) {
-      setErrorMessage('Bu tarayÄ±cÄ± bildirim altyapÄ±sÄ±nÄ± desteklemiyor veya gÃ¼venli baÄŸlantÄ± (HTTPS) yok.')
+      setErrorMessage('Bu tarayýcý bildirim altyapýsýný desteklemiyor veya güvenli baðlantý (HTTPS) yok.')
       return
     }
     if (
@@ -1395,7 +1396,7 @@ export function HomePage() {
       !('serviceWorker' in navigator) ||
       !('PushManager' in window)
     ) {
-      setErrorMessage('Bu tarayÄ±cÄ± bildirim aboneliÄŸini desteklemiyor.')
+      setErrorMessage('Bu tarayýcý bildirim aboneliðini desteklemiyor.')
       return
     }
 
@@ -1413,20 +1414,20 @@ export function HomePage() {
       if (notificationPermission !== 'granted') {
         if (!isSecondAttempt) {
           setPushSecondChanceOpen(true)
-          setPushNotice('Bildirimler zorunlu. Devam etmek iÃ§in bir kez daha izin istemeniz gerekiyor.')
+          setPushNotice('Bildirimler zorunlu. Devam etmek için bir kez daha izin istemeniz gerekiyor.')
           setErrorMessage('Bildirim izni verilmedi. "Tekrar Sor (2/2)" butonu ile ikinci kez izin isteyin.')
           return
         }
 
         setPushSecondChanceOpen(false)
-        throw new Error('Bildirim izni ikinci kez de verilmedi. Bildirim aÃ§Ä±lmadan sistem kullanÄ±lamaz.')
+        throw new Error('Bildirim izni ikinci kez de verilmedi. Bildirim açýlmadan sistem kullanýlamaz.')
       }
 
       setPushSecondChanceOpen(false)
 
       const config = await getEmployeePushConfig()
       if (!config.enabled || !config.vapid_public_key) {
-        throw new Error('Bildirim servisi ÅŸu anda aktif deÄŸil.')
+        throw new Error('Bildirim servisi þu anda aktif deðil.')
       }
       const vapidPublicKey = config.vapid_public_key
 
@@ -1487,11 +1488,11 @@ export function HomePage() {
         )
       }
 
-      // iOS dahil bazÄ± tarayÄ±cÄ±larda showNotification istemci tarafÄ±nda hata verebilir.
-      // Bu adÄ±mÄ± non-fatal tutuyoruz; asÄ±l doÄŸrulama sunucu push testidir.
+      // iOS dahil bazý tarayýcýlarda showNotification istemci tarafýnda hata verebilir.
+      // Bu adýmý non-fatal tutuyoruz; asýl doðrulama sunucu push testidir.
       try {
-        await registration.showNotification('Puantaj Bildirimleri AÃ§Ä±ldÄ±', {
-          body: 'Bildirim kanalÄ± aktif. ArtÄ±k sistem uyarÄ±larÄ±nÄ± alacaksÄ±nÄ±z.',
+        await registration.showNotification('Puantaj Bildirimleri Açýldý', {
+          body: 'Bildirim kanalý aktif. Artýk sistem uyarýlarýný alacaksýnýz.',
           icon: '/employee/icons/icon-192.png',
           badge: '/employee/icons/icon-192.png',
         })
@@ -1502,11 +1503,11 @@ export function HomePage() {
       window.localStorage.setItem(PUSH_VAPID_KEY_STORAGE, vapidPublicKey)
       setPushRegistered(true)
       setPushNeedsResubscribe(false)
-      setPushNotice('Bildirimler bu cihazda etkinleÅŸtirildi.')
+      setPushNotice('Bildirimler bu cihazda etkinleþtirildi.')
       setPushSecondChanceOpen(false)
       await syncPushState(true)
     } catch (error) {
-      const parsed = parseApiError(error, 'Bildirim aboneliÄŸi oluÅŸturulamadÄ±.')
+      const parsed = parseApiError(error, 'Bildirim aboneliði oluþturulamadý.')
       handleDeviceNotClaimed(parsed)
       setErrorMessage(parsed.message)
       setRequestId(parsed.requestId ?? null)
@@ -1517,7 +1518,7 @@ export function HomePage() {
 
   const runQrScan = async (rawQrValue: string) => {
     if (!deviceFingerprint) {
-      setErrorMessage('Cihaz baÄŸlÄ± deÄŸil. Davet linkine tÄ±klayÄ±n.')
+      setErrorMessage('Cihaz baðlý deðil. Davet linkine týklayýn.')
       return
     }
     if (pushGateRequired) {
@@ -1533,7 +1534,7 @@ export function HomePage() {
     }
     const codeValue = rawQrValue.trim()
     if (!codeValue) {
-      setErrorMessage('QR kod deÄŸeri boÅŸ olamaz.')
+      setErrorMessage('QR kod deðeri boþ olamaz.')
       setRequestId(null)
       return
     }
@@ -1549,7 +1550,7 @@ export function HomePage() {
       if (!locationResult.location) {
         setErrorMessage(
           locationResult.warning ??
-            'QR okutma iÅŸlemi iÃ§in konum izni gereklidir. LÃ¼tfen konumu aÃ§Ä±p tekrar deneyin.',
+            'QR okutma iþlemi için konum izni gereklidir. Lütfen konumu açýp tekrar deneyin.',
         )
         return
       }
@@ -1584,7 +1585,7 @@ export function HomePage() {
       }))
       triggerScanSuccessFx()
     } catch (error) {
-      const parsed = parseApiError(error, 'QR iÅŸlemi tamamlanamadÄ±.')
+      const parsed = parseApiError(error, 'QR iþlemi tamamlanamadý.')
       handleDeviceNotClaimed(parsed)
       setErrorMessage(parsed.message)
       setRequestId(parsed.requestId ?? null)
@@ -1596,7 +1597,7 @@ export function HomePage() {
 
   const runCheckout = async () => {
     if (!deviceFingerprint) {
-      setErrorMessage('Cihaz baÄŸlÄ± deÄŸil. Davet linkine tÄ±klayÄ±n.')
+      setErrorMessage('Cihaz baðlý deðil. Davet linkine týklayýn.')
       return
     }
     if (!hasOpenShift) {
@@ -1639,7 +1640,7 @@ export function HomePage() {
       }))
       triggerScanSuccessFx()
     } catch (error) {
-      const parsed = parseApiError(error, 'Mesai bitiÅŸ kaydÄ± oluÅŸturulamadÄ±.')
+      const parsed = parseApiError(error, 'Mesai bitiþ kaydý oluþturulamadý.')
       handleDeviceNotClaimed(parsed)
       setErrorMessage(parsed.message)
       setRequestId(parsed.requestId ?? null)
@@ -1656,13 +1657,13 @@ export function HomePage() {
     if (response.event_type === 'IN') {
       return {
         tone: 'success' as const,
-        text: 'GiriÅŸ kaydedildi',
+        text: 'Giriþ kaydedildi',
       }
     }
 
     return {
       tone: 'warning' as const,
-      text: 'Mesai bitiÅŸ kaydÄ± alÄ±ndÄ±.',
+      text: 'Mesai bitiþ kaydý alýndý.',
     }
   }, [lastAction])
 
@@ -1682,18 +1683,18 @@ export function HomePage() {
       return 'iPhone/iPad icin once Safari ile acip Paylas > Ana Ekrana Ekle yapin. Ardindan ana ekran ikonundan acip "Bildirimleri Ac" adimini tamamlayin.'
     }
     if (!pushRuntimeSupported) {
-      return 'Bu tarayÄ±cÄ± bildirim altyapÄ±sÄ±nÄ± desteklemiyor veya baÄŸlantÄ± gÃ¼venli deÄŸil. Linki HTTPS altÄ±nda Safari (iOS) veya Chrome (Android) ile aÃ§Ä±n.'
+      return 'Bu tarayýcý bildirim altyapýsýný desteklemiyor veya baðlantý güvenli deðil. Linki HTTPS altýnda Safari (iOS) veya Chrome (Android) ile açýn.'
     }
     if (pushNeedsResubscribe) {
-      return 'Bildirim anahtarÄ± gÃ¼ncellendi. Devam etmek iÃ§in "Bildirimleri AÃ§" ile aboneliÄŸi yenileyin.'
+      return 'Bildirim anahtarý güncellendi. Devam etmek için "Bildirimleri Aç" ile aboneliði yenileyin.'
     }
     if (!pushEnabled) {
-      return 'Bildirim servisi sunucuda aktif deÄŸil. Ä°K yÃ¶neticisi ortam ayarlarÄ±nÄ± tamamlamalÄ±dÄ±r.'
+      return 'Bildirim servisi sunucuda aktif deðil. ÝK yöneticisi ortam ayarlarýný tamamlamalýdýr.'
     }
     if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
-      return 'TarayÄ±cÄ± bildirim iznini reddetti. TarayÄ±cÄ± ayarlarÄ±ndan izin verip tekrar deneyin.'
+      return 'Tarayýcý bildirim iznini reddetti. Tarayýcý ayarlarýndan izin verip tekrar deneyin.'
     }
-    return 'Bu portalda devam etmek iÃ§in bildirimleri aÃ§manÄ±z zorunludur.'
+    return 'Bu portalda devam etmek için bildirimleri açmanýz zorunludur.'
   }, [pushEnabled, pushNeedsResubscribe, pushRequiresStandalone, pushRuntimeSupported])
 
   const todayStatusClass = useMemo(() => {
@@ -1708,9 +1709,9 @@ export function HomePage() {
       return normalized
     }
     if (statusSnapshot?.employee_id) {
-      return `Ã‡alÄ±ÅŸan #${statusSnapshot.employee_id}`
+      return `Çalýþan #${statusSnapshot.employee_id}`
     }
-    return 'Ã‡alÄ±ÅŸan bilgisi bekleniyor'
+    return 'Çalýþan bilgisi bekleniyor'
   }, [statusSnapshot?.employee_id, statusSnapshot?.employee_name])
 
   const employeeShiftSummary = useMemo(() => {
@@ -1726,7 +1727,7 @@ export function HomePage() {
     if (shiftStart && shiftEnd) {
       return `${shiftStart}-${shiftEnd}`
     }
-    return 'AtanmamÄ±ÅŸ'
+    return 'Atanmamýþ'
   }, [statusSnapshot?.shift_end_local, statusSnapshot?.shift_name, statusSnapshot?.shift_start_local])
 
   return (
@@ -1735,14 +1736,14 @@ export function HomePage() {
         {showInstallPromotions ? (
           <aside className="promo-rail promo-rail-left" aria-label="Uygulama indirme paneli">
             <p className="promo-rail-kicker">YABUJIN EMPLOYEE APP</p>
-            <h2 className="promo-rail-title">Cepte kur, mesaiyi tek dokunuÅŸla yÃ¶net.</h2>
+            <h2 className="promo-rail-title">Cepte kur, mesaiyi tek dokunuþla yönet.</h2>
             <p className="promo-rail-text">
-              Kurulumdan sonra QR, bildirim ve gÃ¼venlik adÄ±mlarÄ± daha stabil ve hÄ±zlÄ± Ã§alÄ±ÅŸÄ±r.
+              Kurulumdan sonra QR, bildirim ve güvenlik adýmlarý daha stabil ve hýzlý çalýþýr.
             </p>
             <ul className="promo-rail-list">
-              <li>QR tarama ve iÅŸlem akÄ±ÅŸÄ± daha akÄ±cÄ±</li>
-              <li>Push bildirim gecikmeleri azaltÄ±lÄ±r</li>
-              <li>Passkey kurtarma daha kÄ±sa sÃ¼rer</li>
+              <li>QR tarama ve iþlem akýþý daha akýcý</li>
+              <li>Push bildirim gecikmeleri azaltýlýr</li>
+              <li>Passkey kurtarma daha kýsa sürer</li>
             </ul>
             <button
               type="button"
@@ -1752,15 +1753,15 @@ export function HomePage() {
             >
               {installRailPrimaryLabel}
             </button>
-            <p className="promo-rail-note">Desteklenen cihazlarda buton kurulum penceresini direkt aÃ§ar.</p>
+            <p className="promo-rail-note">Desteklenen cihazlarda buton kurulum penceresini direkt açar.</p>
           </aside>
         ) : null}
 
         <section className="phone-card employee-home-card">
         <div className="card-topbar">
           <div>
-            <p className="chip">Ã‡alÄ±ÅŸan PortalÄ±</p>
-            <h1>Puantaj Ä°ÅŸlemleri</h1>
+            <p className="chip">Çalýþan Portalý</p>
+            <h1>Puantaj Ýþlemleri</h1>
           </div>
           <Link className="topbar-link" to="/recover">
             Kurtarma
@@ -1771,7 +1772,7 @@ export function HomePage() {
           <section className="install-banner" role="region" aria-label="Uygulama kurulumu">
             <div className="install-banner-copy">
               <p className="install-banner-kicker">YABUJIN APP</p>
-              <p className="install-banner-title">Ana ekrana ekleyip uygulama gibi kullanÄ±n</p>
+              <p className="install-banner-title">Ana ekrana ekleyip uygulama gibi kullanýn</p>
               <p className="install-banner-subtitle">{installBannerHint}</p>
             </div>
             <div className="install-banner-actions">
@@ -1781,7 +1782,7 @@ export function HomePage() {
                 disabled={isInstallPromptBusy}
                 onClick={() => void runInstallPrompt()}
               >
-                {isInstallPromptBusy ? 'AÃ§Ä±lÄ±yor...' : installPrimaryLabel}
+                {isInstallPromptBusy ? 'Açýlýyor...' : installPrimaryLabel}
               </button>
               <button type="button" className="btn btn-ghost install-banner-dismiss" onClick={dismissInstallBanner}>
                 Daha Sonra
@@ -1822,7 +1823,7 @@ export function HomePage() {
               {installFunnelSteps.steps.map((step) => (
                 <li key={step.id} className={`install-health-step ${step.done ? 'done' : 'pending'}`}>
                   <span className="install-health-step-icon" aria-hidden="true">
-                    {step.done ? 'âœ“' : 'â€¢'}
+                    {step.done ? '?' : '•'}
                   </span>
                   <span>{step.label}</span>
                 </li>
@@ -1859,30 +1860,30 @@ export function HomePage() {
           <section className="employee-command-surface">
             <div className="employee-hero">
               <div className="employee-hero-copy">
-                <p className="employee-hero-kicker">GÃ¼nlÃ¼k Ã‡alÄ±ÅŸma EkranÄ±</p>
+                <p className="employee-hero-kicker">Günlük Çalýþma Ekraný</p>
                 <h2 className="employee-hero-title">{todayStatusLabel(todayStatus)}</h2>
                 <p className="employee-hero-subtitle">{todayStatusHint(todayStatus)}</p>
               </div>
-              <span className={`employee-hero-indicator ${todayStatusClass}`}>CanlÄ±</span>
+              <span className={`employee-hero-indicator ${todayStatusClass}`}>Canlý</span>
             </div>
 
-            <section className="employee-profile-card" aria-label="Ã‡alÄ±ÅŸan kimlik bilgileri">
+            <section className="employee-profile-card" aria-label="Çalýþan kimlik bilgileri">
               <div className="employee-profile-head">
-                <p className="employee-profile-kicker">Ã‡ALIÅžAN KÄ°MLÄ°ÄžÄ°</p>
+                <p className="employee-profile-kicker">ÇALIÞAN KÝMLÝÐÝ</p>
                 <h3 className="employee-profile-name">{employeeDisplayName}</h3>
               </div>
               <dl className="employee-profile-grid">
                 <div className="employee-profile-item">
-                  <dt>Ã‡alÄ±ÅŸan No</dt>
+                  <dt>Çalýþan No</dt>
                   <dd>{statusSnapshot?.employee_id ? `#${statusSnapshot.employee_id}` : '-'}</dd>
                 </div>
                 <div className="employee-profile-item">
-                  <dt>BÃ¶lge</dt>
-                  <dd>{statusSnapshot?.region_name ?? 'AtanmamÄ±ÅŸ'}</dd>
+                  <dt>Bölge</dt>
+                  <dd>{statusSnapshot?.region_name ?? 'Atanmamýþ'}</dd>
                 </div>
                 <div className="employee-profile-item">
                   <dt>Departman</dt>
-                  <dd>{statusSnapshot?.department_name ?? 'AtanmamÄ±ÅŸ'}</dd>
+                  <dd>{statusSnapshot?.department_name ?? 'Atanmamýþ'}</dd>
                 </div>
                 <div className="employee-profile-item">
                   <dt>Atanan Vardiya</dt>
@@ -1893,14 +1894,14 @@ export function HomePage() {
 
             <div className="status-grid">
               <article className="status-card">
-                <p className="small-title">BugÃ¼nkÃ¼ Durum</p>
+                <p className="small-title">Bugünkü Durum</p>
                 <span className={`status-pill ${todayStatusClass}`}>{todayStatusLabel(todayStatus)}</span>
               </article>
 
               <article className="status-card">
                 <p className="small-title">Passkey Durumu</p>
                 <span className={`status-pill ${passkeyRegistered ? 'state-ok' : 'state-warn'}`}>
-                  {passkeyRegistered ? 'Kurulu' : 'Kurulu DeÄŸil'}
+                  {passkeyRegistered ? 'Kurulu' : 'Kurulu Deðil'}
                 </span>
               </article>
 
@@ -1912,12 +1913,12 @@ export function HomePage() {
                   }`}
                 >
                   {pushRegistered
-                    ? 'AÃ§Ä±k'
+                    ? 'Açýk'
                     : !pushRuntimeSupported
                       ? 'Destek Yok'
                       : pushEnabled
-                        ? 'KapalÄ±'
-                        : 'Servis KapalÄ±'}
+                        ? 'Kapalý'
+                        : 'Servis Kapalý'}
                 </span>
               </article>
 
@@ -1935,23 +1936,23 @@ export function HomePage() {
                   <span className="banner-icon" aria-hidden="true">
                     !
                   </span>
-                  AÃ§Ä±k vardiya var, Ã§Ä±kÄ±ÅŸ kaydÄ± bekleniyor.
+                  Açýk vardiya var, çýkýþ kaydý bekleniyor.
                 </p>
-                {openShiftCheckinTime ? <p className="small-text">Son giriÅŸ: {formatTs(openShiftCheckinTime)}</p> : null}
+                {openShiftCheckinTime ? <p className="small-text">Son giriþ: {formatTs(openShiftCheckinTime)}</p> : null}
               </div>
             ) : null}
 
             {!passkeyRegistered ? (
               <section className="passkey-brief passkey-brief-setup" aria-live="polite">
-                <p className="passkey-brief-kicker">GÃœVENLÄ°K ADIMI</p>
-                <h3 className="passkey-brief-title">Passkey kurulumunu tamamlayÄ±n</h3>
+                <p className="passkey-brief-kicker">GÜVENLÝK ADIMI</p>
+                <h3 className="passkey-brief-title">Passkey kurulumunu tamamlayýn</h3>
                 <p className="passkey-brief-text">
-                  Cihaz verisi silinse bile hesabÄ±nÄ±zÄ± geri yÃ¼kleyip QR ile mesaiye kesintisiz devam edebilirsiniz.
+                  Cihaz verisi silinse bile hesabýnýzý geri yükleyip QR ile mesaiye kesintisiz devam edebilirsiniz.
                 </p>
                 <ul className="passkey-brief-list">
-                  <li>TarayÄ±cÄ± verisi silinirse hesabÄ±nÄ±zÄ± geri kazanÄ±rsÄ±nÄ±z.</li>
-                  <li>Åžifre ezberlemeden biyometrik doÄŸrulama kullanÄ±rsÄ±nÄ±z.</li>
-                  <li>Yeni cihazda kurtarma sÃ¼resi ciddi ÅŸekilde kÄ±salÄ±r.</li>
+                  <li>Tarayýcý verisi silinirse hesabýnýzý geri kazanýrsýnýz.</li>
+                  <li>Þifre ezberlemeden biyometrik doðrulama kullanýrsýnýz.</li>
+                  <li>Yeni cihazda kurtarma süresi ciddi þekilde kýsalýr.</li>
                 </ul>
                 <div className="passkey-brief-actions">
                   <button
@@ -1963,15 +1964,15 @@ export function HomePage() {
                     {isPasskeyBusy ? 'Passkey kuruluyor...' : 'Passkey Kur'}
                   </button>
                   <Link className="inline-link passkey-brief-link" to="/recover">
-                    Kurtarma ekranÄ±nÄ± gÃ¶r
+                    Kurtarma ekranýný gör
                   </Link>
                 </div>
               </section>
             ) : (
               <section className="passkey-brief passkey-brief-ready">
-                <p className="passkey-brief-kicker">PASSKEY AKTÄ°F</p>
+                <p className="passkey-brief-kicker">PASSKEY AKTÝF</p>
                 <p className="passkey-brief-text">
-                  Cihaz verisi silinirse <strong>/recover</strong> ekranÄ± ile kimliÄŸini geri yÃ¼kleyebilirsin.
+                  Cihaz verisi silinirse <strong>/recover</strong> ekraný ile kimliðini geri yükleyebilirsin.
                 </p>
               </section>
             )}
@@ -2019,7 +2020,7 @@ export function HomePage() {
 
             <div className="status-cta-row status-cta-row-compact">
               <button type="button" className="btn btn-ghost" onClick={() => setIsHelpOpen(true)}>
-                NasÄ±l Ã§alÄ±ÅŸÄ±r?
+                Nasýl çalýþýr?
               </button>
 
               <button
@@ -2042,12 +2043,12 @@ export function HomePage() {
                 }}
               >
                 {isPushBusy
-                  ? 'Bildirim aÃ§Ä±lÄ±yor...'
+                  ? 'Bildirim açýlýyor...'
                   : pushRegistered
-                    ? 'Bildirimler AÃ§Ä±k'
+                    ? 'Bildirimler Açýk'
                     : pushRequiresStandalone
                       ? 'Ana Ekrana Ekle'
-                      : 'Bildirimleri AÃ§'}
+                      : 'Bildirimleri Aç'}
               </button>
             </div>
           </section>
@@ -2056,7 +2057,7 @@ export function HomePage() {
             <section className="action-panel" ref={actionPanelRef}>
               <div className="action-panel-head">
                 <p className="small-title">Komut Merkezi</p>
-                <span className="action-panel-kicker">HÄ±zlÄ± Ä°ÅŸlemler</span>
+                <span className="action-panel-kicker">Hýzlý Ýþlemler</span>
               </div>
               <div className="stack">
                 <button
@@ -2086,10 +2087,10 @@ export function HomePage() {
                   {isSubmitting && pendingAction === 'checkin' ? (
                     <>
                       <span className="inline-spinner" aria-hidden="true" />
-                      Ä°ÅŸlem yapÄ±lÄ±yor...
+                      Ýþlem yapýlýyor...
                     </>
                   ) : (
-                    'QR ile Ä°ÅŸlem BaÅŸlat'
+                    'QR ile Ýþlem Baþlat'
                   )}
                 </button>
 
@@ -2105,40 +2106,40 @@ export function HomePage() {
                   {isSubmitting && pendingAction === 'checkout' ? (
                     <>
                       <span className="inline-spinner inline-spinner-dark" aria-hidden="true" />
-                      Ä°ÅŸlem yapÄ±lÄ±yor...
+                      Ýþlem yapýlýyor...
                     </>
                   ) : (
-                    'Mesaiyi GÃ¼venli Bitir'
+                    'Mesaiyi Güvenli Bitir'
                   )}
                 </button>
               </div>
 
               <ol className="action-flow">
-                <li>QR okutun ve iÅŸlemi baÅŸlatÄ±n.</li>
-                <li>Mesai sonunda gÃ¼venli bitiÅŸ yapÄ±n.</li>
-                <li>Durum kartlarÄ±ndan anlÄ±k takibi doÄŸrulayÄ±n.</li>
+                <li>QR okutun ve iþlemi baþlatýn.</li>
+                <li>Mesai sonunda güvenli bitiþ yapýn.</li>
+                <li>Durum kartlarýndan anlýk takibi doðrulayýn.</li>
               </ol>
 
               <p className="muted small-text employee-flow-hint">
                 {pushGateRequired
                   ? 'QR islemi baslatirken bildirim adimi zorunlu olarak acilir.'
-                  : 'QR ile iÅŸlem baÅŸlatabilir veya aÃ§Ä±k vardiyayÄ± gÃ¼venli ÅŸekilde kapatabilirsiniz.'}
+                  : 'QR ile iþlem baþlatabilir veya açýk vardiyayý güvenli þekilde kapatabilirsiniz.'}
               </p>
             </section>
 
             {deviceFingerprint ? (
               <div className="device-box">
-                <p className="muted small-text">Cihaz Parmak Ä°zi: {deviceFingerprint}</p>
+                <p className="muted small-text">Cihaz Parmak Ýzi: {deviceFingerprint}</p>
               </div>
             ) : (
               <div className="warn-box">
-                <p>Cihaz baÄŸlÄ± deÄŸil. Davet linkine tÄ±klayÄ±n.</p>
+                <p>Cihaz baðlý deðil. Davet linkine týklayýn.</p>
                 <Link className="inline-link" to="/claim">
-                  /claim ekranÄ±na git
+                  /claim ekranýna git
                 </Link>
                 <p className="muted small-text mt-2">Daha once kurulum yaptiysan passkey veya recovery code ile kurtarma kullan.</p>
                 <Link className="inline-link" to="/recover">
-                  /recover ekranÄ±na git
+                  /recover ekranýna git
                 </Link>
               </div>
             )}
@@ -2151,67 +2152,73 @@ export function HomePage() {
               <span className="banner-icon" aria-hidden="true">
                 !
               </span>
-              HatÄ±rlatma: Mesaiyi bitirmeyi unutmayÄ±n.
+              Hatýrlatma: Mesaiyi bitirmeyi unutmayýn.
             </p>
           </div>
         ) : null}
 
-        {scannerActive ? (
-          <div
-            className="modal-backdrop scanner-modal-backdrop"
-            role="dialog"
-            aria-modal="true"
-            aria-label="QR tarama penceresi"
-            onClick={() => setScannerActive(false)}
-          >
-            <section className="scanner-modal" onClick={(event) => event.stopPropagation()}>
-              <div className="scanner-modal-head">
-                <p className="scanner-modal-kicker">HÄ±zlÄ± QR Tarama</p>
-                <button
-                  type="button"
-                  className="scanner-modal-close"
-                  aria-label="QR tarama penceresini kapat"
-                  onClick={() => setScannerActive(false)}
-                >
-                  Ã—
-                </button>
-              </div>
-              <p className="scanner-title">QR kodu kameraya tutun</p>
-              <p className="scanner-subtitle">
-                Kod algÄ±landÄ±ÄŸÄ± anda puantaj iÅŸlemi otomatik baÅŸlatÄ±lÄ±r.
-              </p>
-              <Suspense fallback={<div className="scanner-overlay scanner-loading">Kamera modÃ¼lÃ¼ yÃ¼kleniyor...</div>}>
-                <QrScanner
-                  active={scannerActive}
-                  onDetected={(raw) => {
-                    setScannerActive(false)
-                    void runQrScan(raw)
-                  }}
-                  onError={(message) => setScannerError(message)}
-                />
-              </Suspense>
-              <div className="scanner-modal-actions">
-                <button type="button" className="btn btn-soft" onClick={() => setScannerActive(false)}>
-                  KamerayÄ± Kapat
-                </button>
-              </div>
-            </section>
-          </div>
-        ) : null}
+        {scannerActive && typeof document !== 'undefined'
+          ? createPortal(
+              <div
+                className="modal-backdrop scanner-modal-backdrop"
+                role="dialog"
+                aria-modal="true"
+                aria-label="QR tarama penceresi"
+                onClick={() => setScannerActive(false)}
+              >
+                <section className="scanner-modal" onClick={(event) => event.stopPropagation()}>
+                  <div className="scanner-modal-head">
+                    <p className="scanner-modal-kicker">Hýzlý QR Tarama</p>
+                    <button
+                      type="button"
+                      className="scanner-modal-close"
+                      aria-label="QR tarama penceresini kapat"
+                      onClick={() => setScannerActive(false)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <p className="scanner-title">QR kodu kameraya tutun</p>
+                  <p className="scanner-subtitle">
+                    Kod algýlandýðý anda puantaj iþlemi otomatik baþlatýlýr.
+                  </p>
+                  <Suspense fallback={<div className="scanner-overlay scanner-loading">Kamera modülü yükleniyor...</div>}>
+                    <QrScanner
+                      active={scannerActive}
+                      onDetected={(raw) => {
+                        setScannerActive(false)
+                        void runQrScan(raw)
+                      }}
+                      onError={(message) => setScannerError(message)}
+                    />
+                  </Suspense>
+                  <div className="scanner-modal-actions">
+                    <button type="button" className="btn btn-soft" onClick={() => setScannerActive(false)}>
+                      Kamerayý Kapat
+                    </button>
+                  </div>
+                </section>
+              </div>,
+              document.body,
+            )
+          : null}
 
-        {scanSuccessFxOpen ? (
-          <div className="scan-success-overlay" role="status" aria-live="polite" aria-label="QR onaylandÄ±">
-            <div className="scan-success-logo" aria-hidden="true">
-              <div className="scan-success-halo" />
-              <div className="scan-success-ring" />
-              <div className="scan-success-spark" />
-              <div className="scan-success-core">
-                <span className="scan-success-brand">YABUJIN</span>
-                <span className="scan-success-sub">ONAYLANDI</span>
-              </div>
-            </div>
-          </div>
-        ) : null}
+        {scanSuccessFxOpen && typeof document !== 'undefined'
+          ? createPortal(
+              <div className="scan-success-overlay" role="status" aria-live="polite" aria-label="QR onaylandý">
+                <div className="scan-success-logo" aria-hidden="true">
+                  <div className="scan-success-halo" />
+                  <div className="scan-success-ring" />
+                  <div className="scan-success-spark" />
+                  <div className="scan-success-core">
+                    <span className="scan-success-brand">YABUJIN</span>
+                    <span className="scan-success-sub">ONAYLANDI</span>
+                  </div>
+                </div>
+              </div>,
+              document.body,
+            )
+          : null}
 
         {passkeyNotice ? (
           <div className="notice-box notice-box-success mt-3">
@@ -2269,20 +2276,20 @@ export function HomePage() {
           <div className={`notice-box ${resultMessage.tone === 'success' ? 'notice-box-success' : 'notice-box-warning'}`}>
             <p>
               <span className="banner-icon" aria-hidden="true">
-                {resultMessage.tone === 'success' ? 'âœ“' : '!'}
+                {resultMessage.tone === 'success' ? '?' : '!'}
               </span>
               {resultMessage.text}
             </p>
             <div className="chips">
-              {duplicateDetected ? <span className="status-pill state-warn">MÃ¼kerrer kayÄ±t</span> : null}
-              {manualCheckout ? <span className="manual-badge">Manuel Ã§Ä±kÄ±ÅŸ yapÄ±ldÄ±</span> : null}
+              {duplicateDetected ? <span className="status-pill state-warn">Mükerrer kayýt</span> : null}
+              {manualCheckout ? <span className="manual-badge">Manuel çýkýþ yapýldý</span> : null}
             </div>
           </div>
         ) : null}
 
         {lastAction ? (
           <section className="result-box">
-            <h2>Son Ä°ÅŸlem</h2>
+            <h2>Son Ýþlem</h2>
             <p>
               event_type: <strong>{lastAction.response.event_type}</strong> ({eventTypeLabel(lastAction.response.event_type)})
             </p>
@@ -2360,11 +2367,11 @@ export function HomePage() {
               <p>
                 {installPromptEvent
                   ? 'Kurulum penceresi hazir, tek butonla tamamlayabilirsiniz.'
-                  : 'Kurulum penceresi hazir degilse Chrome menÃ¼sÃ¼nden hÄ±zlÄ±ca tamamlayÄ±n.'}
+                  : 'Kurulum penceresi hazir degilse Chrome menüsünden hýzlýca tamamlayýn.'}
               </p>
               <ol className="install-onboarding-list">
-                <li>Chrome saÄŸ Ã¼stten 3 nokta menÃ¼sÃ¼nÃ¼ aÃ§Ä±n.</li>
-                <li>"Ana ekrana ekle" veya "Install app" seÃ§eneÄŸini seÃ§in.</li>
+                <li>Chrome sað üstten 3 nokta menüsünü açýn.</li>
+                <li>"Ana ekrana ekle" veya "Install app" seçeneðini seçin.</li>
                 <li>"Ekle / Install" ile kurulumu bitirin.</li>
               </ol>
               <div className="stack">
@@ -2387,10 +2394,10 @@ export function HomePage() {
         {isHelpOpen ? (
           <div className="modal-backdrop" role="dialog" aria-modal="true">
             <div className="help-modal">
-              <h2>Mesai BitiÅŸ Bilgilendirmesi</h2>
-              <p>GÃ¼n iÃ§inde giriÅŸten sonra Ã§Ä±kÄ±ÅŸÄ± mutlaka "Mesaiyi Bitir" ile tamamlayÄ±n.</p>
+              <h2>Mesai Bitiþ Bilgilendirmesi</h2>
+              <p>Gün içinde giriþten sonra çýkýþý mutlaka "Mesaiyi Bitir" ile tamamlayýn.</p>
               <button type="button" className="btn btn-primary" onClick={() => setIsHelpOpen(false)}>
-                AnladÄ±m
+                Anladým
               </button>
             </div>
           </div>
@@ -2399,10 +2406,10 @@ export function HomePage() {
         {showPushGateModal ? (
           <div className="modal-backdrop" role="dialog" aria-modal="true">
             <div className="help-modal">
-              <h2>Bildirim Ä°zni Zorunlu</h2>
+              <h2>Bildirim Ýzni Zorunlu</h2>
               <p>
                 {pushSecondChanceOpen
-                  ? 'Bildirim izni ilk denemede verilmedi. Bu Ã¶zellik sistemin zorunlu bir parÃ§asÄ±. LÃ¼tfen son kez izin verin.'
+                  ? 'Bildirim izni ilk denemede verilmedi. Bu özellik sistemin zorunlu bir parçasý. Lütfen son kez izin verin.'
                   : pushGateMessage}
               </p>
               <div className="stack">
@@ -2420,12 +2427,12 @@ export function HomePage() {
                   }}
                 >
                   {isPushBusy
-                    ? 'Bildirim aÃ§Ä±lÄ±yor...'
+                    ? 'Bildirim açýlýyor...'
                     : pushRequiresStandalone
                       ? 'Ana Ekrana Ekle'
                     : pushSecondChanceOpen
                       ? 'Tekrar Sor (2/2)'
-                      : 'Bildirimleri AÃ§'}
+                      : 'Bildirimleri Aç'}
                 </button>
                 <button
                   type="button"
@@ -2459,18 +2466,18 @@ export function HomePage() {
 
         {showInstallPromotions ? (
           <aside className="promo-rail promo-rail-right" aria-label="Kurumsal tanitim paneli">
-            <p className="promo-rail-kicker">KURUMSAL VERÄ°MLÄ°LÄ°K</p>
-            <h2 className="promo-rail-title">Sahada hÄ±z, merkezde kontrol.</h2>
+            <p className="promo-rail-kicker">KURUMSAL VERÝMLÝLÝK</p>
+            <h2 className="promo-rail-title">Sahada hýz, merkezde kontrol.</h2>
             <p className="promo-rail-text">
-              Ã‡alÄ±ÅŸan uygulamasÄ±nÄ± indirerek tek ekran Ã¼zerinden puantaj, gÃ¼venlik ve bildirim akÄ±ÅŸÄ±nÄ± yÃ¶netin.
+              Çalýþan uygulamasýný indirerek tek ekran üzerinden puantaj, güvenlik ve bildirim akýþýný yönetin.
             </p>
             <div className="promo-rail-badges">
               <span className={`promo-rail-badge ${todayStatusClass}`}>{todayStatusLabel(todayStatus)}</span>
               <span className={`promo-rail-badge ${passkeyRegistered ? 'state-ok' : 'state-warn'}`}>
-                {passkeyRegistered ? 'Passkey HazÄ±r' : 'Passkey Bekliyor'}
+                {passkeyRegistered ? 'Passkey Hazýr' : 'Passkey Bekliyor'}
               </span>
               <span className={`promo-rail-badge ${pushRegistered ? 'state-ok' : 'state-warn'}`}>
-                {pushRegistered ? 'Push AÃ§Ä±k' : 'Push Bekliyor'}
+                {pushRegistered ? 'Push Açýk' : 'Push Bekliyor'}
               </span>
             </div>
             <button
@@ -2481,14 +2488,14 @@ export function HomePage() {
             >
               {installRailPrimaryLabel}
             </button>
-            <p className="promo-rail-note">Butona basÄ±p uygulamayÄ± indirerek daha kurumsal bir kullanÄ±m deneyimi alÄ±n.</p>
+            <p className="promo-rail-note">Butona basýp uygulamayý indirerek daha kurumsal bir kullaným deneyimi alýn.</p>
           </aside>
         ) : null}
       </div>
 
       {showInstallPromotions ? (
         <div className="promo-mobile-dock" role="region" aria-label="Hizli uygulama indirme">
-          <p className="promo-mobile-text">UygulamayÄ± indir, portalÄ± daha hÄ±zlÄ± ve stabil kullan.</p>
+          <p className="promo-mobile-text">Uygulamayý indir, portalý daha hýzlý ve stabil kullan.</p>
           <button
             type="button"
             className="btn btn-primary promo-mobile-btn"
@@ -2502,4 +2509,6 @@ export function HomePage() {
     </main>
   )
 }
+
+
 
