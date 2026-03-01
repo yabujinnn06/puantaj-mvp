@@ -21,6 +21,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        op.execute("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(128)")
+
     op.add_column("notification_jobs", sa.Column("notification_type", sa.String(length=100), nullable=True))
     op.add_column("notification_jobs", sa.Column("audience", sa.String(length=20), nullable=True))
     op.add_column("notification_jobs", sa.Column("risk_level", sa.String(length=20), nullable=True))
@@ -134,3 +138,7 @@ def downgrade() -> None:
     op.drop_column("notification_jobs", "risk_level")
     op.drop_column("notification_jobs", "audience")
     op.drop_column("notification_jobs", "notification_type")
+
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        op.execute("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(32)")
