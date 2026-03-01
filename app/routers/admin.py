@@ -3127,6 +3127,7 @@ def get_control_room_overview(
     department_id: int | None = Query(default=None, ge=1),
     today_status: Literal["NOT_STARTED", "IN_PROGRESS", "FINISHED"] | None = Query(default=None),
     location_state: Literal["LIVE", "STALE", "DORMANT", "NONE"] | None = Query(default=None),
+    map_date: date | None = Query(default=None),
     include_inactive: bool = Query(default=False),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=24, ge=1, le=50),
@@ -3410,35 +3411,61 @@ def get_control_room_overview(
             )
         )
 
-    map_points = [
-        ControlRoomMapPointRead(
-            employee_id=item.employee.id,
-            employee_name=item.employee.full_name,
-            department_name=item.department_name,
-            lat=item.latest_location.lat,
-            lon=item.latest_location.lon,
-            ts_utc=item.latest_location.ts_utc,
-            accuracy_m=item.latest_location.accuracy_m,
-            today_status=item.today_status,
-            location_state=item.location_state,
-            label=f"{item.employee.full_name} / {item.department_name or 'Departman yok'}",
-        )
-        for item in items
-        if item.latest_location is not None
-    ]
+    paged_ids = [row["employee"].id for row in paged_row_meta]
+    map_points: list[ControlRoomMapPointRead] = []
+    if paged_ids:
+        map_local_date = map_date or today_local_date
+        map_start_local = datetime.combine(map_local_date, time.min, tzinfo=tz)
+        map_end_local = map_start_local + timedelta(days=1)
+        map_start_utc = map_start_local.astimezone(timezone.utc)
+        map_end_utc = map_end_local.astimezone(timezone.utc)
 
-    filtered_ids = {row["employee"].id for row in filtered_row_meta}
+        map_event_rows = list(
+            db.scalars(
+                select(AttendanceEvent)
+                .where(
+                    AttendanceEvent.employee_id.in_(paged_ids),
+                    AttendanceEvent.deleted_at.is_(None),
+                    AttendanceEvent.lat.is_not(None),
+                    AttendanceEvent.lon.is_not(None),
+                    AttendanceEvent.ts_utc >= map_start_utc,
+                    AttendanceEvent.ts_utc < map_end_utc,
+                )
+                .order_by(AttendanceEvent.employee_id.asc(), AttendanceEvent.ts_utc.desc(), AttendanceEvent.id.desc())
+            ).all()
+        )
+        map_event_by_employee: dict[int, AttendanceEvent] = {}
+        for event in map_event_rows:
+            map_event_by_employee.setdefault(event.employee_id, event)
+
+        map_points = [
+            ControlRoomMapPointRead(
+                employee_id=item.employee.id,
+                employee_name=item.employee.full_name,
+                department_name=item.department_name,
+                lat=map_event_by_employee[item.employee.id].lat,
+                lon=map_event_by_employee[item.employee.id].lon,
+                ts_utc=map_event_by_employee[item.employee.id].ts_utc,
+                accuracy_m=map_event_by_employee[item.employee.id].accuracy_m,
+                today_status=item.today_status,
+                location_state=item.location_state,
+                label=f"{item.employee.full_name} / {item.department_name or 'Departman yok'}",
+            )
+            for item in items
+            if item.employee.id in map_event_by_employee
+        ]
+
     recent_events_rows: list[AttendanceEvent] = []
-    if filtered_ids:
+    if paged_ids:
         recent_events_rows = list(
             db.scalars(
                 select(AttendanceEvent)
                 .where(
-                    AttendanceEvent.employee_id.in_(list(filtered_ids)),
+                    AttendanceEvent.employee_id.in_(paged_ids),
                     AttendanceEvent.deleted_at.is_(None),
                 )
                 .order_by(AttendanceEvent.ts_utc.desc(), AttendanceEvent.id.desc())
-                .limit(18)
+                .limit(max(18, min(limit * 2, 40)))
             ).all()
         )
 
