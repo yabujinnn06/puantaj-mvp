@@ -1073,6 +1073,19 @@ class NotificationJobRead(BaseModel):
     employee_id: int | None
     admin_user_id: int | None
     job_type: str
+    notification_type: str | None = None
+    audience: str | None = None
+    risk_level: str | None = None
+    event_id: str | None = None
+    event_hash: str | None = None
+    local_day: date | None = None
+    event_ts_utc: datetime | None = None
+    title: str | None = None
+    description: str | None = None
+    shift_summary: str | None = None
+    actual_time_summary: str | None = None
+    suggested_action: str | None = None
+    admin_note: str | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
     scheduled_at_utc: datetime
     status: Literal["PENDING", "SENDING", "SENT", "CANCELED", "FAILED"]
@@ -1388,19 +1401,27 @@ class AdminManualNotificationSendResponse(BaseModel):
 
 
 class NotificationDeliveryLogRead(BaseModel):
-    audit_id: int
+    id: int
+    notification_job_id: int | None = None
+    event_id: str
+    notification_type: str | None = None
+    audience: str | None = None
     sent_at_utc: datetime
-    sender_admin: str
-    target: str
     title: str | None = None
     recipient_type: Literal["employee", "admin"]
     recipient_id: int | None = None
     recipient_name: str | None = None
+    recipient_address: str | None = None
     device_id: int | None = None
     endpoint: str | None = None
     ip: str | None = None
-    status: Literal["SENT", "FAILED"]
+    channel: Literal["push", "email"]
+    status: Literal["PENDING", "SENT", "FAILED"]
     error: str | None = None
+
+
+class NotificationJobNoteUpdateRequest(BaseModel):
+    admin_note: str | None = Field(default=None, max_length=4000)
 
 
 class NotificationDeliveryLogPageResponse(BaseModel):

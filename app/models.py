@@ -1069,6 +1069,19 @@ class NotificationJob(Base):
         index=True,
     )
     job_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    notification_type: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    audience: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+    risk_level: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+    event_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    event_hash: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True, index=True)
+    local_day: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    event_ts_utc: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    shift_summary: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    actual_time_summary: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    suggested_action: Mapped[str | None] = mapped_column(Text, nullable=True)
+    admin_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     payload: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
         nullable=False,
@@ -1098,6 +1111,50 @@ class NotificationJob(Base):
         onupdate=lambda: datetime.now(timezone.utc),
     )
 
+    employee: Mapped[Employee | None] = relationship()
+    admin_user: Mapped[AdminUser | None] = relationship()
+    delivery_logs: Mapped[list[NotificationDeliveryLog]] = relationship(
+        back_populates="notification_job",
+        cascade="all, delete-orphan",
+    )
+
+
+class NotificationDeliveryLog(Base):
+    __tablename__ = "notification_delivery_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    notification_job_id: Mapped[int | None] = mapped_column(
+        ForeignKey("notification_jobs.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    event_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    notification_type: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    audience: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+    channel: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    recipient_type: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    employee_id: Mapped[int | None] = mapped_column(
+        ForeignKey("employees.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    admin_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("admin_users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    recipient_address: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    endpoint: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    notification_job: Mapped[NotificationJob | None] = relationship(back_populates="delivery_logs")
     employee: Mapped[Employee | None] = relationship()
     admin_user: Mapped[AdminUser | None] = relationship()
 

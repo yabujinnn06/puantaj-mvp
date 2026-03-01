@@ -29,8 +29,15 @@ from app.models import (
     Employee,
     LocationStatus,
     ManualDayOverride,
+    NotificationDeliveryLog,
     NotificationJob,
     WorkRule,
+)
+from app.services.attendance_notification_monitor import (
+    AUDIENCE_ADMIN,
+    AUDIENCE_EMPLOYEE,
+    JOB_TYPE_ATTENDANCE_MONITOR,
+    schedule_attendance_monitor_notifications,
 )
 from app.services.exports import build_puantaj_xlsx_bytes
 from app.services.attendance import (
@@ -902,6 +909,37 @@ def _build_message_for_job(session: Session, job: NotificationJob) -> Notificati
         else ("Hayır" if checkin_outside_shift is False else "Bilinmiyor")
     )
 
+    if job.job_type == JOB_TYPE_ATTENDANCE_MONITOR or job.notification_type:
+        audience = str(job.audience or payload.get("audience") or AUDIENCE_EMPLOYEE).strip().lower()
+        recipients = (
+            _admin_notification_emails(session)
+            if audience == AUDIENCE_ADMIN
+            else _employee_notification_emails(session, job=job)
+        )
+        title = str(job.title or payload.get("title") or "Puantaj Bildirimi")
+        description = str(job.description or payload.get("description") or "-")
+        event_time = str(payload.get("event_ts_local") or payload.get("event_ts_utc") or "-")
+        shift_summary = str(job.shift_summary or payload.get("shift_window_local") or shift_line or "-")
+        actual_time_summary = str(job.actual_time_summary or payload.get("actual_time_summary") or "-")
+        risk_level = str(job.risk_level or payload.get("risk_level") or "-")
+        suggested_action = str(job.suggested_action or payload.get("suggested_action") or "-")
+        event_id = str(job.event_id or payload.get("event_id") or f"JOB-{job.id}")
+
+        return NotificationMessage(
+            recipients=recipients,
+            subject=title,
+            body=(
+                f"Baslik:\n{title}\n\n"
+                f"Aciklama:\n{description}\n\n"
+                f"Olay Zamani:\n{event_time}\n\n"
+                f"Vardiya Bilgisi:\n{shift_summary}\n\n"
+                f"Gerceklesen Saat:\n{actual_time_summary}\n\n"
+                f"Risk Seviyesi:\n{risk_level}\n\n"
+                f"Islem Onerisi:\n{suggested_action}\n\n"
+                f"Event ID:\n{event_id}"
+            ),
+        )
+
     if job.job_type == JOB_TYPE_EMPLOYEE_MISSED_CHECKOUT:
         recipients = _employee_notification_emails(session, job=job)
         return NotificationMessage(
@@ -1058,6 +1096,44 @@ def _send_push_for_job(
     job: NotificationJob,
     message: NotificationMessage,
 ) -> dict[str, Any]:
+    if job.job_type == JOB_TYPE_ATTENDANCE_MONITOR or job.notification_type:
+        payload = job.payload or {}
+        audience = str(job.audience or payload.get("audience") or AUDIENCE_EMPLOYEE).strip().lower()
+        target_url = f"/admin-panel/notifications?job_id={job.id}"
+        if audience == AUDIENCE_ADMIN:
+            return send_push_to_admins(
+                session,
+                admin_user_ids=None,
+                title=message.subject,
+                body=message.body,
+                data={
+                    "job_id": job.id,
+                    "job_type": job.job_type,
+                    "notification_type": job.notification_type,
+                    "event_id": job.event_id,
+                    "employee_id": job.employee_id,
+                    "employee_full_name": payload.get("employee_full_name"),
+                    "shift_date": payload.get("shift_date"),
+                    "url": target_url,
+                },
+            )
+        if job.employee_id is None:
+            return {"total_targets": 0, "sent": 0, "failed": 0, "deactivated": 0, "failures": []}
+        return send_push_to_employees(
+            session,
+            employee_ids=[job.employee_id],
+            title=message.subject,
+            body=message.body,
+            data={
+                "job_id": job.id,
+                "job_type": job.job_type,
+                "notification_type": job.notification_type,
+                "event_id": job.event_id,
+                "employee_id": job.employee_id,
+                "payload": job.payload or {},
+            },
+        )
+
     if job.job_type in {
         JOB_TYPE_EMPLOYEE_MISSED_CHECKOUT,
         JOB_TYPE_EMPLOYEE_OVERTIME_9H,
@@ -1209,6 +1285,94 @@ def _mark_job_failure(
     session.commit()
     session.refresh(job)
     return job
+
+
+def _job_audience(job: NotificationJob) -> str | None:
+    raw = (job.audience or "").strip().lower()
+    if raw in {AUDIENCE_ADMIN, AUDIENCE_EMPLOYEE}:
+        return raw
+    if job.job_type.startswith("ADMIN_"):
+        return AUDIENCE_ADMIN
+    if job.job_type.startswith("EMPLOYEE_"):
+        return AUDIENCE_EMPLOYEE
+    return None
+
+
+def _record_delivery_logs(
+    session: Session,
+    *,
+    job: NotificationJob,
+    push_summary: dict[str, Any] | None,
+    email_result: dict[str, Any] | None,
+    now_utc: datetime,
+) -> None:
+    audience = _job_audience(job)
+    event_id = str(job.event_id or f"JOB-{job.id}")
+    notification_type = job.notification_type or job.job_type
+
+    push_deliveries = push_summary.get("deliveries", []) if isinstance(push_summary, dict) else []
+    if isinstance(push_deliveries, list):
+        for row in push_deliveries:
+            if not isinstance(row, dict):
+                continue
+            recipient_type = audience or ("admin" if row.get("admin_user_id") is not None else "employee")
+            status = str(row.get("status") or "FAILED").upper()
+            if status not in {"SENT", "FAILED"}:
+                status = "FAILED"
+            session.add(
+                NotificationDeliveryLog(
+                    notification_job_id=job.id,
+                    event_id=event_id,
+                    notification_type=notification_type,
+                    audience=audience,
+                    channel="push",
+                    recipient_type=recipient_type,
+                    employee_id=(
+                        int(row.get("employee_id"))
+                        if row.get("employee_id") is not None
+                        else (job.employee_id if recipient_type == AUDIENCE_EMPLOYEE else None)
+                    ),
+                    admin_user_id=(
+                        int(row.get("admin_user_id"))
+                        if row.get("admin_user_id") is not None
+                        else None
+                    ),
+                    recipient_address=None,
+                    endpoint=row.get("endpoint") if isinstance(row.get("endpoint"), str) else None,
+                    status=status,
+                    error=row.get("error") if isinstance(row.get("error"), str) else None,
+                    delivered_at=now_utc if status == "SENT" else None,
+                )
+            )
+
+    if not isinstance(email_result, dict):
+        return
+
+    recipients = email_result.get("recipients", [])
+    if not isinstance(recipients, list):
+        return
+    sent_count = _as_int(email_result.get("sent"), 0)
+    email_status = "SENT" if sent_count > 0 else "FAILED"
+    for recipient in recipients:
+        if not isinstance(recipient, str) or not recipient.strip():
+            continue
+        session.add(
+            NotificationDeliveryLog(
+                notification_job_id=job.id,
+                event_id=event_id,
+                notification_type=notification_type,
+                audience=audience,
+                channel="email",
+                recipient_type=audience or AUDIENCE_ADMIN,
+                employee_id=job.employee_id if audience == AUDIENCE_EMPLOYEE else None,
+                admin_user_id=None,
+                recipient_address=recipient.strip(),
+                endpoint=None,
+                status=email_status,
+                error=email_result.get("error") if isinstance(email_result.get("error"), str) else None,
+                delivered_at=now_utc if email_status == "SENT" else None,
+            )
+        )
 
 
 def _shift_crosses_midnight(shift: DepartmentShift | None) -> bool:
@@ -1531,283 +1695,7 @@ def schedule_missed_checkout_notifications(
     now_utc: datetime,
     db: Session | None = None,
 ) -> list[NotificationJob]:
-    if db is None:
-        with SessionLocal() as managed_db:
-            return schedule_missed_checkout_notifications(now_utc, db=managed_db)
-
-    session = db
-    reference_utc = _normalize_ts(now_utc)
-    tz = _attendance_timezone()
-    local_today = reference_utc.astimezone(tz).date()
-    open_shifts = get_employees_with_open_shift(reference_utc, db=session)
-    stale_open_shifts = get_employees_with_stale_open_shift(reference_utc, db=session)
-    created_jobs: list[NotificationJob] = []
-    auto_closed_events: list[tuple[OpenShiftNotificationRecord, AttendanceEvent, datetime]] = []
-    auto_closed_keys: set[tuple[int, date]] = set()
-
-    for record in open_shifts:
-        overtime_alert_at_utc = _normalize_ts(record.first_checkin_ts_utc) + timedelta(hours=9)
-        payload = _build_notification_payload(
-            local_day=record.local_day,
-            shift_end_local=record.shift_end_local,
-            grace_deadline_utc=record.grace_deadline_utc,
-            escalation_deadline_utc=record.escalation_deadline_utc,
-            overtime_alert_at_utc=overtime_alert_at_utc,
-            employee_id=record.employee_id,
-            employee_full_name=record.employee_full_name,
-            department_name=record.department_name,
-            shift_name=record.shift_name,
-            shift_start_local=record.shift_start_local,
-            first_checkin_ts_utc=record.first_checkin_ts_utc,
-            checkin_outside_shift=record.checkin_outside_shift,
-        )
-
-        employee_job = _create_notification_job_if_needed(
-            session,
-            job_type=JOB_TYPE_EMPLOYEE_MISSED_CHECKOUT,
-            employee_id=record.employee_id,
-            local_day=record.local_day,
-            scheduled_at_utc=record.grace_deadline_utc,
-            payload=payload,
-        )
-        if employee_job is not None:
-            created_jobs.append(employee_job)
-
-        escalation_job = _create_notification_job_if_needed(
-            session,
-            job_type=JOB_TYPE_ADMIN_ESCALATION_MISSED_CHECKOUT,
-            employee_id=record.employee_id,
-            local_day=record.local_day,
-            scheduled_at_utc=record.escalation_deadline_utc,
-            payload=payload,
-        )
-        if escalation_job is not None:
-            created_jobs.append(escalation_job)
-
-        overtime_job = _create_notification_job_if_needed(
-            session,
-            job_type=JOB_TYPE_EMPLOYEE_OVERTIME_9H,
-            employee_id=record.employee_id,
-            local_day=record.local_day,
-            scheduled_at_utc=overtime_alert_at_utc,
-            payload=payload,
-        )
-        if overtime_job is not None:
-            created_jobs.append(overtime_job)
-
-    for record in stale_open_shifts:
-        if _record_shift_covers_midnight(record):
-            continue
-
-        auto_checkout_utc, auto_checkout_trigger_utc = _resolve_effective_auto_checkout_utc(record)
-        if auto_checkout_trigger_utc > reference_utc:
-            continue
-
-        latest_event = session.scalar(
-            select(AttendanceEvent)
-            .where(
-                AttendanceEvent.employee_id == record.employee_id,
-                AttendanceEvent.deleted_at.is_(None),
-            )
-            .order_by(AttendanceEvent.ts_utc.desc(), AttendanceEvent.id.desc())
-        )
-        if latest_event is None or latest_event.type != AttendanceType.IN:
-            continue
-
-        latest_local_day = _normalize_ts(latest_event.ts_utc).astimezone(tz).date()
-        if latest_local_day != record.local_day:
-            continue
-
-        device = _resolve_device_for_auto_checkout(session, employee_id=record.employee_id)
-        if device is None:
-            continue
-
-        flags: dict[str, Any] = {
-            "AUTO_CHECKOUT_AT_MIDNIGHT": True,
-            "AUTO_CHECKOUT_REASON": "OPEN_SHIFT_CROSSED_MIDNIGHT",
-            "SHIFT_DATE": record.local_day.isoformat(),
-            "AUTO_BY_WORKER": True,
-            "AUTO_CHECKOUT_TRIGGER_LOCAL": auto_checkout_trigger_utc.astimezone(tz).strftime("%Y-%m-%d %H:%M"),
-            "AUTO_CHECKOUT_EFFECTIVE_LOCAL": auto_checkout_utc.astimezone(tz).strftime("%Y-%m-%d %H:%M"),
-            "AUTO_CHECKOUT_EFFECTIVE_UTC": auto_checkout_utc.isoformat(),
-        }
-        inherited_shift_id = _parse_shift_id_from_flags(latest_event.flags)
-        if inherited_shift_id is not None:
-            flags["SHIFT_ID"] = inherited_shift_id
-        if record.shift_name:
-            flags["SHIFT_NAME"] = record.shift_name
-        if record.shift_start_local is not None:
-            flags["SHIFT_WINDOW_LOCAL"] = (
-                f"{record.shift_start_local.isoformat(timespec='minutes')}"
-                f"-{record.shift_end_local.isoformat(timespec='minutes')}"
-            )
-
-        auto_event = AttendanceEvent(
-            employee_id=record.employee_id,
-            device_id=device.id,
-            type=AttendanceType.OUT,
-            ts_utc=auto_checkout_utc,
-            lat=None,
-            lon=None,
-            accuracy_m=None,
-            location_status=LocationStatus.NO_LOCATION,
-            flags=flags,
-            source=AttendanceEventSource.MANUAL,
-            created_by_admin=True,
-            note="Sistem gece 00:00 otomatik cikis tetikledi",
-        )
-        session.add(auto_event)
-        session.flush()
-        auto_closed_events.append((record, auto_event, auto_checkout_utc))
-        auto_closed_keys.add((record.employee_id, record.local_day))
-
-        overtime_alert_at_utc = _normalize_ts(record.first_checkin_ts_utc) + timedelta(hours=9)
-        auto_payload = _build_notification_payload(
-            local_day=record.local_day,
-            shift_end_local=record.shift_end_local,
-            grace_deadline_utc=record.grace_deadline_utc,
-            escalation_deadline_utc=record.escalation_deadline_utc,
-            overtime_alert_at_utc=overtime_alert_at_utc,
-            employee_id=record.employee_id,
-            employee_full_name=record.employee_full_name,
-            department_name=record.department_name,
-            shift_name=record.shift_name,
-            shift_start_local=record.shift_start_local,
-            first_checkin_ts_utc=record.first_checkin_ts_utc,
-            checkin_outside_shift=record.checkin_outside_shift,
-        )
-        auto_checkout_local_day = auto_checkout_utc.astimezone(tz).date()
-        auto_payload["auto_checkout_utc"] = auto_checkout_utc.isoformat()
-        auto_payload["auto_checkout_local"] = auto_checkout_utc.astimezone(tz).strftime("%Y-%m-%d %H:%M")
-        auto_payload["auto_checkout_local_day"] = auto_checkout_local_day.isoformat()
-        auto_payload["open_day_count"] = str(
-            max(1, (auto_checkout_trigger_utc.astimezone(tz).date() - record.local_day).days + 1)
-        )
-
-        employee_auto_job = _create_notification_job_if_needed(
-            session,
-            job_type=JOB_TYPE_EMPLOYEE_AUTO_MIDNIGHT_CHECKOUT,
-            employee_id=record.employee_id,
-            local_day=record.local_day,
-            scheduled_at_utc=auto_checkout_trigger_utc,
-            payload=auto_payload,
-            idempotency_key=(
-                f"{JOB_TYPE_EMPLOYEE_AUTO_MIDNIGHT_CHECKOUT}:{record.employee_id}:{record.local_day.isoformat()}"
-            ),
-        )
-        if employee_auto_job is not None:
-            created_jobs.append(employee_auto_job)
-
-        admin_auto_job = _create_notification_job_if_needed(
-            session,
-            job_type=JOB_TYPE_ADMIN_AUTO_MIDNIGHT_CHECKOUT,
-            employee_id=record.employee_id,
-            local_day=record.local_day,
-            scheduled_at_utc=auto_checkout_trigger_utc,
-            payload=auto_payload,
-            idempotency_key=(
-                f"{JOB_TYPE_ADMIN_AUTO_MIDNIGHT_CHECKOUT}:{record.employee_id}:{record.local_day.isoformat()}"
-            ),
-        )
-        if admin_auto_job is not None:
-            created_jobs.append(admin_auto_job)
-
-    reminder_records_by_key: dict[tuple[int, date], OpenShiftNotificationRecord] = {}
-    for record in [*open_shifts, *stale_open_shifts]:
-        reminder_records_by_key[(record.employee_id, record.local_day)] = record
-
-    nightly_reminder_local_time = _nightly_missed_checkout_local_time()
-    nightly_reminder_scheduled_at_utc = _nightly_missed_checkout_scheduled_at_utc(local_today)
-
-    for record in reminder_records_by_key.values():
-        if (record.employee_id, record.local_day) in auto_closed_keys:
-            continue
-        if local_today < record.local_day:
-            continue
-        if nightly_reminder_scheduled_at_utc < record.grace_deadline_utc:
-            continue
-
-        overtime_alert_at_utc = _normalize_ts(record.first_checkin_ts_utc) + timedelta(hours=9)
-        payload = _build_notification_payload(
-            local_day=record.local_day,
-            shift_end_local=record.shift_end_local,
-            grace_deadline_utc=record.grace_deadline_utc,
-            escalation_deadline_utc=record.escalation_deadline_utc,
-            overtime_alert_at_utc=overtime_alert_at_utc,
-            employee_id=record.employee_id,
-            employee_full_name=record.employee_full_name,
-            department_name=record.department_name,
-            shift_name=record.shift_name,
-            shift_start_local=record.shift_start_local,
-            first_checkin_ts_utc=record.first_checkin_ts_utc,
-            checkin_outside_shift=record.checkin_outside_shift,
-        )
-        payload["nightly_reminder_local_day"] = local_today.isoformat()
-        payload["nightly_reminder_local_time"] = nightly_reminder_local_time.isoformat(timespec="minutes")
-        payload["open_day_count"] = str(max(1, (local_today - record.local_day).days + 1))
-
-        idempotency_key = (
-            f"{JOB_TYPE_EMPLOYEE_MISSED_CHECKOUT_NIGHTLY}:{record.employee_id}:"
-            f"{record.local_day.isoformat()}:{local_today.isoformat()}"
-        )
-        nightly_job = _create_notification_job_if_needed(
-            session,
-            job_type=JOB_TYPE_EMPLOYEE_MISSED_CHECKOUT_NIGHTLY,
-            employee_id=record.employee_id,
-            local_day=record.local_day,
-            scheduled_at_utc=nightly_reminder_scheduled_at_utc,
-            payload=payload,
-            idempotency_key=idempotency_key,
-        )
-        if nightly_job is not None:
-            created_jobs.append(nightly_job)
-
-    if not created_jobs and not auto_closed_events:
-        return []
-
-    session.commit()
-    for record, auto_event, auto_checkout_utc in auto_closed_events:
-        session.refresh(auto_event)
-        log_audit(
-            session,
-            actor_type=AuditActorType.SYSTEM,
-            actor_id="notification_scheduler",
-            action="ATTENDANCE_AUTO_MIDNIGHT_CHECKOUT",
-            success=True,
-            entity_type="attendance_event",
-            entity_id=str(auto_event.id),
-            details={
-                "employee_id": record.employee_id,
-                "shift_date": record.local_day.isoformat(),
-                "auto_checkout_utc": auto_checkout_utc.isoformat(),
-                "shift_name": record.shift_name,
-                "shift_start_local": record.shift_start_local.isoformat(timespec="minutes")
-                if record.shift_start_local is not None
-                else None,
-                "shift_end_local": record.shift_end_local.isoformat(timespec="minutes"),
-            },
-        )
-
-    for job in created_jobs:
-        session.refresh(job)
-        log_audit(
-            session,
-            actor_type=AuditActorType.SYSTEM,
-            actor_id="notification_scheduler",
-            action="NOTIFICATION_JOB_CREATED",
-            success=True,
-            entity_type="notification_job",
-            entity_id=str(job.id),
-            details={
-                "job_type": job.job_type,
-                "employee_id": job.employee_id,
-                "idempotency_key": job.idempotency_key,
-                "scheduled_at_utc": job.scheduled_at_utc.isoformat(),
-                "shift_date": str(job.payload.get("shift_date", "")),
-            },
-        )
-
-    return created_jobs
+    return schedule_attendance_monitor_notifications(now_utc, db=db)
 
 
 def _normalize_archive_employee_name(value: str) -> str:
@@ -2318,6 +2206,11 @@ def send_pending_notifications(
             }
 
             is_daily_report_job = current_job.job_type == JOB_TYPE_ADMIN_DAILY_REPORT_READY
+            is_structured_monitor_job = (
+                current_job.job_type == JOB_TYPE_ATTENDANCE_MONITOR
+                or bool((current_job.notification_type or "").strip())
+            )
+            is_monitor_admin_job = is_structured_monitor_job and _job_audience(current_job) == AUDIENCE_ADMIN
             is_admin_auto_midnight_job = (
                 current_job.job_type == JOB_TYPE_ADMIN_AUTO_MIDNIGHT_CHECKOUT
             )
@@ -2339,6 +2232,10 @@ def send_pending_notifications(
                 push_summary = _send_push_for_job(session, job=current_job, message=message)
                 if email_enabled and is_admin_auto_midnight_job:
                     email_result = _safe_send_email(email_channel, message)
+                elif email_enabled and is_monitor_admin_job:
+                    push_sent = int(push_summary.get("sent", 0))
+                    if push_sent <= 0:
+                        email_result = _safe_send_email(email_channel, message)
                 elif email_enabled:
                     push_sent = int(push_summary.get("sent", 0))
                     if push_sent <= 0:
@@ -2349,6 +2246,13 @@ def send_pending_notifications(
             push_failed = int(push_summary.get("failed", 0))
             push_deactivated = int(push_summary.get("deactivated", 0))
             email_sent = _as_int(email_result.get("sent"), 0)
+            _record_delivery_logs(
+                session,
+                job=current_job,
+                push_summary=push_summary,
+                email_result=email_result,
+                now_utc=reference_utc,
+            )
             delivery_ok = push_sent > 0 or (email_enabled and email_sent > 0)
             if not delivery_ok:
                 raise RuntimeError(
@@ -2368,7 +2272,10 @@ def send_pending_notifications(
                     "email_sent": email_sent,
                     "email_enabled": email_enabled,
                     "email_required": False,
-                    "email_forced": ((is_daily_report_job or is_admin_auto_midnight_job) and email_enabled),
+                    "email_forced": (
+                        (is_daily_report_job or is_admin_auto_midnight_job or is_monitor_admin_job)
+                        and email_enabled
+                    ),
                     "push_error": push_summary.get("error"),
                 },
             )

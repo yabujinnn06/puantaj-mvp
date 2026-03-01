@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 
 import {
   cancelNotificationJob,
@@ -11,6 +11,7 @@ import {
   getAdminNotificationSubscriptions,
   getAdminPushConfig,
   getAdminPushSelfCheck,
+  getAttendanceEvents,
   getAdminUsers,
   getDailyReportArchives,
   getEmployees,
@@ -22,6 +23,7 @@ import {
   sendAdminPushSelfTest,
   sendAdminNotificationEmailTest,
   sendManualNotification,
+  updateNotificationJobNote,
   updateAdminNotificationEmailTargets,
 } from '../api/admin'
 import { parseApiError } from '../api/error'
@@ -32,7 +34,14 @@ import { Panel } from '../components/Panel'
 import { TableSearchInput } from '../components/TableSearchInput'
 import { useAuth } from '../hooks/useAuth'
 import { useToast } from '../hooks/useToast'
-import type { AdminDailyReportJobHealth, AdminDeviceInviteCreateResponse, NotificationDeliveryLog, NotificationJobStatus } from '../types/api'
+import type {
+  AdminDailyReportJobHealth,
+  AdminDeviceInviteCreateResponse,
+  AttendanceEvent,
+  NotificationDeliveryLog,
+  NotificationJob,
+  NotificationJobStatus,
+} from '../types/api'
 import { urlBase64ToUint8Array } from '../utils/push'
 
 function dt(value: string): string {
@@ -47,16 +56,29 @@ function statusClass(status: NotificationJobStatus): string {
   return 'bg-sky-100 text-sky-700'
 }
 
-function deliveryStatusClass(status: 'SENT' | 'FAILED'): string {
+function deliveryStatusClass(status: 'PENDING' | 'SENT' | 'FAILED'): string {
   if (status === 'SENT') return 'bg-emerald-100 text-emerald-700'
-  return 'bg-rose-100 text-rose-700'
+  if (status === 'FAILED') return 'bg-rose-100 text-rose-700'
+  return 'bg-amber-100 text-amber-700'
 }
 
-function deliveryTargetLabel(value: string): string {
-  if (value === 'admins') return 'ADMIN'
-  if (value === 'employees') return 'CALISAN'
-  if (value === 'both') return 'HER IKISI'
-  return value.toUpperCase()
+function audienceLabel(value: string | null | undefined): string {
+  if (value === 'admin') return 'ADMIN'
+  if (value === 'employee') return 'CALISAN'
+  return '-'
+}
+
+function riskBadgeClass(value: string | null | undefined): string {
+  if (value === 'Kritik') return 'bg-rose-100 text-rose-700'
+  if (value === 'Uyari') return 'bg-amber-100 text-amber-700'
+  return 'bg-sky-100 text-sky-700'
+}
+
+function timelineEventLabel(event: AttendanceEvent): string {
+  const rawShiftName = typeof event.flags?.SHIFT_NAME === 'string' ? event.flags.SHIFT_NAME : null
+  const source = event.source === 'MANUAL' || event.created_by_admin ? 'Manuel' : 'Cihaz'
+  const typeLabel = event.type === 'IN' ? 'Giris' : 'Cikis'
+  return rawShiftName ? `${typeLabel} • ${source} • ${rawShiftName}` : `${typeLabel} • ${source}`
 }
 
 function dailyReportAlarmLabel(value: string): string {
@@ -145,6 +167,12 @@ export function NotificationsPage() {
   const [target, setTarget] = useState<'employees' | 'admins' | 'both'>('employees')
   const [expiresIn, setExpiresIn] = useState(15)
   const [jobsStatus, setJobsStatus] = useState<'' | NotificationJobStatus>('')
+  const [jobNotificationType, setJobNotificationType] = useState('')
+  const [jobRiskLevel, setJobRiskLevel] = useState<'' | 'Bilgi' | 'Uyari' | 'Kritik'>('')
+  const [jobAudience, setJobAudience] = useState<'' | 'employee' | 'admin'>('')
+  const [jobEmployeeId, setJobEmployeeId] = useState('')
+  const [jobStartDate, setJobStartDate] = useState('')
+  const [jobEndDate, setJobEndDate] = useState('')
   const [jobsPage, setJobsPage] = useState(1)
   const [deliveryPage, setDeliveryPage] = useState(1)
   const [searchEmployee, setSearchEmployee] = useState('')
@@ -158,7 +186,9 @@ export function NotificationsPage() {
   const [archiveEmployeeQuery, setArchiveEmployeeQuery] = useState('')
   const [archivePage, setArchivePage] = useState(1)
   const [deliverySearch, setDeliverySearch] = useState('')
-  const [selectedDeliveryAuditId, setSelectedDeliveryAuditId] = useState<number | null>(null)
+  const [selectedJobId, setSelectedJobId] = useState<number | null>(null)
+  const [selectedDeliveryLogId, setSelectedDeliveryLogId] = useState<number | null>(null)
+  const [jobNoteDraft, setJobNoteDraft] = useState('')
   const [emailTargetsText, setEmailTargetsText] = useState('')
   const [emailTestRecipient, setEmailTestRecipient] = useState('')
   const [emailTestSubject, setEmailTestSubject] = useState('Puantaj test email bildirimi')
@@ -185,10 +215,26 @@ export function NotificationsPage() {
     retry: false,
   })
   const jobsQuery = useQuery({
-    queryKey: ['notification-jobs', jobsStatus, jobsPage],
+    queryKey: [
+      'notification-jobs',
+      jobsStatus,
+      jobNotificationType,
+      jobRiskLevel,
+      jobAudience,
+      jobEmployeeId,
+      jobStartDate,
+      jobEndDate,
+      jobsPage,
+    ],
     queryFn: () =>
       getNotificationJobs({
         status: jobsStatus || undefined,
+        notification_type: jobNotificationType.trim() || undefined,
+        risk_level: jobRiskLevel || undefined,
+        audience: jobAudience || undefined,
+        employee_id: Number(jobEmployeeId) > 0 ? Number(jobEmployeeId) : undefined,
+        start_date: jobStartDate || undefined,
+        end_date: jobEndDate || undefined,
         offset: (jobsPage - 1) * LIST_PAGE_SIZE,
         limit: LIST_PAGE_SIZE,
       }),
@@ -211,6 +257,28 @@ export function NotificationsPage() {
   const adminSubsQuery = useQuery({
     queryKey: ['notify-subs-admin'],
     queryFn: () => getAdminNotificationSubscriptions({}),
+    refetchInterval: 15000,
+  })
+
+  const selectedJob = useMemo<NotificationJob | null>(
+    () => (jobsQuery.data?.items ?? []).find((row) => row.id === selectedJobId) ?? null,
+    [jobsQuery.data, selectedJobId],
+  )
+  const selectedJobTimelineQuery = useQuery({
+    queryKey: ['notification-job-timeline', selectedJob?.id, selectedJob?.employee_id, selectedJob?.local_day],
+    queryFn: () =>
+      getAttendanceEvents({
+        employee_id: selectedJob?.employee_id ?? undefined,
+        start_date: selectedJob?.local_day ?? undefined,
+        end_date: selectedJob?.local_day ?? undefined,
+        limit: 50,
+      }),
+    enabled:
+      selectedJob !== null
+      && typeof selectedJob.employee_id === 'number'
+      && selectedJob.employee_id > 0
+      && typeof selectedJob.local_day === 'string'
+      && selectedJob.local_day.length > 0,
     refetchInterval: 15000,
   })
   const archivesQuery = useQuery({
@@ -244,13 +312,16 @@ export function NotificationsPage() {
     return rows.filter((row) => {
       const parts = [
         row.recipient_name ?? '',
+        row.recipient_address ?? '',
         String(row.recipient_id ?? ''),
         String(row.device_id ?? ''),
         row.ip ?? '',
         row.status,
-        row.target,
+        row.channel,
+        row.notification_type ?? '',
+        row.audience ?? '',
+        row.event_id,
         row.title ?? '',
-        row.sender_admin,
       ]
       return parts.join(' ').toLowerCase().includes(q)
     })
@@ -265,8 +336,8 @@ export function NotificationsPage() {
     [filteredDeliveryLogs],
   )
   const selectedDeliveryLog = useMemo<NotificationDeliveryLog | null>(
-    () => filteredDeliveryLogs.find((row) => row.audit_id === selectedDeliveryAuditId) ?? null,
-    [filteredDeliveryLogs, selectedDeliveryAuditId],
+    () => filteredDeliveryLogs.find((row) => row.id === selectedDeliveryLogId) ?? null,
+    [filteredDeliveryLogs, selectedDeliveryLogId],
   )
 
   const jobsRows = jobsQuery.data?.items ?? []
@@ -513,6 +584,18 @@ export function NotificationsPage() {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['notification-jobs'] }),
   })
 
+  const updateJobNoteMutation = useMutation({
+    mutationFn: ({ jobId, note }: { jobId: number; note: string | null }) => updateNotificationJobNote(jobId, note),
+    onSuccess: () => {
+      pushToast({ variant: 'success', title: 'Bildirim notu kaydedildi', description: 'Admin aciklamasi guncellendi.' })
+      void queryClient.invalidateQueries({ queryKey: ['notification-jobs'] })
+    },
+    onError: (error) => {
+      const parsed = parseApiError(error, 'Bildirim notu kaydedilemedi.')
+      pushToast({ variant: 'error', title: 'Not kayit hatasi', description: parsed.message })
+    },
+  })
+
   const downloadMutation = useMutation({
     mutationFn: downloadDailyReportArchive,
     onSuccess: (blob, id) => {
@@ -588,8 +671,16 @@ export function NotificationsPage() {
   ])
 
   useEffect(() => {
+    const rawJobId = searchParams.get('job_id')
+    if (!rawJobId) return
+    const jobId = Number(rawJobId)
+    if (!Number.isInteger(jobId) || jobId <= 0) return
+    setSelectedJobId(jobId)
+  }, [searchParams])
+
+  useEffect(() => {
     setJobsPage(1)
-  }, [jobsStatus])
+  }, [jobsStatus, jobNotificationType, jobRiskLevel, jobAudience, jobEmployeeId, jobStartDate, jobEndDate])
 
   useEffect(() => {
     if (!jobsQuery.data) return
@@ -599,6 +690,21 @@ export function NotificationsPage() {
       return prev
     })
   }, [jobsQuery.data, jobsTotalPages])
+
+  useEffect(() => {
+    const rows = jobsQuery.data?.items ?? []
+    if (rows.length === 0) {
+      setSelectedJobId(null)
+      return
+    }
+    if (selectedJobId === null || !rows.some((row) => row.id === selectedJobId)) {
+      setSelectedJobId(rows[0].id)
+    }
+  }, [jobsQuery.data, selectedJobId])
+
+  useEffect(() => {
+    setJobNoteDraft(selectedJob?.admin_note ?? '')
+  }, [selectedJob?.id, selectedJob?.admin_note])
 
   useEffect(() => {
     setDeliveryPage(1)
@@ -619,13 +725,13 @@ export function NotificationsPage() {
 
   useEffect(() => {
     if (filteredDeliveryLogs.length === 0) {
-      setSelectedDeliveryAuditId(null)
+      setSelectedDeliveryLogId(null)
       return
     }
-    if (selectedDeliveryAuditId === null || !filteredDeliveryLogs.some((row) => row.audit_id === selectedDeliveryAuditId)) {
-      setSelectedDeliveryAuditId(filteredDeliveryLogs[0].audit_id)
+    if (selectedDeliveryLogId === null || !filteredDeliveryLogs.some((row) => row.id === selectedDeliveryLogId)) {
+      setSelectedDeliveryLogId(filteredDeliveryLogs[0].id)
     }
-  }, [filteredDeliveryLogs, selectedDeliveryAuditId])
+  }, [filteredDeliveryLogs, selectedDeliveryLogId])
 
   useEffect(() => {
     if (!archivesQuery.data) return
@@ -751,16 +857,41 @@ export function NotificationsPage() {
 
       <Panel>
         <h4 className="text-base font-semibold text-slate-900">Bildirim Isleri</h4>
-        <div className="mb-2 mt-2 flex gap-2">
+        <div className="mt-3 grid gap-2 md:grid-cols-3 xl:grid-cols-6">
           <select value={jobsStatus} onChange={(e) => setJobsStatus(e.target.value as '' | NotificationJobStatus)} className="rounded border border-slate-300 px-3 py-2 text-sm">
-            <option value="">Tumu</option>
+            <option value="">Durum: Tumu</option>
             <option value="PENDING">PENDING</option>
             <option value="SENDING">SENDING</option>
             <option value="SENT">SENT</option>
             <option value="FAILED">FAILED</option>
             <option value="CANCELED">CANCELED</option>
           </select>
-          <button type="button" onClick={() => void jobsQuery.refetch()} className="rounded border border-slate-300 px-3 py-2 text-sm">Yenile</button>
+          <input
+            value={jobNotificationType}
+            onChange={(e) => setJobNotificationType(e.target.value)}
+            className="rounded border border-slate-300 px-3 py-2 text-sm"
+            placeholder="Tur or. erken_cikis"
+          />
+          <select value={jobRiskLevel} onChange={(e) => setJobRiskLevel(e.target.value as '' | 'Bilgi' | 'Uyari' | 'Kritik')} className="rounded border border-slate-300 px-3 py-2 text-sm">
+            <option value="">Risk: Tumu</option>
+            <option value="Bilgi">Bilgi</option>
+            <option value="Uyari">Uyari</option>
+            <option value="Kritik">Kritik</option>
+          </select>
+          <select value={jobAudience} onChange={(e) => setJobAudience(e.target.value as '' | 'employee' | 'admin')} className="rounded border border-slate-300 px-3 py-2 text-sm">
+            <option value="">Hedef: Tumu</option>
+            <option value="employee">Calisan</option>
+            <option value="admin">Admin</option>
+          </select>
+          <input
+            value={jobEmployeeId}
+            onChange={(e) => setJobEmployeeId(e.target.value)}
+            className="rounded border border-slate-300 px-3 py-2 text-sm"
+            placeholder="Personel ID"
+          />
+          <button type="button" onClick={() => void jobsQuery.refetch()} className="rounded border border-slate-300 px-3 py-2 text-sm">Listeyi yenile</button>
+          <input type="date" value={jobStartDate} onChange={(e) => setJobStartDate(e.target.value)} className="rounded border border-slate-300 px-3 py-2 text-sm" />
+          <input type="date" value={jobEndDate} onChange={(e) => setJobEndDate(e.target.value)} className="rounded border border-slate-300 px-3 py-2 text-sm" />
         </div>
         {jobsQuery.isLoading ? <LoadingBlock label="Yukleniyor..." /> : null}
         {jobsQuery.isError ? <ErrorBlock message="Job listesi alinamadi." /> : null}
@@ -792,41 +923,131 @@ export function NotificationsPage() {
             </div>
           </div>
         ) : null}
-        <div className="mt-2 max-h-[420px] overflow-auto rounded-lg border border-slate-200">
-          <table className="min-w-full text-left text-sm">
-            <thead className="sticky top-0 bg-white">
-              <tr className="text-xs uppercase text-slate-500">
-                <th className="px-2 py-2">Sira</th>
-                <th className="px-2 py-2">ID</th>
-                <th className="px-2 py-2">Tur</th>
-                <th className="px-2 py-2">Durum</th>
-                <th className="px-2 py-2">Planlanan</th>
-                <th className="px-2 py-2">Islem</th>
-              </tr>
-            </thead>
-            <tbody>
-              {jobsRows.map((job, index) => (
-                <tr key={job.id} className="border-t border-slate-100">
-                  <td className="px-2 py-2 text-slate-500">{jobsRangeStart + index}</td>
-                  <td className="px-2 py-2">{job.id}</td>
-                  <td className="px-2 py-2">{job.job_type}</td>
-                  <td className="px-2 py-2">
-                    <span className={`rounded px-2 py-1 text-xs ${statusClass(job.status)}`}>{job.status}</span>
-                  </td>
-                  <td className="px-2 py-2">{dt(job.scheduled_at_utc)}</td>
-                  <td className="px-2 py-2">
-                    {job.status === 'PENDING' || job.status === 'SENDING' ? (
-                      <button type="button" className="rounded border border-rose-300 px-2 py-1 text-xs text-rose-700" onClick={() => cancelMutation.mutate(job.id)}>
-                        Iptal
-                      </button>
-                    ) : (
-                      '-'
-                    )}
-                  </td>
+        <div className="mt-3 grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+          <div className="max-h-[620px] overflow-auto rounded-lg border border-slate-200">
+            <table className="min-w-full text-left text-sm">
+              <thead className="sticky top-0 bg-white">
+                <tr className="text-xs uppercase text-slate-500">
+                  <th className="px-2 py-2">Sira</th>
+                  <th className="px-2 py-2">Tur</th>
+                  <th className="px-2 py-2">Risk</th>
+                  <th className="px-2 py-2">Hedef</th>
+                  <th className="px-2 py-2">Personel</th>
+                  <th className="px-2 py-2">Baslik</th>
+                  <th className="px-2 py-2">Durum</th>
+                  <th className="px-2 py-2">Olay</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {jobsRows.map((job, index) => {
+                  const isSelected = job.id === selectedJobId
+                  return (
+                    <tr
+                      key={job.id}
+                      className={`border-t border-slate-100 ${isSelected ? 'bg-sky-50' : 'hover:bg-slate-50'} cursor-pointer`}
+                      onClick={() => setSelectedJobId(job.id)}
+                    >
+                      <td className="px-2 py-2 text-slate-500">{jobsRangeStart + index}</td>
+                      <td className="px-2 py-2 font-medium text-slate-700">{job.notification_type ?? job.job_type}</td>
+                      <td className="px-2 py-2">
+                        <span className={`rounded px-2 py-1 text-xs ${riskBadgeClass(job.risk_level)}`}>{job.risk_level ?? '-'}</span>
+                      </td>
+                      <td className="px-2 py-2">{audienceLabel(job.audience)}</td>
+                      <td className="px-2 py-2">#{job.employee_id ?? '-'}</td>
+                      <td className="px-2 py-2 max-w-56 truncate" title={job.title ?? ''}>{job.title ?? '-'}</td>
+                      <td className="px-2 py-2">
+                        <span className={`rounded px-2 py-1 text-xs ${statusClass(job.status)}`}>{job.status}</span>
+                      </td>
+                      <td className="px-2 py-2">{job.event_ts_utc ? dt(job.event_ts_utc) : dt(job.scheduled_at_utc)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <aside className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <h5 className="text-sm font-semibold text-slate-900">Secili bildirim detayi</h5>
+            {selectedJob === null ? (
+              <p className="mt-3 text-sm text-slate-600">Listeden bir bildirim secin.</p>
+            ) : (
+              <div className="mt-3 space-y-3">
+                <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700">
+                  <p><span className="font-semibold">Baslik:</span> {selectedJob.title ?? '-'}</p>
+                  <p><span className="font-semibold">Aciklama:</span> {selectedJob.description ?? '-'}</p>
+                  <p><span className="font-semibold">Olay Zamani:</span> {selectedJob.event_ts_utc ? dt(selectedJob.event_ts_utc) : '-'}</p>
+                  <p><span className="font-semibold">Vardiya Bilgisi:</span> {selectedJob.shift_summary ?? '-'}</p>
+                  <p><span className="font-semibold">Gerceklesen Saat:</span> {selectedJob.actual_time_summary ?? '-'}</p>
+                  <p><span className="font-semibold">Risk Seviyesi:</span> {selectedJob.risk_level ?? '-'}</p>
+                  <p><span className="font-semibold">Islem Onerisi:</span> {selectedJob.suggested_action ?? '-'}</p>
+                  <p><span className="font-semibold">Event ID:</span> {selectedJob.event_id ?? '-'}</p>
+                  <p><span className="font-semibold">Personel:</span> #{selectedJob.employee_id ?? '-'} </p>
+                  <p><span className="font-semibold">Hedef:</span> {audienceLabel(selectedJob.audience)}</p>
+                  {selectedJob.status === 'PENDING' || selectedJob.status === 'SENDING' ? (
+                    <button
+                      type="button"
+                      className="mt-2 rounded border border-rose-300 px-3 py-2 text-xs text-rose-700"
+                      onClick={() => cancelMutation.mutate(selectedJob.id)}
+                    >
+                      Bildirimi iptal et
+                    </button>
+                  ) : null}
+                </div>
+
+                <div className="rounded-lg border border-slate-200 bg-white p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <h6 className="text-sm font-semibold text-slate-900">Gun timeline'i</h6>
+                    {selectedJob.employee_id && selectedJob.local_day ? (
+                      <Link
+                        to={`/attendance-events?employee_id=${selectedJob.employee_id}&start_date=${selectedJob.local_day}&end_date=${selectedJob.local_day}`}
+                        className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700"
+                      >
+                        Manuel duzeltme ekranini ac
+                      </Link>
+                    ) : null}
+                  </div>
+                  {selectedJobTimelineQuery.isLoading ? <LoadingBlock label="Timeline yukleniyor..." /> : null}
+                  {selectedJobTimelineQuery.isError ? <ErrorBlock message="Timeline alinamadi." /> : null}
+                  {!selectedJobTimelineQuery.isLoading && !selectedJobTimelineQuery.isError ? (
+                    <div className="mt-2 space-y-2">
+                      {(selectedJobTimelineQuery.data ?? []).length === 0 ? (
+                        <p className="text-sm text-slate-500">Bu gun icin timeline kaydi bulunamadi.</p>
+                      ) : (
+                        (selectedJobTimelineQuery.data ?? []).map((event) => (
+                          <div key={event.id} className="rounded border border-slate-200 bg-slate-50 p-2 text-sm text-slate-700">
+                            <div className="flex items-center justify-between gap-2">
+                              <strong>{timelineEventLabel(event)}</strong>
+                              <span>{dt(event.ts_utc)}</span>
+                            </div>
+                            {event.note ? <p className="mt-1 text-xs text-slate-600">Not: {event.note}</p> : null}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="rounded-lg border border-slate-200 bg-white p-3">
+                  <h6 className="text-sm font-semibold text-slate-900">Admin aciklamasi</h6>
+                  <textarea
+                    value={jobNoteDraft}
+                    onChange={(e) => setJobNoteDraft(e.target.value)}
+                    rows={4}
+                    className="mt-2 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                    placeholder="Bildirimle ilgili operasyon notu ekleyin"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => updateJobNoteMutation.mutate({ jobId: selectedJob.id, note: jobNoteDraft.trim() || null })}
+                    disabled={updateJobNoteMutation.isPending}
+                    className="mt-2 rounded border border-brand-300 px-3 py-2 text-sm text-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {updateJobNoteMutation.isPending ? 'Kaydediliyor...' : 'Aciklamayi kaydet'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </aside>
         </div>
         {!jobsQuery.isLoading && !jobsQuery.isError && jobsTotal === 0 ? (
           <p className="mt-3 text-sm text-slate-500">Filtreye uygun bildirim isi bulunamadi.</p>
@@ -1148,21 +1369,21 @@ export function NotificationsPage() {
                     <tr>
                       <th className="w-36 px-2 py-2">Zaman</th>
                       <th className="w-24 px-2 py-2">Durum</th>
-                      <th className="w-24 px-2 py-2">Hedef</th>
+                      <th className="w-24 px-2 py-2">Kanal</th>
+                      <th className="w-24 px-2 py-2">Kitle</th>
                       <th className="w-56 px-2 py-2">Kisi</th>
-                      <th className="w-20 px-2 py-2">Cihaz</th>
-                      <th className="w-36 px-2 py-2">IP</th>
+                      <th className="w-40 px-2 py-2">Tur</th>
                       <th className="w-48 px-2 py-2">Baslik</th>
                       <th className="w-64 px-2 py-2">Hata</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredDeliveryLogs.map((row, index) => {
-                      const isSelected = row.audit_id === selectedDeliveryAuditId
+                      const isSelected = row.id === selectedDeliveryLogId
                       return (
                         <tr
-                          key={`${row.audit_id}-${row.recipient_type}-${row.recipient_id ?? 0}-${row.device_id ?? 0}-${index}`}
-                          onClick={() => setSelectedDeliveryAuditId(row.audit_id)}
+                          key={`${row.id}-${row.recipient_type}-${row.recipient_id ?? 0}-${row.device_id ?? 0}-${index}`}
+                          onClick={() => setSelectedDeliveryLogId(row.id)}
                           className={`cursor-pointer border-t border-slate-800 ${
                             isSelected ? 'bg-cyan-900/35' : 'hover:bg-slate-800/55'
                           }`}
@@ -1173,13 +1394,13 @@ export function NotificationsPage() {
                               {row.status}
                             </span>
                           </td>
-                          <td className="px-2 py-2 text-slate-300">{deliveryTargetLabel(row.target)}</td>
+                          <td className="px-2 py-2 text-slate-300 uppercase">{row.channel}</td>
+                          <td className="px-2 py-2 text-slate-300">{audienceLabel(row.audience)}</td>
                           <td className="px-2 py-2 text-slate-300 truncate" title={`#${row.recipient_id ?? '-'} - ${row.recipient_name ?? '-'}`}>
                             #{row.recipient_id ?? '-'} - {row.recipient_name ?? '-'}
                           </td>
-                          <td className="px-2 py-2 text-slate-300">{row.device_id ?? '-'}</td>
-                          <td className="px-2 py-2 text-slate-300 truncate" title={row.ip ?? '-'}>
-                            {row.ip ?? '-'}
+                          <td className="px-2 py-2 text-slate-300 truncate" title={row.notification_type ?? '-'}>
+                            {row.notification_type ?? '-'}
                           </td>
                           <td className="px-2 py-2 text-slate-300 truncate" title={row.title ?? '-'}>
                             {row.title ?? '-'}
@@ -1216,11 +1437,20 @@ export function NotificationsPage() {
                       {selectedDeliveryLog.recipient_type === 'employee' ? 'CALISAN' : 'ADMIN'}
                     </p>
                     <p>
-                      <span className="font-semibold">Hedef:</span> {deliveryTargetLabel(selectedDeliveryLog.target)}
+                      <span className="font-semibold">Kitle:</span> {audienceLabel(selectedDeliveryLog.audience)}
                     </p>
                     <p>
                       <span className="font-semibold">Kisi:</span> #{selectedDeliveryLog.recipient_id ?? '-'} -{' '}
                       {selectedDeliveryLog.recipient_name ?? '-'}
+                    </p>
+                    <p>
+                      <span className="font-semibold">E-posta:</span> {selectedDeliveryLog.recipient_address ?? '-'}
+                    </p>
+                    <p>
+                      <span className="font-semibold">Tur:</span> {selectedDeliveryLog.notification_type ?? '-'}
+                    </p>
+                    <p>
+                      <span className="font-semibold">Kanal:</span> {selectedDeliveryLog.channel.toUpperCase()}
                     </p>
                     <p>
                       <span className="font-semibold">Cihaz:</span> {selectedDeliveryLog.device_id ?? '-'}
@@ -1232,7 +1462,7 @@ export function NotificationsPage() {
                       <span className="font-semibold">Baslik:</span> {selectedDeliveryLog.title ?? '-'}
                     </p>
                     <p>
-                      <span className="font-semibold">Gonderen:</span> {selectedDeliveryLog.sender_admin}
+                      <span className="font-semibold">Event ID:</span> {selectedDeliveryLog.event_id}
                     </p>
                     <p className="break-all">
                       <span className="font-semibold">Endpoint:</span> {selectedDeliveryLog.endpoint ?? '-'}

@@ -272,11 +272,23 @@ export interface AuditLogParams {
 
 export interface NotificationJobsParams {
   status?: NotificationJobStatus;
+  notification_type?: string;
+  risk_level?: "Bilgi" | "Uyari" | "Kritik";
+  employee_id?: number;
+  audience?: "employee" | "admin";
+  start_date?: string;
+  end_date?: string;
   offset?: number;
   limit?: number;
 }
 
 export interface NotificationDeliveryLogsParams {
+  notification_type?: string;
+  employee_id?: number;
+  recipient_type?: "employee" | "admin";
+  status?: "PENDING" | "SENT" | "FAILED";
+  start_date?: string;
+  end_date?: string;
   offset?: number;
   limit?: number;
 }
@@ -1121,6 +1133,17 @@ export async function cancelNotificationJob(
 ): Promise<NotificationJob> {
   const response = await apiClient.post<NotificationJob>(
     `/api/admin/notifications/jobs/${jobId}/cancel`,
+  );
+  return response.data;
+}
+
+export async function updateNotificationJobNote(
+  jobId: number,
+  admin_note: string | null,
+): Promise<NotificationJob> {
+  const response = await apiClient.post<NotificationJob>(
+    `/api/admin/notifications/jobs/${jobId}/note`,
+    { admin_note },
   );
   return response.data;
 }

@@ -254,12 +254,27 @@ export interface AuditLog {
 }
 
 export type NotificationJobStatus = 'PENDING' | 'SENDING' | 'SENT' | 'CANCELED' | 'FAILED'
+export type NotificationAudience = 'employee' | 'admin'
+export type NotificationRiskLevel = 'Bilgi' | 'Uyari' | 'Kritik'
 
 export interface NotificationJob {
   id: number
   employee_id: number | null
   admin_user_id: number | null
   job_type: string
+  notification_type: string | null
+  audience: NotificationAudience | null
+  risk_level: NotificationRiskLevel | null
+  event_id: string | null
+  event_hash: string | null
+  local_day: string | null
+  event_ts_utc: string | null
+  title: string | null
+  description: string | null
+  shift_summary: string | null
+  actual_time_summary: string | null
+  suggested_action: string | null
+  admin_note: string | null
   payload: Record<string, unknown>
   scheduled_at_utc: string
   status: NotificationJobStatus
@@ -271,18 +286,22 @@ export interface NotificationJob {
 }
 
 export interface NotificationDeliveryLog {
-  audit_id: number
+  id: number
+  notification_job_id: number | null
+  event_id: string
+  notification_type: string | null
+  audience: NotificationAudience | null
   sent_at_utc: string
-  sender_admin: string
-  target: string
   title: string | null
   recipient_type: 'employee' | 'admin'
   recipient_id: number | null
   recipient_name: string | null
+  recipient_address: string | null
   device_id: number | null
   endpoint: string | null
   ip: string | null
-  status: 'SENT' | 'FAILED'
+  channel: 'push' | 'email'
+  status: 'PENDING' | 'SENT' | 'FAILED'
   error: string | null
 }
 

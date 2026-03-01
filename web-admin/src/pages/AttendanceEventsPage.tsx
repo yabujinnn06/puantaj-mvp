@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 
 import {
   createManualAttendanceEvent,
@@ -139,6 +140,7 @@ function formatFlagList(flags: string[]): string {
 export function AttendanceEventsPage() {
   const queryClient = useQueryClient()
   const { pushToast } = useToast()
+  const [searchParams] = useSearchParams()
 
   const [draftFilters, setDraftFilters] = useState<EventFilters>(DEFAULT_FILTERS)
   const [appliedFilters, setAppliedFilters] = useState<EventFilters>(DEFAULT_FILTERS)
@@ -164,6 +166,21 @@ export function AttendanceEventsPage() {
   const [summaryPage, setSummaryPage] = useState(1)
   const [auditPageSize, setAuditPageSize] = useState(35)
   const [auditPage, setAuditPage] = useState(1)
+
+  useEffect(() => {
+    const employeeId = searchParams.get('employee_id') ?? ''
+    const startDate = searchParams.get('start_date') ?? ''
+    const endDate = searchParams.get('end_date') ?? ''
+    if (!employeeId && !startDate && !endDate) return
+    const nextFilters: EventFilters = {
+      ...DEFAULT_FILTERS,
+      employeeId,
+      dateFrom: startDate,
+      dateTo: endDate || startDate,
+    }
+    setDraftFilters(nextFilters)
+    setAppliedFilters(nextFilters)
+  }, [searchParams])
 
   const employeesQuery = useQuery({
     queryKey: ['employees', 'all'],
