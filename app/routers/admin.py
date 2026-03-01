@@ -113,10 +113,16 @@ from app.schemas import (
     DepartmentShiftRead,
     DepartmentShiftUpsert,
     ControlRoomEmployeeAlertRead,
+    ControlRoomEmployeeActionRequest,
+    ControlRoomEmployeeDetailResponse,
     ControlRoomEmployeeStateRead,
+    ControlRoomFilterAuditRequest,
     ControlRoomMapPointRead,
+    ControlRoomMutationResponse,
+    ControlRoomNoteCreateRequest,
     ControlRoomOverviewResponse,
     ControlRoomRecentEventRead,
+    ControlRoomRiskOverrideRequest,
     ControlRoomSummaryRead,
     SchedulePlanRead,
     SchedulePlanUpsertRequest,
@@ -191,6 +197,13 @@ from app.services.manual_overrides import (
     delete_manual_day_override,
     list_manual_day_overrides,
     upsert_manual_day_override,
+)
+from app.services.control_room import (
+    CONTROL_ROOM_ACTION_AUDIT,
+    CONTROL_ROOM_NOTE_AUDIT,
+    CONTROL_ROOM_OVERRIDE_AUDIT,
+    build_control_room_employee_detail,
+    build_control_room_overview,
 )
 from app.services.monthly import calculate_department_monthly_summary, calculate_employee_monthly
 from app.services.push_notifications import (
@@ -3128,388 +3141,201 @@ def get_control_room_overview(
     today_status: Literal["NOT_STARTED", "IN_PROGRESS", "FINISHED"] | None = Query(default=None),
     location_state: Literal["LIVE", "STALE", "DORMANT", "NONE"] | None = Query(default=None),
     map_date: date | None = Query(default=None),
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
     include_inactive: bool = Query(default=False),
+    risk_min: int | None = Query(default=None, ge=0, le=100),
+    risk_max: int | None = Query(default=None, ge=0, le=100),
+    risk_status: Literal["NORMAL", "WATCH", "CRITICAL"] | None = Query(default=None),
+    sort_by: str = Query(default="risk_score"),
+    sort_dir: Literal["asc", "desc"] = Query(default="desc"),
     offset: int = Query(default=0, ge=0),
-    limit: int = Query(default=24, ge=1, le=50),
+    limit: int = Query(default=24, ge=1, le=100),
     db: Session = Depends(get_db),
 ) -> ControlRoomOverviewResponse:
-    normalized_q = _normalize_query_text(q)
-    employee_filters: list[Any] = []
-    if not include_inactive:
-        employee_filters.append(Employee.is_active.is_(True))
-    if region_id is not None:
-        employee_filters.append(Employee.region_id == region_id)
-    if department_id is not None:
-        employee_filters.append(Employee.department_id == department_id)
-    if normalized_q:
-        search_filters = [Employee.full_name.ilike(f"%{normalized_q}%")]
-        normalized_numeric = normalized_q.replace("#", "").strip()
-        if normalized_numeric.isdigit():
-            search_filters.append(Employee.id == int(normalized_numeric))
-        employee_filters.append(or_(*search_filters))
-
-    candidate_employees = list(
-        db.scalars(
-            select(Employee)
-            .options(
-                selectinload(Employee.region),
-                selectinload(Employee.department),
-                selectinload(Employee.shift),
-                selectinload(Employee.devices),
-            )
-            .where(*employee_filters)
-            .order_by(Employee.is_active.desc(), Employee.full_name.asc(), Employee.id.asc())
-        ).all()
-    )
-
-    now_utc = datetime.now(timezone.utc)
-    tz = _attendance_timezone()
-    now_local = now_utc.astimezone(tz)
-    current_year = now_local.year
-    current_month = now_local.month
-
-    if not candidate_employees:
-        return ControlRoomOverviewResponse(
-            generated_at_utc=now_utc,
-            total=0,
-            offset=offset,
-            limit=limit,
-            summary=ControlRoomSummaryRead(),
-            items=[],
-            map_points=[],
-            recent_events=[],
-        )
-
-    candidate_ids = [employee.id for employee in candidate_employees]
-    employee_ids_as_actor = [str(employee_id) for employee_id in candidate_ids]
-    employees_by_id = {employee.id: employee for employee in candidate_employees}
-
-    today_local_date = now_local.date()
-    today_start_local = datetime.combine(today_local_date, time.min, tzinfo=tz)
-    today_end_local = today_start_local + timedelta(days=1)
-    today_start_utc = today_start_local.astimezone(timezone.utc)
-    today_end_utc = today_end_local.astimezone(timezone.utc)
-
-    today_events_rows = list(
-        db.scalars(
-            select(AttendanceEvent)
-            .where(
-                AttendanceEvent.employee_id.in_(candidate_ids),
-                AttendanceEvent.deleted_at.is_(None),
-                AttendanceEvent.ts_utc >= today_start_utc,
-                AttendanceEvent.ts_utc < today_end_utc,
-            )
-            .order_by(AttendanceEvent.employee_id.asc(), AttendanceEvent.ts_utc.asc(), AttendanceEvent.id.asc())
-        ).all()
-    )
-    today_events_by_employee: dict[int, list[AttendanceEvent]] = {}
-    for event in today_events_rows:
-        today_events_by_employee.setdefault(event.employee_id, []).append(event)
-
-    last_event_ts_subq = (
-        select(
-            AttendanceEvent.employee_id.label("employee_id"),
-            func.max(AttendanceEvent.ts_utc).label("max_ts"),
-        )
-        .where(
-            AttendanceEvent.employee_id.in_(candidate_ids),
-            AttendanceEvent.deleted_at.is_(None),
-        )
-        .group_by(AttendanceEvent.employee_id)
-        .subquery()
-    )
-    last_event_candidates = list(
-        db.scalars(
-            select(AttendanceEvent)
-            .join(
-                last_event_ts_subq,
-                and_(
-                    AttendanceEvent.employee_id == last_event_ts_subq.c.employee_id,
-                    AttendanceEvent.ts_utc == last_event_ts_subq.c.max_ts,
-                ),
-            )
-            .where(AttendanceEvent.deleted_at.is_(None))
-            .order_by(AttendanceEvent.employee_id.asc(), AttendanceEvent.id.desc())
-        ).all()
-    )
-    last_event_by_employee: dict[int, AttendanceEvent] = {}
-    for event in last_event_candidates:
-        current = last_event_by_employee.get(event.employee_id)
-        if current is None or (event.ts_utc, event.id) > (current.ts_utc, current.id):
-            last_event_by_employee[event.employee_id] = event
-
-    last_location_ts_subq = (
-        select(
-            AttendanceEvent.employee_id.label("employee_id"),
-            func.max(AttendanceEvent.ts_utc).label("max_ts"),
-        )
-        .where(
-            AttendanceEvent.employee_id.in_(candidate_ids),
-            AttendanceEvent.deleted_at.is_(None),
-            AttendanceEvent.lat.is_not(None),
-            AttendanceEvent.lon.is_not(None),
-        )
-        .group_by(AttendanceEvent.employee_id)
-        .subquery()
-    )
-    last_location_candidates = list(
-        db.scalars(
-            select(AttendanceEvent)
-            .join(
-                last_location_ts_subq,
-                and_(
-                    AttendanceEvent.employee_id == last_location_ts_subq.c.employee_id,
-                    AttendanceEvent.ts_utc == last_location_ts_subq.c.max_ts,
-                ),
-            )
-            .where(
-                AttendanceEvent.deleted_at.is_(None),
-                AttendanceEvent.lat.is_not(None),
-                AttendanceEvent.lon.is_not(None),
-            )
-            .order_by(AttendanceEvent.employee_id.asc(), AttendanceEvent.id.desc())
-        ).all()
-    )
-    latest_location_by_employee: dict[int, AttendanceEvent] = {}
-    for event in last_location_candidates:
-        current = latest_location_by_employee.get(event.employee_id)
-        if current is None or (event.ts_utc, event.id) > (current.ts_utc, current.id):
-            latest_location_by_employee[event.employee_id] = event
-
-    last_activity_ts_subq = (
-        select(
-            AuditLog.actor_id.label("actor_id"),
-            func.max(AuditLog.ts_utc).label("max_ts"),
-        )
-        .where(
-            AuditLog.actor_type == AuditActorType.SYSTEM,
-            AuditLog.actor_id.in_(employee_ids_as_actor),
-        )
-        .group_by(AuditLog.actor_id)
-        .subquery()
-    )
-    last_activity_candidates = list(
-        db.scalars(
-            select(AuditLog)
-            .join(
-                last_activity_ts_subq,
-                and_(
-                    AuditLog.actor_id == last_activity_ts_subq.c.actor_id,
-                    AuditLog.ts_utc == last_activity_ts_subq.c.max_ts,
-                ),
-            )
-            .where(AuditLog.actor_type == AuditActorType.SYSTEM)
-            .order_by(AuditLog.actor_id.asc(), AuditLog.id.desc())
-        ).all()
-    )
-    last_activity_by_actor_id: dict[str, AuditLog] = {}
-    for log_item in last_activity_candidates:
-        current = last_activity_by_actor_id.get(log_item.actor_id)
-        if current is None or (log_item.ts_utc, log_item.id) > (current.ts_utc, current.id):
-            last_activity_by_actor_id[log_item.actor_id] = log_item
-
-    row_meta: list[dict[str, Any]] = []
-    for employee in candidate_employees:
-        employee_today_events = today_events_by_employee.get(employee.id, [])
-        employee_last_event = last_event_by_employee.get(employee.id)
-        employee_latest_location = latest_location_by_employee.get(employee.id)
-        employee_last_activity = last_activity_by_actor_id.get(str(employee.id))
-        employee_today_status = _today_status_from_events(employee_today_events)
-        employee_location_state = _control_room_location_state(employee_latest_location, now_utc=now_utc)
-        employee_total_devices = len(employee.devices or [])
-        employee_active_devices = sum(1 for item in employee.devices or [] if item.is_active)
-        attention_flags = _control_room_attention_flags(
-            employee=employee,
-            today_status=employee_today_status,
-            today_events=employee_today_events,
-            last_event=employee_last_event,
-            latest_location_event=employee_latest_location,
-            active_devices=employee_active_devices,
-            total_devices=employee_total_devices,
-            now_utc=now_utc,
-            now_local=now_local,
-        )
-        row_meta.append(
-            {
-                "employee": employee,
-                "today_status": employee_today_status,
-                "location_state": employee_location_state,
-                "last_event": employee_last_event,
-                "latest_location": employee_latest_location,
-                "last_portal_seen_utc": employee_last_activity.ts_utc if employee_last_activity else None,
-                "recent_ip": employee_last_activity.ip if employee_last_activity else None,
-                "total_devices": employee_total_devices,
-                "active_devices": employee_active_devices,
-                "attention_flags": attention_flags,
-                "last_event_sort_value": (
-                    employee_last_event.ts_utc.timestamp() if employee_last_event is not None else 0.0
-                ),
-            }
-        )
-
-    filtered_row_meta = [
-        row
-        for row in row_meta
-        if (today_status is None or row["today_status"] == today_status)
-        and (location_state is None or row["location_state"] == location_state)
-    ]
-
-    status_priority = {"IN_PROGRESS": 0, "NOT_STARTED": 1, "FINISHED": 2}
-    location_priority = {"LIVE": 0, "STALE": 1, "DORMANT": 2, "NONE": 3}
-
-    def _alert_score(item: dict[str, Any]) -> tuple[int, int, int]:
-        critical = sum(1 for flag in item["attention_flags"] if flag.severity == "critical")
-        warning = sum(1 for flag in item["attention_flags"] if flag.severity == "warning")
-        info = sum(1 for flag in item["attention_flags"] if flag.severity == "info")
-        return critical, warning, info
-
-    filtered_row_meta.sort(
-        key=lambda item: (
-            -_alert_score(item)[0],
-            -_alert_score(item)[1],
-            -_alert_score(item)[2],
-            status_priority[item["today_status"]],
-            location_priority[item["location_state"]],
-            -item["last_event_sort_value"],
-            item["employee"].full_name.lower(),
-            item["employee"].id,
-        )
-    )
-
-    total_filtered = len(filtered_row_meta)
-    paged_row_meta = filtered_row_meta[offset : offset + limit]
-
-    items: list[ControlRoomEmployeeStateRead] = []
-    for row in paged_row_meta:
-        employee = row["employee"]
-        current_month_report = calculate_employee_monthly(
-            db,
-            employee_id=employee.id,
-            year=current_year,
-            month=current_month,
-        )
-        items.append(
-            ControlRoomEmployeeStateRead(
-                employee=_to_employee_read(employee),
-                department_name=employee.department.name if employee.department else None,
-                shift_name=employee.shift.name if employee.shift else None,
-                shift_window_label=(
-                    f"{_format_hhmm(employee.shift.start_time_local)} - {_format_hhmm(employee.shift.end_time_local)}"
-                    if employee.shift is not None
-                    else None
-                ),
-                today_status=row["today_status"],
-                location_state=row["location_state"],
-                last_event=_attendance_event_to_dashboard_last_event(row["last_event"]),
-                latest_location=_attendance_event_to_live_location(row["latest_location"]),
-                last_portal_seen_utc=row["last_portal_seen_utc"],
-                recent_ip=row["recent_ip"],
-                active_devices=row["active_devices"],
-                total_devices=row["total_devices"],
-                current_month=_dashboard_month_metrics_from_report(current_month_report),
-                attention_flags=row["attention_flags"],
-            )
-        )
-
-    paged_ids = [row["employee"].id for row in paged_row_meta]
-    map_points: list[ControlRoomMapPointRead] = []
-    if paged_ids:
-        map_local_date = map_date or today_local_date
-        map_start_local = datetime.combine(map_local_date, time.min, tzinfo=tz)
-        map_end_local = map_start_local + timedelta(days=1)
-        map_start_utc = map_start_local.astimezone(timezone.utc)
-        map_end_utc = map_end_local.astimezone(timezone.utc)
-
-        map_event_rows = list(
-            db.scalars(
-                select(AttendanceEvent)
-                .where(
-                    AttendanceEvent.employee_id.in_(paged_ids),
-                    AttendanceEvent.deleted_at.is_(None),
-                    AttendanceEvent.lat.is_not(None),
-                    AttendanceEvent.lon.is_not(None),
-                    AttendanceEvent.ts_utc >= map_start_utc,
-                    AttendanceEvent.ts_utc < map_end_utc,
-                )
-                .order_by(AttendanceEvent.employee_id.asc(), AttendanceEvent.ts_utc.desc(), AttendanceEvent.id.desc())
-            ).all()
-        )
-        map_event_by_employee: dict[int, AttendanceEvent] = {}
-        for event in map_event_rows:
-            map_event_by_employee.setdefault(event.employee_id, event)
-
-        map_points = [
-            ControlRoomMapPointRead(
-                employee_id=item.employee.id,
-                employee_name=item.employee.full_name,
-                department_name=item.department_name,
-                lat=map_event_by_employee[item.employee.id].lat,
-                lon=map_event_by_employee[item.employee.id].lon,
-                ts_utc=map_event_by_employee[item.employee.id].ts_utc,
-                accuracy_m=map_event_by_employee[item.employee.id].accuracy_m,
-                today_status=item.today_status,
-                location_state=item.location_state,
-                label=f"{item.employee.full_name} / {item.department_name or 'Departman yok'}",
-            )
-            for item in items
-            if item.employee.id in map_event_by_employee
-        ]
-
-    recent_events_rows: list[AttendanceEvent] = []
-    if paged_ids:
-        recent_events_rows = list(
-            db.scalars(
-                select(AttendanceEvent)
-                .where(
-                    AttendanceEvent.employee_id.in_(paged_ids),
-                    AttendanceEvent.deleted_at.is_(None),
-                )
-                .order_by(AttendanceEvent.ts_utc.desc(), AttendanceEvent.id.desc())
-                .limit(max(18, min(limit * 2, 40)))
-            ).all()
-        )
-
-    recent_events = [
-        ControlRoomRecentEventRead(
-            event_id=event.id,
-            employee_id=event.employee_id,
-            employee_name=employees_by_id[event.employee_id].full_name,
-            department_name=(
-                employees_by_id[event.employee_id].department.name
-                if employees_by_id[event.employee_id].department
-                else None
-            ),
-            event_type=event.type,
-            ts_utc=event.ts_utc,
-            location_status=event.location_status,
-            device_id=event.device_id,
-            lat=event.lat,
-            lon=event.lon,
-            accuracy_m=event.accuracy_m,
-        )
-        for event in recent_events_rows
-    ]
-
-    summary = ControlRoomSummaryRead(
-        total_employees=total_filtered,
-        active_employees=sum(1 for row in filtered_row_meta if row["employee"].is_active),
-        not_started_count=sum(1 for row in filtered_row_meta if row["today_status"] == "NOT_STARTED"),
-        in_progress_count=sum(1 for row in filtered_row_meta if row["today_status"] == "IN_PROGRESS"),
-        finished_count=sum(1 for row in filtered_row_meta if row["today_status"] == "FINISHED"),
-        attention_on_page_count=sum(1 for row in paged_row_meta if row["attention_flags"]),
-        live_location_on_page_count=sum(1 for row in paged_row_meta if row["location_state"] == "LIVE"),
-    )
-
-    return ControlRoomOverviewResponse(
-        generated_at_utc=now_utc,
-        total=total_filtered,
+    return build_control_room_overview(
+        db,
+        q=q,
+        region_id=region_id,
+        department_id=department_id,
+        today_status=today_status,
+        location_state=location_state,
+        map_date=map_date,
+        start_date=start_date,
+        end_date=end_date,
+        include_inactive=include_inactive,
+        risk_min=risk_min,
+        risk_max=risk_max,
+        risk_status=risk_status,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
         offset=offset,
         limit=limit,
-        summary=summary,
-        items=items,
-        map_points=map_points,
-        recent_events=recent_events,
     )
+
+
+@router.get(
+    "/api/admin/control-room/employees/{employee_id}",
+    response_model=ControlRoomEmployeeDetailResponse,
+    dependencies=[Depends(require_admin)],
+)
+def get_control_room_employee_detail(
+    employee_id: int,
+    db: Session = Depends(get_db),
+) -> ControlRoomEmployeeDetailResponse:
+    employee = db.get(Employee, employee_id)
+    if employee is None:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    return build_control_room_employee_detail(db, employee_id=employee_id)
+
+
+@router.post(
+    "/api/admin/control-room/actions",
+    response_model=ControlRoomMutationResponse,
+)
+def create_control_room_employee_action(
+    payload: ControlRoomEmployeeActionRequest,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin_permission("audit", write=True)),
+    db: Session = Depends(get_db),
+) -> ControlRoomMutationResponse:
+    employee = db.get(Employee, payload.employee_id)
+    if employee is None:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    actor_id, actor_admin_user_id = _normalized_admin_actor_from_claims(claims)
+    expires_at = None if payload.indefinite else datetime.now(timezone.utc) + timedelta(days=int(payload.duration_days or 0))
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=actor_id,
+        action=CONTROL_ROOM_ACTION_AUDIT,
+        success=True,
+        entity_type="employee",
+        entity_id=str(employee.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "action_type": payload.action_type,
+            "action_label": {
+                "SUSPEND": "Askiya Al",
+                "DISABLE_TEMP": "Gecici Devre Disi",
+                "REVIEW": "Incelemeye Al",
+            }[payload.action_type],
+            "reason": payload.reason,
+            "note": payload.note,
+            "duration_days": payload.duration_days,
+            "indefinite": payload.indefinite,
+            "expires_at": expires_at.isoformat() if expires_at is not None else None,
+            "actor_admin_user_id": actor_admin_user_id,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return ControlRoomMutationResponse(ok=True, message="Kontrol islemi kaydedildi.", expires_at=expires_at)
+
+
+@router.post(
+    "/api/admin/control-room/risk-override",
+    response_model=ControlRoomMutationResponse,
+)
+def create_control_room_risk_override(
+    payload: ControlRoomRiskOverrideRequest,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin_permission("audit", write=True)),
+    db: Session = Depends(get_db),
+) -> ControlRoomMutationResponse:
+    employee = db.get(Employee, payload.employee_id)
+    if employee is None:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    actor_id, actor_admin_user_id = _normalized_admin_actor_from_claims(claims)
+    expires_at = None if payload.indefinite else datetime.now(timezone.utc) + timedelta(days=int(payload.duration_days or 0))
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=actor_id,
+        action=CONTROL_ROOM_OVERRIDE_AUDIT,
+        success=True,
+        entity_type="employee",
+        entity_id=str(employee.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "action_type": "RISK_OVERRIDE",
+            "action_label": "Risk Override",
+            "reason": payload.reason,
+            "note": payload.note,
+            "override_score": payload.override_score,
+            "duration_days": payload.duration_days,
+            "indefinite": payload.indefinite,
+            "expires_at": expires_at.isoformat() if expires_at is not None else None,
+            "actor_admin_user_id": actor_admin_user_id,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return ControlRoomMutationResponse(ok=True, message="Risk override kaydedildi.", expires_at=expires_at)
+
+
+@router.post(
+    "/api/admin/control-room/notes",
+    response_model=ControlRoomMutationResponse,
+)
+def create_control_room_note(
+    payload: ControlRoomNoteCreateRequest,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin_permission("audit", write=True)),
+    db: Session = Depends(get_db),
+) -> ControlRoomMutationResponse:
+    employee = db.get(Employee, payload.employee_id)
+    if employee is None:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    actor_id, actor_admin_user_id = _normalized_admin_actor_from_claims(claims)
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=actor_id,
+        action=CONTROL_ROOM_NOTE_AUDIT,
+        success=True,
+        entity_type="employee",
+        entity_id=str(employee.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "note": payload.note,
+            "actor_admin_user_id": actor_admin_user_id,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return ControlRoomMutationResponse(ok=True, message="Not kaydedildi.", expires_at=None)
+
+
+@router.post(
+    "/api/admin/control-room/filter-activity",
+    response_model=ControlRoomMutationResponse,
+)
+def create_control_room_filter_activity(
+    payload: ControlRoomFilterAuditRequest,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin_permission("audit", write=True)),
+    db: Session = Depends(get_db),
+) -> ControlRoomMutationResponse:
+    actor_id, actor_admin_user_id = _normalized_admin_actor_from_claims(claims)
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=actor_id,
+        action="CONTROL_ROOM_FILTER_APPLIED",
+        success=True,
+        entity_type="control_room",
+        entity_id=None,
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "filters": payload.filters,
+            "total_results": payload.total_results,
+            "actor_admin_user_id": actor_admin_user_id,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return ControlRoomMutationResponse(ok=True, message="Filtre aktivitesi kaydedildi.", expires_at=None)
 
 
 @router.patch(

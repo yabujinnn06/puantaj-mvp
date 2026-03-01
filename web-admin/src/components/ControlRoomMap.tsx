@@ -23,17 +23,17 @@ function markerStyle(marker: ControlRoomMapMarker): {
   if (marker.todayStatus === 'IN_PROGRESS' && marker.locationState === 'LIVE') {
     return {
       radius: 9,
-      color: '#74ff9a',
-      fillColor: '#74ff9a',
-      fillOpacity: 0.9,
+      color: '#3b82f6',
+      fillColor: '#3b82f6',
+      fillOpacity: 0.86,
       weight: 2,
     }
   }
   if (marker.locationState === 'STALE') {
     return {
       radius: 8,
-      color: '#ffd166',
-      fillColor: '#ffd166',
+      color: '#f59e0b',
+      fillColor: '#f59e0b',
       fillOpacity: 0.86,
       weight: 2,
     }
@@ -41,8 +41,8 @@ function markerStyle(marker: ControlRoomMapMarker): {
   if (marker.todayStatus === 'NOT_STARTED') {
     return {
       radius: 8,
-      color: '#ff6b6b',
-      fillColor: '#ff6b6b',
+      color: '#dc2626',
+      fillColor: '#dc2626',
       fillOpacity: 0.82,
       weight: 2,
     }
@@ -50,16 +50,16 @@ function markerStyle(marker: ControlRoomMapMarker): {
   if (marker.locationState === 'DORMANT') {
     return {
       radius: 7,
-      color: '#8fb6d9',
-      fillColor: '#0b1520',
-      fillOpacity: 0.72,
+      color: '#94a3b8',
+      fillColor: '#334155',
+      fillOpacity: 0.74,
       weight: 2,
     }
   }
   return {
     radius: 8,
-    color: '#40e0d0',
-    fillColor: '#40e0d0',
+    color: '#64748b',
+    fillColor: '#64748b',
     fillOpacity: 0.82,
     weight: 2,
   }

@@ -3125,3 +3125,555 @@ button[class*="bg-slate-900"] {
     align-items: stretch;
   }
 }
+
+/* Operational security matrix */
+.ops-matrix-page {
+  display: grid;
+  gap: 1.25rem;
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+.ops-panel,
+.ops-filter-panel,
+.ops-kpi-card,
+.ops-card,
+.ops-formula-card,
+.ops-department-card,
+.ops-detail-card {
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.95));
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.06);
+}
+
+.ops-filter-panel,
+.ops-panel {
+  padding: 1.2rem;
+}
+
+.ops-panel-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.ops-panel-head h3 {
+  margin: 0.18rem 0 0;
+  color: #0f172a;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.ops-panel-kicker {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.ops-filter-summary-text,
+.ops-cell-stack span,
+.ops-kpi-meta,
+.ops-department-card span,
+.ops-formula-card span,
+.ops-formula-card p,
+.ops-detail-row p,
+.ops-detail-card span {
+  color: #64748b;
+  font-size: 0.84rem;
+}
+
+.ops-filter-grid,
+.ops-detail-grid,
+.ops-card-grid,
+.ops-formula-grid,
+.ops-department-grid,
+.ops-main-grid,
+.ops-analytics-grid,
+.ops-kpi-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.ops-filter-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.ops-field,
+.ops-check-field {
+  display: grid;
+  gap: 0.42rem;
+}
+
+.ops-field span,
+.ops-check-field span {
+  color: #475569;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ops-field input,
+.ops-field select,
+.ops-field textarea,
+.ops-feed-filters input,
+.ops-feed-filters select {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.96);
+  color: #0f172a;
+  padding: 0.78rem 0.88rem;
+  font-size: 0.92rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.ops-field input:focus,
+.ops-field select:focus,
+.ops-field textarea:focus,
+.ops-feed-filters input:focus,
+.ops-feed-filters select:focus {
+  outline: none;
+  border-color: rgba(59, 130, 246, 0.45);
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12);
+}
+
+.ops-lookup-shell {
+  position: relative;
+}
+
+.ops-inline-button,
+.ops-button,
+.ops-sort-button {
+  border: none;
+  border-radius: 14px;
+  cursor: pointer;
+  font-weight: 700;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, color 0.18s ease;
+}
+
+.ops-inline-button {
+  position: absolute;
+  right: 0.5rem;
+  top: 0.45rem;
+  padding: 0.45rem 0.6rem;
+  background: rgba(241, 245, 249, 0.95);
+  color: #475569;
+  font-size: 0.74rem;
+}
+
+.ops-lookup-menu {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  left: 0;
+  right: 0;
+  z-index: 18;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.14);
+  overflow: hidden;
+}
+
+.ops-lookup-option,
+.ops-lookup-empty,
+.ops-feed-item,
+.ops-detail-row {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.8rem;
+  width: 100%;
+  padding: 0.9rem 1rem;
+}
+
+.ops-lookup-option {
+  border: none;
+  background: transparent;
+  text-align: left;
+}
+
+.ops-lookup-option:hover,
+.ops-feed-item:hover {
+  background: rgba(248, 250, 252, 0.95);
+}
+
+.ops-filter-actions,
+.ops-filter-action-group,
+.ops-filter-chip-list,
+.ops-detail-actions,
+.ops-card-actions,
+.ops-pagination-footer,
+.ops-pagination-head,
+.ops-feed-filters,
+.ops-action-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.ops-filter-actions,
+.ops-pagination-footer {
+  justify-content: space-between;
+  margin-top: 1rem;
+}
+
+.ops-filter-chip,
+.ops-status-pill,
+.ops-risk-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.42rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.ops-filter-chip {
+  background: rgba(59, 130, 246, 0.08);
+  color: #1d4ed8;
+}
+
+.ops-status-pill.is-normal,
+.ops-risk-pill.is-normal,
+.ops-card-score.is-normal,
+.ops-detail-score.is-normal {
+  background: rgba(148, 163, 184, 0.12);
+  color: #334155;
+}
+
+.ops-status-pill.is-watch,
+.ops-risk-pill.is-watch,
+.ops-card-score.is-watch,
+.ops-detail-score.is-watch {
+  background: rgba(245, 158, 11, 0.14);
+  color: #92400e;
+}
+
+.ops-status-pill.is-critical,
+.ops-risk-pill.is-critical,
+.ops-card-score.is-critical,
+.ops-detail-score.is-critical {
+  background: rgba(220, 38, 38, 0.14);
+  color: #991b1b;
+}
+
+.ops-button {
+  padding: 0.75rem 1rem;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+}
+
+.ops-button:hover,
+.ops-sort-button:hover,
+.ops-inline-button:hover {
+  transform: translateY(-1px);
+}
+
+.ops-button-primary { background: #0f172a; color: #fff; }
+.ops-button-secondary { background: #e2e8f0; color: #0f172a; }
+.ops-button-ghost { background: rgba(241, 245, 249, 0.92); color: #334155; }
+.ops-button-info { background: rgba(59, 130, 246, 0.12); color: #1d4ed8; }
+.ops-button-warning { background: rgba(245, 158, 11, 0.14); color: #92400e; }
+.ops-button-danger { background: rgba(220, 38, 38, 0.14); color: #991b1b; }
+
+.ops-kpi-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.ops-kpi-card {
+  padding: 1rem 1.05rem;
+}
+
+.ops-kpi-label {
+  color: #64748b;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.ops-kpi-value {
+  display: block;
+  margin-top: 0.3rem;
+  color: #0f172a;
+  font-size: clamp(1.4rem, 2vw, 2rem);
+  line-height: 1;
+}
+
+.ops-analytics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ops-panel-span-2 { grid-column: span 2; }
+.ops-main-grid { grid-template-columns: 1.3fr 0.9fr; }
+
+.ops-bar-list,
+.ops-trend-list,
+.ops-detail-list {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.ops-bar-row {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) 42px;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.ops-bar-track {
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(226, 232, 240, 0.9);
+  overflow: hidden;
+}
+
+.ops-bar-fill,
+.ops-trend-bar {
+  border-radius: 999px;
+  background: linear-gradient(90deg, #3b82f6, #1d4ed8);
+}
+
+.ops-bar-fill-info { height: 100%; }
+
+.ops-trend-list {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  align-items: end;
+  min-height: 220px;
+}
+
+.ops-trend-item {
+  display: grid;
+  justify-items: center;
+  gap: 0.45rem;
+  min-height: 100%;
+}
+
+.ops-trend-bar {
+  width: 100%;
+  min-height: 12px;
+  background: linear-gradient(180deg, #93c5fd, #1d4ed8);
+}
+
+.ops-department-grid,
+.ops-formula-grid,
+.ops-detail-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.ops-department-card,
+.ops-formula-card,
+.ops-detail-card {
+  padding: 1rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.ops-table-panel {
+  overflow: hidden;
+}
+
+.ops-table-wrap {
+  overflow: auto;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  border-radius: 18px;
+  max-width: 100%;
+}
+
+.ops-table {
+  width: 100%;
+  min-width: 1380px;
+  border-collapse: collapse;
+}
+
+.ops-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ops-table th,
+.ops-table td {
+  padding: 0.95rem 0.85rem;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+  vertical-align: top;
+}
+
+.ops-sort-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.ops-cell-stack {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.ops-card-list { display: none; }
+
+.ops-card {
+  padding: 1rem;
+  display: grid;
+  gap: 0.95rem;
+}
+
+.ops-card-head,
+.ops-detail-hero {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.ops-card-head h4,
+.ops-detail-hero h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 1.05rem;
+}
+
+.ops-card-head p,
+.ops-detail-hero p { margin: 0.25rem 0 0; color: #64748b; }
+
+.ops-card-score,
+.ops-detail-score {
+  min-width: 100px;
+  border-radius: 18px;
+  padding: 0.8rem 0.9rem;
+  text-align: center;
+}
+
+.ops-card-score strong,
+.ops-detail-score strong {
+  display: block;
+  font-size: 1.45rem;
+}
+
+.ops-card-primary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  color: #475569;
+}
+
+.ops-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ops-card-grid div { display: grid; gap: 0.15rem; }
+.ops-card-grid span { color: #64748b; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.ops-card-grid strong { color: #0f172a; }
+.ops-card-details summary { cursor: pointer; font-weight: 700; color: #0f172a; }
+.ops-card-details[open] .ops-card-grid { margin-top: 0.75rem; }
+
+.ops-feed-list,
+.ops-detail-list-scroll {
+  max-height: 520px;
+  overflow: auto;
+}
+
+.ops-feed-item,
+.ops-detail-row {
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #0f172a;
+}
+
+.ops-detail-shell,
+.ops-detail-section,
+.ops-action-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.ops-detail-row-side {
+  display: grid;
+  justify-items: end;
+  gap: 0.2rem;
+  white-space: nowrap;
+}
+
+.ops-empty-state {
+  padding: 1rem;
+  border: 1px dashed rgba(148, 163, 184, 0.4);
+  border-radius: 18px;
+  color: #64748b;
+  text-align: center;
+}
+
+@media (max-width: 1400px) {
+  .ops-filter-grid,
+  .ops-kpi-grid,
+  .ops-detail-grid,
+  .ops-formula-grid,
+  .ops-department-grid,
+  .ops-main-grid,
+  .ops-analytics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ops-table-wrap {
+    display: none;
+  }
+
+  .ops-card-list {
+    display: grid;
+    gap: 1rem;
+  }
+}
+
+@media (max-width: 1024px) {
+  .ops-filter-grid,
+  .ops-kpi-grid,
+  .ops-detail-grid,
+  .ops-formula-grid,
+  .ops-department-grid,
+  .ops-main-grid,
+  .ops-analytics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ops-card-details {
+    display: block;
+  }
+}
+
+@media (max-width: 768px) {
+  .ops-filter-panel,
+  .ops-panel,
+  .ops-card,
+  .ops-kpi-card {
+    padding: 1rem;
+    border-radius: 18px;
+  }
+
+  .ops-card-grid,
+  .ops-card-details,
+  .ops-detail-grid,
+  .ops-formula-grid,
+  .ops-department-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ops-card-grid-detail,
+  .ops-card-details,
+  .ops-detail-row-side,
+  .ops-feed-item div:nth-child(2),
+  .ops-feed-item div:nth-child(3) {
+    display: none;
+  }
+
+  .ops-card-primary span:nth-child(n + 3) {
+    display: none;
+  }
+}

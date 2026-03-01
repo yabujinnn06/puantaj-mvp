@@ -561,11 +561,55 @@ export interface DashboardEmployeeSnapshot {
 
 export type ControlRoomLocationState = 'LIVE' | 'STALE' | 'DORMANT' | 'NONE'
 export type ControlRoomAlertSeverity = 'info' | 'warning' | 'critical'
+export type ControlRoomRiskStatus = 'NORMAL' | 'WATCH' | 'CRITICAL'
 
 export interface ControlRoomEmployeeAlert {
   code: string
   label: string
   severity: ControlRoomAlertSeverity
+}
+
+export interface ControlRoomTooltip {
+  title: string
+  body: string
+}
+
+export interface ControlRoomRiskFactor {
+  code: string
+  label: string
+  value: string
+  impact_score: number
+  description: string
+}
+
+export interface ControlRoomMeasure {
+  action_type: 'SUSPEND' | 'DISABLE_TEMP' | 'REVIEW' | 'RISK_OVERRIDE'
+  label: string
+  reason: string
+  note: string
+  duration_days: number | null
+  expires_at: string | null
+  created_at: string
+  created_by: string
+  ip: string | null
+  override_score: number | null
+}
+
+export interface ControlRoomNote {
+  note: string
+  created_at: string
+  created_by: string
+  ip: string | null
+}
+
+export interface ControlRoomAuditEntry {
+  audit_id: number
+  action: string
+  label: string
+  ts_utc: string
+  actor_id: string
+  ip: string | null
+  details: Record<string, unknown>
 }
 
 export interface ControlRoomEmployeeState {
@@ -576,13 +620,27 @@ export interface ControlRoomEmployeeState {
   today_status: 'NOT_STARTED' | 'IN_PROGRESS' | 'FINISHED'
   location_state: ControlRoomLocationState
   last_event: DashboardEmployeeLastEvent | null
+  last_checkin_utc: string | null
+  last_checkout_utc: string | null
   latest_location: EmployeeLiveLocation | null
   last_portal_seen_utc: string | null
+  last_activity_utc: string | null
   recent_ip: string | null
+  location_label: string | null
   active_devices: number
   total_devices: number
   current_month: DashboardEmployeeMonthMetrics
+  worked_today_minutes: number
+  weekly_total_minutes: number
+  violation_count_7d: number
+  risk_score: number
+  risk_status: ControlRoomRiskStatus
+  absence_minutes_7d: number
+  active_measure: ControlRoomMeasure | null
+  latest_note: ControlRoomNote | null
   attention_flags: ControlRoomEmployeeAlert[]
+  tooltip_items: ControlRoomTooltip[]
+  risk_factors: ControlRoomRiskFactor[]
 }
 
 export interface ControlRoomMapPoint {
@@ -612,14 +670,66 @@ export interface ControlRoomRecentEvent {
   accuracy_m: number | null
 }
 
+export interface ControlRoomTrendPoint {
+  label: string
+  value: number
+}
+
+export interface ControlRoomHistogramBucket {
+  label: string
+  min_score: number
+  max_score: number
+  count: number
+}
+
+export interface ControlRoomDepartmentMetric {
+  department_name: string
+  employee_count: number
+  average_checkin_minutes: number | null
+  late_rate_percent: number
+  average_active_minutes: number
+}
+
+export interface ControlRoomRiskFormulaItem {
+  code: string
+  label: string
+  max_score: number
+  description: string
+}
+
+export interface ControlRoomActiveFilters {
+  q: string | null
+  region_id: number | null
+  department_id: number | null
+  start_date: string | null
+  end_date: string | null
+  map_date: string | null
+  include_inactive: boolean
+  risk_min: number | null
+  risk_max: number | null
+  risk_status: ControlRoomRiskStatus | null
+  sort_by: string
+  sort_dir: 'asc' | 'desc'
+  limit: number
+  offset: number
+}
+
 export interface ControlRoomSummary {
   total_employees: number
   active_employees: number
   not_started_count: number
   in_progress_count: number
   finished_count: number
-  attention_on_page_count: number
-  live_location_on_page_count: number
+  normal_count: number
+  watch_count: number
+  critical_count: number
+  average_checkin_minutes: number | null
+  late_rate_percent: number
+  average_active_minutes: number
+  most_common_violation_window: string | null
+  risk_histogram: ControlRoomHistogramBucket[]
+  weekly_trend: ControlRoomTrendPoint[]
+  department_metrics: ControlRoomDepartmentMetric[]
 }
 
 export interface ControlRoomOverview {
@@ -628,9 +738,20 @@ export interface ControlRoomOverview {
   offset: number
   limit: number
   summary: ControlRoomSummary
+  active_filters: ControlRoomActiveFilters
+  risk_formula: ControlRoomRiskFormulaItem[]
   items: ControlRoomEmployeeState[]
   map_points: ControlRoomMapPoint[]
   recent_events: ControlRoomRecentEvent[]
+}
+
+export interface ControlRoomEmployeeDetail {
+  generated_at_utc: string
+  employee_state: ControlRoomEmployeeState
+  risk_formula: ControlRoomRiskFormulaItem[]
+  recent_measures: ControlRoomMeasure[]
+  recent_notes: ControlRoomNote[]
+  recent_audit_entries: ControlRoomAuditEntry[]
 }
 
 export interface MonthlyEmployeeDay {

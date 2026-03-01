@@ -423,7 +423,7 @@ export function ManagementConsolePage() {
         </Panel>
 
         <Panel className="management-console-panel">
-          <h4 className="management-console-title">Çalışan Kontrol Odası</h4>
+          <h4 className="management-console-title">Operasyonel Güvenlik Matrisi</h4>
           <p className="management-console-subtitle">
             Tek çalışan için puantaj, konum ve cihaz metriklerini anlık izleyin.
           </p>

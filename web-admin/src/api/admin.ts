@@ -34,7 +34,9 @@ import type {
   DepartmentSummaryItem,
   DepartmentWeeklyRule,
   ControlRoomOverview,
+  ControlRoomEmployeeDetail,
   ControlRoomLocationState,
+  ControlRoomRiskStatus,
   DashboardEmployeeSnapshot,
   Device,
   EmployeeDeviceOverview,
@@ -375,15 +377,65 @@ export interface DashboardEmployeeSnapshotParams {
 }
 
 export interface ControlRoomOverviewParams {
-  q?: string;
-  region_id?: number;
-  department_id?: number;
-  today_status?: "NOT_STARTED" | "IN_PROGRESS" | "FINISHED";
-  location_state?: ControlRoomLocationState;
-  map_date?: string;
-  include_inactive?: boolean;
-  offset?: number;
-  limit?: number;
+  q?: string
+  region_id?: number
+  department_id?: number
+  today_status?: 'NOT_STARTED' | 'IN_PROGRESS' | 'FINISHED'
+  location_state?: ControlRoomLocationState
+  map_date?: string
+  start_date?: string
+  end_date?: string
+  include_inactive?: boolean
+  risk_min?: number
+  risk_max?: number
+  risk_status?: ControlRoomRiskStatus
+  sort_by?:
+    | 'risk_score'
+    | 'last_activity'
+    | 'last_checkin'
+    | 'last_checkout'
+    | 'worked_today'
+    | 'weekly_total'
+    | 'violation_count_7d'
+    | 'employee_name'
+    | 'department_name'
+  sort_dir?: 'asc' | 'desc'
+  offset?: number
+  limit?: number
+}
+
+export interface ControlRoomEmployeeActionPayload {
+  employee_id: number
+  action_type: 'SUSPEND' | 'DISABLE_TEMP' | 'REVIEW'
+  reason: string
+  note: string
+  duration_days?: 1 | 3 | 7
+  indefinite?: boolean
+}
+
+export interface ControlRoomRiskOverridePayload {
+  employee_id: number
+  override_score: number
+  reason: string
+  note: string
+  duration_days?: 1 | 3 | 7
+  indefinite?: boolean
+}
+
+export interface ControlRoomNotePayload {
+  employee_id: number
+  note: string
+}
+
+export interface ControlRoomFilterAuditPayload {
+  filters: Record<string, unknown>
+  total_results?: number
+}
+
+export interface ControlRoomMutationResponse {
+  ok: boolean
+  message: string
+  expires_at: string | null
 }
 
 export interface MonthlyEmployeeParams {
@@ -1346,6 +1398,55 @@ export async function getControlRoomOverview(
     },
   );
   return response.data;
+}
+
+export async function getControlRoomEmployeeDetail(
+  employeeId: number,
+): Promise<ControlRoomEmployeeDetail> {
+  const response = await apiClient.get<ControlRoomEmployeeDetail>(
+    `/api/admin/control-room/employees/${employeeId}`,
+  )
+  return response.data
+}
+
+export async function createControlRoomEmployeeAction(
+  payload: ControlRoomEmployeeActionPayload,
+): Promise<ControlRoomMutationResponse> {
+  const response = await apiClient.post<ControlRoomMutationResponse>(
+    '/api/admin/control-room/actions',
+    payload,
+  )
+  return response.data
+}
+
+export async function createControlRoomRiskOverride(
+  payload: ControlRoomRiskOverridePayload,
+): Promise<ControlRoomMutationResponse> {
+  const response = await apiClient.post<ControlRoomMutationResponse>(
+    '/api/admin/control-room/risk-override',
+    payload,
+  )
+  return response.data
+}
+
+export async function createControlRoomNote(
+  payload: ControlRoomNotePayload,
+): Promise<ControlRoomMutationResponse> {
+  const response = await apiClient.post<ControlRoomMutationResponse>(
+    '/api/admin/control-room/notes',
+    payload,
+  )
+  return response.data
+}
+
+export async function auditControlRoomFilters(
+  payload: ControlRoomFilterAuditPayload,
+): Promise<ControlRoomMutationResponse> {
+  const response = await apiClient.post<ControlRoomMutationResponse>(
+    '/api/admin/control-room/filter-activity',
+    payload,
+  )
+  return response.data
 }
 
 export async function updateDeviceActive(

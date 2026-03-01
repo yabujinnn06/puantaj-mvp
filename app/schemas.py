@@ -169,6 +169,49 @@ class ControlRoomEmployeeAlertRead(BaseModel):
     severity: Literal["info", "warning", "critical"] = "info"
 
 
+class ControlRoomTooltipRead(BaseModel):
+    title: str
+    body: str
+
+
+class ControlRoomRiskFactorRead(BaseModel):
+    code: str
+    label: str
+    value: str
+    impact_score: int
+    description: str
+
+
+class ControlRoomMeasureRead(BaseModel):
+    action_type: Literal["SUSPEND", "DISABLE_TEMP", "REVIEW", "RISK_OVERRIDE"]
+    label: str
+    reason: str
+    note: str
+    duration_days: int | None = None
+    expires_at: datetime | None = None
+    created_at: datetime
+    created_by: str
+    ip: str | None = None
+    override_score: int | None = None
+
+
+class ControlRoomNoteRead(BaseModel):
+    note: str
+    created_at: datetime
+    created_by: str
+    ip: str | None = None
+
+
+class ControlRoomAuditEntryRead(BaseModel):
+    audit_id: int
+    action: str
+    label: str
+    ts_utc: datetime
+    actor_id: str
+    ip: str | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
 class ControlRoomEmployeeStateRead(BaseModel):
     employee: EmployeeRead
     department_name: str | None = None
@@ -177,13 +220,27 @@ class ControlRoomEmployeeStateRead(BaseModel):
     today_status: Literal["NOT_STARTED", "IN_PROGRESS", "FINISHED"] = "NOT_STARTED"
     location_state: Literal["LIVE", "STALE", "DORMANT", "NONE"] = "NONE"
     last_event: DashboardEmployeeLastEventRead | None = None
+    last_checkin_utc: datetime | None = None
+    last_checkout_utc: datetime | None = None
     latest_location: EmployeeLiveLocationRead | None = None
     last_portal_seen_utc: datetime | None = None
+    last_activity_utc: datetime | None = None
     recent_ip: str | None = None
+    location_label: str | None = None
     active_devices: int = 0
     total_devices: int = 0
     current_month: DashboardEmployeeMonthMetricsRead
+    worked_today_minutes: int = 0
+    weekly_total_minutes: int = 0
+    violation_count_7d: int = 0
+    risk_score: int = 0
+    risk_status: Literal["NORMAL", "WATCH", "CRITICAL"] = "NORMAL"
+    absence_minutes_7d: int = 0
+    active_measure: ControlRoomMeasureRead | None = None
+    latest_note: ControlRoomNoteRead | None = None
     attention_flags: list[ControlRoomEmployeeAlertRead] = Field(default_factory=list)
+    tooltip_items: list[ControlRoomTooltipRead] = Field(default_factory=list)
+    risk_factors: list[ControlRoomRiskFactorRead] = Field(default_factory=list)
 
 
 class ControlRoomMapPointRead(BaseModel):
@@ -213,14 +270,66 @@ class ControlRoomRecentEventRead(BaseModel):
     accuracy_m: float | None = None
 
 
+class ControlRoomTrendPointRead(BaseModel):
+    label: str
+    value: int
+
+
+class ControlRoomHistogramBucketRead(BaseModel):
+    label: str
+    min_score: int
+    max_score: int
+    count: int
+
+
+class ControlRoomDepartmentMetricRead(BaseModel):
+    department_name: str
+    employee_count: int
+    average_checkin_minutes: int | None = None
+    late_rate_percent: float = 0
+    average_active_minutes: int = 0
+
+
+class ControlRoomRiskFormulaItemRead(BaseModel):
+    code: str
+    label: str
+    max_score: int
+    description: str
+
+
+class ControlRoomActiveFiltersRead(BaseModel):
+    q: str | None = None
+    region_id: int | None = None
+    department_id: int | None = None
+    start_date: date | None = None
+    end_date: date | None = None
+    map_date: date | None = None
+    include_inactive: bool = False
+    risk_min: int | None = None
+    risk_max: int | None = None
+    risk_status: Literal["NORMAL", "WATCH", "CRITICAL"] | None = None
+    sort_by: str = "risk_score"
+    sort_dir: Literal["asc", "desc"] = "desc"
+    limit: int = 24
+    offset: int = 0
+
+
 class ControlRoomSummaryRead(BaseModel):
     total_employees: int = 0
     active_employees: int = 0
     not_started_count: int = 0
     in_progress_count: int = 0
     finished_count: int = 0
-    attention_on_page_count: int = 0
-    live_location_on_page_count: int = 0
+    normal_count: int = 0
+    watch_count: int = 0
+    critical_count: int = 0
+    average_checkin_minutes: int | None = None
+    late_rate_percent: float = 0
+    average_active_minutes: int = 0
+    most_common_violation_window: str | None = None
+    risk_histogram: list[ControlRoomHistogramBucketRead] = Field(default_factory=list)
+    weekly_trend: list[ControlRoomTrendPointRead] = Field(default_factory=list)
+    department_metrics: list[ControlRoomDepartmentMetricRead] = Field(default_factory=list)
 
 
 class ControlRoomOverviewResponse(BaseModel):
@@ -229,9 +338,70 @@ class ControlRoomOverviewResponse(BaseModel):
     offset: int = 0
     limit: int = 0
     summary: ControlRoomSummaryRead
+    active_filters: ControlRoomActiveFiltersRead
+    risk_formula: list[ControlRoomRiskFormulaItemRead] = Field(default_factory=list)
     items: list[ControlRoomEmployeeStateRead] = Field(default_factory=list)
     map_points: list[ControlRoomMapPointRead] = Field(default_factory=list)
     recent_events: list[ControlRoomRecentEventRead] = Field(default_factory=list)
+
+
+class ControlRoomEmployeeDetailResponse(BaseModel):
+    generated_at_utc: datetime
+    employee_state: ControlRoomEmployeeStateRead
+    risk_formula: list[ControlRoomRiskFormulaItemRead] = Field(default_factory=list)
+    recent_measures: list[ControlRoomMeasureRead] = Field(default_factory=list)
+    recent_notes: list[ControlRoomNoteRead] = Field(default_factory=list)
+    recent_audit_entries: list[ControlRoomAuditEntryRead] = Field(default_factory=list)
+
+
+class ControlRoomEmployeeActionRequest(BaseModel):
+    employee_id: int = Field(ge=1)
+    action_type: Literal["SUSPEND", "DISABLE_TEMP", "REVIEW"]
+    reason: str = Field(min_length=3, max_length=255)
+    note: str = Field(min_length=3, max_length=1000)
+    duration_days: Literal[1, 3, 7] | None = None
+    indefinite: bool = False
+
+    @model_validator(mode="after")
+    def validate_duration(self) -> "ControlRoomEmployeeActionRequest":
+        if self.indefinite and self.duration_days is not None:
+            raise ValueError("duration_days must be empty when indefinite is true")
+        if not self.indefinite and self.duration_days is None:
+            raise ValueError("duration_days is required unless indefinite is true")
+        return self
+
+
+class ControlRoomRiskOverrideRequest(BaseModel):
+    employee_id: int = Field(ge=1)
+    override_score: int = Field(ge=0, le=100)
+    reason: str = Field(min_length=3, max_length=255)
+    note: str = Field(min_length=3, max_length=1000)
+    duration_days: Literal[1, 3, 7] | None = None
+    indefinite: bool = False
+
+    @model_validator(mode="after")
+    def validate_duration(self) -> "ControlRoomRiskOverrideRequest":
+        if self.indefinite and self.duration_days is not None:
+            raise ValueError("duration_days must be empty when indefinite is true")
+        if not self.indefinite and self.duration_days is None:
+            raise ValueError("duration_days is required unless indefinite is true")
+        return self
+
+
+class ControlRoomNoteCreateRequest(BaseModel):
+    employee_id: int = Field(ge=1)
+    note: str = Field(min_length=3, max_length=1000)
+
+
+class ControlRoomFilterAuditRequest(BaseModel):
+    filters: dict[str, Any] = Field(default_factory=dict)
+    total_results: int | None = Field(default=None, ge=0)
+
+
+class ControlRoomMutationResponse(BaseModel):
+    ok: bool
+    message: str
+    expires_at: datetime | None = None
 
 
 class EmployeeActiveUpdateRequest(BaseModel):
