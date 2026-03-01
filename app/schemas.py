@@ -1407,6 +1407,61 @@ class AdminManualNotificationSendResponse(BaseModel):
     admin_target_missing: bool = False
 
 
+class ScheduledNotificationTaskBase(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    title: str = Field(min_length=1, max_length=120)
+    message: str = Field(min_length=1, max_length=2000)
+    target: Literal["employees", "admins", "both"]
+    employee_scope: Literal["all", "selected"] | None = None
+    admin_scope: Literal["all", "selected"] | None = None
+    employee_ids: list[int] | None = None
+    admin_user_ids: list[int] | None = None
+    schedule_kind: Literal["once", "daily"]
+    run_date_local: date | None = None
+    run_time_local: time
+    timezone_name: str | None = Field(default="Europe/Istanbul", max_length=64)
+    is_active: bool = True
+
+
+class ScheduledNotificationTaskCreateRequest(ScheduledNotificationTaskBase):
+    pass
+
+
+class ScheduledNotificationTaskUpdateRequest(ScheduledNotificationTaskBase):
+    pass
+
+
+class ScheduledNotificationTaskRead(BaseModel):
+    id: int
+    name: str
+    title: str
+    message: str
+    target: Literal["employees", "admins", "both"]
+    employee_scope: Literal["all", "selected"] | None = None
+    admin_scope: Literal["all", "selected"] | None = None
+    employee_ids: list[int] = Field(default_factory=list)
+    admin_user_ids: list[int] = Field(default_factory=list)
+    schedule_kind: Literal["once", "daily"]
+    run_date_local: date | None = None
+    run_time_local: time
+    timezone_name: str
+    is_active: bool
+    last_enqueued_local_date: date | None = None
+    last_enqueued_at_utc: datetime | None = None
+    next_run_at_utc: datetime | None = None
+    created_by_username: str | None = None
+    updated_by_username: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ScheduledNotificationTaskPageResponse(BaseModel):
+    items: list[ScheduledNotificationTaskRead] = Field(default_factory=list)
+    total: int = 0
+
+
 class NotificationDeliveryLogRead(BaseModel):
     id: int
     notification_job_id: int | None = None

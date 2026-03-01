@@ -31,6 +31,7 @@ import { ErrorBlock } from '../components/ErrorBlock'
 import { LoadingBlock } from '../components/LoadingBlock'
 import { PageHeader } from '../components/PageHeader'
 import { Panel } from '../components/Panel'
+import { NotificationTaskManager } from '../components/notifications/NotificationTaskManager'
 import { TableSearchInput } from '../components/TableSearchInput'
 import { useAuth } from '../hooks/useAuth'
 import { useToast } from '../hooks/useToast'
@@ -854,6 +855,11 @@ export function NotificationsPage() {
           <button type="submit" className="rounded bg-brand-600 px-4 py-2 text-sm font-semibold text-white">Bildirimi gonder</button>
         </form>
       </Panel>
+
+      <NotificationTaskManager
+        employees={employeesQuery.data ?? []}
+        admins={adminsQuery.data ?? []}
+      />
 
       <Panel>
         <h4 className="text-base font-semibold text-slate-900">Bildirim Isleri</h4>

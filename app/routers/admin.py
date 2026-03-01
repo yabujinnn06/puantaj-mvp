@@ -39,6 +39,7 @@ from app.models import (
     ManualDayOverride,
     NotificationDeliveryLog,
     NotificationJob,
+    ScheduledNotificationTask,
     QRCode,
     QRCodePoint,
     QRPoint,
@@ -156,6 +157,10 @@ from app.schemas import (
     NotificationDeliveryLogRead,
     NotificationDeliveryLogPageResponse,
     NotificationJobNoteUpdateRequest,
+    ScheduledNotificationTaskCreateRequest,
+    ScheduledNotificationTaskPageResponse,
+    ScheduledNotificationTaskRead,
+    ScheduledNotificationTaskUpdateRequest,
     RegionCreate,
     RegionRead,
     RegionUpdate,
@@ -238,6 +243,10 @@ from app.services.notifications import (
     normalize_notification_email,
     replace_admin_notification_email_targets,
     send_admin_notification_test_email,
+)
+from app.services.notification_tasks import (
+    get_task_next_run_at_utc,
+    normalize_scheduled_notification_task_payload,
 )
 
 router = APIRouter(tags=["admin"])
@@ -512,6 +521,19 @@ def _to_admin_notification_email_target_read(
     row: AdminNotificationEmailTarget,
 ) -> AdminNotificationEmailTargetRead:
     return AdminNotificationEmailTargetRead.model_validate(row)
+
+
+def _to_scheduled_notification_task_read(
+    row: ScheduledNotificationTask,
+) -> ScheduledNotificationTaskRead:
+    payload = ScheduledNotificationTaskRead.model_validate(row)
+    return payload.model_copy(
+        update={
+            "employee_ids": [value for value in (row.employee_ids or []) if isinstance(value, int) and value > 0],
+            "admin_user_ids": [value for value in (row.admin_user_ids or []) if isinstance(value, int) and value > 0],
+            "next_run_at_utc": get_task_next_run_at_utc(row),
+        }
+    )
 
 
 def _endpoint_fingerprint(endpoint: str) -> str:
@@ -6641,6 +6663,227 @@ def send_manual_notification(
         admin_deactivated=admin_deactivated,
         admin_target_missing=admin_target_missing,
     )
+
+
+@router.get(
+    "/api/admin/notifications/tasks",
+    response_model=ScheduledNotificationTaskPageResponse,
+)
+def list_scheduled_notification_tasks(
+    is_active: bool | None = Query(default=None),
+    claims: dict[str, Any] = Depends(require_admin_permission("audit")),
+    db: Session = Depends(get_db),
+) -> ScheduledNotificationTaskPageResponse:
+    stmt = select(ScheduledNotificationTask)
+    total_stmt = select(func.count(ScheduledNotificationTask.id))
+    if is_active is not None:
+        stmt = stmt.where(ScheduledNotificationTask.is_active.is_(is_active))
+        total_stmt = total_stmt.where(ScheduledNotificationTask.is_active.is_(is_active))
+
+    stmt = stmt.order_by(
+        ScheduledNotificationTask.is_active.desc(),
+        ScheduledNotificationTask.updated_at.desc(),
+        ScheduledNotificationTask.id.desc(),
+    )
+    rows = list(db.scalars(stmt).all())
+    total = int(db.scalar(total_stmt) or 0)
+    return ScheduledNotificationTaskPageResponse(
+        items=[_to_scheduled_notification_task_read(row) for row in rows],
+        total=total,
+    )
+
+
+@router.post(
+    "/api/admin/notifications/tasks",
+    response_model=ScheduledNotificationTaskRead,
+)
+def create_scheduled_notification_task(
+    payload: ScheduledNotificationTaskCreateRequest,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin_permission("audit", write=True)),
+    db: Session = Depends(get_db),
+) -> ScheduledNotificationTaskRead:
+    actor_username, _ = _normalized_admin_actor_from_claims(claims)
+    try:
+        normalized = normalize_scheduled_notification_task_payload(
+            db,
+            name=payload.name,
+            title=payload.title,
+            message=payload.message,
+            target=payload.target,
+            employee_scope=payload.employee_scope,
+            admin_scope=payload.admin_scope,
+            employee_ids=payload.employee_ids,
+            admin_user_ids=payload.admin_user_ids,
+            schedule_kind=payload.schedule_kind,
+            run_date_local=payload.run_date_local,
+            run_time_local=payload.run_time_local,
+            timezone_name=payload.timezone_name,
+            is_active=payload.is_active,
+        )
+    except ValueError as exc:
+        raise ApiError(status_code=422, code="VALIDATION_ERROR", message=str(exc)) from exc
+
+    row = ScheduledNotificationTask(
+        **normalized,
+        created_by_username=actor_username,
+        updated_by_username=actor_username,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=actor_username,
+        action="SCHEDULED_NOTIFICATION_TASK_CREATED",
+        success=True,
+        entity_type="scheduled_notification_task",
+        entity_id=str(row.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "name": row.name,
+            "target": row.target,
+            "employee_scope": row.employee_scope,
+            "admin_scope": row.admin_scope,
+            "employee_ids": row.employee_ids,
+            "admin_user_ids": row.admin_user_ids,
+            "schedule_kind": row.schedule_kind,
+            "run_date_local": row.run_date_local.isoformat() if row.run_date_local is not None else None,
+            "run_time_local": row.run_time_local.strftime("%H:%M:%S"),
+            "is_active": row.is_active,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return _to_scheduled_notification_task_read(row)
+
+
+@router.patch(
+    "/api/admin/notifications/tasks/{task_id}",
+    response_model=ScheduledNotificationTaskRead,
+)
+def update_scheduled_notification_task(
+    task_id: int,
+    payload: ScheduledNotificationTaskUpdateRequest,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin_permission("audit", write=True)),
+    db: Session = Depends(get_db),
+) -> ScheduledNotificationTaskRead:
+    row = db.get(ScheduledNotificationTask, task_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Scheduled notification task not found")
+
+    actor_username, _ = _normalized_admin_actor_from_claims(claims)
+    try:
+        normalized = normalize_scheduled_notification_task_payload(
+            db,
+            name=payload.name,
+            title=payload.title,
+            message=payload.message,
+            target=payload.target,
+            employee_scope=payload.employee_scope,
+            admin_scope=payload.admin_scope,
+            employee_ids=payload.employee_ids,
+            admin_user_ids=payload.admin_user_ids,
+            schedule_kind=payload.schedule_kind,
+            run_date_local=payload.run_date_local,
+            run_time_local=payload.run_time_local,
+            timezone_name=payload.timezone_name,
+            is_active=payload.is_active,
+        )
+    except ValueError as exc:
+        raise ApiError(status_code=422, code="VALIDATION_ERROR", message=str(exc)) from exc
+
+    previous_last_enqueued_local_date = row.last_enqueued_local_date
+    previous_is_active = row.is_active
+    previous_schedule_kind = row.schedule_kind
+    previous_run_date_local = row.run_date_local
+    for key, value in normalized.items():
+        setattr(row, key, value)
+    row.updated_by_username = actor_username
+    if row.schedule_kind == "once" and (
+        row.run_date_local != previous_run_date_local
+        or row.run_date_local != previous_last_enqueued_local_date
+        or (not previous_is_active and row.is_active)
+        or previous_schedule_kind != row.schedule_kind
+    ):
+        row.last_enqueued_local_date = None
+        row.last_enqueued_at_utc = None
+    elif row.schedule_kind == "daily" and ((not previous_is_active and row.is_active) or previous_schedule_kind != row.schedule_kind):
+        row.last_enqueued_local_date = None
+        row.last_enqueued_at_utc = None
+
+    db.commit()
+    db.refresh(row)
+
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=actor_username,
+        action="SCHEDULED_NOTIFICATION_TASK_UPDATED",
+        success=True,
+        entity_type="scheduled_notification_task",
+        entity_id=str(row.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "name": row.name,
+            "target": row.target,
+            "employee_scope": row.employee_scope,
+            "admin_scope": row.admin_scope,
+            "employee_ids": row.employee_ids,
+            "admin_user_ids": row.admin_user_ids,
+            "schedule_kind": row.schedule_kind,
+            "run_date_local": row.run_date_local.isoformat() if row.run_date_local is not None else None,
+            "run_time_local": row.run_time_local.strftime("%H:%M:%S"),
+            "is_active": row.is_active,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return _to_scheduled_notification_task_read(row)
+
+
+@router.delete(
+    "/api/admin/notifications/tasks/{task_id}",
+    response_model=SoftDeleteResponse,
+)
+def delete_scheduled_notification_task(
+    task_id: int,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin_permission("audit", write=True)),
+    db: Session = Depends(get_db),
+) -> SoftDeleteResponse:
+    row = db.get(ScheduledNotificationTask, task_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Scheduled notification task not found")
+
+    actor_username, _ = _normalized_admin_actor_from_claims(claims)
+    task_snapshot = {
+        "name": row.name,
+        "target": row.target,
+        "schedule_kind": row.schedule_kind,
+        "run_date_local": row.run_date_local.isoformat() if row.run_date_local is not None else None,
+        "run_time_local": row.run_time_local.strftime("%H:%M:%S"),
+    }
+    db.delete(row)
+    db.commit()
+
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=actor_username,
+        action="SCHEDULED_NOTIFICATION_TASK_DELETED",
+        success=True,
+        entity_type="scheduled_notification_task",
+        entity_id=str(task_id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details=task_snapshot,
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return SoftDeleteResponse(ok=True)
 
 
 @router.post(

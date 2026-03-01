@@ -59,6 +59,8 @@ import type {
   QrCodeType,
   QrPoint,
   SchedulePlan,
+  ScheduledNotificationTask,
+  ScheduledNotificationTaskPageResponse,
   SchedulePlanTargetType,
   WorkRule,
 } from "../types/api";
@@ -320,6 +322,22 @@ export interface ManualNotificationPayload {
   target?: "employees" | "admins" | "both";
   employee_ids?: number[];
   admin_user_ids?: number[];
+}
+
+export interface ScheduledNotificationTaskPayload {
+  name: string;
+  title: string;
+  message: string;
+  target: "employees" | "admins" | "both";
+  employee_scope?: "all" | "selected" | null;
+  admin_scope?: "all" | "selected" | null;
+  employee_ids?: number[];
+  admin_user_ids?: number[];
+  schedule_kind: "once" | "daily";
+  run_date_local?: string | null;
+  run_time_local: string;
+  timezone_name?: string;
+  is_active?: boolean;
 }
 
 export interface CreateAdminDeviceInvitePayload {
@@ -1286,6 +1304,46 @@ export async function sendManualNotification(
   const response = await apiClient.post<AdminManualNotificationSendResponse>(
     "/api/admin/notifications/send",
     payload,
+  );
+  return response.data;
+}
+
+export async function getScheduledNotificationTasks(params?: {
+  is_active?: boolean;
+}): Promise<ScheduledNotificationTaskPageResponse> {
+  const response = await apiClient.get<ScheduledNotificationTaskPageResponse>(
+    "/api/admin/notifications/tasks",
+    { params },
+  );
+  return response.data;
+}
+
+export async function createScheduledNotificationTask(
+  payload: ScheduledNotificationTaskPayload,
+): Promise<ScheduledNotificationTask> {
+  const response = await apiClient.post<ScheduledNotificationTask>(
+    "/api/admin/notifications/tasks",
+    payload,
+  );
+  return response.data;
+}
+
+export async function updateScheduledNotificationTask(
+  taskId: number,
+  payload: ScheduledNotificationTaskPayload,
+): Promise<ScheduledNotificationTask> {
+  const response = await apiClient.patch<ScheduledNotificationTask>(
+    `/api/admin/notifications/tasks/${taskId}`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function deleteScheduledNotificationTask(
+  taskId: number,
+): Promise<{ ok: boolean }> {
+  const response = await apiClient.delete<{ ok: boolean }>(
+    `/api/admin/notifications/tasks/${taskId}`,
   );
   return response.data;
 }

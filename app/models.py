@@ -1159,6 +1159,61 @@ class NotificationDeliveryLog(Base):
     admin_user: Mapped[AdminUser | None] = relationship()
 
 
+class ScheduledNotificationTask(Base):
+    __tablename__ = "scheduled_notification_tasks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    target: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    employee_scope: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    admin_scope: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    employee_ids: Mapped[list[int]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+    )
+    admin_user_ids: Mapped[list[int]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+    )
+    schedule_kind: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    run_date_local: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    run_time_local: Mapped[time] = mapped_column(Time, nullable=False)
+    timezone_name: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        default="Europe/Istanbul",
+        server_default=text("'Europe/Istanbul'"),
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+        index=True,
+    )
+    last_enqueued_local_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    last_enqueued_at_utc: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by_username: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    updated_by_username: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
 class AttendanceExtraCheckinApproval(Base):
     __tablename__ = "attendance_extra_checkin_approvals"
 

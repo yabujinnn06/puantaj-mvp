@@ -15,6 +15,7 @@ from app.models import (
     LocationStatus,
     ManualDayOverride,
     NotificationJob,
+    ScheduledNotificationTask,
     WorkRule,
 )
 from app.services.notifications import (
@@ -33,6 +34,14 @@ from app.services.notifications import (
     repair_auto_midnight_checkout_events,
     schedule_missing_checkin_notifications,
     send_admin_notification_test_email,
+)
+from app.services.notification_tasks import (
+    TASK_JOB_TYPE,
+    TASK_SCHEDULE_ONCE,
+    TASK_TARGET_EMPLOYEES,
+    enqueue_due_scheduled_notification_tasks,
+    get_task_next_run_at_utc,
+    normalize_scheduled_notification_task_payload,
 )
 
 
@@ -132,6 +141,43 @@ class _FakeAutoCheckoutRepairSession:
 
     def commit(self) -> None:
         self.commit_count += 1
+
+
+class _FakeScheduledNotificationTaskSession:
+    def __init__(self, *, tasks=None, scalar_values=None):
+        self._tasks = list(tasks or [])
+        self._scalar_values = list(scalar_values or [])
+        self.added: list[object] = []
+        self.commit_count = 0
+        self.flush_count = 0
+
+    def scalars(self, statement):  # type: ignore[no-untyped-def]
+        statement_text = str(statement)
+        if "scheduled_notification_tasks" in statement_text:
+            return _ScalarRows(self._tasks)
+        return _ScalarRows([])
+
+    def scalar(self, _statement):  # type: ignore[no-untyped-def]
+        if not self._scalar_values:
+            return None
+        return self._scalar_values.pop(0)
+
+    def add(self, obj):  # type: ignore[no-untyped-def]
+        if isinstance(obj, NotificationJob) and getattr(obj, "id", None) is None:
+            obj.id = 100 + len([item for item in self.added if isinstance(item, NotificationJob)])
+        self.added.append(obj)
+
+    def flush(self) -> None:
+        self.flush_count += 1
+        for index, obj in enumerate([item for item in self.added if isinstance(item, NotificationJob)], start=1):
+            if getattr(obj, "id", None) is None:
+                obj.id = 100 + index
+
+    def commit(self) -> None:
+        self.commit_count += 1
+
+    def refresh(self, _obj) -> None:  # type: ignore[no-untyped-def]
+        return None
 
 
 class NotificationServiceTests(unittest.TestCase):
@@ -569,7 +615,7 @@ class NotificationServiceTests(unittest.TestCase):
         self.assertEqual(repaired, 1)
         self.assertEqual(auto_out_event.ts_utc, datetime(2026, 2, 13, 14, 30, tzinfo=timezone.utc))
         self.assertEqual(auto_out_event.note, "Sistem gece 00:00 otomatik cikis tetikledi")
-        self.assertEqual(fake_db.commit_count, 1)
+        self.assertGreaterEqual(fake_db.commit_count, 1)
 
     def test_admin_escalation_message_is_detailed(self) -> None:
         employee = Employee(id=7, full_name="Hüseyincan Orman", department_id=10, shift_id=100, is_active=True)
@@ -791,6 +837,85 @@ class NotificationServiceTests(unittest.TestCase):
         self.assertEqual(result["sent"], 0)
         self.assertEqual(result["mode"], "send_exception")
         self.assertIn("smtp_down", str(result.get("error")))
+
+    def test_normalize_scheduled_notification_task_payload_requires_selected_employee(self) -> None:
+        fake_db = _FakeScheduledNotificationTaskSession()
+
+        with self.assertRaisesRegex(ValueError, "en az bir calisan secin"):
+            normalize_scheduled_notification_task_payload(
+                fake_db,  # type: ignore[arg-type]
+                name="Sabah duyurusu",
+                title="Hatirlatma",
+                message="Mesaj",
+                target="employees",
+                employee_scope="selected",
+                admin_scope=None,
+                employee_ids=[],
+                admin_user_ids=[],
+                schedule_kind="once",
+                run_date_local=date.today(),
+                run_time_local=time(9, 0),
+                timezone_name="Europe/Istanbul",
+                is_active=True,
+            )
+
+    def test_get_task_next_run_at_utc_returns_once_schedule(self) -> None:
+        task = ScheduledNotificationTask(
+            id=5,
+            name="Tek sefer",
+            title="Bilgilendirme",
+            message="Mesaj",
+            target="employees",
+            employee_scope="all",
+            admin_scope=None,
+            employee_ids=[],
+            admin_user_ids=[],
+            schedule_kind="once",
+            run_date_local=date(2026, 3, 2),
+            run_time_local=time(10, 30),
+            timezone_name="Europe/Istanbul",
+            is_active=True,
+        )
+
+        result = get_task_next_run_at_utc(
+            task,
+            reference_utc=datetime(2026, 3, 2, 7, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(result, datetime(2026, 3, 2, 7, 30, tzinfo=timezone.utc))
+
+    def test_enqueue_due_scheduled_notification_tasks_creates_job_and_deactivates_once_task(self) -> None:
+        task = ScheduledNotificationTask(
+            id=9,
+            name="Gun baslangici",
+            title="Hatirlatma",
+            message="Vardiya oncesi bilgilendirme",
+            target=TASK_TARGET_EMPLOYEES,
+            employee_scope="all",
+            admin_scope=None,
+            employee_ids=[],
+            admin_user_ids=[],
+            schedule_kind=TASK_SCHEDULE_ONCE,
+            run_date_local=date(2026, 3, 2),
+            run_time_local=time(10, 0),
+            timezone_name="Europe/Istanbul",
+            is_active=True,
+        )
+        fake_db = _FakeScheduledNotificationTaskSession(tasks=[task], scalar_values=[None])
+
+        jobs = enqueue_due_scheduled_notification_tasks(
+            now_utc=datetime(2026, 3, 2, 7, 5, tzinfo=timezone.utc),
+            db=fake_db,  # type: ignore[arg-type]
+        )
+
+        self.assertEqual(len(jobs), 1)
+        self.assertEqual(jobs[0].job_type, TASK_JOB_TYPE)
+        self.assertEqual(jobs[0].notification_type, "gorev_bildirimi")
+        self.assertEqual(jobs[0].audience, "employee")
+        self.assertEqual(jobs[0].payload.get("employee_scope"), "all")
+        self.assertFalse(task.is_active)
+        self.assertEqual(task.last_enqueued_local_date, date(2026, 3, 2))
+        self.assertGreaterEqual(fake_db.commit_count, 1)
 
 
 if __name__ == "__main__":

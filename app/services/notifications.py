@@ -69,6 +69,7 @@ JOB_TYPE_EMPLOYEE_AUTO_MIDNIGHT_CHECKOUT = "EMPLOYEE_AUTO_MIDNIGHT_CHECKOUT"
 JOB_TYPE_ADMIN_AUTO_MIDNIGHT_CHECKOUT = "ADMIN_AUTO_MIDNIGHT_CHECKOUT"
 JOB_TYPE_ADMIN_MISSING_CHECKIN = "ADMIN_MISSING_CHECKIN"
 JOB_TYPE_ADMIN_DAILY_REPORT_READY = "ADMIN_DAILY_REPORT_READY"
+JOB_TYPE_ADMIN_SCHEDULED_BROADCAST = "ADMIN_SCHEDULED_BROADCAST"
 
 logger = logging.getLogger("app.notifications")
 
@@ -810,6 +811,30 @@ def _employee_notification_emails(session: Session, *, job: NotificationJob) -> 
     if isinstance(payload_email, str) and payload_email.strip():
         values.add(payload_email.strip())
 
+    payload_employee_ids = payload.get("employee_ids")
+    if isinstance(payload_employee_ids, list):
+        employee_ids = sorted(
+            {
+                int(value)
+                for value in payload_employee_ids
+                if isinstance(value, int) and value > 0
+            }
+        )
+        if employee_ids:
+            employees = list(session.scalars(select(Employee).where(Employee.id.in_(employee_ids))).all())
+            for employee in employees:
+                employee_email = getattr(employee, "email", None)
+                if isinstance(employee_email, str) and employee_email.strip():
+                    values.add(employee_email.strip())
+
+    payload_employee_scope = str(payload.get("employee_scope") or "").strip().lower()
+    if payload_employee_scope == "all":
+        employees = list(session.scalars(select(Employee).where(Employee.is_active.is_(True))).all())
+        for employee in employees:
+            employee_email = getattr(employee, "email", None)
+            if isinstance(employee_email, str) and employee_email.strip():
+                values.add(employee_email.strip())
+
     if job.employee_id is not None:
         employee = session.get(Employee, job.employee_id)
         if employee is not None:
@@ -830,6 +855,12 @@ def _payload_bool(value: Any) -> bool | None:
         if normalized in {"false", "0", "no", "hayir", "hayır"}:
             return False
     return None
+
+
+def _payload_int_list(value: Any) -> list[int]:
+    if not isinstance(value, list):
+        return []
+    return sorted({item for item in value if isinstance(item, int) and item > 0})
 
 
 def _payload_local_day(value: Any) -> date | None:
@@ -916,6 +947,15 @@ def _build_message_for_job(session: Session, job: NotificationJob) -> Notificati
             if audience == AUDIENCE_ADMIN
             else _employee_notification_emails(session, job=job)
         )
+        if job.job_type == JOB_TYPE_ADMIN_SCHEDULED_BROADCAST:
+            title = str(job.title or payload.get("title") or "Planli Bildirim")
+            description = str(job.description or payload.get("description") or "-")
+            return NotificationMessage(
+                recipients=recipients,
+                subject=title,
+                body=description,
+            )
+
         title = str(job.title or payload.get("title") or "Puantaj Bildirimi")
         description = str(job.description or payload.get("description") or "-")
         event_time = str(payload.get("event_ts_local") or payload.get("event_ts_utc") or "-")
@@ -1101,9 +1141,11 @@ def _send_push_for_job(
         audience = str(job.audience or payload.get("audience") or AUDIENCE_EMPLOYEE).strip().lower()
         target_url = f"/admin-panel/notifications?job_id={job.id}"
         if audience == AUDIENCE_ADMIN:
+            target_admin_user_ids = _payload_int_list(payload.get("admin_user_ids"))
+            admin_scope = str(payload.get("admin_scope") or "").strip().lower()
             return send_push_to_admins(
                 session,
-                admin_user_ids=None,
+                admin_user_ids=(target_admin_user_ids if target_admin_user_ids else None),
                 title=message.subject,
                 body=message.body,
                 data={
@@ -1114,14 +1156,20 @@ def _send_push_for_job(
                     "employee_id": job.employee_id,
                     "employee_full_name": payload.get("employee_full_name"),
                     "shift_date": payload.get("shift_date"),
+                    "admin_scope": admin_scope or None,
                     "url": target_url,
                 },
             )
-        if job.employee_id is None:
+
+        target_employee_ids = _payload_int_list(payload.get("employee_ids"))
+        employee_scope = str(payload.get("employee_scope") or "").strip().lower()
+        if not target_employee_ids and job.employee_id is not None:
+            target_employee_ids = [job.employee_id]
+        if not target_employee_ids and employee_scope != "all":
             return {"total_targets": 0, "sent": 0, "failed": 0, "deactivated": 0, "failures": []}
         return send_push_to_employees(
             session,
-            employee_ids=[job.employee_id],
+            employee_ids=(target_employee_ids if target_employee_ids else None),
             title=message.subject,
             body=message.body,
             data={
@@ -1130,6 +1178,7 @@ def _send_push_for_job(
                 "notification_type": job.notification_type,
                 "event_id": job.event_id,
                 "employee_id": job.employee_id,
+                "employee_scope": employee_scope or None,
                 "payload": job.payload or {},
             },
         )

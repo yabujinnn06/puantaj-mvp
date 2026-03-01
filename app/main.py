@@ -27,6 +27,7 @@ from app.services.notifications import (
     schedule_missed_checkout_notifications,
     send_pending_notifications,
 )
+from app.services.notification_tasks import enqueue_due_scheduled_notification_tasks
 from app.services.notifications_alerts import dispatch_daily_report_alarm
 from app.services.push_notifications import run_admin_push_claim_health_check
 from app.services.schema_guard import SchemaGuardResult, verify_runtime_schema
@@ -344,6 +345,7 @@ async def _notification_worker_loop(stop_event: asyncio.Event) -> None:
             created_jobs = await asyncio.to_thread(schedule_missed_checkout_notifications, now_utc)
             missing_checkin_jobs = await asyncio.to_thread(schedule_missing_checkin_notifications, now_utc)
             daily_jobs = await asyncio.to_thread(schedule_daily_admin_report_archive_notifications, now_utc)
+            scheduled_task_jobs = await asyncio.to_thread(enqueue_due_scheduled_notification_tasks, now_utc)
             processed_jobs = await asyncio.to_thread(send_pending_notifications, 100, now_utc=now_utc)
             daily_report_health = await asyncio.to_thread(get_daily_report_job_health, now_utc)
             if settings.admin_push_healthcheck_enabled:
@@ -369,7 +371,7 @@ async def _notification_worker_loop(stop_event: asyncio.Event) -> None:
                         "notification_admin_claim_health_check",
                         extra=admin_claim_health_summary,
                     )
-            created_jobs_count = len(created_jobs) + len(missing_checkin_jobs) + len(daily_jobs)
+            created_jobs_count = len(created_jobs) + len(missing_checkin_jobs) + len(daily_jobs) + len(scheduled_task_jobs)
             processed_jobs_count = len(processed_jobs)
         except Exception:
             notification_worker_logger.exception("notification_worker_tick_failed")

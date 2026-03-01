@@ -515,6 +515,35 @@ export interface AdminManualNotificationSendResponse {
   admin_target_missing: boolean
 }
 
+export interface ScheduledNotificationTask {
+  id: number
+  name: string
+  title: string
+  message: string
+  target: 'employees' | 'admins' | 'both'
+  employee_scope: 'all' | 'selected' | null
+  admin_scope: 'all' | 'selected' | null
+  employee_ids: number[]
+  admin_user_ids: number[]
+  schedule_kind: 'once' | 'daily'
+  run_date_local: string | null
+  run_time_local: string
+  timezone_name: string
+  is_active: boolean
+  last_enqueued_local_date: string | null
+  last_enqueued_at_utc: string | null
+  next_run_at_utc: string | null
+  created_by_username: string | null
+  updated_by_username: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ScheduledNotificationTaskPageResponse {
+  items: ScheduledNotificationTask[]
+  total: number
+}
+
 export interface ManualDayOverride {
   id: number
   employee_id: number
