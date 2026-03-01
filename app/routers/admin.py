@@ -4559,26 +4559,31 @@ def list_attendance_events(
     location_status: LocationStatus | None = Query(default=None),
     duplicates_only: bool = Query(default=False),
     include_deleted: bool = Query(default=False),
+    offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
     db: Session = Depends(get_db),
 ) -> list[AttendanceEventRead]:
-    stmt = select(AttendanceEvent).order_by(AttendanceEvent.id.desc()).limit(limit)
+    stmt = (
+        select(
+            AttendanceEvent,
+            Employee.full_name.label("employee_name"),
+            Department.name.label("department_name"),
+        )
+        .join(Employee, Employee.id == AttendanceEvent.employee_id)
+        .join(Department, Department.id == Employee.department_id, isouter=True)
+        .order_by(AttendanceEvent.id.desc())
+        .offset(offset)
+        .limit(limit)
+    )
     attendance_tz = _attendance_timezone()
-    employee_joined = False
     if not include_deleted:
         stmt = stmt.where(AttendanceEvent.deleted_at.is_(None))
     if employee_id is not None:
         stmt = stmt.where(AttendanceEvent.employee_id == employee_id)
     if department_id is not None:
-        stmt = stmt.join(Employee, Employee.id == AttendanceEvent.employee_id).where(
-            Employee.department_id == department_id
-        )
-        employee_joined = True
+        stmt = stmt.where(Employee.department_id == department_id)
     if region_id is not None:
-        if not employee_joined:
-            stmt = stmt.join(Employee, Employee.id == AttendanceEvent.employee_id)
-            employee_joined = True
-        stmt = stmt.join(Department, Department.id == Employee.department_id, isouter=True).where(
+        stmt = stmt.where(
             or_(
                 Employee.region_id == region_id,
                 and_(Employee.region_id.is_(None), Department.region_id == region_id),
@@ -4599,7 +4604,14 @@ def list_attendance_events(
         stmt = stmt.where(AttendanceEvent.location_status == location_status)
     if duplicates_only:
         stmt = stmt.where(AttendanceEvent.flags["DUPLICATE_EVENT"].astext == "true")
-    return list(db.scalars(stmt).all())
+    rows = db.execute(stmt).all()
+    items: list[AttendanceEventRead] = []
+    for event, employee_name, department_name in rows:
+        payload = AttendanceEventRead.model_validate(event).model_dump()
+        payload["employee_name"] = employee_name
+        payload["department_name"] = department_name
+        items.append(AttendanceEventRead(**payload))
+    return items
 
 
 @router.post(

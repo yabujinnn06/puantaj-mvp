@@ -201,6 +201,8 @@ export interface QrPoint {
 export interface AttendanceEvent {
   id: number
   employee_id: number
+  employee_name: string | null
+  department_name: string | null
   device_id: number
   type: AttendanceType
   ts_utc: string
@@ -773,6 +775,7 @@ export interface ControlRoomOverview {
 export interface ControlRoomEmployeeDetail {
   generated_at_utc: string
   employee_state: ControlRoomEmployeeState
+  risk_history: ControlRoomTrendPoint[]
   risk_formula: ControlRoomRiskFormulaItem[]
   recent_measures: ControlRoomMeasure[]
   recent_notes: ControlRoomNote[]

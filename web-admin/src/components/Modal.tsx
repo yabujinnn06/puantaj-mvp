@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 
 export function Modal({
   open,
@@ -15,6 +15,30 @@ export function Modal({
   placement?: 'center' | 'right'
   maxWidthClass?: string
 }) {
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null)
+
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    closeButtonRef.current?.focus()
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose()
+      }
+    }
+
+    window.addEventListener('keydown', handleEscape)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', handleEscape)
+    }
+  }, [onClose, open])
+
   if (!open) {
     return null
   }
@@ -22,29 +46,28 @@ export function Modal({
   const isRightPlacement = placement === 'right'
 
   return (
-    <div
-      className={`fixed inset-0 z-50 flex bg-slate-900/45 ${
-        isRightPlacement ? 'items-stretch justify-end p-0 sm:p-3' : 'items-center justify-center px-4'
-      }`}
-    >
+    <div className={`mc-modal ${isRightPlacement ? 'is-right' : 'is-center'}`} role="presentation">
+      <button type="button" className="mc-modal__backdrop" aria-label="Kapat" onClick={onClose} />
       <div
-        className={`admin-panel page-enter w-full border border-slate-200 bg-white p-5 shadow-2xl ${
-          isRightPlacement
-            ? `${maxWidthClass} h-full overflow-y-auto rounded-none sm:rounded-l-2xl`
-            : `${maxWidthClass} rounded-xl`
-        }`}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className={`mc-modal__panel ${maxWidthClass} ${isRightPlacement ? 'is-right' : 'is-center'} page-enter`}
       >
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <h4 className="text-base font-semibold text-slate-900">{title}</h4>
+        <div className="mc-modal__header">
+          <div>
+            <h4>{title}</h4>
+          </div>
           <button
+            ref={closeButtonRef}
             type="button"
             onClick={onClose}
-            className="btn-animated rounded-lg border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+            className="mc-button mc-button--ghost"
           >
             Kapat
           </button>
         </div>
-        {children}
+        <div className="mc-modal__body">{children}</div>
       </div>
     </div>
   )

@@ -1278,6 +1278,7 @@ def build_control_room_employee_detail(db: Session, *, employee_id: int) -> Cont
     return ControlRoomEmployeeDetailResponse(
         generated_at_utc=overview.generated_at_utc,
         employee_state=overview.items[0],
+        risk_history=overview.summary.weekly_trend,
         risk_formula=RISK_FORMULA_ITEMS,
         recent_measures=[_measure_from_audit(item) for item in audit_rows if item.action in {CONTROL_ROOM_ACTION_AUDIT, CONTROL_ROOM_OVERRIDE_AUDIT}],
         recent_notes=[_note_from_audit(item) for item in audit_rows if item.action == CONTROL_ROOM_NOTE_AUDIT],

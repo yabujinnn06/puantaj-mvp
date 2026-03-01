@@ -352,6 +352,7 @@ class ControlRoomOverviewResponse(BaseModel):
 class ControlRoomEmployeeDetailResponse(BaseModel):
     generated_at_utc: datetime
     employee_state: ControlRoomEmployeeStateRead
+    risk_history: list[ControlRoomTrendPointRead] = Field(default_factory=list)
     risk_formula: list[ControlRoomRiskFormulaItemRead] = Field(default_factory=list)
     recent_measures: list[ControlRoomMeasureRead] = Field(default_factory=list)
     recent_notes: list[ControlRoomNoteRead] = Field(default_factory=list)
@@ -1002,6 +1003,8 @@ class AttendanceEventCreate(BaseModel):
 class AttendanceEventRead(BaseModel):
     id: int
     employee_id: int
+    employee_name: str | None = None
+    department_name: str | None = None
     device_id: int
     type: AttendanceType
     ts_utc: datetime

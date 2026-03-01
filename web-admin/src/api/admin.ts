@@ -229,12 +229,14 @@ export interface SchedulePlanParams {
 export interface AttendanceEventParams {
   employee_id?: number;
   department_id?: number;
+  region_id?: number;
   start_date?: string;
   end_date?: string;
   type?: AttendanceType;
   location_status?: LocationStatus;
   duplicates_only?: boolean;
   include_deleted?: boolean;
+  offset?: number;
   limit?: number;
 }
 
