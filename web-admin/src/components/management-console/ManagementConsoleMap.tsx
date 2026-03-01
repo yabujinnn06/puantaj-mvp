@@ -68,7 +68,7 @@ function clusterIcon(count: number): L.DivIcon {
 function popupHtml(event: ManagementConsoleMapEvent, showTechnicalDetails: boolean): string {
   const lines = [
     `<strong>${escapeHtml(event.employeeName)}</strong>`,
-    `<div>${escapeHtml(eventTypeLabel(event.eventType))} • ${escapeHtml(formatDateTime(event.tsUtc))}</div>`,
+    `<div>${escapeHtml(eventTypeLabel(event.eventType))} &bull; ${escapeHtml(formatDateTime(event.tsUtc))}</div>`,
     `<div>${escapeHtml(event.departmentName ?? 'Departman yok')}</div>`,
     `<div>Konum durumu: ${escapeHtml(locationStatusLabel(event.locationStatus))}</div>`,
   ]

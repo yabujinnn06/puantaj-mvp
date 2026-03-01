@@ -123,26 +123,29 @@ export function ManagementConsoleEmployeeDetailModal({
       if (!employeeId || !actionState) {
         throw new Error('Personel seçilmedi.')
       }
+
       if (actionState.kind === 'action') {
         return createControlRoomEmployeeAction({
           employee_id: employeeId,
           action_type: actionState.actionType,
           reason,
           note,
-          duration_days: duration === 'indefinite' ? undefined : Number(duration) as 1 | 3 | 7,
+          duration_days: duration === 'indefinite' ? undefined : (Number(duration) as 1 | 3 | 7),
           indefinite: duration === 'indefinite',
         })
       }
+
       if (actionState.kind === 'override') {
         return createControlRoomRiskOverride({
           employee_id: employeeId,
           override_score: Math.max(0, Math.min(100, Number(overrideScore) || 0)),
           reason,
           note,
-          duration_days: duration === 'indefinite' ? undefined : Number(duration) as 1 | 3 | 7,
+          duration_days: duration === 'indefinite' ? undefined : (Number(duration) as 1 | 3 | 7),
           indefinite: duration === 'indefinite',
         })
       }
+
       return createControlRoomNote({ employee_id: employeeId, note })
     },
     onSuccess: (result) => {
@@ -154,7 +157,9 @@ export function ManagementConsoleEmployeeDetailModal({
       setOverrideScore('50')
       void queryClient.invalidateQueries({ queryKey: ['control-room-overview'] })
       void queryClient.invalidateQueries({ queryKey: ['management-console-detail', employeeId] })
-      void queryClient.invalidateQueries({ queryKey: ['management-console-detail-notifications', employeeId, bounds.start, bounds.end] })
+      void queryClient.invalidateQueries({
+        queryKey: ['management-console-detail-notifications', employeeId, bounds.start, bounds.end],
+      })
     },
     onError: (error: unknown) => {
       pushToast({
@@ -165,6 +170,16 @@ export function ManagementConsoleEmployeeDetailModal({
     },
   })
 
+  const detail = detailQuery.data
+  const employee = detail?.employee_state ?? null
+  const riskHistoryMax = Math.max(1, ...(detail?.risk_history ?? []).map((item) => item.value))
+  const recentEvents = useMemo(
+    () =>
+      [...(attendanceQuery.data ?? [])]
+        .sort((left, right) => new Date(right.ts_utc).getTime() - new Date(left.ts_utc).getTime())
+        .slice(0, 12),
+    [attendanceQuery.data],
+  )
   const overtimeDays = useMemo(
     () =>
       (monthlyQuery.data?.days ?? [])
@@ -180,24 +195,14 @@ export function ManagementConsoleEmployeeDetailModal({
     [monthlyQuery.data?.days],
   )
 
-  const detail = detailQuery.data
-  const employee = detail?.employee_state ?? null
-  const riskHistoryMax = Math.max(1, ...(detail?.risk_history ?? []).map((item) => item.value))
-  const recentEvents = useMemo(
-    () =>
-      [...(attendanceQuery.data ?? [])]
-        .sort((left, right) => new Date(right.ts_utc).getTime() - new Date(left.ts_utc).getTime())
-        .slice(0, 12),
-    [attendanceQuery.data],
-  )
-
   return (
     <Modal
       open={open}
       title={employee ? `${employee.employee.full_name} · Operasyon dosyası` : 'Operasyon dosyası'}
       onClose={onClose}
-      placement="right"
-      maxWidthClass="max-w-6xl"
+      placement="center"
+      maxWidthClass="max-w-none"
+      panelClassName="mc-modal__panel--detail"
     >
       {detailQuery.isLoading && !detail ? (
         <LoadingBlock label="Personel dosyası yükleniyor..." />
@@ -213,14 +218,22 @@ export function ManagementConsoleEmployeeDetailModal({
                 {employee.department_name ?? 'Departman yok'} · {employee.shift_name ?? 'Vardiya tanımı yok'} ·{' '}
                 {todayStatusLabel(employee.today_status)}
               </p>
+              <div className="mc-detail__hero-tags">
+                <span className={`mc-status-pill ${riskClass(employee.risk_status)}`}>
+                  {riskStatusLabel(employee.risk_status)}
+                </span>
+                <span className="mc-chip">{employee.shift_window_label ?? 'Plan penceresi yok'}</span>
+                <span className="mc-chip">{employee.location_label ?? 'Konum bilgisi yok'}</span>
+              </div>
             </div>
+
             <div className={`mc-detail__score ${riskClass(employee.risk_status)}`}>
               <strong>{employee.risk_score}</strong>
               <span>{riskStatusLabel(employee.risk_status)}</span>
             </div>
           </header>
 
-          <section className="mc-detail__stats">
+          <section className="mc-detail__summary-grid">
             <article className="mc-detail__stat">
               <span>Son giriş</span>
               <strong>{formatDateTime(employee.last_checkin_utc)}</strong>
@@ -231,11 +244,15 @@ export function ManagementConsoleEmployeeDetailModal({
             </article>
             <article className="mc-detail__stat">
               <span>Bugünkü süre</span>
-              <strong><MinuteDisplay minutes={employee.worked_today_minutes} /></strong>
+              <strong>
+                <MinuteDisplay minutes={employee.worked_today_minutes} />
+              </strong>
             </article>
             <article className="mc-detail__stat">
               <span>Haftalık toplam</span>
-              <strong><MinuteDisplay minutes={employee.weekly_total_minutes} /></strong>
+              <strong>
+                <MinuteDisplay minutes={employee.weekly_total_minutes} />
+              </strong>
             </article>
             <article className="mc-detail__stat">
               <span>Son aktivite</span>
@@ -248,8 +265,8 @@ export function ManagementConsoleEmployeeDetailModal({
             </article>
           </section>
 
-          <div className="mc-detail__layout">
-            <div className="mc-detail__main">
+          <div className="mc-detail__content">
+            <main className="mc-detail__primary">
               <section className="mc-detail__section">
                 <div className="mc-detail__section-head">
                   <div>
@@ -306,7 +323,9 @@ export function ManagementConsoleEmployeeDetailModal({
                           </p>
                         </div>
                         <div className="mc-detail__list-side">
-                          <strong><MinuteDisplay minutes={day.overtime_minutes} /></strong>
+                          <strong>
+                            <MinuteDisplay minutes={day.overtime_minutes} />
+                          </strong>
                           <span>Toplam mesai</span>
                         </div>
                       </article>
@@ -317,6 +336,35 @@ export function ManagementConsoleEmployeeDetailModal({
                 </div>
               </section>
 
+              <section className="mc-detail__section">
+                <div className="mc-detail__section-head">
+                  <div>
+                    <h4>İnceleme izi</h4>
+                    <p>Son yönetim ve sistem kayıtları</p>
+                  </div>
+                </div>
+                <div className="mc-detail__list">
+                  {detail.recent_audit_entries.length ? (
+                    detail.recent_audit_entries.slice(0, 8).map((entry) => (
+                      <article key={entry.audit_id} className="mc-detail__list-row">
+                        <div>
+                          <strong>{entry.label}</strong>
+                          <p>{formatDateTime(entry.ts_utc)}</p>
+                        </div>
+                        <div className="mc-detail__list-side">
+                          <strong>{entry.actor_id}</strong>
+                          <span>{entry.ip ?? 'IP yok'}</span>
+                        </div>
+                      </article>
+                    ))
+                  ) : (
+                    <div className="mc-empty-state">Audit kaydı bulunmuyor.</div>
+                  )}
+                </div>
+              </section>
+            </main>
+
+            <aside className="mc-detail__secondary">
               <section className="mc-detail__section">
                 <div className="mc-detail__section-head">
                   <div>
@@ -343,9 +391,7 @@ export function ManagementConsoleEmployeeDetailModal({
                   )}
                 </div>
               </section>
-            </div>
 
-            <aside className="mc-detail__side">
               <section className="mc-detail__section">
                 <div className="mc-detail__section-head">
                   <div>
@@ -440,7 +486,7 @@ export function ManagementConsoleEmployeeDetailModal({
                 </div>
               </section>
 
-              <section className="mc-detail__section">
+              <section className="mc-detail__section mc-detail__section--action">
                 <div className="mc-detail__section-head">
                   <div>
                     <h4>Müdahale</h4>
@@ -498,6 +544,7 @@ export function ManagementConsoleEmployeeDetailModal({
                             placeholder="İşlem gerekçesi"
                           />
                         </label>
+
                         {actionState.kind === 'override' ? (
                           <label className="mc-field">
                             <span>Risk skoru</span>
@@ -510,6 +557,7 @@ export function ManagementConsoleEmployeeDetailModal({
                             />
                           </label>
                         ) : null}
+
                         <label className="mc-field">
                           <span>Süre</span>
                           <select
@@ -531,9 +579,7 @@ export function ManagementConsoleEmployeeDetailModal({
                     </label>
 
                     <div className="mc-action-composer__footer">
-                      <span>
-                        Süre: {actionState.kind === 'note' ? 'Anlık kayıt' : durationLabel(duration)}
-                      </span>
+                      <span>Süre: {actionState.kind === 'note' ? 'Anlık kayıt' : durationLabel(duration)}</span>
                       <div className="mc-action-composer__actions">
                         <button
                           type="button"

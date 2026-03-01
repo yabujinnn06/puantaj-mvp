@@ -17,7 +17,13 @@ import { ManagementConsoleKpiCards } from '../components/management-console/Mana
 import { ManagementConsoleMapPanel } from '../components/management-console/ManagementConsoleMapPanel'
 import { ManagementConsoleMatrixTable } from '../components/management-console/ManagementConsoleMatrixTable'
 import { ManagementConsoleNotificationPanel } from '../components/management-console/ManagementConsoleNotificationPanel'
-import { defaultFilters, parseNumber, toOverviewParams, type FilterFormState, type SortField } from '../components/management-console/types'
+import {
+  defaultFilters,
+  parseNumber,
+  toOverviewParams,
+  type FilterFormState,
+  type SortField,
+} from '../components/management-console/types'
 import {
   formatClockMinutes,
   formatDateTime,
