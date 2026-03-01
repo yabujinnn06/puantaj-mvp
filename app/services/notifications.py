@@ -48,6 +48,10 @@ from app.services.attendance import (
 )
 from app.services.push_notifications import send_push_to_admins, send_push_to_employees
 from app.services.schedule_plans import resolve_effective_plan_for_employee_day
+from app.services.weekday_shift_assignments import (
+    resolve_employee_day_shift_candidates,
+    select_employee_preferred_shift,
+)
 from app.settings import get_public_base_url, get_settings
 
 try:
@@ -509,6 +513,17 @@ def _build_open_shift_record(
     shift: DepartmentShift | None = None
     if plan is not None and plan.shift_id is not None:
         shift = session.get(DepartmentShift, plan.shift_id)
+    if shift is None:
+        weekday_shift = select_employee_preferred_shift(
+            employee=employee,
+            shifts=resolve_employee_day_shift_candidates(
+                session,
+                employee=employee,
+                day_date=local_day,
+            ),
+        )
+        if weekday_shift is not None:
+            shift = weekday_shift
     if shift is None and employee.shift_id is not None:
         shift = session.get(DepartmentShift, employee.shift_id)
     if shift is None:

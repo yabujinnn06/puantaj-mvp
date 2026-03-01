@@ -59,7 +59,9 @@ class _FakeNotificationDB:
         self._scalar_values = list(scalar_values)
         self._get_map = get_map
 
-    def scalars(self, _statement):  # type: ignore[no-untyped-def]
+    def scalars(self, statement):  # type: ignore[no-untyped-def]
+        if "department_weekday_shift_assignments" in str(statement):
+            return _ScalarRows([])
         return _ScalarRows(self._employees)
 
     def scalar(self, _statement):  # type: ignore[no-untyped-def]
@@ -105,7 +107,9 @@ class _FakeMissingCheckinSession:
         self.added: list[NotificationJob] = []
         self.commit_count = 0
 
-    def scalars(self, _statement):  # type: ignore[no-untyped-def]
+    def scalars(self, statement):  # type: ignore[no-untyped-def]
+        if "department_weekday_shift_assignments" in str(statement):
+            return _ScalarRows([])
         return _ScalarRows(self._events)
 
     def get(self, model, pk):  # type: ignore[no-untyped-def]
@@ -128,7 +132,9 @@ class _FakeAutoCheckoutRepairSession:
         self._get_map = get_map
         self.commit_count = 0
 
-    def scalars(self, _statement):  # type: ignore[no-untyped-def]
+    def scalars(self, statement):  # type: ignore[no-untyped-def]
+        if "department_weekday_shift_assignments" in str(statement):
+            return _ScalarRows([])
         return _ScalarRows(self._events)
 
     def scalar(self, _statement):  # type: ignore[no-untyped-def]

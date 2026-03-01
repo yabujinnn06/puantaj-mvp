@@ -26,6 +26,12 @@ const FLAG_DICTIONARY: Record<string, FlagMeta> = {
       'Aynı gün için haftalık gün kuralı ile vardiya süresi/mola bilgisi farklı. Hesaplamada vardiya kuralı önceliklendirildi.',
     tone: 'warning',
   },
+  WEEKDAY_SHIFT_ASSIGNMENT: {
+    label: 'Günlük vardiya planı',
+    description:
+      'Bu gün için departmanın vardiya atama planı kullanıldı. Legacy haftalık dakika kuralı devre dışı bırakıldı.',
+    tone: 'info',
+  },
   CROSS_MIDNIGHT_CHECKOUT: {
     label: 'Gece vardiyası çıkışı',
     description:

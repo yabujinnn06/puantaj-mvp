@@ -7,6 +7,7 @@ from app.models import (
     AttendanceEvent,
     AttendanceType,
     DepartmentShift,
+    DepartmentWeekdayShiftAssignment,
     DepartmentWeeklyRule,
     Employee,
     LocationStatus,
@@ -74,6 +75,64 @@ class WeeklyRulesAndShiftsTests(unittest.TestCase):
         self.assertIsNotNone(first_day)
         self.assertEqual(first_day.status, "OFF")
         self.assertEqual(first_day.worked_minutes, 0)
+
+    def test_weekday_shift_assignment_overrides_legacy_weekly_off_rule(self) -> None:
+        employee = Employee(id=11, full_name="Assigned User", department_id=1, shift_id=10, is_active=True)
+        work_rule = WorkRule(
+            id=11,
+            department_id=1,
+            daily_minutes_planned=540,
+            break_minutes=60,
+            grace_minutes=5,
+        )
+        sunday_off = DepartmentWeeklyRule(
+            id=11,
+            department_id=1,
+            weekday=6,
+            is_workday=False,
+            planned_minutes=0,
+            break_minutes=0,
+        )
+        shift = DepartmentShift(
+            id=10,
+            department_id=1,
+            name="Pazar 09:00-14:00",
+            start_time_local=time(9, 0),
+            end_time_local=time(14, 0),
+            break_minutes=0,
+            is_active=True,
+        )
+        assignment = DepartmentWeekdayShiftAssignment(
+            id=1,
+            department_id=1,
+            weekday=6,
+            shift_id=10,
+            sort_order=0,
+            is_active=True,
+        )
+        assignment.shift = shift
+
+        fake_db = _FakeMonthlyDB(
+            scalar_values=[employee, work_rule, None],
+            scalars_values=[
+                [],
+                [],
+                [],
+                [sunday_off],
+                [shift],
+                [assignment],
+                [],
+            ],
+        )
+
+        report = calculate_employee_monthly(fake_db, employee_id=11, year=2026, month=2)
+        first_day = next((day for day in report.days if day.date == date(2026, 2, 1)), None)
+        self.assertIsNotNone(first_day)
+        assert first_day is not None
+        self.assertEqual(first_day.status, "INCOMPLETE")
+        self.assertEqual(first_day.shift_id, 10)
+        self.assertIn("MISSING_IN", first_day.flags)
+        self.assertNotEqual(first_day.status, "OFF")
 
     def test_shift_assignment_changes_daily_planned_and_overtime(self) -> None:
         employee = Employee(id=2, full_name="Shift User", department_id=1, shift_id=10, is_active=True)

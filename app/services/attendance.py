@@ -31,6 +31,7 @@ from app.settings import get_settings
 from app.services.location import distance_m, evaluate_location
 from app.services.push_notifications import send_push_to_admins
 from app.services.schedule_plans import resolve_effective_plan_for_employee_day
+from app.services.weekday_shift_assignments import resolve_employee_day_shift_candidates
 
 QR_DOUBLE_SCAN_WINDOW = timedelta(minutes=5)
 EXTRA_CHECKIN_APPROVAL_STATUS_PENDING = "PENDING"
@@ -469,16 +470,23 @@ def _infer_shift_from_checkin_time(
     if employee.department_id is None:
         return None, None
 
-    shifts = list(
-        db.scalars(
-            select(DepartmentShift)
-            .where(
-                DepartmentShift.department_id == employee.department_id,
-                DepartmentShift.is_active.is_(True),
-            )
-            .order_by(DepartmentShift.id.asc())
-        ).all()
+    local_day = _normalize_ts(checkin_ts_utc).astimezone(_attendance_timezone()).date()
+    shifts = resolve_employee_day_shift_candidates(
+        db,
+        employee=employee,
+        day_date=local_day,
     )
+    if not shifts:
+        shifts = list(
+            db.scalars(
+                select(DepartmentShift)
+                .where(
+                    DepartmentShift.department_id == employee.department_id,
+                    DepartmentShift.is_active.is_(True),
+                )
+                .order_by(DepartmentShift.id.asc())
+            ).all()
+        )
     if not shifts:
         return None, None
 

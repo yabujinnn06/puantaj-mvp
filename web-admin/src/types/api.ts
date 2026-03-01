@@ -160,6 +160,21 @@ export interface DepartmentWeeklyRule {
   updated_at: string
 }
 
+export interface DepartmentWeekdayShiftAssignment {
+  id: number
+  department_id: number
+  weekday: number
+  shift_id: number
+  shift_name: string
+  shift_start_time_local: string
+  shift_end_time_local: string
+  shift_break_minutes: number
+  sort_order: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
 export interface DepartmentShift {
   id: number
   department_id: number

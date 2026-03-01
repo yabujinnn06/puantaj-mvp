@@ -1,15 +1,15 @@
-﻿import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import {
   deleteDepartmentShift,
   getDepartments,
   getDepartmentShifts,
-  getDepartmentWeeklyRules,
+  getDepartmentWeekdayShiftAssignments,
   getEmployees,
+  replaceDepartmentWeekdayShiftAssignments,
   updateEmployeeDepartment,
   upsertDepartmentShift,
-  upsertDepartmentWeeklyRule,
 } from '../api/admin'
 import { parseApiError } from '../api/error'
 import { EmployeeAutocompleteField } from '../components/EmployeeAutocompleteField'
@@ -18,24 +18,9 @@ import { LoadingBlock } from '../components/LoadingBlock'
 import { MinuteDisplay } from '../components/MinuteDisplay'
 import { PageHeader } from '../components/PageHeader'
 import { Panel } from '../components/Panel'
+import { WeekdayShiftAssignmentEditor } from '../components/schedule/WeekdayShiftAssignmentEditor'
 import { useToast } from '../hooks/useToast'
 import type { DepartmentShift } from '../types/api'
-
-type WeeklyDraft = {
-  is_workday: boolean
-  planned_minutes: string
-  break_minutes: string
-}
-
-const WEEKDAYS = [
-  { value: 0, label: 'Pazartesi' },
-  { value: 1, label: 'Salı' },
-  { value: 2, label: 'Çarşamba' },
-  { value: 3, label: 'Perşembe' },
-  { value: 4, label: 'Cuma' },
-  { value: 5, label: 'Cumartesi' },
-  { value: 6, label: 'Pazar' },
-]
 
 export function QuickSetupPage() {
   const queryClient = useQueryClient()
@@ -44,7 +29,6 @@ export function QuickSetupPage() {
   const [selectedDepartmentId, setSelectedDepartmentId] = useState('')
   const [assignmentEmployeeId, setAssignmentEmployeeId] = useState('')
   const [assignmentDepartmentId, setAssignmentDepartmentId] = useState('')
-  const [weeklyDrafts, setWeeklyDrafts] = useState<Record<number, WeeklyDraft>>({})
 
   const [shiftName, setShiftName] = useState('')
   const [shiftStartTime, setShiftStartTime] = useState('09:00')
@@ -58,9 +42,9 @@ export function QuickSetupPage() {
     queryKey: ['employees', 'all-for-quick-setup'],
     queryFn: () => getEmployees({ include_inactive: true, status: 'all' }),
   })
-  const weeklyRulesQuery = useQuery({
-    queryKey: ['department-weekly-rules'],
-    queryFn: () => getDepartmentWeeklyRules(),
+  const weekdayShiftAssignmentsQuery = useQuery({
+    queryKey: ['department-weekday-shifts'],
+    queryFn: () => getDepartmentWeekdayShiftAssignments({ active_only: true }),
   })
   const shiftsQuery = useQuery({
     queryKey: ['department-shifts'],
@@ -90,20 +74,20 @@ export function QuickSetupPage() {
     },
   })
 
-  const upsertWeeklyRuleMutation = useMutation({
-    mutationFn: upsertDepartmentWeeklyRule,
+  const replaceWeekdayShiftAssignmentsMutation = useMutation({
+    mutationFn: replaceDepartmentWeekdayShiftAssignments,
     onSuccess: () => {
       pushToast({
         variant: 'success',
-        title: 'Haftalık kural kaydedildi',
-        description: 'Seçilen gün için plan güncellendi.',
+        title: 'Günlük vardiya planı kaydedildi',
+        description: 'Seçilen gün için vardiya ataması güncellendi.',
       })
-      void queryClient.invalidateQueries({ queryKey: ['department-weekly-rules'] })
+      void queryClient.invalidateQueries({ queryKey: ['department-weekday-shifts'] })
     },
     onError: (error) => {
       pushToast({
         variant: 'error',
-        title: 'Haftalık kural kaydedilemedi',
+        title: 'Günlük vardiya planı kaydedilemedi',
         description: parseApiError(error, 'İşlem başarısız.').message,
       })
     },
@@ -191,9 +175,27 @@ export function QuickSetupPage() {
     },
   })
 
+  if (
+    departmentsQuery.isLoading ||
+    employeesQuery.isLoading ||
+    weekdayShiftAssignmentsQuery.isLoading ||
+    shiftsQuery.isLoading
+  ) {
+    return <LoadingBlock />
+  }
+
+  if (
+    departmentsQuery.isError ||
+    employeesQuery.isError ||
+    weekdayShiftAssignmentsQuery.isError ||
+    shiftsQuery.isError
+  ) {
+    return <ErrorBlock message="Hızlı ayarlar verileri alınamadı." />
+  }
+
   const departments = departmentsQuery.data ?? []
   const employees = employeesQuery.data ?? []
-  const weeklyRules = weeklyRulesQuery.data ?? []
+  const weekdayShiftAssignments = weekdayShiftAssignmentsQuery.data ?? []
   const shifts = shiftsQuery.data ?? []
 
   const departmentNameById = useMemo(
@@ -206,58 +208,21 @@ export function QuickSetupPage() {
     return shifts.filter((item) => item.department_id === selectedDepartmentNum)
   }, [selectedDepartmentNum, shifts])
 
+  const filteredWeekdayAssignments = useMemo(() => {
+    if (!selectedDepartmentNum) return []
+    return weekdayShiftAssignments.filter((item) => item.department_id === selectedDepartmentNum)
+  }, [selectedDepartmentNum, weekdayShiftAssignments])
+
   const selectedAssignmentEmployee = useMemo(
     () => employees.find((item) => String(item.id) === assignmentEmployeeId),
     [employees, assignmentEmployeeId],
   )
 
-  useEffect(() => {
-    if (!selectedDepartmentNum) {
-      setWeeklyDrafts({})
-      return
-    }
-
-    const rulesByWeekday = new Map(
-      weeklyRules
-        .filter((rule) => rule.department_id === selectedDepartmentNum)
-        .map((rule) => [rule.weekday, rule]),
-    )
-
-    const nextDrafts: Record<number, WeeklyDraft> = {}
-    for (const weekday of WEEKDAYS) {
-      const existing = rulesByWeekday.get(weekday.value)
-      nextDrafts[weekday.value] = {
-        is_workday: existing?.is_workday ?? true,
-        planned_minutes: String(existing?.planned_minutes ?? 540),
-        break_minutes: String(existing?.break_minutes ?? 60),
-      }
-    }
-    setWeeklyDrafts(nextDrafts)
-  }, [selectedDepartmentNum, weeklyRules])
-
-  if (
-    departmentsQuery.isLoading ||
-    employeesQuery.isLoading ||
-    weeklyRulesQuery.isLoading ||
-    shiftsQuery.isLoading
-  ) {
-    return <LoadingBlock />
-  }
-
-  if (
-    departmentsQuery.isError ||
-    employeesQuery.isError ||
-    weeklyRulesQuery.isError ||
-    shiftsQuery.isError
-  ) {
-    return <ErrorBlock message="Hızlı ayarlar verileri alınamadı." />
-  }
-
   return (
     <div className="space-y-4">
       <PageHeader
         title="Hızlı Ayarlar"
-        description="Sadece gerekli kurulum adımları: çalışan-departman ataması, haftalık gün kuralları ve vardiyalar."
+        description="Sadece gerekli kurulum adımları: çalışan-departman ataması, günlük vardiya planı ve vardiyalar."
       />
 
       <Panel>
@@ -330,12 +295,12 @@ export function QuickSetupPage() {
       </Panel>
 
       <Panel>
-        <h4 className="text-base font-semibold text-slate-900">2) Departman Haftalık Gün Kuralları</h4>
+        <h4 className="text-base font-semibold text-slate-900">2) Günlük Vardiya Planı</h4>
         <p className="mt-1 text-xs text-slate-500">
-          Her gün için çalışma günü, planlanan dakika ve mola dakikasını belirleyin.
+          Bir güne birden fazla vardiya atanabilir. Sistem önce bu listedeki vardiyalar arasından seçim yapar.
         </p>
 
-        <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <div className="mt-3 grid gap-3 md:grid-cols-[minmax(260px,340px)_1fr]">
           <label className="text-sm text-slate-700">
             Departman
             <select
@@ -351,131 +316,34 @@ export function QuickSetupPage() {
               ))}
             </select>
           </label>
+
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-600">
+            Eğer gün için vardiya atamazsanız sistem eski fallback kurallarına döner. Net davranış için her çalışma
+            gününe en az bir vardiya tanımlayın.
+          </div>
         </div>
 
-        {selectedDepartmentNum ? (
-          <div className="mt-4 overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
-              <thead className="text-xs uppercase text-slate-500">
-                <tr>
-                  <th className="py-2">Gün</th>
-                  <th className="py-2">Çalışma Günü</th>
-                  <th className="py-2">Planlanan Dakika</th>
-                  <th className="py-2">Mola Dakika</th>
-                  <th className="py-2 text-right">İşlem</th>
-                </tr>
-              </thead>
-              <tbody>
-                {WEEKDAYS.map((weekday) => {
-                  const draft = weeklyDrafts[weekday.value] ?? {
-                    is_workday: true,
-                    planned_minutes: '540',
-                    break_minutes: '60',
-                  }
-
-                  return (
-                    <tr key={weekday.value} className="border-t border-slate-100">
-                      <td className="py-2">{weekday.label}</td>
-                      <td className="py-2">
-                        <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                          <input
-                            type="checkbox"
-                            checked={draft.is_workday}
-                            onChange={(event) =>
-                              setWeeklyDrafts((prev) => ({
-                                ...prev,
-                                [weekday.value]: {
-                                  ...draft,
-                                  is_workday: event.target.checked,
-                                },
-                              }))
-                            }
-                          />
-                          Çalışma günü
-                        </label>
-                      </td>
-                      <td className="py-2">
-                        <input
-                          value={draft.planned_minutes}
-                          onChange={(event) =>
-                            setWeeklyDrafts((prev) => ({
-                              ...prev,
-                              [weekday.value]: {
-                                ...draft,
-                                planned_minutes: event.target.value,
-                              },
-                            }))
-                          }
-                          className="w-full rounded-lg border border-slate-300 px-3 py-2"
-                        />
-                      </td>
-                      <td className="py-2">
-                        <input
-                          value={draft.break_minutes}
-                          onChange={(event) =>
-                            setWeeklyDrafts((prev) => ({
-                              ...prev,
-                              [weekday.value]: {
-                                ...draft,
-                                break_minutes: event.target.value,
-                              },
-                            }))
-                          }
-                          className="w-full rounded-lg border border-slate-300 px-3 py-2"
-                        />
-                      </td>
-                      <td className="py-2 text-right">
-                        <button
-                          type="button"
-                          disabled={upsertWeeklyRuleMutation.isPending}
-                          onClick={() => {
-                            const planned = Number(draft.planned_minutes)
-                            const breakMinutes = Number(draft.break_minutes)
-                            if (!Number.isFinite(planned) || planned < 0) {
-                              pushToast({
-                                variant: 'error',
-                                title: 'Geçersiz planlanan dakika',
-                                description: `${weekday.label} için sayı giriniz.`,
-                              })
-                              return
-                            }
-                            if (!Number.isFinite(breakMinutes) || breakMinutes < 0) {
-                              pushToast({
-                                variant: 'error',
-                                title: 'Geçersiz mola dakikası',
-                                description: `${weekday.label} için sayı giriniz.`,
-                              })
-                              return
-                            }
-
-                            upsertWeeklyRuleMutation.mutate({
-                              department_id: selectedDepartmentNum,
-                              weekday: weekday.value,
-                              is_workday: draft.is_workday,
-                              planned_minutes: Math.trunc(planned),
-                              break_minutes: Math.trunc(breakMinutes),
-                            })
-                          }}
-                          className="rounded-lg bg-brand-600 px-3 py-2 text-xs font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          Kaydet
-                        </button>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="mt-3 text-sm text-slate-500">Haftalık kural düzenlemek için departman seçin.</p>
-        )}
+        <WeekdayShiftAssignmentEditor
+          departmentId={selectedDepartmentNum}
+          shifts={filteredShifts}
+          assignments={filteredWeekdayAssignments}
+          isSaving={replaceWeekdayShiftAssignmentsMutation.isPending}
+          onSave={(weekday, shiftIds) => {
+            if (!selectedDepartmentNum) return
+            replaceWeekdayShiftAssignmentsMutation.mutate({
+              department_id: selectedDepartmentNum,
+              weekday,
+              shift_ids: shiftIds,
+            })
+          }}
+          emptyMessage="Günlük vardiya planı düzenlemek için departman seçin."
+        />
       </Panel>
 
       <Panel>
         <h4 className="text-base font-semibold text-slate-900">3) Departman Vardiyaları</h4>
         <p className="mt-1 text-xs text-slate-500">
-          Bir departman için birden fazla vardiya tanımlayabilirsiniz (ör. 10:00-18:00 ve 14:00-22:00).
+          Bir departman için birden fazla vardiya tanımlayabilirsiniz (ör. 09:30-18:30 ve 13:00-22:00).
         </p>
 
         {selectedDepartmentNum ? (
@@ -493,8 +361,8 @@ export function QuickSetupPage() {
                   return
                 }
 
-                const breakMinutes = Number(shiftBreakMinutes)
-                if (!Number.isFinite(breakMinutes) || breakMinutes < 0) {
+                const parsedBreakMinutes = Number(shiftBreakMinutes)
+                if (!Number.isFinite(parsedBreakMinutes) || parsedBreakMinutes < 0) {
                   pushToast({
                     variant: 'error',
                     title: 'Geçersiz mola dakikası',
@@ -509,7 +377,7 @@ export function QuickSetupPage() {
                   name: shiftName.trim(),
                   start_time_local: shiftStartTime,
                   end_time_local: shiftEndTime,
-                  break_minutes: Math.trunc(breakMinutes),
+                  break_minutes: Math.trunc(parsedBreakMinutes),
                   is_active: shiftIsActive,
                 })
               }}
@@ -525,7 +393,7 @@ export function QuickSetupPage() {
                   value={shiftName}
                   onChange={(event) => setShiftName(event.target.value)}
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-                  placeholder="Örn: Sabah 10-18"
+                  placeholder="Örn: Sabah 09:30-18:30"
                 />
               </label>
 

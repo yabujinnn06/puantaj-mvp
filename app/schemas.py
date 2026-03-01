@@ -856,6 +856,27 @@ class DepartmentShiftRead(BaseModel):
     updated_at: datetime
 
 
+class DepartmentWeekdayShiftAssignmentReplaceRequest(BaseModel):
+    department_id: int
+    weekday: int = Field(ge=0, le=6)
+    shift_ids: list[int] = Field(default_factory=list)
+
+
+class DepartmentWeekdayShiftAssignmentRead(BaseModel):
+    id: int
+    department_id: int
+    weekday: int
+    shift_id: int
+    shift_name: str
+    shift_start_time_local: str
+    shift_end_time_local: str
+    shift_break_minutes: int
+    sort_order: int
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
 class QRCodeCreateRequest(BaseModel):
     name: str | None = Field(default=None, max_length=255)
     code_value: str = Field(min_length=1, max_length=255)

@@ -30,6 +30,10 @@ from app.services.attendance import (
     _resolve_active_open_shift_event,
 )
 from app.services.schedule_plans import resolve_effective_plan_for_employee_day
+from app.services.weekday_shift_assignments import (
+    resolve_employee_day_shift_candidates,
+    select_employee_preferred_shift,
+)
 
 JOB_TYPE_ATTENDANCE_MONITOR = "ATTENDANCE_MONITOR"
 
@@ -196,9 +200,20 @@ def _resolve_shift_for_day(
             grace_minutes = max(0, int(plan.grace_minutes))
 
     default_shift = session.get(DepartmentShift, employee.shift_id) if employee.shift_id is not None else None
+    weekday_shift_candidates = resolve_employee_day_shift_candidates(
+        session,
+        employee=employee,
+        day_date=local_day,
+    )
+    weekday_shift = select_employee_preferred_shift(
+        employee=employee,
+        shifts=weekday_shift_candidates,
+    )
     effective_shift: DepartmentShift | None = None
     if plan is not None and plan.shift_id is not None:
         effective_shift = session.get(DepartmentShift, plan.shift_id)
+    if effective_shift is None and weekday_shift is not None:
+        effective_shift = weekday_shift
     if effective_shift is None and default_shift is not None:
         effective_shift = default_shift
     if effective_shift is None and first_checkin_event is not None:

@@ -29,6 +29,7 @@ from app.models import (
     DepartmentSchedulePlan,
     DepartmentSchedulePlanEmployee,
     DepartmentShift,
+    DepartmentWeekdayShiftAssignment,
     DepartmentWeeklyRule,
     Device,
     DeviceInvite,
@@ -114,6 +115,8 @@ from app.schemas import (
     DeviceRead,
     DepartmentShiftRead,
     DepartmentShiftUpsert,
+    DepartmentWeekdayShiftAssignmentRead,
+    DepartmentWeekdayShiftAssignmentReplaceRequest,
     ControlRoomEmployeeAlertRead,
     ControlRoomEmployeeActionRequest,
     ControlRoomEmployeeDetailResponse,
@@ -212,6 +215,7 @@ from app.services.control_room import (
     build_control_room_employee_detail,
     build_control_room_overview,
 )
+from app.services.weekday_shift_assignments import normalize_shift_ids
 from app.services.monthly import calculate_department_monthly_summary, calculate_employee_monthly
 from app.services.push_notifications import (
     get_push_public_config,
@@ -3560,6 +3564,147 @@ def list_department_weekly_rules(
     return list(db.scalars(stmt).all())
 
 
+@router.put(
+    "/admin/department-weekday-shifts",
+    response_model=list[DepartmentWeekdayShiftAssignmentRead],
+    dependencies=[Depends(require_admin_permission("schedule", write=True))],
+)
+def replace_department_weekday_shift_assignments(
+    payload: DepartmentWeekdayShiftAssignmentReplaceRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> list[DepartmentWeekdayShiftAssignmentRead]:
+    department = db.get(Department, payload.department_id)
+    if department is None:
+        raise HTTPException(status_code=404, detail="Department not found")
+
+    shift_ids = normalize_shift_ids(payload.shift_ids)
+    shifts_by_id: dict[int, DepartmentShift] = {}
+    if shift_ids:
+        shifts = list(
+            db.scalars(
+                select(DepartmentShift).where(DepartmentShift.id.in_(shift_ids))
+            ).all()
+        )
+        shifts_by_id = {shift.id: shift for shift in shifts}
+        missing_shift_ids = [shift_id for shift_id in shift_ids if shift_id not in shifts_by_id]
+        if missing_shift_ids:
+            raise HTTPException(status_code=404, detail=f"Department shift not found: {missing_shift_ids[0]}")
+        for shift_id in shift_ids:
+            shift = shifts_by_id[shift_id]
+            if shift.department_id != payload.department_id:
+                raise HTTPException(status_code=422, detail="Shift does not belong to selected department")
+
+    existing_rows = list(
+        db.scalars(
+            select(DepartmentWeekdayShiftAssignment)
+            .options(selectinload(DepartmentWeekdayShiftAssignment.shift))
+            .where(
+                DepartmentWeekdayShiftAssignment.department_id == payload.department_id,
+                DepartmentWeekdayShiftAssignment.weekday == payload.weekday,
+            )
+            .order_by(
+                DepartmentWeekdayShiftAssignment.sort_order.asc(),
+                DepartmentWeekdayShiftAssignment.id.asc(),
+            )
+        ).all()
+    )
+    existing_by_shift_id = {row.shift_id: row for row in existing_rows}
+    desired_shift_ids = set(shift_ids)
+
+    for row in existing_rows:
+        if row.shift_id not in desired_shift_ids:
+            db.delete(row)
+
+    for sort_order, shift_id in enumerate(shift_ids):
+        row = existing_by_shift_id.get(shift_id)
+        if row is None:
+            row = DepartmentWeekdayShiftAssignment(
+                department_id=payload.department_id,
+                weekday=payload.weekday,
+                shift_id=shift_id,
+                sort_order=sort_order,
+                is_active=True,
+            )
+            db.add(row)
+            continue
+        row.sort_order = sort_order
+        row.is_active = True
+
+    db.commit()
+
+    rows = list(
+        db.scalars(
+            select(DepartmentWeekdayShiftAssignment)
+            .options(selectinload(DepartmentWeekdayShiftAssignment.shift))
+            .where(
+                DepartmentWeekdayShiftAssignment.department_id == payload.department_id,
+                DepartmentWeekdayShiftAssignment.weekday == payload.weekday,
+            )
+            .order_by(
+                DepartmentWeekdayShiftAssignment.sort_order.asc(),
+                DepartmentWeekdayShiftAssignment.id.asc(),
+            )
+        ).all()
+    )
+
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id="admin",
+        action="DEPARTMENT_WEEKDAY_SHIFT_ASSIGNMENTS_REPLACED",
+        success=True,
+        entity_type="department_weekday_shift_assignments",
+        entity_id=f"{payload.department_id}:{payload.weekday}",
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "department_id": payload.department_id,
+            "weekday": payload.weekday,
+            "shift_ids": shift_ids,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return [_to_department_weekday_shift_assignment_read(item) for item in rows]
+
+
+@router.get(
+    "/admin/department-weekday-shifts",
+    response_model=list[DepartmentWeekdayShiftAssignmentRead],
+    dependencies=[Depends(require_admin_permission("schedule"))],
+)
+def list_department_weekday_shift_assignments(
+    department_id: int | None = Query(default=None, ge=1),
+    region_id: int | None = Query(default=None, ge=1),
+    weekday: int | None = Query(default=None, ge=0, le=6),
+    active_only: bool = Query(default=True),
+    db: Session = Depends(get_db),
+) -> list[DepartmentWeekdayShiftAssignmentRead]:
+    stmt = (
+        select(DepartmentWeekdayShiftAssignment)
+        .options(selectinload(DepartmentWeekdayShiftAssignment.shift))
+        .order_by(
+            DepartmentWeekdayShiftAssignment.department_id.asc(),
+            DepartmentWeekdayShiftAssignment.weekday.asc(),
+            DepartmentWeekdayShiftAssignment.sort_order.asc(),
+            DepartmentWeekdayShiftAssignment.id.asc(),
+        )
+    )
+    if department_id is not None:
+        stmt = stmt.where(DepartmentWeekdayShiftAssignment.department_id == department_id)
+    if region_id is not None:
+        stmt = stmt.join(Department, Department.id == DepartmentWeekdayShiftAssignment.department_id).where(
+            Department.region_id == region_id
+        )
+    if weekday is not None:
+        stmt = stmt.where(DepartmentWeekdayShiftAssignment.weekday == weekday)
+    if active_only:
+        stmt = stmt.where(DepartmentWeekdayShiftAssignment.is_active.is_(True))
+
+    rows = list(db.scalars(stmt).all())
+    return [_to_department_weekday_shift_assignment_read(item) for item in rows]
+
+
 def _to_shift_read(shift: DepartmentShift) -> DepartmentShiftRead:
     return DepartmentShiftRead(
         id=shift.id,
@@ -3571,6 +3716,28 @@ def _to_shift_read(shift: DepartmentShift) -> DepartmentShiftRead:
         is_active=shift.is_active,
         created_at=shift.created_at,
         updated_at=shift.updated_at,
+    )
+
+
+def _to_department_weekday_shift_assignment_read(
+    assignment: DepartmentWeekdayShiftAssignment,
+) -> DepartmentWeekdayShiftAssignmentRead:
+    shift = assignment.shift
+    if shift is None:
+        raise HTTPException(status_code=500, detail="Department weekday shift assignment missing shift")
+    return DepartmentWeekdayShiftAssignmentRead(
+        id=assignment.id,
+        department_id=assignment.department_id,
+        weekday=assignment.weekday,
+        shift_id=assignment.shift_id,
+        shift_name=shift.name,
+        shift_start_time_local=_format_hhmm(shift.start_time_local),
+        shift_end_time_local=_format_hhmm(shift.end_time_local),
+        shift_break_minutes=shift.break_minutes,
+        sort_order=assignment.sort_order,
+        is_active=assignment.is_active,
+        created_at=assignment.created_at,
+        updated_at=assignment.updated_at,
     )
 
 

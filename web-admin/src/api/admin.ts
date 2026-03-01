@@ -31,6 +31,7 @@ import type {
   AttendanceType,
   Department,
   DepartmentShift,
+  DepartmentWeekdayShiftAssignment,
   DepartmentSummaryItem,
   DepartmentWeeklyRule,
   ControlRoomOverview,
@@ -201,6 +202,12 @@ export interface UpsertDepartmentShiftPayload {
   end_time_local: string;
   break_minutes: number;
   is_active: boolean;
+}
+
+export interface ReplaceDepartmentWeekdayShiftAssignmentsPayload {
+  department_id: number;
+  weekday: number;
+  shift_ids: number[];
 }
 
 export interface UpsertSchedulePlanPayload {
@@ -926,6 +933,28 @@ export async function upsertDepartmentWeeklyRule(
 ): Promise<DepartmentWeeklyRule> {
   const response = await apiClient.post<DepartmentWeeklyRule>(
     "/admin/department-weekly-rules",
+    payload,
+  );
+  return response.data;
+}
+
+export async function getDepartmentWeekdayShiftAssignments(params?: {
+  department_id?: number;
+  weekday?: number;
+  active_only?: boolean;
+}): Promise<DepartmentWeekdayShiftAssignment[]> {
+  const response = await apiClient.get<DepartmentWeekdayShiftAssignment[]>(
+    "/admin/department-weekday-shifts",
+    { params },
+  );
+  return response.data;
+}
+
+export async function replaceDepartmentWeekdayShiftAssignments(
+  payload: ReplaceDepartmentWeekdayShiftAssignmentsPayload,
+): Promise<DepartmentWeekdayShiftAssignment[]> {
+  const response = await apiClient.put<DepartmentWeekdayShiftAssignment[]>(
+    "/admin/department-weekday-shifts",
     payload,
   );
   return response.data;

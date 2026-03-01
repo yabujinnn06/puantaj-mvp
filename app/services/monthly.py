@@ -38,6 +38,11 @@ from app.schemas import (
 from app.settings import get_settings
 from app.services.monthly_calc import calculate_day_metrics
 from app.services.schedule_plans import list_department_plans_in_range, resolve_best_plan_for_day
+from app.services.weekday_shift_assignments import (
+    build_department_weekday_shift_map,
+    list_department_weekday_shift_assignments,
+    select_employee_preferred_shift,
+)
 
 DEFAULT_DAILY_MINUTES_PLANNED = 540
 DEFAULT_BREAK_MINUTES = 60
@@ -166,6 +171,20 @@ def _resolve_department_shift_map(
         stmt = stmt.where(DepartmentShift.is_active.is_(True))
     rows = list(db.scalars(stmt).all())
     return {item.id: item for item in rows}
+
+
+def _resolve_department_weekday_shift_map(
+    db: Session,
+    department_id: int | None,
+) -> dict[int, list[DepartmentShift]]:
+    if department_id is None:
+        return {}
+    rows = list_department_weekday_shift_assignments(
+        db,
+        department_id=department_id,
+        active_only=True,
+    )
+    return build_department_weekday_shift_map(rows).get(department_id, {})
 
 
 def _shift_planned_minutes(shift: DepartmentShift) -> int:
@@ -513,6 +532,7 @@ def _build_day_records(
         employee.department_id,
         include_inactive=True,
     )
+    weekday_shift_map = _resolve_department_weekday_shift_map(db, employee.department_id)
     department_plans = list_department_plans_in_range(
         db,
         department_id=employee.department_id,
@@ -536,7 +556,9 @@ def _build_day_records(
             employee_id=employee.id,
             day_date=cursor,
         )
-        weekday_rule = weekly_rule_map.get(cursor.weekday())
+        weekday_shift_candidates = weekday_shift_map.get(cursor.weekday(), [])
+        has_weekday_shift_assignments = bool(weekday_shift_candidates)
+        weekday_rule = None if has_weekday_shift_assignments else weekly_rule_map.get(cursor.weekday())
 
         base_planned_minutes = (
             schedule_plan.daily_minutes_planned
@@ -554,18 +576,24 @@ def _build_day_records(
             last_out=last_out,
             shifts_by_id=department_shift_map,
         )
-        default_shift = _resolve_day_shift(
+        employee_default_shift = (
+            department_shift_map.get(employee.shift_id)
+            if employee.shift_id is not None
+            else None
+        )
+        configured_weekday_shift = select_employee_preferred_shift(
             employee=employee,
-            first_in=first_in,
-            last_out=last_out,
-            shifts_by_id=department_shift_map,
+            shifts=weekday_shift_candidates,
         )
         planned_shift = (
             department_shift_map.get(schedule_plan.shift_id)
             if schedule_plan is not None and schedule_plan.shift_id is not None
             else None
         )
-        day_shift = planned_shift or default_shift
+        if has_weekday_shift_assignments:
+            day_shift = planned_shift or configured_weekday_shift or event_shift
+        else:
+            day_shift = planned_shift or event_shift or employee_default_shift
         manual_rule_shift = (
             department_shift_map.get(manual_override.rule_shift_id_override)
             if manual_override is not None and manual_override.rule_shift_id_override is not None
@@ -596,6 +624,8 @@ def _build_day_records(
                 rule_source_flags.append("SCHEDULE_PLAN_LOCKED")
                 if schedule_plan.shift_id is not None and event_shift is not None and event_shift.id != schedule_plan.shift_id:
                     rule_source_flags.append("PLANNED_SHIFT_VIOLATION")
+        elif has_weekday_shift_assignments:
+            rule_source_flags.append("WEEKDAY_SHIFT_ASSIGNMENT")
 
         if manual_override is not None:
             first_in_ts = _to_utc(manual_override.in_ts)

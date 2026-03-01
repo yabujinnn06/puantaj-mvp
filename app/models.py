@@ -115,6 +115,9 @@ class Department(Base):
     employees: Mapped[list[Employee]] = relationship(back_populates="department")
     work_rule: Mapped[WorkRule | None] = relationship(back_populates="department", uselist=False)
     weekly_rules: Mapped[list[DepartmentWeeklyRule]] = relationship(back_populates="department")
+    weekday_shift_assignments: Mapped[list[DepartmentWeekdayShiftAssignment]] = relationship(
+        back_populates="department"
+    )
     shifts: Mapped[list[DepartmentShift]] = relationship(back_populates="department")
     schedule_plans: Mapped[list[DepartmentSchedulePlan]] = relationship(back_populates="department")
     qr_points: Mapped[list[QRPoint]] = relationship(back_populates="department")
@@ -456,7 +459,61 @@ class DepartmentShift(Base):
 
     department: Mapped[Department] = relationship(back_populates="shifts")
     employees: Mapped[list[Employee]] = relationship(back_populates="shift")
+    weekday_assignments: Mapped[list[DepartmentWeekdayShiftAssignment]] = relationship(
+        back_populates="shift"
+    )
     schedule_plans: Mapped[list[DepartmentSchedulePlan]] = relationship(back_populates="shift")
+
+
+class DepartmentWeekdayShiftAssignment(Base):
+    __tablename__ = "department_weekday_shift_assignments"
+    __table_args__ = (
+        UniqueConstraint(
+            "department_id",
+            "weekday",
+            "shift_id",
+            name="uq_department_weekday_shift_assignments_dep_weekday_shift",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    department_id: Mapped[int] = mapped_column(
+        ForeignKey("departments.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    weekday: Mapped[int] = mapped_column(Integer, nullable=False)
+    shift_id: Mapped[int] = mapped_column(
+        ForeignKey("department_shifts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    sort_order: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    department: Mapped[Department] = relationship(back_populates="weekday_shift_assignments")
+    shift: Mapped[DepartmentShift] = relationship(back_populates="weekday_assignments")
 
 
 class DepartmentSchedulePlan(Base):

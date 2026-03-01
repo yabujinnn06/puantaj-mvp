@@ -7,15 +7,16 @@ import {
   createWorkRule,
   deleteDepartmentShift,
   getDepartmentShifts,
+  getDepartmentWeekdayShiftAssignments,
   getDepartments,
-  getDepartmentWeeklyRules,
   getEmployees,
   getSchedulePlans,
   getWorkRules,
+  replaceDepartmentWeekdayShiftAssignments,
   upsertDepartmentShift,
-  upsertDepartmentWeeklyRule,
   upsertSchedulePlan,
 } from '../api/admin'
+import { WeekdayShiftAssignmentEditor } from '../components/schedule/WeekdayShiftAssignmentEditor'
 import { parseApiError } from '../api/error'
 import { ErrorBlock } from '../components/ErrorBlock'
 import { LoadingBlock } from '../components/LoadingBlock'
@@ -33,14 +34,6 @@ const workRuleSchema = z.object({
   grace_minutes: z.coerce.number().int().nonnegative(),
 })
 
-const weeklyRuleSchema = z.object({
-  department_id: z.coerce.number().int().positive(),
-  weekday: z.coerce.number().int().min(0).max(6),
-  is_workday: z.boolean(),
-  planned_minutes: z.coerce.number().int().nonnegative(),
-  break_minutes: z.coerce.number().int().nonnegative(),
-})
-
 const shiftSchema = z.object({
   department_id: z.coerce.number().int().positive(),
   name: z.string().min(1).max(100),
@@ -49,16 +42,6 @@ const shiftSchema = z.object({
   break_minutes: z.coerce.number().int().nonnegative(),
   is_active: z.boolean(),
 })
-
-const WEEKDAYS = [
-  { value: 0, label: 'Pazartesi' },
-  { value: 1, label: 'Sali' },
-  { value: 2, label: 'Carsamba' },
-  { value: 3, label: 'Persembe' },
-  { value: 4, label: 'Cuma' },
-  { value: 5, label: 'Cumartesi' },
-  { value: 6, label: 'Pazar' },
-]
 
 const PLAN_TARGET_OPTIONS: Array<{ value: SchedulePlanTargetType; label: string }> = [
   { value: 'DEPARTMENT', label: 'Tum departman' },
@@ -114,11 +97,7 @@ export function WorkRulesPage() {
   const [breakMinutes, setBreakMinutes] = useState('60')
   const [graceMinutes, setGraceMinutes] = useState('5')
 
-  const [weeklyDepartmentId, setWeeklyDepartmentId] = useState('')
-  const [weeklyWeekday, setWeeklyWeekday] = useState('0')
-  const [weeklyIsWorkday, setWeeklyIsWorkday] = useState(true)
-  const [weeklyPlannedMinutes, setWeeklyPlannedMinutes] = useState('540')
-  const [weeklyBreakMinutes, setWeeklyBreakMinutes] = useState('60')
+  const [weekdayAssignmentDepartmentId, setWeekdayAssignmentDepartmentId] = useState('')
 
   const [shiftDepartmentId, setShiftDepartmentId] = useState('')
   const [shiftName, setShiftName] = useState('')
@@ -149,7 +128,10 @@ export function WorkRulesPage() {
   const departmentsQuery = useQuery({ queryKey: ['departments'], queryFn: getDepartments })
   const employeesQuery = useQuery({ queryKey: ['employees', 'all'], queryFn: () => getEmployees({ status: 'all' }) })
   const workRulesQuery = useQuery({ queryKey: ['work-rules'], queryFn: getWorkRules })
-  const weeklyRulesQuery = useQuery({ queryKey: ['department-weekly-rules'], queryFn: () => getDepartmentWeeklyRules() })
+  const weekdayShiftAssignmentsQuery = useQuery({
+    queryKey: ['department-weekday-shifts'],
+    queryFn: () => getDepartmentWeekdayShiftAssignments({ active_only: true }),
+  })
   const shiftsQuery = useQuery({ queryKey: ['department-shifts'], queryFn: () => getDepartmentShifts() })
   const schedulePlansQuery = useQuery({ queryKey: ['schedule-plans', 'all'], queryFn: () => getSchedulePlans({ active_only: false }) })
 
@@ -167,17 +149,21 @@ export function WorkRulesPage() {
     },
   })
 
-  const upsertWeeklyRuleMutation = useMutation({
-    mutationFn: upsertDepartmentWeeklyRule,
+  const replaceWeekdayShiftAssignmentsMutation = useMutation({
+    mutationFn: replaceDepartmentWeekdayShiftAssignments,
     onSuccess: () => {
       setFormError(null)
-      pushToast({ variant: 'success', title: 'Haftalik plan kaydedildi', description: 'Secilen gun icin departman plani guncellendi.' })
-      void queryClient.invalidateQueries({ queryKey: ['department-weekly-rules'] })
+      pushToast({
+        variant: 'success',
+        title: 'Günlük vardiya planı kaydedildi',
+        description: 'Seçilen gün için vardiya eşleştirmesi güncellendi.',
+      })
+      void queryClient.invalidateQueries({ queryKey: ['department-weekday-shifts'] })
     },
     onError: (error) => {
-      const parsed = parseApiError(error, 'Haftalik plan kaydedilemedi.')
+      const parsed = parseApiError(error, 'Günlük vardiya planı kaydedilemedi.')
       setFormError(parsed.message)
-      pushToast({ variant: 'error', title: 'Haftalik plan kaydedilemedi', description: parsed.message })
+      pushToast({ variant: 'error', title: 'Günlük vardiya planı kaydedilemedi', description: parsed.message })
     },
   })
 
@@ -318,7 +304,7 @@ export function WorkRulesPage() {
     departmentsQuery.isLoading ||
     employeesQuery.isLoading ||
     workRulesQuery.isLoading ||
-    weeklyRulesQuery.isLoading ||
+    weekdayShiftAssignmentsQuery.isLoading ||
     shiftsQuery.isLoading ||
     schedulePlansQuery.isLoading
   ) {
@@ -329,7 +315,7 @@ export function WorkRulesPage() {
     departmentsQuery.isError ||
     employeesQuery.isError ||
     workRulesQuery.isError ||
-    weeklyRulesQuery.isError ||
+    weekdayShiftAssignmentsQuery.isError ||
     shiftsQuery.isError ||
     schedulePlansQuery.isError
   ) {
@@ -339,7 +325,7 @@ export function WorkRulesPage() {
   const departments = departmentsQuery.data ?? []
   const employees = employeesQuery.data ?? []
   const workRules = workRulesQuery.data ?? []
-  const weeklyRules = weeklyRulesQuery.data ?? []
+  const weekdayShiftAssignments = weekdayShiftAssignmentsQuery.data ?? []
   const shifts = shiftsQuery.data ?? []
   const schedulePlans = schedulePlansQuery.data ?? []
 
@@ -348,11 +334,20 @@ export function WorkRulesPage() {
   const shiftNameById = new Map(shifts.map((shift) => [shift.id, shift.name]))
 
   const filteredPlans = schedulePlans.filter((plan) => showInactivePlans || plan.is_active)
-  const selectedPlanDepartmentId = Number(planDepartmentId)
-  const planDepartmentShifts = Number.isFinite(selectedPlanDepartmentId)
+  const selectedWeekdayAssignmentDepartmentId = weekdayAssignmentDepartmentId
+    ? Number(weekdayAssignmentDepartmentId)
+    : null
+  const weekdayAssignmentDepartmentShifts = selectedWeekdayAssignmentDepartmentId !== null
+    ? shifts.filter((shift) => shift.department_id === selectedWeekdayAssignmentDepartmentId)
+    : []
+  const weekdayAssignmentRows = selectedWeekdayAssignmentDepartmentId !== null
+    ? weekdayShiftAssignments.filter((item) => item.department_id === selectedWeekdayAssignmentDepartmentId)
+    : []
+  const selectedPlanDepartmentId = planDepartmentId ? Number(planDepartmentId) : null
+  const planDepartmentShifts = selectedPlanDepartmentId !== null
     ? shifts.filter((shift) => shift.department_id === selectedPlanDepartmentId)
     : []
-  const planDepartmentEmployees = Number.isFinite(selectedPlanDepartmentId)
+  const planDepartmentEmployees = selectedPlanDepartmentId !== null
     ? employees.filter((employee) => employee.department_id === selectedPlanDepartmentId)
     : []
   const filteredPlanDepartmentEmployees = planTargetSearch.trim()
@@ -425,24 +420,17 @@ export function WorkRulesPage() {
     createWorkRuleMutation.mutate(parsed.data)
   }
 
-  const onSubmitWeeklyRule = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setFormError(null)
-
-    const parsed = weeklyRuleSchema.safeParse({
-      department_id: weeklyDepartmentId,
-      weekday: weeklyWeekday,
-      is_workday: weeklyIsWorkday,
-      planned_minutes: weeklyPlannedMinutes,
-      break_minutes: weeklyBreakMinutes,
-    })
-    if (!parsed.success) {
-      const message = parsed.error.issues[0]?.message ?? 'Haftalik plan formunu kontrol edin.'
-      setFormError(message)
-      pushToast({ variant: 'error', title: 'Form hatasi', description: message })
+  const onSaveWeekdayAssignments = (weekday: number, shiftIds: number[]) => {
+    if (selectedWeekdayAssignmentDepartmentId === null || selectedWeekdayAssignmentDepartmentId <= 0) {
+      setFormError('Günlük vardiya planı için departman seçmelisiniz.')
       return
     }
-    upsertWeeklyRuleMutation.mutate(parsed.data)
+    setFormError(null)
+    replaceWeekdayShiftAssignmentsMutation.mutate({
+      department_id: selectedWeekdayAssignmentDepartmentId,
+      weekday,
+      shift_ids: shiftIds,
+    })
   }
 
   const onSubmitShift = (event: React.FormEvent<HTMLFormElement>) => {
@@ -612,19 +600,20 @@ export function WorkRulesPage() {
       </Panel>
 
       <Panel>
-        <h4 className="text-base font-semibold text-slate-900">Haftalik Gun Plani</h4>
+        <h4 className="text-base font-semibold text-slate-900">Günlük Vardiya Atama Planı</h4>
         <p className="mt-1 text-xs text-slate-500">
-          Ornek: Cumartesi 5 saat, Pazar calisma yok gibi farkli gun davranislarini buradan tanimlayin.
+          Haftalık dakika kuralı yerine her gün için geçerli vardiyaları belirleyin. Bir güne birden fazla vardiya
+          atanabilir; sistem önce o günün vardiya listesini dikkate alır.
         </p>
-        <form onSubmit={onSubmitWeeklyRule} className="mt-3 grid gap-3 md:grid-cols-5">
+        <div className="mt-3 grid gap-3 md:grid-cols-[minmax(260px,340px)_1fr]">
           <label className="text-sm text-slate-700">
             Departman
             <select
-              value={weeklyDepartmentId}
-              onChange={(event) => setWeeklyDepartmentId(event.target.value)}
+              value={weekdayAssignmentDepartmentId}
+              onChange={(event) => setWeekdayAssignmentDepartmentId(event.target.value)}
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
             >
-              <option value="">Seciniz</option>
+              <option value="">Seçiniz</option>
               {departments.map((department) => (
                 <option key={department.id} value={department.id}>
                   {department.name}
@@ -633,87 +622,23 @@ export function WorkRulesPage() {
             </select>
           </label>
 
-          <label className="text-sm text-slate-700">
-            Gun
-            <select
-              value={weeklyWeekday}
-              onChange={(event) => setWeeklyWeekday(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-            >
-              {WEEKDAYS.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="text-sm text-slate-700">
-            Planlanan Dakika
-            <input
-              value={weeklyPlannedMinutes}
-              onChange={(event) => setWeeklyPlannedMinutes(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-            />
-          </label>
-
-          <label className="text-sm text-slate-700">
-            Mola Dakikasi
-            <input
-              value={weeklyBreakMinutes}
-              onChange={(event) => setWeeklyBreakMinutes(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-            />
-          </label>
-
-          <label className="inline-flex items-center gap-2 pt-8 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={weeklyIsWorkday}
-              onChange={(event) => setWeeklyIsWorkday(event.target.checked)}
-            />
-            Calisma Gunu
-          </label>
-
-          <div className="md:col-span-5">
-            <button
-              type="submit"
-              disabled={upsertWeeklyRuleMutation.isPending}
-              className="btn-primary rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
-            >
-              {upsertWeeklyRuleMutation.isPending ? 'Kaydediliyor...' : 'Gunu Kaydet'}
-            </button>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-600">
+            <p className="font-medium text-slate-800">Karar sırası</p>
+            <p className="mt-1">
+              Tarih aralıklı vardiya override varsa o kazanır. Yoksa bu günün vardiya atamaları kullanılır. Bu gün
+              için atama yoksa sistem legacy fallback kurallarına döner.
+            </p>
           </div>
-        </form>
-
-        <div className="mt-4 list-scroll-area">
-          <table className="min-w-full text-left text-sm">
-            <thead className="text-xs uppercase text-slate-500">
-              <tr>
-                <th className="py-2">Departman</th>
-                <th className="py-2">Gun</th>
-                <th className="py-2">Durum</th>
-                <th className="py-2">Planlanan Sure</th>
-                <th className="py-2">Mola</th>
-              </tr>
-            </thead>
-            <tbody>
-              {weeklyRules.map((item) => (
-                <tr key={item.id} className="border-t border-slate-100">
-                  <td className="py-2">{departmentNameById.get(item.department_id) ?? item.department_id}</td>
-                  <td className="py-2">{WEEKDAYS.find((w) => w.value === item.weekday)?.label ?? item.weekday}</td>
-                  <td className="py-2">{item.is_workday ? 'Calisma' : 'Off'}</td>
-                  <td className="py-2">
-                    <MinuteDisplay minutes={item.planned_minutes} />
-                  </td>
-                  <td className="py-2">
-                    <MinuteDisplay minutes={item.break_minutes} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
+
+        <WeekdayShiftAssignmentEditor
+          departmentId={selectedWeekdayAssignmentDepartmentId}
+          shifts={weekdayAssignmentDepartmentShifts}
+          assignments={weekdayAssignmentRows}
+          isSaving={replaceWeekdayShiftAssignmentsMutation.isPending}
+          onSave={onSaveWeekdayAssignments}
+          emptyMessage="Günlük vardiya planı düzenlemek için departman seçin."
+        />
       </Panel>
 
       <Panel>

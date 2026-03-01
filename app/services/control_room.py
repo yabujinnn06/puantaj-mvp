@@ -47,6 +47,11 @@ from app.schemas import (
 from app.services.attendance import _attendance_timezone
 from app.services.monthly import calculate_employee_monthly
 from app.services.schedule_plans import resolve_best_plan_for_day
+from app.services.weekday_shift_assignments import (
+    build_department_weekday_shift_map,
+    list_department_weekday_shift_assignments,
+    select_employee_preferred_shift,
+)
 
 CONTROL_ROOM_ACTION_AUDIT = "CONTROL_ROOM_EMPLOYEE_ACTION"
 CONTROL_ROOM_NOTE_AUDIT = "CONTROL_ROOM_NOTE_CREATED"
@@ -358,16 +363,20 @@ def _sum_interval_minutes(intervals: list[IntervalRecord], *, window_start_utc: 
     return max(0, int(round(total_seconds / 60)))
 
 
-def _resolve_shift_context(*, employee: Employee, day_date: date, work_rule_map: dict[int, WorkRule], weekly_rule_map: dict[int, dict[int, DepartmentWeeklyRule]], shift_map: dict[int, dict[int, DepartmentShift]], plan_map: dict[int, list[DepartmentSchedulePlan]]) -> ScheduleContext:
+def _resolve_shift_context(*, employee: Employee, day_date: date, work_rule_map: dict[int, WorkRule], weekly_rule_map: dict[int, dict[int, DepartmentWeeklyRule]], weekday_shift_map: dict[int, dict[int, list[DepartmentShift]]], shift_map: dict[int, dict[int, DepartmentShift]], plan_map: dict[int, list[DepartmentSchedulePlan]]) -> ScheduleContext:
     department_id = employee.department_id or 0
     department_work_rule = work_rule_map.get(department_id)
-    department_weekly_rule = weekly_rule_map.get(department_id, {}).get(day_date.weekday())
+    department_weekday_shifts = weekday_shift_map.get(department_id, {}).get(day_date.weekday(), [])
+    has_weekday_shift_assignments = bool(department_weekday_shifts)
+    department_weekly_rule = None if has_weekday_shift_assignments else weekly_rule_map.get(department_id, {}).get(day_date.weekday())
     department_shift_map = shift_map.get(department_id, {})
     department_plans = plan_map.get(department_id, [])
     effective_plan = resolve_best_plan_for_day(department_plans, employee_id=employee.id, day_date=day_date)
     shift: DepartmentShift | None = None
     if effective_plan is not None and effective_plan.shift_id is not None:
         shift = department_shift_map.get(effective_plan.shift_id)
+    if shift is None and has_weekday_shift_assignments:
+        shift = select_employee_preferred_shift(employee=employee, shifts=department_weekday_shifts)
     if shift is None and employee.shift_id is not None:
         shift = department_shift_map.get(employee.shift_id) or employee.shift
     if shift is None:
@@ -403,6 +412,8 @@ def _resolve_shift_context(*, employee: Employee, day_date: date, work_rule_map:
     elif department_work_rule is not None:
         break_minutes = max(0, int(department_work_rule.break_minutes))
         planned_minutes = max(0, int(department_work_rule.daily_minutes_planned) - break_minutes)
+    elif has_weekday_shift_assignments:
+        is_workday = True
     return ScheduleContext(
         shift_name=shift_name,
         shift_window_label=shift_window_label,
@@ -633,11 +644,17 @@ def build_control_room_overview(
     weekly_rule_rows = list(db.scalars(select(DepartmentWeeklyRule).where(DepartmentWeeklyRule.department_id.in_(department_ids))).all()) if department_ids else []
     shift_rows = list(db.scalars(select(DepartmentShift).where(DepartmentShift.department_id.in_(department_ids))).all()) if department_ids else []
     plan_rows = list(db.scalars(select(DepartmentSchedulePlan).where(DepartmentSchedulePlan.department_id.in_(department_ids), DepartmentSchedulePlan.is_active.is_(True))).all()) if department_ids else []
+    weekday_shift_rows = list_department_weekday_shift_assignments(
+        db,
+        department_ids=department_ids,
+        active_only=True,
+    ) if department_ids else []
 
     work_rule_map = {item.department_id: item for item in work_rule_rows}
     weekly_rule_map: dict[int, dict[int, DepartmentWeeklyRule]] = defaultdict(dict)
     for item in weekly_rule_rows:
         weekly_rule_map[item.department_id][item.weekday] = item
+    weekday_shift_map = build_department_weekday_shift_map(weekday_shift_rows)
     shift_map: dict[int, dict[int, DepartmentShift]] = defaultdict(dict)
     for item in shift_rows:
         shift_map[item.department_id][item.id] = item
@@ -734,6 +751,7 @@ def build_control_room_overview(
             day_date=today_local_date,
             work_rule_map=work_rule_map,
             weekly_rule_map=weekly_rule_map,
+            weekday_shift_map=weekday_shift_map,
             shift_map=shift_map,
             plan_map=plan_map,
         )
@@ -791,6 +809,7 @@ def build_control_room_overview(
                 day_date=day_date,
                 work_rule_map=work_rule_map,
                 weekly_rule_map=weekly_rule_map,
+                weekday_shift_map=weekday_shift_map,
                 shift_map=shift_map,
                 plan_map=plan_map,
             )
