@@ -64,6 +64,15 @@ CONTROL_ROOM_ACTION_LABELS: dict[str, str] = {
     "RISK_OVERRIDE": "Risk Override",
 }
 
+CONTROL_ROOM_ALLOWED_ACTION_TYPES = frozenset(CONTROL_ROOM_ACTION_LABELS.keys())
+CONTROL_ROOM_ACTION_TYPE_ALIASES: dict[str, str] = {
+    "DISABLE": "DISABLE_TEMP",
+    "TEMP_DISABLE": "DISABLE_TEMP",
+    "TEMP_DISABLED": "DISABLE_TEMP",
+    "SUSPENSION": "SUSPEND",
+    "INVESTIGATE": "REVIEW",
+}
+
 CONTROL_ROOM_AUDIT_LABELS: dict[str, str] = {
     CONTROL_ROOM_ACTION_AUDIT: "Operasyon islemi",
     CONTROL_ROOM_NOTE_AUDIT: "Inceleme notu",
@@ -225,14 +234,33 @@ def _measure_from_audit(log_item: AuditLog) -> ControlRoomMeasureRead:
     details = log_item.details if isinstance(log_item.details, dict) else {}
     duration_days = details.get("duration_days")
     expires_at_raw = details.get("expires_at")
-    expires_at = _normalize_utc(expires_at_raw) if isinstance(expires_at_raw, datetime) else None
-    action_type = str(details.get("action_type") or "REVIEW")
+    expires_at: datetime | None = None
+    if isinstance(expires_at_raw, datetime):
+        expires_at = _normalize_utc(expires_at_raw)
+    elif isinstance(expires_at_raw, str):
+        normalized_value = expires_at_raw.strip()
+        if normalized_value:
+            try:
+                expires_at = _normalize_utc(datetime.fromisoformat(normalized_value.replace("Z", "+00:00")))
+            except ValueError:
+                expires_at = None
+
+    duration_days_value: int | None = None
+    if isinstance(duration_days, int):
+        duration_days_value = duration_days
+    elif isinstance(duration_days, str) and duration_days.strip().isdigit():
+        duration_days_value = int(duration_days.strip())
+
+    raw_action_type = str(details.get("action_type") or "REVIEW").strip().upper()
+    action_type = CONTROL_ROOM_ACTION_TYPE_ALIASES.get(raw_action_type, raw_action_type)
+    if action_type not in CONTROL_ROOM_ALLOWED_ACTION_TYPES:
+        action_type = "REVIEW"
     return ControlRoomMeasureRead(
         action_type=action_type,
         label=str(details.get("action_label") or CONTROL_ROOM_ACTION_LABELS.get(action_type, "Inceleme")),
         reason=str(details.get("reason") or ""),
         note=str(details.get("note") or ""),
-        duration_days=(duration_days if isinstance(duration_days, int) else None),
+        duration_days=duration_days_value,
         expires_at=expires_at,
         created_at=log_item.ts_utc,
         created_by=str(log_item.actor_id or "admin"),
