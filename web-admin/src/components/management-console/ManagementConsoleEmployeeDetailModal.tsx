@@ -16,18 +16,43 @@ import { LoadingBlock } from '../LoadingBlock'
 import { MinuteDisplay } from '../MinuteDisplay'
 import { Modal } from '../Modal'
 import { useToast } from '../../hooks/useToast'
+import type { AttendanceEvent, MonthlyEmployeeDay, NotificationJob } from '../../types/api'
 import type { ActionState } from './types'
 import {
+  ISTANBUL_TIMEZONE,
   eventSourceLabel,
   eventTypeLabel,
   formatDate,
   formatDateTime,
   formatRelative,
+  locationStateLabel,
   notificationStatusLabel,
   riskClass,
   riskStatusLabel,
   todayStatusLabel,
 } from './utils'
+
+type TimelineGroup = {
+  dateKey: string
+  label: string
+  day: MonthlyEmployeeDay | null
+  events: AttendanceEvent[]
+  firstIn: AttendanceEvent | null
+  lastOut: AttendanceEvent | null
+}
+
+type Recommendation = {
+  title: string
+  description: string
+  severity: 'info' | 'warning' | 'critical'
+}
+
+const DAY_KEY = new Intl.DateTimeFormat('en-CA', {
+  timeZone: ISTANBUL_TIMEZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+})
 
 function currentMonthBounds() {
   const now = new Date()
@@ -43,9 +68,90 @@ function currentMonthBounds() {
   }
 }
 
-function durationLabel(duration: '1' | '3' | '7' | 'indefinite') {
-  if (duration === 'indefinite') return 'Süresiz'
-  return `${duration} gün`
+function localDayKey(value: string) {
+  return DAY_KEY.format(new Date(value))
+}
+
+function buildTimeline(events: AttendanceEvent[], monthDays: MonthlyEmployeeDay[]) {
+  const dayMap = new Map(monthDays.map((day) => [day.date, day]))
+  const grouped = new Map<string, AttendanceEvent[]>()
+  for (const event of events) {
+    const key = localDayKey(event.ts_utc)
+    grouped.set(key, [...(grouped.get(key) ?? []), event])
+  }
+  return [...grouped.entries()]
+    .map(([dateKey, items]) => {
+      const sorted = [...items].sort((a, b) => new Date(b.ts_utc).getTime() - new Date(a.ts_utc).getTime())
+      return {
+        dateKey,
+        label: formatDate(dateKey),
+        day: dayMap.get(dateKey) ?? null,
+        events: sorted,
+        firstIn: [...sorted].reverse().find((item) => item.type === 'IN') ?? null,
+        lastOut: sorted.find((item) => item.type === 'OUT') ?? null,
+      } satisfies TimelineGroup
+    })
+    .sort((a, b) => b.dateKey.localeCompare(a.dateKey))
+    .slice(0, 7)
+}
+
+function buildRecommendations(
+  riskStatus: 'NORMAL' | 'WATCH' | 'CRITICAL',
+  incompleteDays: MonthlyEmployeeDay[],
+  jobs: NotificationJob[],
+  hasLocationGap: boolean,
+  activeMeasure: string | null,
+) {
+  const items: Recommendation[] = []
+  if (riskStatus === 'CRITICAL') {
+    items.push({
+      severity: 'critical',
+      title: 'Kritik risk kontrolü',
+      description: 'Son 7 günlük giriş-çıkış akışını ve vardiya eşleşmesini manuel doğrulayın.',
+    })
+  }
+  if (incompleteDays.length) {
+    items.push({
+      severity: 'warning',
+      title: 'Eksik kayıt incelemesi',
+      description: 'Incomplete veya eksik süre içeren günler için attendance olaylarını kontrol edin.',
+    })
+  }
+  if (jobs.some((job) => job.status === 'FAILED')) {
+    items.push({
+      severity: 'warning',
+      title: 'Bildirim teslim problemi',
+      description: 'Başarısız job kayıtları için cihaz ve abonelik sağlığını doğrulayın.',
+    })
+  }
+  if (hasLocationGap) {
+    items.push({
+      severity: 'info',
+      title: 'Konum kapsamı zayıf',
+      description: 'Konum verisi eksik ya da eski. Cihaz ve lokasyon politikalarını gözden geçirin.',
+    })
+  }
+  if (activeMeasure) {
+    items.push({
+      severity: 'info',
+      title: 'Aktif önlem mevcut',
+      description: `${activeMeasure} işlemi sürüyor. Yeni aksiyondan önce mevcut önlemi doğrulayın.`,
+    })
+  }
+  if (!items.length) {
+    items.push({
+      severity: 'info',
+      title: 'Stabil görünüm',
+      description: 'Ek müdahale gerektiren belirgin bir sinyal görünmüyor.',
+    })
+  }
+  return items.slice(0, 4)
+}
+
+function severityClass(value: Recommendation['severity']) {
+  if (value === 'critical') return 'is-critical'
+  if (value === 'warning') return 'is-watch'
+  return 'is-normal'
 }
 
 export function ManagementConsoleEmployeeDetailModal({
@@ -81,49 +187,25 @@ export function ManagementConsoleEmployeeDetailModal({
     queryFn: () => getControlRoomEmployeeDetail(employeeId as number),
     enabled: open && employeeId != null,
   })
-
   const attendanceQuery = useQuery({
     queryKey: ['management-console-detail-events', employeeId, bounds.start, bounds.end],
-    queryFn: () =>
-      getAttendanceEvents({
-        employee_id: employeeId as number,
-        start_date: bounds.start,
-        end_date: bounds.end,
-        limit: 250,
-      }),
+    queryFn: () => getAttendanceEvents({ employee_id: employeeId as number, start_date: bounds.start, end_date: bounds.end, limit: 250 }),
     enabled: open && employeeId != null,
   })
-
   const monthlyQuery = useQuery({
     queryKey: ['management-console-detail-monthly', employeeId, bounds.year, bounds.month],
-    queryFn: () =>
-      getMonthlyEmployee({
-        employee_id: employeeId as number,
-        year: bounds.year,
-        month: bounds.month,
-      }),
+    queryFn: () => getMonthlyEmployee({ employee_id: employeeId as number, year: bounds.year, month: bounds.month }),
     enabled: open && employeeId != null,
   })
-
   const notificationQuery = useQuery({
     queryKey: ['management-console-detail-notifications', employeeId, bounds.start, bounds.end],
-    queryFn: () =>
-      getNotificationJobs({
-        employee_id: employeeId as number,
-        start_date: bounds.start,
-        end_date: bounds.end,
-        offset: 0,
-        limit: 6,
-      }),
+    queryFn: () => getNotificationJobs({ employee_id: employeeId as number, start_date: bounds.start, end_date: bounds.end, offset: 0, limit: 6 }),
     enabled: open && employeeId != null,
   })
 
   const actionMutation = useMutation({
     mutationFn: async () => {
-      if (!employeeId || !actionState) {
-        throw new Error('Personel seçilmedi.')
-      }
-
+      if (!employeeId || !actionState) throw new Error('Personel seçilmedi.')
       if (actionState.kind === 'action') {
         return createControlRoomEmployeeAction({
           employee_id: employeeId,
@@ -134,7 +216,6 @@ export function ManagementConsoleEmployeeDetailModal({
           indefinite: duration === 'indefinite',
         })
       }
-
       if (actionState.kind === 'override') {
         return createControlRoomRiskOverride({
           employee_id: employeeId,
@@ -145,7 +226,6 @@ export function ManagementConsoleEmployeeDetailModal({
           indefinite: duration === 'indefinite',
         })
       }
-
       return createControlRoomNote({ employee_id: employeeId, note })
     },
     onSuccess: (result) => {
@@ -153,13 +233,8 @@ export function ManagementConsoleEmployeeDetailModal({
       setActionState(null)
       setReason('')
       setNote('')
-      setDuration('1')
-      setOverrideScore('50')
       void queryClient.invalidateQueries({ queryKey: ['control-room-overview'] })
       void queryClient.invalidateQueries({ queryKey: ['management-console-detail', employeeId] })
-      void queryClient.invalidateQueries({
-        queryKey: ['management-console-detail-notifications', employeeId, bounds.start, bounds.end],
-      })
     },
     onError: (error: unknown) => {
       pushToast({
@@ -172,28 +247,27 @@ export function ManagementConsoleEmployeeDetailModal({
 
   const detail = detailQuery.data
   const employee = detail?.employee_state ?? null
-  const riskHistoryMax = Math.max(1, ...(detail?.risk_history ?? []).map((item) => item.value))
-  const recentEvents = useMemo(
-    () =>
-      [...(attendanceQuery.data ?? [])]
-        .sort((left, right) => new Date(right.ts_utc).getTime() - new Date(left.ts_utc).getTime())
-        .slice(0, 12),
-    [attendanceQuery.data],
+  const monthDays = monthlyQuery.data?.days ?? []
+  const notificationJobs = notificationQuery.data?.items ?? []
+  const timeline = useMemo(() => buildTimeline(attendanceQuery.data ?? [], monthDays), [attendanceQuery.data, monthDays])
+  const incompleteDays = useMemo(
+    () => monthDays.filter((day) => day.status === 'INCOMPLETE' || day.missing_minutes > 0 || day.flags.length > 0).slice(0, 5),
+    [monthDays],
   )
   const overtimeDays = useMemo(
-    () =>
-      (monthlyQuery.data?.days ?? [])
-        .filter(
-          (day) =>
-            day.overtime_minutes > 0 ||
-            day.plan_overtime_minutes > 0 ||
-            day.legal_overtime_minutes > 0 ||
-            day.legal_extra_work_minutes > 0,
-        )
-        .sort((left, right) => right.date.localeCompare(left.date))
-        .slice(0, 8),
-    [monthlyQuery.data?.days],
+    () => monthDays.filter((day) => day.overtime_minutes > 0 || day.legal_overtime_minutes > 0).slice(0, 5),
+    [monthDays],
   )
+  const riskHistoryMax = Math.max(1, ...(detail?.risk_history ?? []).map((item) => item.value))
+  const recommendations = employee
+    ? buildRecommendations(
+        employee.risk_status,
+        incompleteDays,
+        notificationJobs,
+        employee.location_state === 'NONE' || employee.location_state === 'DORMANT',
+        employee.active_measure?.label ?? null,
+      )
+    : []
 
   return (
     <Modal
@@ -209,403 +283,181 @@ export function ManagementConsoleEmployeeDetailModal({
       ) : detailQuery.isError || !detail || !employee ? (
         <ErrorBlock message="Personel detay bilgisi alınamadı." />
       ) : (
-        <div className="mc-detail">
-          <header className="mc-detail__hero">
-            <div className="mc-detail__identity">
-              <p className="mc-kicker">PERSONEL DOSYASI</p>
+        <div className="mc-dossier">
+          <header className="mc-dossier__hero">
+            <div className="mc-dossier__hero-main">
+              <p className="mc-kicker">OPERASYON DOSYASI</p>
               <h3>{employee.employee.full_name}</h3>
-              <p>
-                {employee.department_name ?? 'Departman yok'} · {employee.shift_name ?? 'Vardiya tanımı yok'} ·{' '}
-                {todayStatusLabel(employee.today_status)}
-              </p>
-              <div className="mc-detail__hero-tags">
-                <span className={`mc-status-pill ${riskClass(employee.risk_status)}`}>
-                  {riskStatusLabel(employee.risk_status)}
-                </span>
+              <p>{employee.department_name ?? 'Departman yok'} · {employee.shift_name ?? 'Vardiya tanımı yok'} · {todayStatusLabel(employee.today_status)}</p>
+              <div className="mc-dossier__hero-tags">
+                <span className={`mc-status-pill ${riskClass(employee.risk_status)}`}>{riskStatusLabel(employee.risk_status)}</span>
                 <span className="mc-chip">{employee.shift_window_label ?? 'Plan penceresi yok'}</span>
-                <span className="mc-chip">{employee.location_label ?? 'Konum bilgisi yok'}</span>
+                <span className="mc-chip">{locationStateLabel(employee.location_state)}</span>
               </div>
             </div>
-
-            <div className={`mc-detail__score ${riskClass(employee.risk_status)}`}>
+            <div className={`mc-dossier__score ${riskClass(employee.risk_status)}`}>
+              <span>Risk skoru</span>
               <strong>{employee.risk_score}</strong>
-              <span>{riskStatusLabel(employee.risk_status)}</span>
+              <small>{formatRelative(employee.last_activity_utc)}</small>
             </div>
           </header>
 
-          <section className="mc-detail__summary-grid">
-            <article className="mc-detail__stat">
-              <span>Son giriş</span>
-              <strong>{formatDateTime(employee.last_checkin_utc)}</strong>
-            </article>
-            <article className="mc-detail__stat">
-              <span>Son çıkış</span>
-              <strong>{formatDateTime(employee.last_checkout_utc)}</strong>
-            </article>
-            <article className="mc-detail__stat">
-              <span>Bugünkü süre</span>
-              <strong>
-                <MinuteDisplay minutes={employee.worked_today_minutes} />
-              </strong>
-            </article>
-            <article className="mc-detail__stat">
-              <span>Haftalık toplam</span>
-              <strong>
-                <MinuteDisplay minutes={employee.weekly_total_minutes} />
-              </strong>
-            </article>
-            <article className="mc-detail__stat">
-              <span>Son aktivite</span>
-              <strong>{formatRelative(employee.last_activity_utc)}</strong>
-            </article>
-            <article className="mc-detail__stat">
-              <span>Konum / IP</span>
-              <strong>{employee.location_label ?? '-'}</strong>
-              <small>{employee.recent_ip ?? 'IP yok'}</small>
-            </article>
+          <section className="mc-dossier__summary-grid">
+            <article className="mc-dossier__stat"><span>Son giriş</span><strong>{formatDateTime(employee.last_checkin_utc)}</strong></article>
+            <article className="mc-dossier__stat"><span>Son çıkış</span><strong>{formatDateTime(employee.last_checkout_utc)}</strong></article>
+            <article className="mc-dossier__stat"><span>Bugünkü süre</span><strong><MinuteDisplay minutes={employee.worked_today_minutes} /></strong></article>
+            <article className="mc-dossier__stat"><span>Haftalık toplam</span><strong><MinuteDisplay minutes={employee.weekly_total_minutes} /></strong></article>
+            <article className="mc-dossier__stat"><span>Açık uyarı</span><strong>{employee.attention_flags.length}</strong></article>
+            <article className="mc-dossier__stat"><span>Bildirim</span><strong>{notificationJobs.length}</strong><small>{notificationJobs.filter((job) => job.status === 'FAILED').length} hata</small></article>
           </section>
 
-          <div className="mc-detail__content">
-            <main className="mc-detail__primary">
-              <section className="mc-detail__section">
-                <div className="mc-detail__section-head">
-                  <div>
-                    <h4>Giriş / çıkış zaman çizelgesi</h4>
-                    <p>Bu aya ait son olaylar ve kaynak bilgileri</p>
-                  </div>
-                  <Link
-                    to={`/attendance-events?employee_id=${employee.employee.id}&start_date=${bounds.start}&end_date=${bounds.end}`}
-                    className="mc-button mc-button--ghost"
-                  >
-                    Manuel düzeltme
-                  </Link>
-                </div>
-                <div className="mc-timeline">
-                  {attendanceQuery.isLoading ? (
-                    <div className="mc-empty-state">Zaman çizelgesi yükleniyor...</div>
-                  ) : recentEvents.length ? (
-                    recentEvents.map((event) => (
-                      <article key={event.id} className="mc-timeline__item">
-                        <div className="mc-timeline__icon">{event.type === 'IN' ? 'G' : 'Ç'}</div>
-                        <div className="mc-timeline__body">
-                          <strong>{eventTypeLabel(event.type)}</strong>
-                          <p>{formatDateTime(event.ts_utc)}</p>
-                        </div>
-                        <div className="mc-timeline__meta">
-                          <span>{eventSourceLabel(event.source)}</span>
-                          <span>{event.note ?? 'Not yok'}</span>
-                        </div>
-                      </article>
-                    ))
-                  ) : (
-                    <div className="mc-empty-state">Bu dönem için giriş-çıkış kaydı bulunmuyor.</div>
-                  )}
-                </div>
-              </section>
-
-              <section className="mc-detail__section">
-                <div className="mc-detail__section-head">
-                  <div>
-                    <h4>Fazla mesai geçmişi</h4>
-                    <p>Ay içindeki mesai aşımı görülen günler</p>
-                  </div>
-                </div>
-                <div className="mc-detail__list">
-                  {monthlyQuery.isLoading ? (
-                    <div className="mc-empty-state">Mesai özeti yükleniyor...</div>
-                  ) : overtimeDays.length ? (
-                    overtimeDays.map((day) => (
-                      <article key={day.date} className="mc-detail__list-row">
-                        <div>
-                          <strong>{formatDate(day.date)}</strong>
-                          <p>
-                            Giriş: {day.in ?? '-'} · Çıkış: {day.out ?? '-'}
-                          </p>
-                        </div>
-                        <div className="mc-detail__list-side">
-                          <strong>
-                            <MinuteDisplay minutes={day.overtime_minutes} />
-                          </strong>
-                          <span>Toplam mesai</span>
-                        </div>
-                      </article>
-                    ))
-                  ) : (
-                    <div className="mc-empty-state">Bu ay kayıtlı fazla mesai yok.</div>
-                  )}
-                </div>
-              </section>
-
-              <section className="mc-detail__section">
-                <div className="mc-detail__section-head">
-                  <div>
-                    <h4>İnceleme izi</h4>
-                    <p>Son yönetim ve sistem kayıtları</p>
-                  </div>
-                </div>
-                <div className="mc-detail__list">
-                  {detail.recent_audit_entries.length ? (
-                    detail.recent_audit_entries.slice(0, 8).map((entry) => (
-                      <article key={entry.audit_id} className="mc-detail__list-row">
-                        <div>
-                          <strong>{entry.label}</strong>
-                          <p>{formatDateTime(entry.ts_utc)}</p>
-                        </div>
-                        <div className="mc-detail__list-side">
-                          <strong>{entry.actor_id}</strong>
-                          <span>{entry.ip ?? 'IP yok'}</span>
-                        </div>
-                      </article>
-                    ))
-                  ) : (
-                    <div className="mc-empty-state">Audit kaydı bulunmuyor.</div>
-                  )}
-                </div>
-              </section>
-            </main>
-
-            <aside className="mc-detail__secondary">
-              <section className="mc-detail__section">
-                <div className="mc-detail__section-head">
-                  <div>
-                    <h4>Risk geçmişi</h4>
-                    <p>Haftalık risk değişimi ve yoğunluk trendi</p>
-                  </div>
-                </div>
-                <div className="mc-risk-history">
-                  {(detail.risk_history ?? []).length ? (
-                    detail.risk_history.map((point) => (
-                      <article key={point.label} className="mc-risk-history__item">
-                        <span>{point.label}</span>
-                        <div className="mc-risk-history__bar">
-                          <div
-                            className="mc-risk-history__fill"
-                            style={{ height: `${Math.max(12, (point.value / riskHistoryMax) * 100)}%` }}
-                          />
-                        </div>
-                        <strong>{point.value.toFixed(1)}</strong>
-                      </article>
-                    ))
-                  ) : (
-                    <div className="mc-empty-state">Risk geçmişi verisi bulunmuyor.</div>
-                  )}
-                </div>
-              </section>
-
-              <section className="mc-detail__section">
-                <div className="mc-detail__section-head">
-                  <div>
-                    <h4>Risk faktörleri</h4>
-                    <p>Skoru etkileyen son sinyaller</p>
-                  </div>
-                </div>
-                <div className="mc-detail__list">
-                  {employee.risk_factors.length ? (
-                    employee.risk_factors.map((factor) => (
-                      <article key={factor.code} className="mc-detail__list-row">
-                        <div>
-                          <strong>{factor.label}</strong>
-                          <p>{factor.description}</p>
-                        </div>
-                        <div className="mc-detail__list-side">
-                          <strong>+{factor.impact_score}</strong>
-                          <span>{factor.value}</span>
-                        </div>
-                      </article>
-                    ))
-                  ) : (
-                    <div className="mc-empty-state">Aktif risk faktörü bulunmuyor.</div>
-                  )}
-                </div>
-              </section>
-
-              <section className="mc-detail__section">
-                <div className="mc-detail__section-head">
-                  <div>
-                    <h4>Notlar ve önlemler</h4>
-                    <p>Son yönetim müdahaleleri ve açıklamalar</p>
-                  </div>
-                </div>
-                <div className="mc-detail__list">
-                  {detail.recent_measures.map((measure, index) => (
-                    <article key={`${measure.created_at}-${index}`} className="mc-detail__list-row">
-                      <div>
-                        <strong>{measure.label}</strong>
-                        <p>{measure.reason}</p>
-                      </div>
-                      <div className="mc-detail__list-side">
-                        <strong>{formatDateTime(measure.created_at)}</strong>
-                        <span>{measure.duration_days ? `${measure.duration_days} gün` : 'Süresiz'}</span>
-                      </div>
+          <div className="mc-dossier__layout">
+            <aside className="mc-dossier__sidebar">
+              <section className="mc-dossier__section">
+                <div className="mc-dossier__section-head"><div><h4>Operasyon sinyalleri</h4><p>Aktif uyarılar ve kayıt kalitesi</p></div></div>
+                <div className="mc-dossier__signal-list">
+                  {employee.attention_flags.length ? employee.attention_flags.map((alert) => (
+                    <article key={alert.code} className={`mc-dossier__signal ${alert.severity === 'critical' ? 'is-critical' : alert.severity === 'warning' ? 'is-watch' : 'is-normal'}`}>
+                      <strong>{alert.label}</strong>
+                      <span>{alert.code}</span>
                     </article>
-                  ))}
-                  {detail.recent_notes.map((entry, index) => (
-                    <article key={`${entry.created_at}-${index}`} className="mc-detail__list-row">
-                      <div>
-                        <strong>{entry.created_by}</strong>
-                        <p>{entry.note}</p>
-                      </div>
-                      <div className="mc-detail__list-side">
-                        <strong>{formatDateTime(entry.created_at)}</strong>
-                        <span>Not</span>
-                      </div>
-                    </article>
-                  ))}
-                  {!detail.recent_measures.length && !detail.recent_notes.length ? (
-                    <div className="mc-empty-state">Kayıtlı not veya önlem bulunmuyor.</div>
-                  ) : null}
+                  )) : <div className="mc-empty-state">Aktif operasyon uyarısı bulunmuyor.</div>}
+                </div>
+                <div className="mc-dossier__quality-grid">
+                  <article className="mc-dossier__quality-card"><span>Eksik gün</span><strong>{incompleteDays.length}</strong></article>
+                  <article className="mc-dossier__quality-card"><span>Mesai günü</span><strong>{overtimeDays.length}</strong></article>
+                  <article className="mc-dossier__quality-card"><span>Cihaz</span><strong>{employee.active_devices}/{employee.total_devices}</strong></article>
+                  <article className="mc-dossier__quality-card"><span>Aktif önlem</span><strong>{employee.active_measure ? 'Var' : 'Yok'}</strong></article>
                 </div>
               </section>
 
-              <section className="mc-detail__section">
-                <div className="mc-detail__section-head">
-                  <div>
-                    <h4>Son bildirimler</h4>
-                    <p>Bu aya ait son notification kayıtları</p>
-                  </div>
-                </div>
-                <div className="mc-detail__list">
-                  {notificationQuery.isLoading ? (
-                    <div className="mc-empty-state">Bildirimler yükleniyor...</div>
-                  ) : notificationQuery.data?.items.length ? (
-                    notificationQuery.data.items.map((job) => (
-                      <article key={job.id} className="mc-detail__list-row">
-                        <div>
-                          <strong>{job.title ?? job.notification_type ?? 'Bildirim'}</strong>
-                          <p>{job.description ?? 'Açıklama bulunmuyor.'}</p>
-                        </div>
-                        <div className="mc-detail__list-side">
-                          <strong>{notificationStatusLabel(job.status)}</strong>
-                          <span>{formatDateTime(job.created_at)}</span>
-                        </div>
-                      </article>
-                    ))
-                  ) : (
-                    <div className="mc-empty-state">Bu dönem için bildirim kaydı bulunmuyor.</div>
-                  )}
-                </div>
-              </section>
-
-              <section className="mc-detail__section mc-detail__section--action">
-                <div className="mc-detail__section-head">
-                  <div>
-                    <h4>Müdahale</h4>
-                    <p>Kontrollü işlem, inceleme ve not akışı</p>
-                  </div>
-                </div>
-
+              <section className="mc-dossier__section mc-dossier__section--action">
+                <div className="mc-dossier__section-head"><div><h4>Müdahale</h4><p>Kontrollü işlem ve not akışı</p></div></div>
                 <div className="mc-action-strip">
-                  <button
-                    type="button"
-                    className="mc-button mc-button--primary"
-                    onClick={() => setActionState({ kind: 'action', actionType: 'REVIEW' })}
-                  >
-                    İncelemeye al
-                  </button>
-                  <button
-                    type="button"
-                    className="mc-button mc-button--secondary"
-                    onClick={() => setActionState({ kind: 'action', actionType: 'DISABLE_TEMP' })}
-                  >
-                    Geçici devre dışı
-                  </button>
-                  <button
-                    type="button"
-                    className="mc-button mc-button--danger"
-                    onClick={() => setActionState({ kind: 'action', actionType: 'SUSPEND' })}
-                  >
-                    Askıya al
-                  </button>
-                  <button
-                    type="button"
-                    className="mc-button mc-button--ghost"
-                    onClick={() => setActionState({ kind: 'override' })}
-                  >
-                    Risk override
-                  </button>
-                  <button
-                    type="button"
-                    className="mc-button mc-button--ghost"
-                    onClick={() => setActionState({ kind: 'note' })}
-                  >
-                    Not ekle
-                  </button>
+                  <button type="button" className="mc-button mc-button--primary" onClick={() => setActionState({ kind: 'action', actionType: 'REVIEW' })}>İncelemeye al</button>
+                  <button type="button" className="mc-button mc-button--secondary" onClick={() => setActionState({ kind: 'action', actionType: 'DISABLE_TEMP' })}>Geçici devre dışı</button>
+                  <button type="button" className="mc-button mc-button--danger" onClick={() => setActionState({ kind: 'action', actionType: 'SUSPEND' })}>Askıya al</button>
+                  <button type="button" className="mc-button mc-button--ghost" onClick={() => setActionState({ kind: 'override' })}>Risk override</button>
+                  <button type="button" className="mc-button mc-button--ghost" onClick={() => setActionState({ kind: 'note' })}>Not ekle</button>
                 </div>
-
                 {actionState ? (
                   <div className="mc-action-composer">
                     {actionState.kind !== 'note' ? (
                       <>
-                        <label className="mc-field">
-                          <span>Sebep</span>
-                          <input
-                            value={reason}
-                            onChange={(event) => setReason(event.target.value)}
-                            placeholder="İşlem gerekçesi"
-                          />
-                        </label>
-
-                        {actionState.kind === 'override' ? (
-                          <label className="mc-field">
-                            <span>Risk skoru</span>
-                            <input
-                              type="number"
-                              min={0}
-                              max={100}
-                              value={overrideScore}
-                              onChange={(event) => setOverrideScore(event.target.value)}
-                            />
-                          </label>
-                        ) : null}
-
-                        <label className="mc-field">
-                          <span>Süre</span>
-                          <select
-                            value={duration}
-                            onChange={(event) => setDuration(event.target.value as '1' | '3' | '7' | 'indefinite')}
-                          >
-                            <option value="1">1 gün</option>
-                            <option value="3">3 gün</option>
-                            <option value="7">7 gün</option>
-                            <option value="indefinite">Süresiz</option>
-                          </select>
-                        </label>
+                        <label className="mc-field"><span>Sebep</span><input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="İşlem gerekçesi" /></label>
+                        {actionState.kind === 'override' ? <label className="mc-field"><span>Risk skoru</span><input type="number" min={0} max={100} value={overrideScore} onChange={(event) => setOverrideScore(event.target.value)} /></label> : null}
+                        <label className="mc-field"><span>Süre</span><select value={duration} onChange={(event) => setDuration(event.target.value as '1' | '3' | '7' | 'indefinite')}><option value="1">1 gün</option><option value="3">3 gün</option><option value="7">7 gün</option><option value="indefinite">Süresiz</option></select></label>
                       </>
                     ) : null}
-
-                    <label className="mc-field">
-                      <span>{actionState.kind === 'note' ? 'Not' : 'İşlem notu'}</span>
-                      <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={4} />
-                    </label>
-
+                    <label className="mc-field"><span>{actionState.kind === 'note' ? 'Not' : 'İşlem notu'}</span><textarea value={note} onChange={(event) => setNote(event.target.value)} rows={4} /></label>
                     <div className="mc-action-composer__footer">
-                      <span>Süre: {actionState.kind === 'note' ? 'Anlık kayıt' : durationLabel(duration)}</span>
+                      <span>{actionState.kind === 'note' ? 'Anlık kayıt' : `${duration === 'indefinite' ? 'Süresiz' : `${duration} gün`} işlem`}</span>
                       <div className="mc-action-composer__actions">
-                        <button
-                          type="button"
-                          className="mc-button mc-button--ghost"
-                          onClick={() => setActionState(null)}
-                        >
-                          Vazgeç
-                        </button>
-                        <button
-                          type="button"
-                          className="mc-button mc-button--primary"
-                          disabled={
-                            actionMutation.isPending ||
-                            !note.trim() ||
-                            (actionState.kind !== 'note' && !reason.trim())
-                          }
-                          onClick={() => void actionMutation.mutateAsync()}
-                        >
-                          {actionMutation.isPending ? 'Kaydediliyor...' : 'Kaydet'}
-                        </button>
+                        <button type="button" className="mc-button mc-button--ghost" onClick={() => setActionState(null)}>Vazgeç</button>
+                        <button type="button" className="mc-button mc-button--primary" disabled={actionMutation.isPending || !note.trim() || (actionState.kind !== 'note' && !reason.trim())} onClick={() => void actionMutation.mutateAsync()}>{actionMutation.isPending ? 'Kaydediliyor...' : 'Kaydet'}</button>
                       </div>
                     </div>
                   </div>
                 ) : null}
               </section>
             </aside>
+
+            <main className="mc-dossier__main">
+              <section className="mc-dossier__section">
+                <div className="mc-dossier__section-head">
+                  <div><h4>Gün bazlı akış</h4><p>Son kayıt günleri, vardiya sonucu ve olay izi</p></div>
+                  <Link to={`/attendance-events?employee_id=${employee.employee.id}&start_date=${bounds.start}&end_date=${bounds.end}`} className="mc-button mc-button--ghost">Manuel düzeltme</Link>
+                </div>
+                <div className="mc-dossier__timeline-days">
+                  {attendanceQuery.isLoading ? <div className="mc-empty-state">Zaman çizelgesi yükleniyor...</div> : timeline.length ? timeline.map((group) => (
+                    <article key={group.dateKey} className="mc-dossier__timeline-day">
+                      <div className="mc-dossier__timeline-head">
+                        <div><strong>{group.label}</strong><p>{group.day?.shift_name ?? employee.shift_name ?? 'Vardiya bilgisi yok'} · {group.day?.rule_source ?? 'Kural bilgisi yok'}</p></div>
+                        <div className="mc-dossier__timeline-meta">
+                          <span><MinuteDisplay minutes={group.day?.worked_minutes ?? 0} /></span>
+                          <span>{group.day?.missing_minutes ? <MinuteDisplay minutes={group.day.missing_minutes} /> : 'Eksik yok'}</span>
+                        </div>
+                      </div>
+                      <div className="mc-dossier__timeline-summary">
+                        <span>İlk giriş: {formatDateTime(group.firstIn?.ts_utc ?? null)}</span>
+                        <span>Son çıkış: {formatDateTime(group.lastOut?.ts_utc ?? null)}</span>
+                      </div>
+                      <div className="mc-dossier__event-list">
+                        {group.events.map((event) => (
+                          <article key={event.id} className="mc-dossier__event-row">
+                            <div className="mc-dossier__event-main"><strong>{eventTypeLabel(event.type)}</strong><span>{formatDateTime(event.ts_utc)}</span></div>
+                            <div className="mc-dossier__event-meta"><span>{eventSourceLabel(event.source)}</span><span>{event.note ?? 'Not yok'}</span></div>
+                          </article>
+                        ))}
+                      </div>
+                    </article>
+                  )) : <div className="mc-empty-state">Bu dönem için giriş-çıkış kaydı bulunmuyor.</div>}
+                </div>
+              </section>
+
+              <section className="mc-dossier__section">
+                <div className="mc-dossier__section-head"><div><h4>Risk analitiği</h4><p>Personel özel trend ve önerilen aksiyonlar</p></div></div>
+                <div className="mc-dossier__analytics">
+                  <div className="mc-dossier__analytics-block">
+                    <h5>Risk geçmişi</h5>
+                    <div className="mc-risk-history">
+                      {(detail.risk_history ?? []).map((point) => (
+                        <article key={point.label} className="mc-risk-history__item">
+                          <span>{point.label}</span>
+                          <div className="mc-risk-history__bar"><div className="mc-risk-history__fill" style={{ height: `${Math.max(12, (point.value / riskHistoryMax) * 100)}%` }} /></div>
+                          <strong>{point.value}</strong>
+                        </article>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="mc-dossier__analytics-block">
+                    <h5>Öneriler</h5>
+                    <div className="mc-dossier__recommendations">
+                      {recommendations.map((item) => (
+                        <article key={item.title} className={`mc-dossier__recommendation ${severityClass(item.severity)}`}>
+                          <strong>{item.title}</strong>
+                          <p>{item.description}</p>
+                        </article>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="mc-dossier__dual">
+                <section className="mc-dossier__section">
+                  <div className="mc-dossier__section-head"><div><h4>Mesai ve eksik günler</h4><p>Ay içindeki problemli operasyon günleri</p></div></div>
+                  <div className="mc-dossier__list">
+                    {[...overtimeDays, ...incompleteDays].slice(0, 6).map((day) => (
+                      <article key={`${day.date}-${day.status}`} className="mc-dossier__list-row">
+                        <div><strong>{formatDate(day.date)}</strong><p>Durum: {day.status} · Vardiya: {day.shift_name ?? 'Tanımsız'}</p></div>
+                        <div className="mc-dossier__list-side"><strong><MinuteDisplay minutes={Math.max(day.overtime_minutes, day.missing_minutes)} /></strong><span>{day.flags.length} flag</span></div>
+                      </article>
+                    ))}
+                    {!overtimeDays.length && !incompleteDays.length ? <div className="mc-empty-state">Dikkat gerektiren günlük kayıt bulunmuyor.</div> : null}
+                  </div>
+                </section>
+
+                <section className="mc-dossier__section">
+                  <div className="mc-dossier__section-head"><div><h4>Bildirim ve denetim</h4><p>Son bildirim işleri ve audit kayıtları</p></div></div>
+                  <div className="mc-dossier__list">
+                    {notificationJobs.map((job) => (
+                      <article key={job.id} className="mc-dossier__list-row">
+                        <div><strong>{job.title ?? job.notification_type ?? 'Bildirim'}</strong><p>{job.description ?? 'Açıklama bulunmuyor.'}</p></div>
+                        <div className="mc-dossier__list-side"><strong>{notificationStatusLabel(job.status)}</strong><span>{formatDateTime(job.created_at)}</span></div>
+                      </article>
+                    ))}
+                    {detail.recent_audit_entries.slice(0, 4).map((entry) => (
+                      <article key={entry.audit_id} className="mc-dossier__list-row">
+                        <div><strong>{entry.label}</strong><p>{formatDateTime(entry.ts_utc)}</p></div>
+                        <div className="mc-dossier__list-side"><strong>{entry.actor_id}</strong><span>{entry.ip ?? 'IP yok'}</span></div>
+                      </article>
+                    ))}
+                    {!notificationJobs.length && !detail.recent_audit_entries.length ? <div className="mc-empty-state">Bildirim veya audit kaydı bulunmuyor.</div> : null}
+                  </div>
+                </section>
+              </section>
+            </main>
           </div>
         </div>
       )}

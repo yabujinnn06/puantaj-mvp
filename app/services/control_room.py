@@ -1307,9 +1307,197 @@ def build_control_room_overview(
     )
 
 
+def _build_employee_risk_history(
+    db: Session,
+    *,
+    employee: Employee,
+    end_day: date,
+    lookback_days: int = 7,
+) -> list[ControlRoomTrendPointRead]:
+    tz = _attendance_timezone()
+    today_local_date = datetime.now(timezone.utc).astimezone(tz).date()
+    start_day = end_day - timedelta(days=max(0, lookback_days - 1))
+    range_start_utc = datetime.combine(start_day, time.min, tzinfo=tz).astimezone(timezone.utc)
+    range_end_utc = datetime.combine(end_day + timedelta(days=1), time.min, tzinfo=tz).astimezone(timezone.utc)
+
+    department_id = employee.department_id or 0
+    work_rule_map = {}
+    weekly_rule_map: dict[int, dict[int, DepartmentWeeklyRule]] = defaultdict(dict)
+    shift_map: dict[int, dict[int, DepartmentShift]] = defaultdict(dict)
+    plan_map: dict[int, list[DepartmentSchedulePlan]] = defaultdict(list)
+    weekday_shift_map: dict[int, dict[int, list[DepartmentShift]]] = {}
+
+    if department_id:
+        work_rule = db.scalar(select(WorkRule).where(WorkRule.department_id == department_id))
+        if work_rule is not None:
+            work_rule_map[department_id] = work_rule
+
+        weekly_rules = list(
+            db.scalars(select(DepartmentWeeklyRule).where(DepartmentWeeklyRule.department_id == department_id)).all()
+        )
+        for rule in weekly_rules:
+            weekly_rule_map[department_id][rule.weekday] = rule
+
+        shifts = list(
+            db.scalars(select(DepartmentShift).where(DepartmentShift.department_id == department_id)).all()
+        )
+        for shift in shifts:
+            shift_map[department_id][shift.id] = shift
+
+        plans = list(
+            db.scalars(
+                select(DepartmentSchedulePlan).where(
+                    DepartmentSchedulePlan.department_id == department_id,
+                    DepartmentSchedulePlan.is_active.is_(True),
+                )
+            ).all()
+        )
+        for plan in sorted(plans, key=lambda row: (row.start_date, row.end_date, row.id)):
+            plan_map[department_id].append(plan)
+
+        weekday_shift_map = build_department_weekday_shift_map(
+            list_department_weekday_shift_assignments(
+                db,
+                department_id=department_id,
+                active_only=True,
+            )
+        )
+
+    employee_events = list(
+        db.scalars(
+            select(AttendanceEvent)
+            .where(
+                AttendanceEvent.employee_id == employee.id,
+                AttendanceEvent.deleted_at.is_(None),
+                AttendanceEvent.ts_utc >= range_start_utc,
+                AttendanceEvent.ts_utc < range_end_utc,
+            )
+            .order_by(AttendanceEvent.ts_utc.asc(), AttendanceEvent.id.asc())
+        ).all()
+    )
+    employee_intervals = _build_intervals(employee_events, now_utc=datetime.now(timezone.utc))
+    risk_daily_events: dict[date, list[AttendanceEvent]] = defaultdict(list)
+    for event in employee_events:
+        event_day = _local_day(event.ts_utc, tz)
+        if event_day is not None:
+            risk_daily_events[event_day].append(event)
+
+    daily_ips: dict[date, set[str]] = defaultdict(set)
+    audit_rows = list(
+        db.scalars(
+            select(AuditLog)
+            .where(
+                AuditLog.actor_type == AuditActorType.SYSTEM,
+                AuditLog.actor_id == str(employee.id),
+                AuditLog.ts_utc >= range_start_utc,
+                AuditLog.ts_utc < range_end_utc,
+                AuditLog.ip.is_not(None),
+            )
+            .order_by(AuditLog.ts_utc.asc(), AuditLog.id.asc())
+        ).all()
+    )
+    for row in audit_rows:
+        row_day = _local_day(row.ts_utc, tz)
+        if row_day is not None and row.ip:
+            daily_ips[row_day].add(row.ip.strip())
+
+    trend: list[ControlRoomTrendPointRead] = []
+    for day_index in range(lookback_days):
+        day_date = start_day + timedelta(days=day_index)
+        day_events = risk_daily_events.get(day_date, [])
+        schedule = _resolve_shift_context(
+            employee=employee,
+            day_date=day_date,
+            work_rule_map=work_rule_map,
+            weekly_rule_map=weekly_rule_map,
+            weekday_shift_map=weekday_shift_map,
+            shift_map=shift_map,
+            plan_map=plan_map,
+        )
+        day_start_local = datetime.combine(day_date, time.min, tzinfo=tz)
+        day_end_local = day_start_local + timedelta(days=1)
+        day_start_utc = day_start_local.astimezone(timezone.utc)
+        day_end_utc = day_end_local.astimezone(timezone.utc)
+        worked_day_minutes = _sum_interval_minutes(
+            employee_intervals,
+            window_start_utc=day_start_utc,
+            window_end_utc=day_end_utc,
+        )
+        first_in = next((item for item in day_events if item.type == AttendanceType.IN), None)
+        last_out = next((item for item in reversed(day_events) if item.type == AttendanceType.OUT), None)
+
+        daily_score = 0
+        if schedule.is_workday and schedule.shift_start_local is not None and first_in is not None:
+            first_in_local = _normalize_utc(first_in.ts_utc)
+            if first_in_local is not None:
+                late_cutoff = schedule.shift_start_local + timedelta(minutes=schedule.grace_minutes)
+                if first_in_local.astimezone(tz) > late_cutoff:
+                    daily_score += 8
+
+        if schedule.is_workday and schedule.shift_end_local is not None and last_out is not None:
+            last_out_local = _normalize_utc(last_out.ts_utc)
+            if last_out_local is not None:
+                early_cutoff = schedule.shift_end_local - timedelta(minutes=schedule.grace_minutes)
+                if last_out_local.astimezone(tz) < early_cutoff:
+                    daily_score += 8
+
+        has_in = any(item.type == AttendanceType.IN for item in day_events)
+        has_out = any(item.type == AttendanceType.OUT for item in day_events)
+        if has_out and not has_in:
+            daily_score += 10
+        if has_in and not has_out and day_date < today_local_date:
+            daily_score += 8
+
+        if any(item.location_status == LocationStatus.UNVERIFIED_LOCATION for item in day_events):
+            daily_score += 10
+
+        if schedule.shift_start_local is not None and schedule.shift_end_local is not None:
+            off_hours_start = schedule.shift_start_local - timedelta(minutes=schedule.grace_minutes)
+            off_hours_end = schedule.shift_end_local + timedelta(minutes=schedule.grace_minutes)
+            off_hours_detected = False
+            for item in day_events:
+                item_local = _normalize_utc(item.ts_utc)
+                if item_local is None:
+                    continue
+                item_local = item_local.astimezone(tz)
+                if item_local < off_hours_start or item_local > off_hours_end:
+                    off_hours_detected = True
+                    break
+            if off_hours_detected:
+                daily_score += 6
+        elif not schedule.is_workday and day_events:
+            daily_score += 6
+
+        if any(bool(item.flags) for item in day_events):
+            daily_score += 4
+
+        if schedule.is_workday and schedule.planned_minutes > 0:
+            absence_minutes = max(0, schedule.planned_minutes - min(schedule.planned_minutes, worked_day_minutes))
+            daily_score += min(max(0, ceil(absence_minutes / 60)) * 3, 18)
+
+        ip_count = len(daily_ips.get(day_date, set()))
+        if ip_count > 1:
+            daily_score += min((ip_count - 1) * 10, 10)
+
+        trend.append(
+            ControlRoomTrendPointRead(
+                label=day_date.strftime("%d.%m"),
+                value=min(100, int(daily_score)),
+            )
+        )
+    return trend
+
+
 def build_control_room_employee_detail(db: Session, *, employee_id: int) -> ControlRoomEmployeeDetailResponse:
     overview = build_control_room_overview(db, employee_id=employee_id, include_inactive=True, offset=0, limit=1)
     if not overview.items:
+        raise ValueError("Employee not found")
+    employee = db.scalar(
+        select(Employee)
+        .options(selectinload(Employee.department), selectinload(Employee.shift))
+        .where(Employee.id == employee_id)
+    )
+    if employee is None:
         raise ValueError("Employee not found")
     audit_rows = list(
         db.scalars(
@@ -1326,7 +1514,11 @@ def build_control_room_employee_detail(db: Session, *, employee_id: int) -> Cont
     return ControlRoomEmployeeDetailResponse(
         generated_at_utc=overview.generated_at_utc,
         employee_state=overview.items[0],
-        risk_history=overview.summary.weekly_trend,
+        risk_history=_build_employee_risk_history(
+            db,
+            employee=employee,
+            end_day=overview.generated_at_utc.astimezone(_attendance_timezone()).date(),
+        ),
         risk_formula=RISK_FORMULA_ITEMS,
         recent_measures=[_measure_from_audit(item) for item in audit_rows if item.action in {CONTROL_ROOM_ACTION_AUDIT, CONTROL_ROOM_OVERRIDE_AUDIT}],
         recent_notes=[_note_from_audit(item) for item in audit_rows if item.action == CONTROL_ROOM_NOTE_AUDIT],
