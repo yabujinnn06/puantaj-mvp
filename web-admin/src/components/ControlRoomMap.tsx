@@ -76,6 +76,7 @@ export function ControlRoomMap({
   const mapRef = useRef<L.Map | null>(null)
   const layerRef = useRef<L.LayerGroup | null>(null)
   const renderedMarkersRef = useRef<Map<string, L.CircleMarker>>(new Map())
+  const invalidateTimerRef = useRef<number | null>(null)
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) {
@@ -89,6 +90,9 @@ export function ControlRoomMap({
       zoom: 6,
       zoomControl: true,
       attributionControl: false,
+      zoomAnimation: false,
+      fadeAnimation: false,
+      markerZoomAnimation: false,
     })
     mapRef.current = map
 
@@ -99,7 +103,12 @@ export function ControlRoomMap({
     layerRef.current = L.layerGroup().addTo(map)
 
     return () => {
+      if (invalidateTimerRef.current != null) {
+        window.clearTimeout(invalidateTimerRef.current)
+        invalidateTimerRef.current = null
+      }
       if (mapRef.current) {
+        mapRef.current.stop()
         mapRef.current.remove()
         mapRef.current = null
       }
@@ -155,17 +164,21 @@ export function ControlRoomMap({
     }
 
     if (latLngs.length === 1) {
-      map.setView(latLngs[0], 15, { animate: true })
+      map.setView(latLngs[0], 15, { animate: false })
     } else {
       map.fitBounds(L.latLngBounds(latLngs), {
         padding: [26, 26],
         maxZoom: 15,
-        animate: true,
+        animate: false,
       })
     }
 
-    window.setTimeout(() => {
-      map.invalidateSize()
+    if (invalidateTimerRef.current != null) {
+      window.clearTimeout(invalidateTimerRef.current)
+    }
+    invalidateTimerRef.current = window.setTimeout(() => {
+      map.invalidateSize(false)
+      invalidateTimerRef.current = null
     }, 80)
   }, [markers])
 
@@ -178,7 +191,7 @@ export function ControlRoomMap({
       return
     }
     const markerLatLng = marker.getLatLng()
-    mapRef.current.setView(markerLatLng, Math.max(mapRef.current.getZoom(), 14), { animate: true })
+    mapRef.current.setView(markerLatLng, Math.max(mapRef.current.getZoom(), 14), { animate: false })
     marker.openPopup()
   }, [focusedMarkerId, markers])
 

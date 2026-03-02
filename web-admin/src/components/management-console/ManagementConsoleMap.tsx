@@ -104,6 +104,7 @@ export function ManagementConsoleMap({
   const layerRef = useRef<L.LayerGroup | null>(null)
   const renderedMarkersRef = useRef<Map<number, L.Layer>>(new Map())
   const hasInitialFitRef = useRef(false)
+  const invalidateTimerRef = useRef<number | null>(null)
   const [viewportVersion, setViewportVersion] = useState(0)
 
   useEffect(() => {
@@ -116,6 +117,9 @@ export function ManagementConsoleMap({
       zoom: 6,
       zoomControl: true,
       attributionControl: false,
+      zoomAnimation: false,
+      fadeAnimation: false,
+      markerZoomAnimation: false,
     })
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -131,6 +135,11 @@ export function ManagementConsoleMap({
     setViewportVersion((current) => current + 1)
 
     return () => {
+      if (invalidateTimerRef.current != null) {
+        window.clearTimeout(invalidateTimerRef.current)
+        invalidateTimerRef.current = null
+      }
+      map.stop()
       map.remove()
       mapRef.current = null
       layerRef.current = null
@@ -215,7 +224,7 @@ export function ManagementConsoleMap({
           `<div class="mc-map__popup"><strong>${item.count} kayıt</strong><div>Küme görünümü</div></div>`,
         )
         .on('click', () => {
-          map.setView([item.centerLat, item.centerLon], Math.min(map.getZoom() + 2, 16), { animate: true })
+          map.setView([item.centerLat, item.centerLon], Math.min(map.getZoom() + 2, 16), { animate: false })
         })
         .addTo(layer)
 
@@ -225,18 +234,24 @@ export function ManagementConsoleMap({
 
     if (!hasInitialFitRef.current && latLngs.length) {
       if (latLngs.length === 1) {
-        map.setView(latLngs[0], 14, { animate: true })
+        map.setView(latLngs[0], 14, { animate: false })
       } else {
         map.fitBounds(L.latLngBounds(latLngs), {
           padding: [28, 28],
           maxZoom: 14,
-          animate: true,
+          animate: false,
         })
       }
       hasInitialFitRef.current = true
     }
 
-    window.setTimeout(() => map.invalidateSize(), 80)
+    if (invalidateTimerRef.current != null) {
+      window.clearTimeout(invalidateTimerRef.current)
+    }
+    invalidateTimerRef.current = window.setTimeout(() => {
+      map.invalidateSize(false)
+      invalidateTimerRef.current = null
+    }, 80)
   }, [clusteredEvents, events.length, focusedEventId, onSelectEmployee, showTechnicalDetails])
 
   useEffect(() => {
@@ -250,7 +265,7 @@ export function ManagementConsoleMap({
     if ('getLatLng' in marker) {
       const markerWithLatLng = marker as L.Marker | L.CircleMarker
       mapRef.current.setView(markerWithLatLng.getLatLng(), Math.max(mapRef.current.getZoom(), 14), {
-        animate: true,
+        animate: false,
       })
     }
     if ('openPopup' in marker) {

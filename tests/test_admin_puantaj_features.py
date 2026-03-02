@@ -22,6 +22,7 @@ from app.models import (
     LocationStatus,
     ManualDayOverride,
     Region,
+    ScheduledNotificationTask,
 )
 from app.schemas import MonthlyEmployeeDay, MonthlyEmployeeResponse, MonthlyEmployeeTotals
 from app.security import require_admin
@@ -215,6 +216,32 @@ class _FakeDepartmentManageDB:
         return
 
     def refresh(self, _obj: object) -> None:
+        return
+
+    def rollback(self) -> None:
+        return
+
+
+class _FakeScheduledNotificationTaskDB:
+    def __init__(self, task: ScheduledNotificationTask):
+        self.task = task
+        self.deleted_ids: list[int] = []
+        self.audit_rows: list[object] = []
+
+    def get(self, model, pk):  # type: ignore[no-untyped-def]
+        if model is ScheduledNotificationTask and self.task.id == pk:
+            return self.task
+        return None
+
+    def delete(self, obj: object) -> None:
+        if obj is self.task:
+            self.deleted_ids.append(self.task.id)
+            self.task = None  # type: ignore[assignment]
+
+    def add(self, obj: object) -> None:
+        self.audit_rows.append(obj)
+
+    def commit(self) -> None:
         return
 
     def rollback(self) -> None:
@@ -790,6 +817,40 @@ class AdminPuantajFeatureTests(unittest.TestCase):
         self.assertEqual(len(payload), 1)
         self.assertEqual(payload[0]["id"], 11)
         self.assertEqual(payload[0]["region_id"], 1)
+
+    def test_delete_scheduled_notification_task_returns_soft_delete_payload(self) -> None:
+        task = ScheduledNotificationTask(
+            id=91,
+            name="Hatirlatma",
+            title="Baslik",
+            message="Mesaj",
+            target="employees",
+            employee_scope="all",
+            admin_scope=None,
+            employee_ids=[],
+            admin_user_ids=[],
+            schedule_kind="daily",
+            run_date_local=None,
+            run_time_local=datetime(2026, 3, 2, 9, 0).time(),
+            timezone_name="Europe/Istanbul",
+            is_active=True,
+            created_by_username="admin",
+            updated_by_username="admin",
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        fake_db = _FakeScheduledNotificationTaskDB(task)
+        app.dependency_overrides[get_db] = _override_get_db(fake_db)
+        app.dependency_overrides[require_admin] = lambda: _super_admin_claims()
+        client = TestClient(app)
+
+        response = client.delete("/api/admin/notifications/tasks/91")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["ok"], True)
+        self.assertEqual(payload["id"], 91)
+        self.assertEqual(fake_db.deleted_ids, [91])
 
 
 if __name__ == "__main__":

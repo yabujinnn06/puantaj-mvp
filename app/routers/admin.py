@@ -1834,7 +1834,7 @@ def reset_admin_user_mfa_endpoint(
         },
         request_id=getattr(request.state, "request_id", None),
     )
-    return SoftDeleteResponse(ok=True)
+    return SoftDeleteResponse(ok=True, id=admin_user.id)
 
 
 @router.post(
@@ -7050,7 +7050,7 @@ def delete_scheduled_notification_task(
         details=task_snapshot,
         request_id=getattr(request.state, "request_id", None),
     )
-    return SoftDeleteResponse(ok=True)
+    return SoftDeleteResponse(ok=True, id=task_id)
 
 
 @router.post(
