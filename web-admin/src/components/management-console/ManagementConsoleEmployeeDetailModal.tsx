@@ -258,6 +258,16 @@ export function ManagementConsoleEmployeeDetailModal({
     () => monthDays.filter((day) => day.overtime_minutes > 0 || day.legal_overtime_minutes > 0).slice(0, 5),
     [monthDays],
   )
+  const attentionDays = useMemo(() => {
+    const merged = new Map<string, MonthlyEmployeeDay>()
+    for (const day of [...incompleteDays, ...overtimeDays]) {
+      if (!merged.has(day.date)) {
+        merged.set(day.date, day)
+      }
+    }
+    return [...merged.values()].slice(0, 6)
+  }, [incompleteDays, overtimeDays])
+  const failedNotificationCount = notificationJobs.filter((job) => job.status === 'FAILED').length
   const riskHistoryMax = Math.max(1, ...(detail?.risk_history ?? []).map((item) => item.value))
   const recommendations = employee
     ? buildRecommendations(
@@ -294,6 +304,24 @@ export function ManagementConsoleEmployeeDetailModal({
                 <span className="mc-chip">{employee.shift_window_label ?? 'Plan penceresi yok'}</span>
                 <span className="mc-chip">{locationStateLabel(employee.location_state)}</span>
               </div>
+              <div className="mc-dossier__hero-strip">
+                <article className="mc-dossier__hero-chip">
+                  <span>Son hareket</span>
+                  <strong>{formatRelative(employee.last_activity_utc)}</strong>
+                </article>
+                <article className="mc-dossier__hero-chip">
+                  <span>Aktif cihaz</span>
+                  <strong>{employee.active_devices}/{employee.total_devices}</strong>
+                </article>
+                <article className="mc-dossier__hero-chip">
+                  <span>Aktif onlem</span>
+                  <strong>{employee.active_measure?.label ?? 'Yok'}</strong>
+                </article>
+                <article className="mc-dossier__hero-chip">
+                  <span>Bildirim hata</span>
+                  <strong>{failedNotificationCount}</strong>
+                </article>
+              </div>
             </div>
             <div className={`mc-dossier__score ${riskClass(employee.risk_status)}`}>
               <span>Risk skoru</span>
@@ -308,12 +336,13 @@ export function ManagementConsoleEmployeeDetailModal({
             <article className="mc-dossier__stat"><span>Bugünkü süre</span><strong><MinuteDisplay minutes={employee.worked_today_minutes} /></strong></article>
             <article className="mc-dossier__stat"><span>Haftalık toplam</span><strong><MinuteDisplay minutes={employee.weekly_total_minutes} /></strong></article>
             <article className="mc-dossier__stat"><span>Açık uyarı</span><strong>{employee.attention_flags.length}</strong></article>
-            <article className="mc-dossier__stat"><span>Bildirim</span><strong>{notificationJobs.length}</strong><small>{notificationJobs.filter((job) => job.status === 'FAILED').length} hata</small></article>
+            <article className="mc-dossier__stat"><span>Bildirim</span><strong>{notificationJobs.length}</strong><small>{failedNotificationCount} hata</small></article>
           </section>
 
           <div className="mc-dossier__layout">
             <aside className="mc-dossier__sidebar">
-              <section className="mc-dossier__section">
+              <div className="mc-dossier__column-badge">Saha kontrolu</div>
+              <section className="mc-dossier__section mc-dossier__section--signals">
                 <div className="mc-dossier__section-head"><div><h4>Operasyon sinyalleri</h4><p>Aktif uyarılar ve kayıt kalitesi</p></div></div>
                 <div className="mc-dossier__signal-list">
                   {employee.attention_flags.length ? employee.attention_flags.map((alert) => (
@@ -363,7 +392,8 @@ export function ManagementConsoleEmployeeDetailModal({
             </aside>
 
             <main className="mc-dossier__main">
-              <section className="mc-dossier__section">
+              <div className="mc-dossier__column-badge">Kayit ve analiz</div>
+              <section className="mc-dossier__section mc-dossier__section--timeline">
                 <div className="mc-dossier__section-head">
                   <div><h4>Gün bazlı akış</h4><p>Son kayıt günleri, vardiya sonucu ve olay izi</p></div>
                   <Link to={`/attendance-events?employee_id=${employee.employee.id}&start_date=${bounds.start}&end_date=${bounds.end}`} className="mc-button mc-button--ghost">Manuel düzeltme</Link>
@@ -395,7 +425,7 @@ export function ManagementConsoleEmployeeDetailModal({
                 </div>
               </section>
 
-              <section className="mc-dossier__section">
+              <section className="mc-dossier__section mc-dossier__section--analytics">
                 <div className="mc-dossier__section-head"><div><h4>Risk analitiği</h4><p>Personel özel trend ve önerilen aksiyonlar</p></div></div>
                 <div className="mc-dossier__analytics">
                   <div className="mc-dossier__analytics-block">
@@ -425,10 +455,13 @@ export function ManagementConsoleEmployeeDetailModal({
               </section>
 
               <section className="mc-dossier__dual">
-                <section className="mc-dossier__section">
+                <section className="mc-dossier__section mc-dossier__section--feed">
                   <div className="mc-dossier__section-head"><div><h4>Mesai ve eksik günler</h4><p>Ay içindeki problemli operasyon günleri</p></div></div>
+                  <div className="mc-dossier__section-meta">
+                    <span className="mc-chip">{attentionDays.length} kayit</span>
+                  </div>
                   <div className="mc-dossier__list">
-                    {[...overtimeDays, ...incompleteDays].slice(0, 6).map((day) => (
+                    {attentionDays.map((day) => (
                       <article key={`${day.date}-${day.status}`} className="mc-dossier__list-row">
                         <div><strong>{formatDate(day.date)}</strong><p>Durum: {day.status} · Vardiya: {day.shift_name ?? 'Tanımsız'}</p></div>
                         <div className="mc-dossier__list-side"><strong><MinuteDisplay minutes={Math.max(day.overtime_minutes, day.missing_minutes)} /></strong><span>{day.flags.length} flag</span></div>
@@ -438,8 +471,11 @@ export function ManagementConsoleEmployeeDetailModal({
                   </div>
                 </section>
 
-                <section className="mc-dossier__section">
+                <section className="mc-dossier__section mc-dossier__section--audit">
                   <div className="mc-dossier__section-head"><div><h4>Bildirim ve denetim</h4><p>Son bildirim işleri ve audit kayıtları</p></div></div>
+                  <div className="mc-dossier__section-meta">
+                    <span className="mc-chip">{failedNotificationCount} hata</span>
+                  </div>
                   <div className="mc-dossier__list">
                     {notificationJobs.map((job) => (
                       <article key={job.id} className="mc-dossier__list-row">
