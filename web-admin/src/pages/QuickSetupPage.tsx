@@ -52,6 +52,30 @@ export function QuickSetupPage() {
   })
 
   const selectedDepartmentNum = selectedDepartmentId ? Number(selectedDepartmentId) : null
+  const departments = departmentsQuery.data ?? []
+  const employees = employeesQuery.data ?? []
+  const weekdayShiftAssignments = weekdayShiftAssignmentsQuery.data ?? []
+  const shifts = shiftsQuery.data ?? []
+
+  const departmentNameById = useMemo(
+    () => new Map(departments.map((department) => [department.id, department.name])),
+    [departments],
+  )
+
+  const filteredShifts = useMemo(() => {
+    if (!selectedDepartmentNum) return []
+    return shifts.filter((item) => item.department_id === selectedDepartmentNum)
+  }, [selectedDepartmentNum, shifts])
+
+  const filteredWeekdayAssignments = useMemo(() => {
+    if (!selectedDepartmentNum) return []
+    return weekdayShiftAssignments.filter((item) => item.department_id === selectedDepartmentNum)
+  }, [selectedDepartmentNum, weekdayShiftAssignments])
+
+  const selectedAssignmentEmployee = useMemo(
+    () => employees.find((item) => String(item.id) === assignmentEmployeeId),
+    [employees, assignmentEmployeeId],
+  )
 
   const updateEmployeeDepartmentMutation = useMutation({
     mutationFn: ({ employeeId, departmentId }: { employeeId: number; departmentId: number | null }) =>
@@ -192,31 +216,6 @@ export function QuickSetupPage() {
   ) {
     return <ErrorBlock message="Hızlı ayarlar verileri alınamadı." />
   }
-
-  const departments = departmentsQuery.data ?? []
-  const employees = employeesQuery.data ?? []
-  const weekdayShiftAssignments = weekdayShiftAssignmentsQuery.data ?? []
-  const shifts = shiftsQuery.data ?? []
-
-  const departmentNameById = useMemo(
-    () => new Map(departments.map((department) => [department.id, department.name])),
-    [departments],
-  )
-
-  const filteredShifts = useMemo(() => {
-    if (!selectedDepartmentNum) return []
-    return shifts.filter((item) => item.department_id === selectedDepartmentNum)
-  }, [selectedDepartmentNum, shifts])
-
-  const filteredWeekdayAssignments = useMemo(() => {
-    if (!selectedDepartmentNum) return []
-    return weekdayShiftAssignments.filter((item) => item.department_id === selectedDepartmentNum)
-  }, [selectedDepartmentNum, weekdayShiftAssignments])
-
-  const selectedAssignmentEmployee = useMemo(
-    () => employees.find((item) => String(item.id) === assignmentEmployeeId),
-    [employees, assignmentEmployeeId],
-  )
 
   return (
     <div className="space-y-4">
