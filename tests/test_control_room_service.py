@@ -1,13 +1,49 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from collections import defaultdict
+from datetime import date, datetime, time, timezone
 import unittest
 
-from app.models import AuditActorType, AuditLog
-from app.services.control_room import _measure_from_audit
+from app.models import AuditActorType, AuditLog, DepartmentShift, Employee
+from app.services.control_room import _measure_from_audit, _resolve_shift_context
 
 
 class ControlRoomServiceTests(unittest.TestCase):
+    def test_resolve_shift_context_returns_timezone_aware_shift_window(self) -> None:
+        employee = Employee(
+            id=7,
+            full_name="Test Personel",
+            department_id=11,
+            shift_id=21,
+            is_active=True,
+        )
+        shift = DepartmentShift(
+            id=21,
+            department_id=11,
+            name="Hafta Ici",
+            start_time_local=time(9, 30),
+            end_time_local=time(18, 30),
+            break_minutes=60,
+            is_active=True,
+        )
+
+        context = _resolve_shift_context(
+            employee=employee,
+            day_date=date(2026, 3, 2),
+            work_rule_map={},
+            weekly_rule_map=defaultdict(dict),
+            weekday_shift_map={},
+            shift_map=defaultdict(dict, {11: {21: shift}}),
+            plan_map=defaultdict(list),
+        )
+
+        self.assertIsNotNone(context.shift_start_local)
+        self.assertIsNotNone(context.shift_end_local)
+        self.assertIsNotNone(context.shift_start_local.tzinfo)
+        self.assertIsNotNone(context.shift_end_local.tzinfo)
+        self.assertIsNotNone(context.shift_start_local.utcoffset())
+        self.assertIsNotNone(context.shift_end_local.utcoffset())
+
     def test_measure_from_audit_normalizes_legacy_action_types(self) -> None:
         log_item = AuditLog(
             id=1,

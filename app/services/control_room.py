@@ -421,8 +421,9 @@ def _resolve_shift_context(*, employee: Employee, day_date: date, work_rule_map:
     shift_window_label: str | None = None
     if shift is not None:
         shift_name = shift.name
-        shift_start_local = datetime.combine(day_date, shift.start_time_local)
-        shift_end_local = datetime.combine(day_date, shift.end_time_local)
+        local_tz = _attendance_timezone()
+        shift_start_local = datetime.combine(day_date, shift.start_time_local, tzinfo=local_tz)
+        shift_end_local = datetime.combine(day_date, shift.end_time_local, tzinfo=local_tz)
         if shift_end_local <= shift_start_local:
             shift_end_local += timedelta(days=1)
         break_minutes = max(0, int(shift.break_minutes))
