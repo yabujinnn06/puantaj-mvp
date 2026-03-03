@@ -4591,6 +4591,7 @@ button[class*="bg-slate-900"] {
 .mc-modal__body {
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
   padding: 1.5rem;
 }
 
@@ -5573,7 +5574,7 @@ button[class*="bg-slate-900"] {
 
 .mc-ops__section--sticky {
   position: sticky;
-  top: 0.25rem;
+  top: 1rem;
 }
 
 .mc-ops__section-head {
@@ -5637,15 +5638,15 @@ button[class*="bg-slate-900"] {
 
 .mc-ops__timeline,
 .mc-ops__feed {
-  max-height: 34rem;
-  overflow: auto;
-  padding-right: 0.1rem;
+  max-height: none;
+  overflow: visible;
+  padding-right: 0;
 }
 
 .mc-ops__event-list {
-  max-height: 13rem;
-  overflow: auto;
-  padding-right: 0.1rem;
+  max-height: none;
+  overflow: visible;
+  padding-right: 0;
 }
 
 .mc-ops__timeline-head,
@@ -5720,21 +5721,20 @@ button[class*="bg-slate-900"] {
 .mc-ops__feed,
 .mc-ops__timeline,
 .mc-ops__event-list {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(150, 164, 184, 0.95) rgba(236, 243, 249, 0.85);
+  scrollbar-width: auto;
 }
 
 .mc-ops__timeline::-webkit-scrollbar,
 .mc-ops__event-list::-webkit-scrollbar,
 .mc-ops__feed::-webkit-scrollbar {
-  width: 10px;
+  width: 0;
+  height: 0;
 }
 
 .mc-ops__timeline::-webkit-scrollbar-thumb,
 .mc-ops__event-list::-webkit-scrollbar-thumb,
 .mc-ops__feed::-webkit-scrollbar-thumb {
-  background: rgba(150, 164, 184, 0.95);
-  border-radius: 999px;
+  background: transparent;
 }
 
 @container detail-modal (max-width: 1240px) {
