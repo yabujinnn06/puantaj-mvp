@@ -5573,8 +5573,7 @@ button[class*="bg-slate-900"] {
 }
 
 .mc-ops__section--sticky {
-  position: sticky;
-  top: 1rem;
+  position: static;
 }
 
 .mc-ops__section-head {
