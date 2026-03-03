@@ -359,16 +359,41 @@ class ControlRoomEmployeeDetailResponse(BaseModel):
     recent_audit_entries: list[ControlRoomAuditEntryRead] = Field(default_factory=list)
 
 
+CONTROL_ROOM_DEFAULT_REASON_MAP: dict[str, str] = {
+    "REVIEW": "Operasyon dosyasi uzerinden manuel inceleme baslatildi.",
+    "DISABLE_TEMP": "Calisan kaydi gecici olarak devre disi birakildi.",
+    "SUSPEND": "Calisan kaydi operasyonel inceleme nedeniyle askiya alindi.",
+    "RISK_OVERRIDE": "Risk skoru manuel olarak override edildi.",
+}
+
+CONTROL_ROOM_DEFAULT_NOTE_MAP: dict[str, str] = {
+    "REVIEW": "Operasyon dosyasinda inceleme akisi baslatildi.",
+    "DISABLE_TEMP": "Gecici devre disi islemi operasyon panelinden kaydedildi.",
+    "SUSPEND": "Askiya alma islemi operasyon panelinden kaydedildi.",
+    "RISK_OVERRIDE": "Risk override islemi operasyon panelinden kaydedildi.",
+    "NOTE": "Operasyon dosyasina admin notu eklendi.",
+}
+
+
+def _normalize_control_room_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
 class ControlRoomEmployeeActionRequest(BaseModel):
     employee_id: int = Field(ge=1)
     action_type: Literal["SUSPEND", "DISABLE_TEMP", "REVIEW"]
-    reason: str = Field(min_length=3, max_length=255)
-    note: str = Field(min_length=3, max_length=1000)
+    reason: str | None = Field(default=None, max_length=255)
+    note: str | None = Field(default=None, max_length=1000)
     duration_days: Literal[1, 3, 7] | None = None
     indefinite: bool = False
 
     @model_validator(mode="after")
     def validate_duration(self) -> "ControlRoomEmployeeActionRequest":
+        self.reason = _normalize_control_room_text(self.reason) or CONTROL_ROOM_DEFAULT_REASON_MAP[self.action_type]
+        self.note = _normalize_control_room_text(self.note) or CONTROL_ROOM_DEFAULT_NOTE_MAP[self.action_type]
         if self.indefinite and self.duration_days is not None:
             raise ValueError("duration_days must be empty when indefinite is true")
         if not self.indefinite and self.duration_days is None:
@@ -379,13 +404,15 @@ class ControlRoomEmployeeActionRequest(BaseModel):
 class ControlRoomRiskOverrideRequest(BaseModel):
     employee_id: int = Field(ge=1)
     override_score: int = Field(ge=0, le=100)
-    reason: str = Field(min_length=3, max_length=255)
-    note: str = Field(min_length=3, max_length=1000)
+    reason: str | None = Field(default=None, max_length=255)
+    note: str | None = Field(default=None, max_length=1000)
     duration_days: Literal[1, 3, 7] | None = None
     indefinite: bool = False
 
     @model_validator(mode="after")
     def validate_duration(self) -> "ControlRoomRiskOverrideRequest":
+        self.reason = _normalize_control_room_text(self.reason) or CONTROL_ROOM_DEFAULT_REASON_MAP["RISK_OVERRIDE"]
+        self.note = _normalize_control_room_text(self.note) or CONTROL_ROOM_DEFAULT_NOTE_MAP["RISK_OVERRIDE"]
         if self.indefinite and self.duration_days is not None:
             raise ValueError("duration_days must be empty when indefinite is true")
         if not self.indefinite and self.duration_days is None:
@@ -395,7 +422,12 @@ class ControlRoomRiskOverrideRequest(BaseModel):
 
 class ControlRoomNoteCreateRequest(BaseModel):
     employee_id: int = Field(ge=1)
-    note: str = Field(min_length=3, max_length=1000)
+    note: str | None = Field(default=None, max_length=1000)
+
+    @model_validator(mode="after")
+    def validate_note(self) -> "ControlRoomNoteCreateRequest":
+        self.note = _normalize_control_room_text(self.note) or CONTROL_ROOM_DEFAULT_NOTE_MAP["NOTE"]
+        return self
 
 
 class ControlRoomFilterAuditRequest(BaseModel):

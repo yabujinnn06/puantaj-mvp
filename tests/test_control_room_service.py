@@ -5,6 +5,11 @@ from datetime import date, datetime, time, timezone
 import unittest
 
 from app.models import AuditActorType, AuditLog, DepartmentShift, Employee
+from app.schemas import (
+    ControlRoomEmployeeActionRequest,
+    ControlRoomNoteCreateRequest,
+    ControlRoomRiskOverrideRequest,
+)
 from app.services.control_room import _measure_from_audit, _resolve_shift_context
 
 
@@ -93,6 +98,35 @@ class ControlRoomServiceTests(unittest.TestCase):
         measure = _measure_from_audit(log_item)
 
         self.assertEqual(measure.action_type, "REVIEW")
+
+    def test_action_request_defaults_reason_and_note_when_blank(self) -> None:
+        payload = ControlRoomEmployeeActionRequest(
+            employee_id=7,
+            action_type="REVIEW",
+            reason="  ",
+            note="",
+            duration_days=3,
+            indefinite=False,
+        )
+
+        self.assertEqual(payload.reason, "Operasyon dosyasi uzerinden manuel inceleme baslatildi.")
+        self.assertEqual(payload.note, "Operasyon dosyasinda inceleme akisi baslatildi.")
+
+    def test_risk_override_request_defaults_reason_and_note_when_missing(self) -> None:
+        payload = ControlRoomRiskOverrideRequest(
+            employee_id=7,
+            override_score=62,
+            duration_days=1,
+            indefinite=False,
+        )
+
+        self.assertEqual(payload.reason, "Risk skoru manuel olarak override edildi.")
+        self.assertEqual(payload.note, "Risk override islemi operasyon panelinden kaydedildi.")
+
+    def test_note_request_defaults_message_when_blank(self) -> None:
+        payload = ControlRoomNoteCreateRequest(employee_id=7, note="   ")
+
+        self.assertEqual(payload.note, "Operasyon dosyasina admin notu eklendi.")
 
 
 if __name__ == "__main__":
