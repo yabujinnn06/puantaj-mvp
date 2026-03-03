@@ -75,6 +75,16 @@ function riskBadgeClass(value: string | null | undefined): string {
   return 'bg-sky-100 text-sky-700'
 }
 
+function payloadString(payload: Record<string, unknown> | null | undefined, key: string): string | null {
+  const value = payload?.[key]
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function payloadNumber(payload: Record<string, unknown> | null | undefined, key: string): number | null {
+  const value = payload?.[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
 function timelineEventLabel(event: AttendanceEvent): string {
   const rawShiftName = typeof event.flags?.SHIFT_NAME === 'string' ? event.flags.SHIFT_NAME : null
   const source = event.source === 'MANUAL' || event.created_by_admin ? 'Manuel' : 'Cihaz'
@@ -947,6 +957,9 @@ export function NotificationsPage() {
               <tbody>
                 {jobsRows.map((job, index) => {
                   const isSelected = job.id === selectedJobId
+                  const employeeFullName = payloadString(job.payload, 'employee_full_name')
+                  const regionName = payloadString(job.payload, 'region_name')
+                  const departmentName = payloadString(job.payload, 'department_name')
                   return (
                     <tr
                       key={job.id}
@@ -959,7 +972,16 @@ export function NotificationsPage() {
                         <span className={`rounded px-2 py-1 text-xs ${riskBadgeClass(job.risk_level)}`}>{job.risk_level ?? '-'}</span>
                       </td>
                       <td className="px-2 py-2">{audienceLabel(job.audience)}</td>
-                      <td className="px-2 py-2">#{job.employee_id ?? '-'}</td>
+                      <td className="px-2 py-2">
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-slate-800">{employeeFullName ?? `#${job.employee_id ?? '-'}`}</p>
+                          <p className="truncate text-xs text-slate-500">
+                            #{job.employee_id ?? '-'}
+                            {regionName ? ` · ${regionName}` : ''}
+                            {departmentName ? ` · ${departmentName}` : ''}
+                          </p>
+                        </div>
+                      </td>
                       <td className="px-2 py-2 max-w-56 truncate" title={job.title ?? ''}>{job.title ?? '-'}</td>
                       <td className="px-2 py-2">
                         <span className={`rounded px-2 py-1 text-xs ${statusClass(job.status)}`}>{job.status}</span>
@@ -979,15 +1001,24 @@ export function NotificationsPage() {
             ) : (
               <div className="mt-3 space-y-3">
                 <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700">
+                  <p><span className="font-semibold">Personel ID:</span> #{selectedJob.employee_id ?? '-'}</p>
+                  <p><span className="font-semibold">Ad Soyad:</span> {payloadString(selectedJob.payload, 'employee_full_name') ?? '-'}</p>
+                  <p><span className="font-semibold">Bolge:</span> {payloadString(selectedJob.payload, 'region_name') ?? '-'}</p>
+                  <p><span className="font-semibold">Departman:</span> {payloadString(selectedJob.payload, 'department_name') ?? '-'}</p>
                   <p><span className="font-semibold">Baslik:</span> {selectedJob.title ?? '-'}</p>
-                  <p><span className="font-semibold">Aciklama:</span> {selectedJob.description ?? '-'}</p>
+                  <p className="whitespace-pre-line"><span className="font-semibold">Aciklama:</span> {selectedJob.description ?? '-'}</p>
                   <p><span className="font-semibold">Olay Zamani:</span> {selectedJob.event_ts_utc ? dt(selectedJob.event_ts_utc) : '-'}</p>
                   <p><span className="font-semibold">Vardiya Bilgisi:</span> {selectedJob.shift_summary ?? '-'}</p>
                   <p><span className="font-semibold">Gerceklesen Saat:</span> {selectedJob.actual_time_summary ?? '-'}</p>
                   <p><span className="font-semibold">Risk Seviyesi:</span> {selectedJob.risk_level ?? '-'}</p>
+                  {payloadNumber(selectedJob.payload, 'late_minutes') !== null ? (
+                    <p><span className="font-semibold">Gecikme:</span> {payloadNumber(selectedJob.payload, 'late_minutes')} dk</p>
+                  ) : null}
+                  {payloadNumber(selectedJob.payload, 'late_streak_days') !== null ? (
+                    <p><span className="font-semibold">Gec kalma serisi:</span> {payloadNumber(selectedJob.payload, 'late_streak_days')} gun</p>
+                  ) : null}
                   <p><span className="font-semibold">Islem Onerisi:</span> {selectedJob.suggested_action ?? '-'}</p>
                   <p><span className="font-semibold">Event ID:</span> {selectedJob.event_id ?? '-'}</p>
-                  <p><span className="font-semibold">Personel:</span> #{selectedJob.employee_id ?? '-'} </p>
                   <p><span className="font-semibold">Hedef:</span> {audienceLabel(selectedJob.audience)}</p>
                   {selectedJob.status === 'PENDING' || selectedJob.status === 'SENDING' ? (
                     <button

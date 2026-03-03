@@ -109,6 +109,7 @@ export function AppLayout() {
   const canWriteAudit = hasPermission('audit', 'write')
 
   const visibleNavItems = navItems.filter((item) => !item.permission || hasPermission(item.permission))
+  const adminLogoUrl = `${import.meta.env.BASE_URL}admin-logo.svg`
 
   const title =
     pageTitles[location.pathname] ??
@@ -222,8 +223,13 @@ export function AppLayout() {
       ) : null}
 
       <aside ref={sidebarRef} className="admin-sidebar flex flex-col px-3 py-6 text-slate-100 shadow-panel xl:px-4">
-        <h1 className="px-2 text-xl font-bold tracking-tight">Puantaj Admin</h1>
-        <p className="px-2 pt-1 text-xs text-slate-400">FastAPI Yönetim Paneli</p>
+        <div className="admin-brand px-2">
+          <img src={adminLogoUrl} alt="Rainwater Yabujin admin logosu" className="admin-brand__mark" />
+          <div className="min-w-0">
+            <h1 className="admin-brand__title">Rainwater Yabujin</h1>
+            <p className="admin-brand__subtitle">Yonetim Konsolu</p>
+          </div>
+        </div>
         <nav className="mt-6 flex flex-col gap-1">
           {visibleNavItems.map((item) => (
             <NavLink

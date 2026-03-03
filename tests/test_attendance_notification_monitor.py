@@ -7,12 +7,14 @@ from app.models import AttendanceEvent, AttendanceType, DepartmentShift, Employe
 from app.services.attendance_notification_monitor import (
     AUDIENCE_ADMIN,
     TYPE_EARLY_CHECKOUT,
+    TYPE_LATE_CHECKIN,
     TYPE_OVERRIDE_INFO,
     TYPE_OVERTIME_6H_CLOSED,
     DayAssessment,
     _is_checkin_outside_shift,
     _create_notification_job,
     _schedule_early_checkout,
+    _schedule_late_checkin,
     _schedule_overtime_auto_close,
     _schedule_override_info,
 )
@@ -36,7 +38,12 @@ class _DummySession:
         self.flush_count += 1
 
 
-def _build_assessment(*, override_active: bool, checkout_ts_utc: datetime | None) -> DayAssessment:
+def _build_assessment(
+    *,
+    override_active: bool,
+    checkout_ts_utc: datetime | None,
+    first_checkin_ts_utc: datetime | None = None,
+) -> DayAssessment:
     employee = Employee(id=7, full_name="Ahmet Yilmaz", department_id=10, shift_id=101, is_active=True)
     shift = DepartmentShift(
         id=101,
@@ -59,11 +66,12 @@ def _build_assessment(*, override_active: bool, checkout_ts_utc: datetime | None
     return DayAssessment(
         employee=employee,
         local_day=date(2026, 3, 1),
+        region_name="Ic Anadolu",
         department_name="Operasyon",
         plan=None,
         shift=shift,
         default_shift=default_shift,
-        first_checkin_ts_utc=datetime(2026, 3, 1, 7, 0, tzinfo=timezone.utc),
+        first_checkin_ts_utc=first_checkin_ts_utc or datetime(2026, 3, 1, 7, 0, tzinfo=timezone.utc),
         first_checkin_source="event",
         checkout_ts_utc=checkout_ts_utc,
         checkout_source="event" if checkout_ts_utc is not None else None,
@@ -109,6 +117,7 @@ class AttendanceNotificationMonitorTests(unittest.TestCase):
         assessment = _build_assessment(
             override_active=False,
             checkout_ts_utc=datetime(2026, 3, 1, 14, 0, tzinfo=timezone.utc),
+            first_checkin_ts_utc=datetime(2026, 3, 1, 10, 20, tzinfo=timezone.utc),
         )
         created_jobs: list[NotificationJob] = []
 
@@ -183,6 +192,57 @@ class AttendanceNotificationMonitorTests(unittest.TestCase):
         )
 
         self.assertFalse(result)
+
+    def test_late_checkin_admin_payload_contains_employee_context(self) -> None:
+        session = _DummySession(scalar_values=[None, None, None, None])
+        assessment = _build_assessment(
+            override_active=False,
+            checkout_ts_utc=datetime(2026, 3, 1, 14, 0, tzinfo=timezone.utc),
+            first_checkin_ts_utc=datetime(2026, 3, 1, 10, 20, tzinfo=timezone.utc),
+        )
+        created_jobs: list[NotificationJob] = []
+
+        _schedule_late_checkin(session, created_jobs=created_jobs, assessment=assessment)  # type: ignore[arg-type]
+
+        self.assertEqual(len(created_jobs), 2)
+        admin_job = next(job for job in created_jobs if job.audience == AUDIENCE_ADMIN)
+        self.assertEqual(admin_job.notification_type, TYPE_LATE_CHECKIN)
+        self.assertIn("Personel ID: #7", admin_job.description or "")
+        self.assertIn("Ad Soyad: Ahmet Yilmaz", admin_job.description or "")
+        self.assertIn("Bolge: Ic Anadolu", admin_job.description or "")
+        self.assertEqual(admin_job.payload.get("region_name"), "Ic Anadolu")
+
+    def test_late_checkin_escalates_after_two_consecutive_days(self) -> None:
+        session = _DummySession(scalar_values=[1, None, None, None])
+        assessment = _build_assessment(
+            override_active=False,
+            checkout_ts_utc=datetime(2026, 3, 1, 14, 0, tzinfo=timezone.utc),
+            first_checkin_ts_utc=datetime(2026, 3, 1, 10, 20, tzinfo=timezone.utc),
+        )
+        created_jobs: list[NotificationJob] = []
+
+        _schedule_late_checkin(session, created_jobs=created_jobs, assessment=assessment)  # type: ignore[arg-type]
+
+        admin_job = next(job for job in created_jobs if job.audience == AUDIENCE_ADMIN)
+        self.assertEqual(admin_job.title, "Tekrarlayan Gec Giris Tespit Edildi")
+        self.assertEqual(admin_job.risk_level, "Uyari")
+        self.assertEqual(admin_job.payload.get("late_streak_days"), 2)
+
+    def test_late_checkin_becomes_critical_after_three_consecutive_days(self) -> None:
+        session = _DummySession(scalar_values=[1, 1, None, None, None])
+        assessment = _build_assessment(
+            override_active=False,
+            checkout_ts_utc=datetime(2026, 3, 1, 14, 0, tzinfo=timezone.utc),
+            first_checkin_ts_utc=datetime(2026, 3, 1, 10, 20, tzinfo=timezone.utc),
+        )
+        created_jobs: list[NotificationJob] = []
+
+        _schedule_late_checkin(session, created_jobs=created_jobs, assessment=assessment)  # type: ignore[arg-type]
+
+        admin_job = next(job for job in created_jobs if job.audience == AUDIENCE_ADMIN)
+        self.assertEqual(admin_job.title, "Tekrarlayan Gec Giris Kritik Seviyede")
+        self.assertEqual(admin_job.risk_level, "Kritik")
+        self.assertEqual(admin_job.payload.get("late_streak_days"), 3)
 
 
 if __name__ == "__main__":

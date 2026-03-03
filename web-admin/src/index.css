@@ -192,6 +192,39 @@ body::after {
     );
 }
 
+.admin-brand {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.admin-brand__mark {
+  width: 2.9rem;
+  height: 2.9rem;
+  flex: 0 0 auto;
+  border-radius: 0.95rem;
+  box-shadow:
+    0 12px 28px rgba(2, 16, 28, 0.34),
+    0 0 0 1px rgba(187, 225, 242, 0.16);
+}
+
+.admin-brand__title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #f6fbff;
+}
+
+.admin-brand__subtitle {
+  padding-top: 0.15rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(188, 218, 233, 0.72);
+}
+
 .mobile-nav-loader {
   position: fixed;
   inset: 0;

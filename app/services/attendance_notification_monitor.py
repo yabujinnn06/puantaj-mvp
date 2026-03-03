@@ -20,6 +20,7 @@ from app.models import (
     LocationStatus,
     ManualDayOverride,
     NotificationJob,
+    Region,
     WorkRule,
 )
 from app.services.attendance import (
@@ -59,12 +60,16 @@ DEFAULT_GRACE_MINUTES = 5
 DEFAULT_OFF_SHIFT_TOLERANCE_MINUTES = 0
 OVERTIME_WARNING_HOURS = 3
 OVERTIME_MAX_HOURS = 6
+LATE_STREAK_ESCALATION_DAYS = 2
+LATE_STREAK_CRITICAL_DAYS = 3
+LATE_STREAK_LOOKBACK_DAYS = 14
 
 
 @dataclass(frozen=True, slots=True)
 class DayAssessment:
     employee: Employee
     local_day: date
+    region_name: str | None
     department_name: str | None
     plan: DepartmentSchedulePlan | None
     shift: DepartmentShift | None
@@ -141,6 +146,17 @@ def _resolve_department_name(session: Session, employee: Employee) -> str | None
     if department is None or not department.name:
         return None
     return department.name
+
+
+def _resolve_region_name(session: Session, employee: Employee) -> str | None:
+    if employee.region is not None and employee.region.name:
+        return employee.region.name
+    if employee.region_id is None:
+        return None
+    region = session.get(Region, employee.region_id)
+    if region is None or not region.name:
+        return None
+    return region.name
 
 
 def _resolve_department_work_rule(session: Session, employee: Employee) -> WorkRule | None:
@@ -461,6 +477,7 @@ def _build_day_assessment(
         has_any_activity = True
 
     department_name = _resolve_department_name(session, employee)
+    region_name = _resolve_region_name(session, employee)
     checkin_outside_shift = (
         _is_checkin_outside_shift(
             first_checkin_ts_utc,
@@ -474,6 +491,7 @@ def _build_day_assessment(
     return DayAssessment(
         employee=employee,
         local_day=local_day,
+        region_name=region_name,
         department_name=department_name,
         plan=plan,
         shift=shift,
@@ -513,6 +531,7 @@ def _monitor_payload(
     payload: dict[str, Any] = {
         "employee_id": assessment.employee.id,
         "employee_full_name": assessment.employee.full_name,
+        "region_name": assessment.region_name,
         "department_name": assessment.department_name,
         "shift_date": assessment.local_day.isoformat(),
         "notification_type": notification_type,
@@ -537,6 +556,38 @@ def _monitor_payload(
     if extra:
         payload.update(extra)
     return payload
+
+
+def _employee_identity_lines(assessment: DayAssessment) -> list[str]:
+    lines = [
+        f"Personel ID: #{assessment.employee.id}",
+        f"Ad Soyad: {assessment.employee.full_name}",
+    ]
+    if assessment.region_name:
+        lines.append(f"Bolge: {assessment.region_name}")
+    if assessment.department_name:
+        lines.append(f"Departman: {assessment.department_name}")
+    return lines
+
+
+def _count_consecutive_late_days(session: Session, *, employee_id: int, local_day: date) -> int:
+    streak_days = 1
+    probe_day = local_day - timedelta(days=1)
+    for _ in range(LATE_STREAK_LOOKBACK_DAYS):
+        existing_job_id = session.scalar(
+            select(NotificationJob.id).where(
+                NotificationJob.employee_id == employee_id,
+                NotificationJob.notification_type == TYPE_LATE_CHECKIN,
+                NotificationJob.local_day == probe_day,
+                NotificationJob.audience == AUDIENCE_ADMIN,
+                NotificationJob.status != "CANCELED",
+            )
+        )
+        if existing_job_id is None:
+            break
+        streak_days += 1
+        probe_day -= timedelta(days=1)
+    return streak_days
 
 
 def _create_notification_job(
@@ -745,6 +796,55 @@ def _schedule_late_checkin(session: Session, *, created_jobs: list[NotificationJ
     planned_text = _format_time(late_threshold_utc)
     actual_text = _format_time(assessment.first_checkin_ts_utc)
     actual_summary = f"Planlanan baslangic: {planned_text} | Gerceklesen giris: {actual_text}"
+    late_streak_days = _count_consecutive_late_days(
+        session,
+        employee_id=assessment.employee.id,
+        local_day=assessment.local_day,
+    )
+    identity_lines = _employee_identity_lines(assessment)
+    streak_line = (
+        f"Gec kalma serisi: {late_streak_days} gun ust uste"
+        if late_streak_days >= LATE_STREAK_ESCALATION_DAYS
+        else None
+    )
+    employee_description_lines = [
+        f"Planlanan vardiya baslangici: {planned_text}",
+        f"Gerceklesen giris: {actual_text}",
+        f"Durum: Gec Giris ({diff_minutes} dk)",
+    ]
+    admin_description_lines = [
+        *identity_lines,
+        f"Planlanan vardiya baslangici: {planned_text}",
+        f"Gerceklesen giris: {actual_text}",
+        f"Durum: Gec Giris ({diff_minutes} dk)",
+    ]
+    if streak_line is not None:
+        employee_description_lines.append(streak_line)
+        admin_description_lines.append(streak_line)
+
+    if late_streak_days >= LATE_STREAK_CRITICAL_DAYS:
+        employee_title = "Tekrarlayan Gec Giris Uyarisi"
+        admin_title = "Tekrarlayan Gec Giris Kritik Seviyede"
+        admin_risk = RISK_CRITICAL
+        employee_action = (
+            "Ust uste gec giris kaydiniz olustu. Zaman planinizi duzenleyin; kayit hataliysa yoneticiye bildirin."
+        )
+        admin_action = (
+            "Tekrarlayan gec kalma davranisini inceleyin; gerekirse personeli incelemeye alip resmi aciklama talep edin."
+        )
+    elif late_streak_days >= LATE_STREAK_ESCALATION_DAYS:
+        employee_title = "Tekrarlayan Gec Giris Uyarisi"
+        admin_title = "Tekrarlayan Gec Giris Tespit Edildi"
+        admin_risk = RISK_WARNING
+        employee_action = "Ardisik gec giris kaydi olustu. Kayit hataliysa yonetici ile gorusup duzeltme talep edin."
+        admin_action = "Ardisik gec kalma serisini takip edin; gun timeline'ini ve vardiya planini kontrol edin."
+    else:
+        employee_title = "Gec Giris Bilgilendirmesi"
+        admin_title = "Gec Giris Tespit Edildi"
+        admin_risk = RISK_WARNING
+        employee_action = "Kayit hataliysa yonetici ile gorusup duzeltme talep edin."
+        admin_action = "Cihaz kaydi ve gun timeline'ini kontrol edin; gerekiyorsa aciklama ekleyin."
+
     _schedule_for_both_audiences(
         session,
         created_jobs=created_jobs,
@@ -753,20 +853,20 @@ def _schedule_late_checkin(session: Session, *, created_jobs: list[NotificationJ
         event_ts_utc=assessment.first_checkin_ts_utc,
         scheduled_at_utc=assessment.first_checkin_ts_utc,
         employee_risk=RISK_WARNING,
-        employee_title="Gec Giris Bilgilendirmesi",
-        employee_description=(
-            f"Planlanan vardiya baslangici: {planned_text}. "
-            f"Gerceklesen giris: {actual_text}. Durum: Gec Giris ({diff_minutes} dk)."
-        ),
-        admin_risk=RISK_WARNING,
-        admin_title="Gec Giris Tespit Edildi",
-        admin_description=(
-            f"{assessment.employee.full_name} icin planlanan vardiya baslangici: {planned_text}. "
-            f"Gerceklesen giris: {actual_text}. Durum: Gec Giris ({diff_minutes} dk)."
-        ),
+        employee_title=employee_title,
+        employee_description="\n".join(employee_description_lines),
+        admin_risk=admin_risk,
+        admin_title=admin_title,
+        admin_description="\n".join(admin_description_lines),
         actual_time_summary=actual_summary,
-        employee_action="Kayit hataliysa yonetici ile gorusup duzeltme talep edin.",
-        admin_action="Cihaz kaydi ve gun timeline'ini kontrol edin; gerekiyorsa aciklama ekleyin.",
+        employee_action=employee_action,
+        admin_action=admin_action,
+        extra_payload={
+            "late_minutes": diff_minutes,
+            "late_streak_days": late_streak_days,
+            "planned_shift_start_local": planned_text,
+            "actual_checkin_local": actual_text,
+        },
     )
 
 

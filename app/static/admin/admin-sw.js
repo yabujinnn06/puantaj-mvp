@@ -98,8 +98,8 @@ function buildNotificationOptions(payload) {
   return {
     body: payload.body,
     data,
-    icon: '/admin-panel/vite.svg',
-    badge: '/admin-panel/vite.svg',
+    icon: '/admin-panel/admin-logo.svg',
+    badge: '/admin-panel/admin-logo.svg',
     tag: rawTag || `admin-push-${now}`,
     renotify: true,
     requireInteraction: asBoolean(data.requireInteraction, true),
