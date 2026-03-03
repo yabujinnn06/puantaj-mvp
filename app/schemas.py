@@ -801,6 +801,7 @@ class WorkRuleUpsert(BaseModel):
     daily_minutes_planned: int = Field(default=540, ge=0)
     break_minutes: int = Field(default=60, ge=0)
     grace_minutes: int = Field(default=5, ge=0)
+    off_shift_tolerance_minutes: int = Field(default=0, ge=0)
 
 
 class WorkRuleRead(BaseModel):
@@ -809,6 +810,7 @@ class WorkRuleRead(BaseModel):
     daily_minutes_planned: int
     break_minutes: int
     grace_minutes: int
+    off_shift_tolerance_minutes: int
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -953,6 +955,7 @@ class SchedulePlanUpsertRequest(BaseModel):
     daily_minutes_planned: int | None = Field(default=None, ge=0)
     break_minutes: int | None = Field(default=None, ge=0)
     grace_minutes: int | None = Field(default=None, ge=0)
+    off_shift_tolerance_minutes: int | None = Field(default=None, ge=0)
     start_date: date
     end_date: date
     is_locked: bool = False
@@ -970,6 +973,7 @@ class SchedulePlanRead(BaseModel):
     daily_minutes_planned: int | None
     break_minutes: int | None
     grace_minutes: int | None
+    off_shift_tolerance_minutes: int | None
     start_date: date
     end_date: date
     is_locked: bool
@@ -1655,6 +1659,7 @@ class MonthlyEmployeeDay(BaseModel):
     check_out_lat: float | None = Field(default=None, serialization_alias="out_lat")
     check_out_lon: float | None = Field(default=None, serialization_alias="out_lon")
     worked_minutes: int
+    early_arrival_minutes: int = 0
     overtime_minutes: int
     plan_overtime_minutes: int = 0
     legal_extra_work_minutes: int = 0
@@ -1671,6 +1676,7 @@ class MonthlyEmployeeDay(BaseModel):
 
 class MonthlyEmployeeTotals(BaseModel):
     worked_minutes: int
+    early_arrival_minutes: int = 0
     overtime_minutes: int
     plan_overtime_minutes: int = 0
     legal_extra_work_minutes: int = 0

@@ -56,6 +56,7 @@ TYPE_OFF_SHIFT_ACTIVITY = "vardiya_disinda_aktivite"
 
 DEFAULT_DAILY_MINUTES_PLANNED = 540
 DEFAULT_GRACE_MINUTES = 5
+DEFAULT_OFF_SHIFT_TOLERANCE_MINUTES = 0
 OVERTIME_WARNING_HOURS = 3
 OVERTIME_MAX_HOURS = 6
 
@@ -78,6 +79,7 @@ class DayAssessment:
     shift_end_local_dt: datetime
     default_shift_end_local_dt: datetime | None
     grace_minutes: int
+    off_shift_tolerance_minutes: int
     planned_minutes: int
     override_active: bool
     override_note: str | None
@@ -184,13 +186,15 @@ def _resolve_shift_for_day(
     employee: Employee,
     local_day: date,
     first_checkin_event: AttendanceEvent | None,
-) -> tuple[DepartmentSchedulePlan | None, DepartmentShift | None, DepartmentShift | None, int, int, bool, str | None]:
+) -> tuple[DepartmentSchedulePlan | None, DepartmentShift | None, DepartmentShift | None, int, int, int, bool, str | None]:
     planned_minutes = DEFAULT_DAILY_MINUTES_PLANNED
     grace_minutes = DEFAULT_GRACE_MINUTES
+    off_shift_tolerance_minutes = DEFAULT_OFF_SHIFT_TOLERANCE_MINUTES
     work_rule = _resolve_department_work_rule(session, employee)
     if work_rule is not None:
         planned_minutes = max(1, int(work_rule.daily_minutes_planned))
         grace_minutes = max(0, int(work_rule.grace_minutes))
+        off_shift_tolerance_minutes = max(0, int(work_rule.off_shift_tolerance_minutes or 0))
 
     plan = resolve_effective_plan_for_employee_day(session, employee=employee, day_date=local_day)
     if plan is not None:
@@ -198,6 +202,8 @@ def _resolve_shift_for_day(
             planned_minutes = max(1, int(plan.daily_minutes_planned))
         if plan.grace_minutes is not None:
             grace_minutes = max(0, int(plan.grace_minutes))
+        if plan.off_shift_tolerance_minutes is not None:
+            off_shift_tolerance_minutes = max(0, int(plan.off_shift_tolerance_minutes))
 
     default_shift = session.get(DepartmentShift, employee.shift_id) if employee.shift_id is not None else None
     weekday_shift_candidates = resolve_employee_day_shift_candidates(
@@ -226,19 +232,37 @@ def _resolve_shift_for_day(
         or plan.daily_minutes_planned is not None
         or plan.break_minutes is not None
         or plan.grace_minutes is not None
+        or plan.off_shift_tolerance_minutes is not None
         or bool((plan.note or "").strip())
     )
     override_note = (plan.note or "").strip() if plan is not None and (plan.note or "").strip() else None
-    return plan, effective_shift, default_shift, planned_minutes, grace_minutes, override_active, override_note
+    return (
+        plan,
+        effective_shift,
+        default_shift,
+        planned_minutes,
+        grace_minutes,
+        off_shift_tolerance_minutes,
+        override_active,
+        override_note,
+    )
 
 
-def _is_checkin_outside_shift(first_checkin_ts_utc: datetime, shift: DepartmentShift | None) -> bool | None:
+def _is_checkin_outside_shift(
+    first_checkin_ts_utc: datetime,
+    shift: DepartmentShift | None,
+    *,
+    off_shift_tolerance_minutes: int,
+) -> bool | None:
     if shift is None:
         return None
     checkin_local = _normalize_ts(first_checkin_ts_utc).astimezone(_attendance_timezone())
     checkin_minutes = (checkin_local.hour * 60) + checkin_local.minute
-    start_minutes = (shift.start_time_local.hour * 60) + shift.start_time_local.minute
-    end_minutes = (shift.end_time_local.hour * 60) + shift.end_time_local.minute
+    tolerance = max(0, off_shift_tolerance_minutes)
+    start_minutes = ((shift.start_time_local.hour * 60) + shift.start_time_local.minute) - tolerance
+    end_minutes = ((shift.end_time_local.hour * 60) + shift.end_time_local.minute) + tolerance
+    start_minutes %= 24 * 60
+    end_minutes %= 24 * 60
     if end_minutes > start_minutes:
         in_window = start_minutes <= checkin_minutes <= end_minutes
     elif end_minutes < start_minutes:
@@ -354,7 +378,16 @@ def _build_day_assessment(
         local_day=local_day,
         event_type=AttendanceType.IN,
     )
-    plan, shift, default_shift, planned_minutes, grace_minutes, override_active, override_note = _resolve_shift_for_day(
+    (
+        plan,
+        shift,
+        default_shift,
+        planned_minutes,
+        grace_minutes,
+        off_shift_tolerance_minutes,
+        override_active,
+        override_note,
+    ) = _resolve_shift_for_day(
         session,
         employee=employee,
         local_day=local_day,
@@ -429,7 +462,11 @@ def _build_day_assessment(
 
     department_name = _resolve_department_name(session, employee)
     checkin_outside_shift = (
-        _is_checkin_outside_shift(first_checkin_ts_utc, shift)
+        _is_checkin_outside_shift(
+            first_checkin_ts_utc,
+            shift,
+            off_shift_tolerance_minutes=off_shift_tolerance_minutes,
+        )
         if first_checkin_ts_utc is not None
         else None
     )
@@ -451,6 +488,7 @@ def _build_day_assessment(
         shift_end_local_dt=shift_end_local_dt,
         default_shift_end_local_dt=default_shift_end_local_dt,
         grace_minutes=grace_minutes,
+        off_shift_tolerance_minutes=off_shift_tolerance_minutes,
         planned_minutes=planned_minutes,
         override_active=override_active,
         override_note=override_note,

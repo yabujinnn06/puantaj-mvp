@@ -101,6 +101,7 @@ class ScheduleContext:
         planned_minutes: int,
         break_minutes: int,
         grace_minutes: int,
+        off_shift_tolerance_minutes: int,
         is_workday: bool,
     ) -> None:
         self.shift_name = shift_name
@@ -110,6 +111,7 @@ class ScheduleContext:
         self.planned_minutes = planned_minutes
         self.break_minutes = break_minutes
         self.grace_minutes = grace_minutes
+        self.off_shift_tolerance_minutes = off_shift_tolerance_minutes
         self.is_workday = is_workday
 
 
@@ -410,8 +412,15 @@ def _resolve_shift_context(*, employee: Employee, day_date: date, work_rule_map:
     if shift is None:
         shift = employee.shift
     grace_minutes = max(0, int(department_work_rule.grace_minutes)) if department_work_rule is not None else 5
+    off_shift_tolerance_minutes = (
+        max(0, int(department_work_rule.off_shift_tolerance_minutes or 0))
+        if department_work_rule is not None
+        else 0
+    )
     if effective_plan is not None and effective_plan.grace_minutes is not None:
         grace_minutes = max(0, int(effective_plan.grace_minutes))
+    if effective_plan is not None and effective_plan.off_shift_tolerance_minutes is not None:
+        off_shift_tolerance_minutes = max(0, int(effective_plan.off_shift_tolerance_minutes))
     planned_minutes = 0
     break_minutes = 0
     is_workday = True
@@ -451,6 +460,7 @@ def _resolve_shift_context(*, employee: Employee, day_date: date, work_rule_map:
         planned_minutes=planned_minutes,
         break_minutes=break_minutes,
         grace_minutes=grace_minutes,
+        off_shift_tolerance_minutes=off_shift_tolerance_minutes,
         is_workday=is_workday,
     )
 
@@ -876,7 +886,7 @@ def build_control_room_overview(
                 last_out_local = _normalize_utc(last_out.ts_utc)
                 if last_out_local is not None:
                     last_out_local = last_out_local.astimezone(tz)
-                    early_cutoff = schedule.shift_end_local - timedelta(minutes=schedule.grace_minutes)
+                    early_cutoff = schedule.shift_end_local
                     if last_out_local < early_cutoff:
                         early_days += 1
                         violation_count_7d += 1
@@ -921,8 +931,8 @@ def build_control_room_overview(
 
             off_hours_event: AttendanceEvent | None = None
             if schedule.shift_start_local is not None and schedule.shift_end_local is not None:
-                off_hours_start = schedule.shift_start_local - timedelta(minutes=schedule.grace_minutes)
-                off_hours_end = schedule.shift_end_local + timedelta(minutes=schedule.grace_minutes)
+                off_hours_start = schedule.shift_start_local - timedelta(minutes=schedule.off_shift_tolerance_minutes)
+                off_hours_end = schedule.shift_end_local + timedelta(minutes=schedule.off_shift_tolerance_minutes)
                 for item in day_events:
                     item_local = _normalize_utc(item.ts_utc)
                     if item_local is None:
@@ -1437,7 +1447,7 @@ def _build_employee_risk_history(
         if schedule.is_workday and schedule.shift_end_local is not None and last_out is not None:
             last_out_local = _normalize_utc(last_out.ts_utc)
             if last_out_local is not None:
-                early_cutoff = schedule.shift_end_local - timedelta(minutes=schedule.grace_minutes)
+                early_cutoff = schedule.shift_end_local
                 if last_out_local.astimezone(tz) < early_cutoff:
                     daily_score += 8
 
@@ -1452,8 +1462,8 @@ def _build_employee_risk_history(
             daily_score += 10
 
         if schedule.shift_start_local is not None and schedule.shift_end_local is not None:
-            off_hours_start = schedule.shift_start_local - timedelta(minutes=schedule.grace_minutes)
-            off_hours_end = schedule.shift_end_local + timedelta(minutes=schedule.grace_minutes)
+            off_hours_start = schedule.shift_start_local - timedelta(minutes=schedule.off_shift_tolerance_minutes)
+            off_hours_end = schedule.shift_end_local + timedelta(minutes=schedule.off_shift_tolerance_minutes)
             off_hours_detected = False
             for item in day_events:
                 item_local = _normalize_utc(item.ts_utc)

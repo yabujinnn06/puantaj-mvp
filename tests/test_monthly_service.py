@@ -111,6 +111,28 @@ class MonthlyServiceTests(unittest.TestCase):
         self.assertEqual(result.effective_break_minutes, 60)
         self.assertTrue(result.min_break_not_met)
 
+    def test_early_arrival_is_tracked_but_not_counted_as_overtime(self) -> None:
+        shift_start = datetime(2026, 2, 1, 9, 30, tzinfo=timezone.utc)
+        first_in = datetime(2026, 2, 1, 9, 15, tzinfo=timezone.utc)
+        last_out = datetime(2026, 2, 1, 18, 30, tzinfo=timezone.utc)
+
+        result = calculate_day_metrics(
+            first_in_ts=first_in,
+            last_out_ts=last_out,
+            planned_minutes=480,
+            break_minutes=60,
+            daily_max_minutes=11 * 60,
+            night_work_max_minutes=int(7.5 * 60),
+            enforce_min_break=False,
+            is_night_shift=False,
+            shift_start_ts=shift_start,
+        )
+
+        self.assertEqual(result.status, "OK")
+        self.assertEqual(result.worked_minutes_net, 495)
+        self.assertEqual(result.early_arrival_minutes, 15)
+        self.assertEqual(result.overtime_minutes, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

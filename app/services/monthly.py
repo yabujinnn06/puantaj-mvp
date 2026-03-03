@@ -72,6 +72,7 @@ class _InternalDayRecord:
     check_out_lat: float | None
     check_out_lon: float | None
     worked_minutes: int
+    early_arrival_minutes: int
     overtime_minutes: int
     missing_minutes: int
     rule_source: str
@@ -194,6 +195,12 @@ def _shift_planned_minutes(shift: DepartmentShift) -> int:
     if gross <= 0:
         gross += 24 * 60
     return max(0, gross - max(0, shift.break_minutes))
+
+
+def _shift_start_utc(*, day_date: date, shift: DepartmentShift | None) -> datetime | None:
+    if shift is None:
+        return None
+    return datetime.combine(day_date, shift.start_time_local, tzinfo=_attendance_timezone()).astimezone(timezone.utc)
 
 
 def _rule_planned_minutes(planned_minutes: int, break_minutes: int) -> int:
@@ -614,6 +621,7 @@ def _build_day_records(
             manual_rule_source_override=manual_override.rule_source_override if manual_override else None,
             manual_rule_shift=manual_rule_shift,
         )
+        day_shift_start_utc = _shift_start_utc(day_date=cursor, shift=(manual_rule_shift or day_shift) if manual_override and manual_override.rule_source_override == "SHIFT" else day_shift)
         if schedule_plan is not None:
             rule_source_flags.append("SCHEDULE_PLAN_APPLIED")
             if schedule_plan.shift_id is not None:
@@ -646,6 +654,7 @@ def _build_day_records(
                         check_out_lat=None,
                         check_out_lon=None,
                         worked_minutes=0,
+                        early_arrival_minutes=0,
                         overtime_minutes=0,
                         missing_minutes=(day_planned_minutes if is_workday else 0),
                         rule_source=rule_source,
@@ -667,6 +676,7 @@ def _build_day_records(
                     night_work_max_minutes=night_work_max_minutes,
                     enforce_min_break=enforce_min_break,
                     is_night_shift=False,
+                    shift_start_ts=day_shift_start_utc,
                 )
                 flags = ["MANUAL_OVERRIDE", *rule_source_flags]
                 if first_in_ts is None:
@@ -700,6 +710,7 @@ def _build_day_records(
                         check_out_lat=None,
                         check_out_lon=None,
                         worked_minutes=metrics.worked_minutes_net,
+                        early_arrival_minutes=metrics.early_arrival_minutes,
                         overtime_minutes=metrics.overtime_minutes,
                         missing_minutes=missing_minutes,
                         rule_source=rule_source,
@@ -723,6 +734,7 @@ def _build_day_records(
                     check_out_lat=None,
                     check_out_lon=None,
                     worked_minutes=0,
+                    early_arrival_minutes=0,
                     overtime_minutes=0,
                     missing_minutes=0,
                     rule_source=rule_source,
@@ -746,6 +758,7 @@ def _build_day_records(
                     check_out_lat=None,
                     check_out_lon=None,
                     worked_minutes=0,
+                    early_arrival_minutes=0,
                     overtime_minutes=0,
                     missing_minutes=0,
                     rule_source=rule_source,
@@ -784,6 +797,7 @@ def _build_day_records(
                         and _local_date_from_utc(first_in.ts_utc) != _local_date_from_utc(last_out.ts_utc)
                     )
                 ),
+                shift_start_ts=day_shift_start_utc,
             )
             missing_minutes = 0
             if (
@@ -822,6 +836,7 @@ def _build_day_records(
                     check_out_lat=check_out_lat,
                     check_out_lon=check_out_lon,
                     worked_minutes=metrics.worked_minutes_net,
+                    early_arrival_minutes=metrics.early_arrival_minutes,
                     overtime_minutes=metrics.overtime_minutes,
                     missing_minutes=missing_minutes,
                     rule_source=rule_source,
@@ -985,6 +1000,7 @@ def _employee_monthly_from_model(
     days: list[MonthlyEmployeeDay] = []
     incomplete_days = 0
     total_worked = 0
+    total_early_arrival = 0
     total_plan_overtime = 0
     total_legal_extra_work = 0
     total_legal_overtime = 0
@@ -998,6 +1014,7 @@ def _employee_monthly_from_model(
         if record.status == "INCOMPLETE":
             incomplete_days += 1
         total_worked += record.worked_minutes
+        total_early_arrival += record.early_arrival_minutes
         total_plan_overtime += record.overtime_minutes
         legal_extra_work_minutes, legal_overtime_minutes = daily_legal_breakdown.get(record.day_date, (0, 0))
         total_legal_extra_work += legal_extra_work_minutes
@@ -1014,6 +1031,7 @@ def _employee_monthly_from_model(
                 check_out_lat=record.check_out_lat,
                 check_out_lon=record.check_out_lon,
                 worked_minutes=record.worked_minutes,
+                early_arrival_minutes=record.early_arrival_minutes,
                 overtime_minutes=record.overtime_minutes,
                 plan_overtime_minutes=record.overtime_minutes,
                 legal_extra_work_minutes=legal_extra_work_minutes,
@@ -1036,6 +1054,7 @@ def _employee_monthly_from_model(
         days=days,
         totals=MonthlyEmployeeTotals(
             worked_minutes=total_worked,
+            early_arrival_minutes=total_early_arrival,
             overtime_minutes=total_plan_overtime,
             plan_overtime_minutes=total_plan_overtime,
             legal_extra_work_minutes=total_legal_extra_work,

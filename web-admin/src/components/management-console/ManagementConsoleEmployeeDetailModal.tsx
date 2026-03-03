@@ -258,6 +258,10 @@ export function ManagementConsoleEmployeeDetailModal({
     () => monthDays.filter((day) => day.overtime_minutes > 0 || day.legal_overtime_minutes > 0).slice(0, 5),
     [monthDays],
   )
+  const earlyArrivalDays = useMemo(
+    () => monthDays.filter((day) => day.early_arrival_minutes > 0).slice(0, 5),
+    [monthDays],
+  )
   const attentionDays = useMemo(() => {
     const merged = new Map<string, MonthlyEmployeeDay>()
     for (const day of [...incompleteDays, ...overtimeDays]) {
@@ -336,6 +340,7 @@ export function ManagementConsoleEmployeeDetailModal({
             <article className="mc-dossier__stat"><span>Bugünkü süre</span><strong><MinuteDisplay minutes={employee.worked_today_minutes} /></strong></article>
             <article className="mc-dossier__stat"><span>Haftalık toplam</span><strong><MinuteDisplay minutes={employee.weekly_total_minutes} /></strong></article>
             <article className="mc-dossier__stat"><span>Açık uyarı</span><strong>{employee.attention_flags.length}</strong></article>
+            <article className="mc-dossier__stat"><span>Erken gelis</span><strong><MinuteDisplay minutes={monthlyQuery.data?.totals.early_arrival_minutes ?? 0} /></strong><small>{earlyArrivalDays.length} gun</small></article>
             <article className="mc-dossier__stat"><span>Bildirim</span><strong>{notificationJobs.length}</strong><small>{failedNotificationCount} hata</small></article>
           </section>
 

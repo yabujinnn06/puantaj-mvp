@@ -359,6 +359,10 @@ export function EmployeeMonthlyReportPage() {
     () => days.filter((day) => day.legal_overtime_minutes > 0).length,
     [days],
   )
+  const earlyArrivalDayCount = useMemo(
+    () => days.filter((day) => day.early_arrival_minutes > 0).length,
+    [days],
+  )
   const leaveDayCount = useMemo(() => days.filter((day) => day.status === 'LEAVE').length, [days])
   const offDayCount = useMemo(() => days.filter((day) => day.status === 'OFF').length, [days])
   const workingDayCount = useMemo(
@@ -736,6 +740,13 @@ export function EmployeeMonthlyReportPage() {
                   <MinuteDisplay minutes={totalMissingMinutes} />
                 </p>
               </div>
+              <div className="rounded-lg border border-slate-200 p-3">
+                <p className="text-xs text-slate-500">Toplam Erken Gelis</p>
+                <p className="text-lg font-semibold">
+                  <MinuteDisplay minutes={reportQuery.data.totals.early_arrival_minutes} />
+                </p>
+                <p className="text-xs text-slate-500">{earlyArrivalDayCount} gun</p>
+              </div>
             </div>
           </Panel>
 
@@ -849,6 +860,7 @@ export function EmployeeMonthlyReportPage() {
                       <th className="py-2">Giris</th>
                       <th className="py-2">Cikis</th>
                       <th className="py-2">Calisma</th>
+                      <th className="py-2">Erken Gelis</th>
                       <th className="py-2">Plan Ustu</th>
                       <th className="py-2">Yasal Fazla Sure</th>
                       <th className="py-2">Yasal Fazla Mesai</th>
@@ -905,6 +917,9 @@ export function EmployeeMonthlyReportPage() {
                           </td>
                           <td className="py-2">
                             <MinuteDisplay minutes={day.worked_minutes} />
+                          </td>
+                          <td className="py-2">
+                            <MinuteDisplay minutes={day.early_arrival_minutes} />
                           </td>
                           <td className="py-2">
                             <MinuteDisplay minutes={day.plan_overtime_minutes} />

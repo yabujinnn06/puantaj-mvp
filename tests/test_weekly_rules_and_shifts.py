@@ -190,6 +190,62 @@ class WeeklyRulesAndShiftsTests(unittest.TestCase):
         self.assertEqual(target_day.shift_name, "Stant 10-18")
         self.assertEqual(target_day.overtime_minutes, 60)
 
+    def test_early_arrival_is_reported_separately_from_overtime(self) -> None:
+        employee = Employee(id=21, full_name="Early User", department_id=1, shift_id=10, is_active=True)
+        work_rule = WorkRule(
+            id=21,
+            department_id=1,
+            daily_minutes_planned=540,
+            break_minutes=60,
+            grace_minutes=5,
+        )
+        shift = DepartmentShift(
+            id=10,
+            department_id=1,
+            name="Sabah 09:30-18:30",
+            start_time_local=time(9, 30),
+            end_time_local=time(18, 30),
+            break_minutes=60,
+            is_active=True,
+        )
+        event_in = AttendanceEvent(
+            id=211,
+            employee_id=21,
+            device_id=1,
+            type=AttendanceType.IN,
+            ts_utc=datetime(2026, 2, 3, 6, 15, tzinfo=timezone.utc),
+            location_status=LocationStatus.NO_LOCATION,
+            flags={},
+        )
+        event_out = AttendanceEvent(
+            id=212,
+            employee_id=21,
+            device_id=1,
+            type=AttendanceType.OUT,
+            ts_utc=datetime(2026, 2, 3, 15, 30, tzinfo=timezone.utc),
+            location_status=LocationStatus.NO_LOCATION,
+            flags={},
+        )
+
+        fake_db = _FakeMonthlyDB(
+            scalar_values=[employee, work_rule, None],
+            scalars_values=[
+                [event_in, event_out],
+                [],
+                [],
+                [],
+                [shift],
+            ],
+        )
+
+        report = calculate_employee_monthly(fake_db, employee_id=21, year=2026, month=2)
+        target_day = next((day for day in report.days if day.date == date(2026, 2, 3)), None)
+        self.assertIsNotNone(target_day)
+        assert target_day is not None
+        self.assertEqual(target_day.early_arrival_minutes, 15)
+        self.assertEqual(target_day.overtime_minutes, 0)
+        self.assertEqual(report.totals.early_arrival_minutes, 15)
+
     def test_shift_and_weekly_rule_conflict_adds_flag(self) -> None:
         employee = Employee(id=3, full_name="Conflict User", department_id=1, shift_id=10, is_active=True)
         work_rule = WorkRule(

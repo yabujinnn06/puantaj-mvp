@@ -184,6 +184,7 @@ export interface UpsertWorkRulePayload {
   daily_minutes_planned: number;
   break_minutes: number;
   grace_minutes: number;
+  off_shift_tolerance_minutes: number;
 }
 
 export interface UpsertDepartmentWeeklyRulePayload {
@@ -220,6 +221,7 @@ export interface UpsertSchedulePlanPayload {
   daily_minutes_planned?: number | null;
   break_minutes?: number | null;
   grace_minutes?: number | null;
+  off_shift_tolerance_minutes?: number | null;
   start_date: string;
   end_date: string;
   is_locked?: boolean;

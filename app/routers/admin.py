@@ -3476,12 +3476,14 @@ def upsert_work_rule(payload: WorkRuleUpsert, db: Session = Depends(get_db)) -> 
             daily_minutes_planned=payload.daily_minutes_planned,
             break_minutes=payload.break_minutes,
             grace_minutes=payload.grace_minutes,
+            off_shift_tolerance_minutes=payload.off_shift_tolerance_minutes,
         )
         db.add(rule)
     else:
         rule.daily_minutes_planned = payload.daily_minutes_planned
         rule.break_minutes = payload.break_minutes
         rule.grace_minutes = payload.grace_minutes
+        rule.off_shift_tolerance_minutes = payload.off_shift_tolerance_minutes
 
     db.commit()
     db.refresh(rule)
@@ -3816,6 +3818,7 @@ def _schedule_plan_to_read(plan: DepartmentSchedulePlan) -> SchedulePlanRead:
         daily_minutes_planned=plan.daily_minutes_planned,
         break_minutes=plan.break_minutes,
         grace_minutes=plan.grace_minutes,
+        off_shift_tolerance_minutes=plan.off_shift_tolerance_minutes,
         start_date=plan.start_date,
         end_date=plan.end_date,
         is_locked=plan.is_locked,
@@ -3838,6 +3841,7 @@ def _validate_schedule_plan_payload(
         and payload.daily_minutes_planned is None
         and payload.break_minutes is None
         and payload.grace_minutes is None
+        and payload.off_shift_tolerance_minutes is None
     ):
         raise HTTPException(
             status_code=422,
@@ -4473,6 +4477,7 @@ def upsert_schedule_plan(
             daily_minutes_planned=payload.daily_minutes_planned,
             break_minutes=payload.break_minutes,
             grace_minutes=payload.grace_minutes,
+            off_shift_tolerance_minutes=payload.off_shift_tolerance_minutes,
             start_date=payload.start_date,
             end_date=payload.end_date,
             is_locked=payload.is_locked,
@@ -4496,6 +4501,7 @@ def upsert_schedule_plan(
         plan.daily_minutes_planned = payload.daily_minutes_planned
         plan.break_minutes = payload.break_minutes
         plan.grace_minutes = payload.grace_minutes
+        plan.off_shift_tolerance_minutes = payload.off_shift_tolerance_minutes
         plan.start_date = payload.start_date
         plan.end_date = payload.end_date
         plan.is_locked = payload.is_locked

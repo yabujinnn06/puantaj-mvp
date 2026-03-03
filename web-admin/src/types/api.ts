@@ -147,6 +147,7 @@ export interface WorkRule {
   daily_minutes_planned: number
   break_minutes: number
   grace_minutes: number
+  off_shift_tolerance_minutes: number
 }
 
 export interface DepartmentWeeklyRule {
@@ -245,6 +246,7 @@ export interface SchedulePlan {
   daily_minutes_planned: number | null
   break_minutes: number | null
   grace_minutes: number | null
+  off_shift_tolerance_minutes: number | null
   start_date: string
   end_date: string
   is_locked: boolean
@@ -836,6 +838,7 @@ export interface MonthlyEmployeeDay {
   out_lat: number | null
   out_lon: number | null
   worked_minutes: number
+  early_arrival_minutes: number
   overtime_minutes: number
   plan_overtime_minutes: number
   legal_extra_work_minutes: number
@@ -861,6 +864,7 @@ export interface MonthlyEmployeeWeek {
 
 export interface MonthlyEmployeeTotals {
   worked_minutes: number
+  early_arrival_minutes: number
   overtime_minutes: number
   plan_overtime_minutes: number
   legal_extra_work_minutes: number

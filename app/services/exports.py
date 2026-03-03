@@ -51,6 +51,8 @@ DAILY_HEADERS = [
     "Bayraklar",
 ]
 
+DAILY_HEADERS[8:8] = ["Erken Gelis", "Erken Gelis (dk)"]
+
 HEADER_FILL = PatternFill(fill_type="solid", fgColor="0B4F73")
 SUBHEADER_FILL = PatternFill(fill_type="solid", fgColor="DCEBF3")
 META_LABEL_FILL = PatternFill(fill_type="solid", fgColor="EAF4F9")
@@ -149,6 +151,7 @@ def _build_summary_row_from_daily_facts(
     rows: list[dict[str, object]],
 ) -> dict[str, object]:
     worked_minutes = sum(int(item["worked_minutes"]) for item in rows)
+    early_arrival_minutes = sum(int(item.get("early_arrival_minutes", 0)) for item in rows)
     plan_overtime_minutes = sum(int(item.get("plan_overtime_minutes", 0)) for item in rows)
     extra_work_minutes = sum(int(item["extra_work_minutes"]) for item in rows)
     overtime_minutes = sum(int(item["overtime_minutes"]) for item in rows)
@@ -172,6 +175,7 @@ def _build_summary_row_from_daily_facts(
         "employee_name": employee_name,
         "department_name": department_name,
         "worked_minutes": worked_minutes,
+        "early_arrival_minutes": early_arrival_minutes,
         "plan_overtime_minutes": plan_overtime_minutes,
         "extra_work_minutes": extra_work_minutes,
         "overtime_minutes": overtime_minutes,
@@ -195,6 +199,7 @@ def _group_summary_rows_by_department(rows: list[dict[str, object]]) -> list[dic
                 "department_name": department_name,
                 "employee_count": 0,
                 "worked_minutes": 0,
+                "early_arrival_minutes": 0,
                 "plan_overtime_minutes": 0,
                 "extra_work_minutes": 0,
                 "overtime_minutes": 0,
@@ -210,6 +215,7 @@ def _group_summary_rows_by_department(rows: list[dict[str, object]]) -> list[dic
         employee_id = int(row["employee_id"])
         member_map[department_name].add(employee_id)
         bucket["worked_minutes"] = int(bucket["worked_minutes"]) + int(row["worked_minutes"])
+        bucket["early_arrival_minutes"] = int(bucket["early_arrival_minutes"]) + int(row.get("early_arrival_minutes", 0))
         bucket["plan_overtime_minutes"] = int(bucket["plan_overtime_minutes"]) + int(row.get("plan_overtime_minutes", 0))
         bucket["extra_work_minutes"] = int(bucket["extra_work_minutes"]) + int(row["extra_work_minutes"])
         bucket["overtime_minutes"] = int(bucket["overtime_minutes"]) + int(row["overtime_minutes"])
@@ -706,6 +712,7 @@ def _append_summary_area(
     summary_start = ws.max_row + 1
     ws.append(["\u00d6zet", "De\u011fer"])
     ws.append(["Toplam Net S\u00fcre", _minutes_to_hhmm(report.totals.worked_minutes)])
+    ws.append(["Toplam Erken Gelis", _minutes_to_hhmm(report.totals.early_arrival_minutes)])
     ws.append(["Toplam Plan \u00dcst\u00fc S\u00fcre", _minutes_to_hhmm(report.totals.plan_overtime_minutes)])
     ws.append(["Toplam Fazla S\u00fcrelerle \u00c7al\u0131\u015fma", _minutes_to_hhmm(total_extra_work_minutes)])
     ws.append(["Toplam Yasal Fazla Mesai", _minutes_to_hhmm(total_legal_overtime_minutes)])
@@ -791,6 +798,8 @@ def _append_employee_daily_sheet(
                 _minutes_to_excel_duration(break_minutes),
                 _minutes_to_excel_duration(day.worked_minutes),
                 day.worked_minutes,
+                _minutes_to_excel_duration(day.early_arrival_minutes),
+                day.early_arrival_minutes,
                 _minutes_to_excel_duration(plan_overtime_minutes),
                 plan_overtime_minutes,
                 _minutes_to_excel_duration(extra_work_minutes),
@@ -840,6 +849,13 @@ def _append_employee_daily_sheet(
         ],
     )
 
+    _apply_duration_formats(
+        ws,
+        header_row=header_row,
+        data_start_row=data_start_row,
+        data_end_row=data_end_row,
+        header_names=["Erken Gelis"],
+    )
     _auto_width(ws)
     _finalize_visual_scope(ws, used_max_col=len(DAILY_HEADERS))
     _apply_print_layout(ws, header_row=header_row)

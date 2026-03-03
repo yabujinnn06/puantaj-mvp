@@ -25,6 +25,7 @@ from app.services.notifications import (
     JOB_TYPE_EMPLOYEE_AUTO_MIDNIGHT_CHECKOUT,
     JOB_TYPE_EMPLOYEE_MISSED_CHECKOUT_NIGHTLY,
     _ensure_daily_report_notification_job,
+    _is_checkin_outside_shift,
     _build_message_for_job,
     get_daily_report_job_health,
     get_employees_with_missing_checkin,
@@ -187,6 +188,25 @@ class _FakeScheduledNotificationTaskSession:
 
 
 class NotificationServiceTests(unittest.TestCase):
+    def test_legacy_off_shift_tolerance_allows_small_early_checkin(self) -> None:
+        shift = DepartmentShift(
+            id=901,
+            department_id=10,
+            name="Sabah",
+            start_time_local=time(8, 30),
+            end_time_local=time(17, 30),
+            break_minutes=60,
+            is_active=True,
+        )
+
+        result = _is_checkin_outside_shift(
+            first_checkin_ts_utc=datetime(2026, 2, 9, 5, 15, tzinfo=timezone.utc),
+            shift=shift,
+            off_shift_tolerance_minutes=20,
+        )
+
+        self.assertFalse(result)
+
     def test_open_shift_uses_istanbul_local_day_near_midnight(self) -> None:
         employee = Employee(id=1, full_name="Test User", department_id=10, shift_id=100, is_active=True)
         shift = DepartmentShift(

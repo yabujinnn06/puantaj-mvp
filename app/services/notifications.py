@@ -62,6 +62,7 @@ except Exception:  # pragma: no cover - optional runtime guard
 
 DEFAULT_DAILY_MINUTES_PLANNED = 540
 DEFAULT_GRACE_MINUTES = 5
+DEFAULT_OFF_SHIFT_TOLERANCE_MINUTES = 0
 DEFAULT_ESCALATION_DELAY_MINUTES = 30
 DEFAULT_MISSED_CHECKOUT_NIGHTLY_REMINDER_LOCAL_TIME = time(21, 30)
 MAX_NOTIFICATION_ATTEMPTS = 5
@@ -454,14 +455,16 @@ def _is_checkin_outside_shift(
     *,
     first_checkin_ts_utc: datetime,
     shift: DepartmentShift | None,
+    off_shift_tolerance_minutes: int = DEFAULT_OFF_SHIFT_TOLERANCE_MINUTES,
 ) -> bool | None:
     if shift is None:
         return None
 
     checkin_local = _normalize_ts(first_checkin_ts_utc).astimezone(_attendance_timezone())
     checkin_minutes = checkin_local.hour * 60 + checkin_local.minute
-    shift_start_minutes = shift.start_time_local.hour * 60 + shift.start_time_local.minute
-    shift_end_minutes = shift.end_time_local.hour * 60 + shift.end_time_local.minute
+    tolerance = max(0, off_shift_tolerance_minutes)
+    shift_start_minutes = ((shift.start_time_local.hour * 60 + shift.start_time_local.minute) - tolerance) % (24 * 60)
+    shift_end_minutes = ((shift.end_time_local.hour * 60 + shift.end_time_local.minute) + tolerance) % (24 * 60)
 
     if shift_end_minutes > shift_start_minutes:
         in_shift_window = shift_start_minutes <= checkin_minutes <= shift_end_minutes
@@ -491,6 +494,7 @@ def _build_open_shift_record(
 
     planned_minutes = DEFAULT_DAILY_MINUTES_PLANNED
     grace_minutes = DEFAULT_GRACE_MINUTES
+    off_shift_tolerance_minutes = DEFAULT_OFF_SHIFT_TOLERANCE_MINUTES
     if employee.department_id is not None:
         work_rule = session.scalar(
             select(WorkRule).where(WorkRule.department_id == employee.department_id)
@@ -498,6 +502,7 @@ def _build_open_shift_record(
         if work_rule is not None:
             planned_minutes = work_rule.daily_minutes_planned
             grace_minutes = work_rule.grace_minutes
+            off_shift_tolerance_minutes = max(0, int(work_rule.off_shift_tolerance_minutes or 0))
 
     plan = resolve_effective_plan_for_employee_day(
         session,
@@ -509,6 +514,8 @@ def _build_open_shift_record(
             planned_minutes = plan.daily_minutes_planned
         if plan.grace_minutes is not None:
             grace_minutes = plan.grace_minutes
+        if plan.off_shift_tolerance_minutes is not None:
+            off_shift_tolerance_minutes = max(0, int(plan.off_shift_tolerance_minutes))
 
     shift: DepartmentShift | None = None
     if plan is not None and plan.shift_id is not None:
@@ -551,6 +558,7 @@ def _build_open_shift_record(
     checkin_outside_shift = _is_checkin_outside_shift(
         first_checkin_ts_utc=first_in_event.ts_utc,
         shift=shift,
+        off_shift_tolerance_minutes=off_shift_tolerance_minutes,
     )
 
     return OpenShiftNotificationRecord(

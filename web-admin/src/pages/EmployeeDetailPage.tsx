@@ -1066,6 +1066,13 @@ export function EmployeeDetailPage() {
                 <p className="text-lg font-semibold text-slate-900">{monthlyQuery.data?.totals.incomplete_days ?? 0}</p>
               </div>
               <div className="rounded-lg border border-slate-200 p-3">
+                <p className="text-xs text-slate-500">Erken gelis</p>
+                <p className="text-lg font-semibold text-slate-900">
+                  <MinuteDisplay minutes={monthlyQuery.data?.totals.early_arrival_minutes ?? 0} />
+                </p>
+                <p className="text-xs text-slate-500">{monthlyRows.filter((day) => day.early_arrival_minutes > 0).length} gun</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 p-3">
                 <p className="text-xs text-slate-500">Calisilan gun</p>
                 <p className="text-lg font-semibold text-slate-900">{monthlyInsight.workedDayCount}</p>
                 <p className="text-xs text-slate-500">Hafta ici: {monthlyInsight.weekdayWorkedDayCount} gun</p>
@@ -1114,6 +1121,7 @@ export function EmployeeDetailPage() {
                     <th className="py-2">Giris Konum (lat/lon)</th>
                     <th className="py-2">Cikis Konum (lat/lon)</th>
                     <th className="py-2">Net Sure</th>
+                    <th className="py-2">Erken Gelis</th>
                     <th className="py-2">Plan Ustu</th>
                     <th className="py-2">Yasal Fazla Sure</th>
                     <th className="py-2">Yasal Fazla Mesai</th>
@@ -1163,6 +1171,9 @@ export function EmployeeDetailPage() {
                         </td>
                         <td className="py-2">
                           <MinuteDisplay minutes={day.worked_minutes} />
+                        </td>
+                        <td className="py-2">
+                          <MinuteDisplay minutes={day.early_arrival_minutes} />
                         </td>
                         <td className="py-2">
                           <MinuteDisplay minutes={day.plan_overtime_minutes} />

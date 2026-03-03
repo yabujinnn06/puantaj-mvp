@@ -10,6 +10,7 @@ from app.services.attendance_notification_monitor import (
     TYPE_OVERRIDE_INFO,
     TYPE_OVERTIME_6H_CLOSED,
     DayAssessment,
+    _is_checkin_outside_shift,
     _create_notification_job,
     _schedule_early_checkout,
     _schedule_overtime_auto_close,
@@ -72,6 +73,7 @@ def _build_assessment(*, override_active: bool, checkout_ts_utc: datetime | None
         shift_end_local_dt=datetime(2026, 3, 1, 18, 0, tzinfo=timezone.utc),
         default_shift_end_local_dt=datetime(2026, 3, 1, 19, 0, tzinfo=timezone.utc),
         grace_minutes=5,
+        off_shift_tolerance_minutes=0,
         planned_minutes=480,
         override_active=override_active,
         override_note="Ramazan duzeni" if override_active else None,
@@ -162,6 +164,25 @@ class AttendanceNotificationMonitorTests(unittest.TestCase):
         self.assertEqual(auto_event.type, AttendanceType.OUT)
         self.assertEqual(auto_event.device_id, 17)
         self.assertEqual(auto_event.ts_utc, datetime(2026, 3, 2, 0, 0, tzinfo=timezone.utc))
+
+    def test_off_shift_tolerance_allows_small_early_checkin(self) -> None:
+        shift = DepartmentShift(
+            id=301,
+            department_id=10,
+            name="Sabah",
+            start_time_local=time(8, 30),
+            end_time_local=time(17, 30),
+            break_minutes=60,
+            is_active=True,
+        )
+
+        result = _is_checkin_outside_shift(
+            datetime(2026, 3, 1, 5, 15, tzinfo=timezone.utc),
+            shift,
+            off_shift_tolerance_minutes=20,
+        )
+
+        self.assertFalse(result)
 
 
 if __name__ == "__main__":

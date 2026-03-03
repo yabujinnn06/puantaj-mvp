@@ -710,6 +710,15 @@ export function AttendanceEventsPage() {
                 <p className="text-xs text-slate-500">{monthlySummaryInsight.overtimeDayCount} gun</p>
               </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                <p className="text-xs text-slate-500">Erken gelis</p>
+                <p className="text-sm font-semibold text-slate-900">
+                  <MinuteDisplay minutes={monthlySummaryQuery.data?.totals.early_arrival_minutes ?? 0} />
+                </p>
+                <p className="text-xs text-slate-500">
+                  {(monthlySummaryRows.filter((day) => day.early_arrival_minutes > 0).length)} gun
+                </p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
                 <p className="text-xs text-slate-500">Calisilan gun</p>
                 <p className="text-sm font-semibold text-slate-900">{monthlySummaryInsight.workedDayCount}</p>
                 <p className="text-xs text-slate-500">Hafta ici: {monthlySummaryInsight.weekdayWorkedDayCount}</p>
@@ -752,6 +761,7 @@ export function AttendanceEventsPage() {
                     <th className="py-2">Giris</th>
                     <th className="py-2">Cikis</th>
                     <th className="py-2">Calisma</th>
+                    <th className="py-2">Erken Gelis</th>
                     <th className="py-2">Plan Ustu</th>
                     <th className="py-2">Yasal Fazla Sure</th>
                     <th className="py-2">Yasal Fazla Mesai</th>
@@ -767,6 +777,7 @@ export function AttendanceEventsPage() {
                       <td className="py-2">{day.in ? formatTs(day.in) : '-'}</td>
                       <td className="py-2">{day.out ? formatTs(day.out) : '-'}</td>
                       <td className="py-2"><MinuteDisplay minutes={day.worked_minutes} /></td>
+                      <td className="py-2"><MinuteDisplay minutes={day.early_arrival_minutes} /></td>
                       <td className="py-2"><MinuteDisplay minutes={day.plan_overtime_minutes} /></td>
                       <td className="py-2"><MinuteDisplay minutes={day.legal_extra_work_minutes} /></td>
                       <td className="py-2"><MinuteDisplay minutes={day.legal_overtime_minutes} /></td>

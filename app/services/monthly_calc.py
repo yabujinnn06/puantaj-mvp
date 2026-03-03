@@ -11,6 +11,7 @@ class DayComputation:
     status: str
     gross_minutes: int
     worked_minutes_net: int
+    early_arrival_minutes: int
     overtime_minutes: int
     effective_break_minutes: int
     legal_min_break_minutes: int
@@ -73,12 +74,18 @@ def calculate_day_metrics(
     night_work_max_minutes: int,
     enforce_min_break: bool,
     is_night_shift: bool = False,
+    shift_start_ts: datetime | None = None,
 ) -> DayComputation:
+    early_arrival_minutes = 0
+    if first_in_ts is not None and shift_start_ts is not None and first_in_ts < shift_start_ts:
+        early_arrival_minutes = max(0, int((shift_start_ts - first_in_ts).total_seconds() // 60))
+
     if first_in_ts is None or last_out_ts is None:
         return DayComputation(
             status="INCOMPLETE",
             gross_minutes=0,
             worked_minutes_net=0,
+            early_arrival_minutes=early_arrival_minutes,
             overtime_minutes=0,
             effective_break_minutes=max(0, break_minutes),
             legal_min_break_minutes=0,
@@ -94,7 +101,8 @@ def calculate_day_metrics(
     min_break_not_met = enforce_min_break and configured_break < legal_break and gross_minutes > 0
 
     worked_minutes_net = max(0, gross_minutes - effective_break)
-    overtime_minutes = max(0, worked_minutes_net - max(0, planned_minutes))
+    overtime_basis_minutes = max(0, worked_minutes_net - min(worked_minutes_net, early_arrival_minutes))
+    overtime_minutes = max(0, overtime_basis_minutes - max(0, planned_minutes))
     daily_max_exceeded = gross_minutes > max(0, daily_max_minutes)
     night_work_exceeded = is_night_shift and gross_minutes > max(0, night_work_max_minutes)
 
@@ -102,6 +110,7 @@ def calculate_day_metrics(
         status="OK",
         gross_minutes=gross_minutes,
         worked_minutes_net=worked_minutes_net,
+        early_arrival_minutes=early_arrival_minutes,
         overtime_minutes=overtime_minutes,
         effective_break_minutes=effective_break,
         legal_min_break_minutes=legal_break,
@@ -117,6 +126,7 @@ def calculate_work_and_overtime(
     last_out_ts: datetime | None,
     planned_minutes: int,
     break_minutes: int,
+    shift_start_ts: datetime | None = None,
 ) -> tuple[str, int, int]:
     metrics = calculate_day_metrics(
         first_in_ts=first_in_ts,
@@ -127,5 +137,6 @@ def calculate_work_and_overtime(
         night_work_max_minutes=24 * 60,
         enforce_min_break=False,
         is_night_shift=False,
+        shift_start_ts=shift_start_ts,
     )
     return metrics.status, metrics.worked_minutes_net, metrics.overtime_minutes
