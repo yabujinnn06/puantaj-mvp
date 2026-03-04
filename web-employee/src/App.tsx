@@ -100,7 +100,7 @@ export default function App() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setShowBootLoader(false)
-    }, 2250)
+    }, 3200)
     return () => {
       window.clearTimeout(timer)
     }

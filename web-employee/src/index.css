@@ -1516,7 +1516,7 @@ textarea:focus {
   align-content: center;
   gap: 0.9rem;
   text-align: center;
-  transform: translate3d(-8px, -4px, 0);
+  transform: translate3d(-16px, -4px, 0);
 }
 
 .employee-boot-loader-stage {
@@ -1526,7 +1526,17 @@ textarea:focus {
   width: min(76vw, 264px);
   aspect-ratio: 1;
   transform-style: preserve-3d;
-  transform: translate3d(-4px, -6px, 0);
+  transform: translate3d(-10px, -4px, 0);
+}
+
+@media (max-width: 430px) {
+  .employee-boot-loader-center {
+    transform: translate3d(-28px, -6px, 0);
+  }
+
+  .employee-boot-loader-stage {
+    transform: translate3d(-18px, -5px, 0);
+  }
 }
 
 .employee-boot-loader-shadow {
