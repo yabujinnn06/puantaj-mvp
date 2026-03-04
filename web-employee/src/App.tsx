@@ -109,18 +109,31 @@ export default function App() {
   return (
     <>
       {showBootLoader ? (
-        <div className="employee-boot-loader" role="status" aria-live="polite" aria-label="Uygulama açılıyor">
+        <div
+          className="employee-boot-loader"
+          role="status"
+          aria-live="polite"
+          aria-label="Uygulama açılıyor"
+        >
           <div className="employee-boot-loader-center">
-            <div className="employee-boot-loader-logo" aria-hidden="true">
-              <div className="employee-boot-loader-halo" />
-              <div className="employee-boot-loader-ring" />
-              <div className="employee-boot-loader-spark" />
-              <div className="employee-boot-loader-core">
-                <span className="employee-boot-loader-brand">YABUJIN</span>
-                <span className="employee-boot-loader-sub">EMPLOYEE CORE</span>
+            <div className="employee-boot-loader-stage" aria-hidden="true">
+              <div className="employee-boot-loader-shadow" />
+              <div className="employee-boot-loader-aura" />
+              <div className="employee-boot-loader-orbit employee-boot-loader-orbit--outer" />
+              <div className="employee-boot-loader-orbit employee-boot-loader-orbit--inner" />
+              <div className="employee-boot-loader-logo">
+                <div className="employee-boot-loader-logo-depth" />
+                <div className="employee-boot-loader-core">
+                  <span className="employee-boot-loader-monogram">Y</span>
+                  <span className="employee-boot-loader-brand">YABUJIN</span>
+                  <span className="employee-boot-loader-sub">EMPLOYEE CORE</span>
+                </div>
+                <div className="employee-boot-loader-spark employee-boot-loader-spark--a" />
+                <div className="employee-boot-loader-spark employee-boot-loader-spark--b" />
               </div>
             </div>
             <p className="employee-boot-loader-text">Sistem hazırlanıyor...</p>
+            <p className="employee-boot-loader-caption">Güvenli çalışma katmanı yükleniyor</p>
           </div>
         </div>
       ) : null}
