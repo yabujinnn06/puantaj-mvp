@@ -5,7 +5,6 @@ import { AuthGuard } from './auth/AuthGuard'
 import { PublicOnlyRoute } from './auth/PublicOnlyRoute'
 import { AdminDeviceClaimPage } from './pages/AdminDeviceClaimPage'
 import { AttendanceEventsPage } from './pages/AttendanceEventsPage'
-import { DashboardPage } from './pages/DashboardPage'
 import { DepartmentSummaryReportPage } from './pages/DepartmentSummaryReportPage'
 import { DepartmentsPage } from './pages/DepartmentsPage'
 import { DevicesPage } from './pages/DevicesPage'
@@ -44,7 +43,7 @@ function App() {
           <Route path="/" element={<Navigate to="/management-console" replace />} />
           <Route path="/management-console" element={<ManagementConsolePage />} />
           <Route path="/control-room" element={<Navigate to="/management-console?focus=matrix" replace />} />
-          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/dashboard" element={<Navigate to="/management-console" replace />} />
           <Route path="/regions" element={<RegionsPage />} />
           <Route path="/departments" element={<DepartmentsPage />} />
           <Route path="/employees" element={<EmployeesPage />} />

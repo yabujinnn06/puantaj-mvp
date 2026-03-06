@@ -53,9 +53,7 @@ export function ManagementConsoleNotificationPanel({
                   <strong>{job.title ?? job.notification_type ?? 'Bildirim'}</strong>
                   <span>{job.notification_type ?? 'Tanımsız tür'}</span>
                 </div>
-                <span className={`mc-status-pill ${riskClass(job.risk_level)}`}>
-                  {job.risk_level ?? 'Bilgi'}
-                </span>
+                <span className={`mc-status-pill ${riskClass(job.risk_level)}`}>{job.risk_level ?? 'Bilgi'}</span>
               </div>
               <p>{job.description ?? 'Açıklama bulunmuyor.'}</p>
               <div className="mc-notification-card__meta">
@@ -71,7 +69,7 @@ export function ManagementConsoleNotificationPanel({
                     className="mc-button mc-button--ghost"
                     onClick={() => onOpenEmployee(job.employee_id as number)}
                   >
-                    Personeli aç
+                    Personeli Aç
                   </button>
                 ) : null}
               </div>

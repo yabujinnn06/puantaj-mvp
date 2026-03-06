@@ -6360,3 +6360,333 @@ button[class*="bg-slate-900"] {
     gap: 1rem;
   }
 }
+
+.mc-console--erp {
+  gap: 0.85rem;
+}
+
+.mc-console--erp .mc-header,
+.mc-console--erp .mc-panel,
+.mc-console--erp .mc-kpi {
+  border-radius: 16px;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.05);
+}
+
+.mc-console--erp .mc-header,
+.mc-console--erp .mc-panel {
+  padding: 0.95rem 1rem;
+}
+
+.mc-console--erp .mc-button {
+  min-height: 34px;
+  padding: 0.52rem 0.8rem;
+  border-radius: 10px;
+  font-size: 0.8rem;
+}
+
+.mc-console--erp .mc-status-pill,
+.mc-console--erp .mc-risk-pill,
+.mc-console--erp .mc-chip {
+  padding: 0.28rem 0.58rem;
+  font-size: 0.72rem;
+}
+
+.mc-console--erp .mc-panel__head {
+  margin-bottom: 0.25rem;
+}
+
+.mc-header__row,
+.mc-header__copy,
+.mc-erp-banner,
+.mc-erp-shell,
+.mc-erp-side,
+.mc-erp-chip-row,
+.mc-erp-mini-grid,
+.mc-erp-focus-grid,
+.mc-erp-device-list,
+.mc-erp-feed,
+.mc-erp-copy-stack,
+.mc-erp-department-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.mc-header__row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.mc-header__copy h2 {
+  margin: 0.2rem 0 0;
+  font-size: 1.3rem;
+  line-height: 1.1;
+  color: var(--mc-text);
+}
+
+.mc-header__copy p {
+  margin: 0.25rem 0 0;
+  max-width: 72ch;
+  color: var(--mc-text-muted);
+}
+
+.mc-erp-banner {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 0.8rem;
+}
+
+.mc-erp-banner__item,
+.mc-erp-stat,
+.mc-erp-summary-card,
+.mc-erp-card,
+.mc-erp-feed__row,
+.mc-erp-device-row,
+.mc-erp-department-row {
+  border: 1px solid rgba(203, 213, 225, 0.8);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 249, 252, 0.96));
+}
+
+.mc-erp-banner__item,
+.mc-erp-stat,
+.mc-erp-summary-card,
+.mc-erp-card {
+  padding: 0.8rem 0.9rem;
+}
+
+.mc-erp-banner__item span,
+.mc-erp-stat span {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mc-text-soft);
+}
+
+.mc-erp-banner__item strong,
+.mc-erp-stat strong,
+.mc-erp-summary-card strong {
+  display: block;
+  margin-top: 0.32rem;
+  color: var(--mc-text);
+}
+
+.mc-erp-banner__item small,
+.mc-erp-stat small,
+.mc-erp-inline-note,
+.mc-erp-summary-card p {
+  display: block;
+  margin-top: 0.18rem;
+  color: var(--mc-text-muted);
+}
+
+.mc-erp-shell {
+  grid-template-columns: minmax(0, 1.48fr) minmax(310px, 0.84fr);
+  align-items: start;
+}
+
+.mc-erp-focus {
+  gap: 0.85rem;
+}
+
+.mc-erp-side {
+  align-content: start;
+}
+
+.mc-erp-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.mc-erp-employee-head,
+.mc-erp-card__head,
+.mc-erp-feed__row,
+.mc-erp-device-row,
+.mc-erp-device-row__meta,
+.mc-erp-department-row,
+.mc-erp-department-row__meta {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.mc-erp-employee-head strong,
+.mc-erp-card__head strong,
+.mc-erp-feed__row strong,
+.mc-erp-device-row strong,
+.mc-erp-department-row strong {
+  color: var(--mc-text);
+}
+
+.mc-erp-employee-head p,
+.mc-erp-card__head span,
+.mc-erp-feed__row p,
+.mc-erp-device-row p,
+.mc-erp-device-row__meta small,
+.mc-erp-department-row p,
+.mc-erp-department-row__meta span {
+  margin: 0.22rem 0 0;
+  color: var(--mc-text-muted);
+}
+
+.mc-erp-mini-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.mc-erp-focus-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mc-erp-card__body {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.55rem;
+}
+
+.mc-erp-data-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.9rem;
+}
+
+.mc-erp-data-row span {
+  color: var(--mc-text-muted);
+}
+
+.mc-erp-data-row strong {
+  color: var(--mc-text);
+}
+
+.mc-erp-device-row,
+.mc-erp-feed__row,
+.mc-erp-department-row {
+  padding: 0.75rem 0.85rem;
+}
+
+.mc-erp-device-row__meta,
+.mc-erp-feed__meta,
+.mc-erp-department-row__meta {
+  display: grid;
+  gap: 0.18rem;
+  justify-items: end;
+  text-align: right;
+}
+
+.mc-erp-copy-stack {
+  gap: 0.55rem;
+}
+
+.mc-console--erp .mc-filter-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.mc-console--erp .mc-field input,
+.mc-console--erp .mc-field select,
+.mc-console--erp .mc-field textarea {
+  min-height: 40px;
+  padding: 0.65rem 0.75rem;
+  border-radius: 10px;
+}
+
+.mc-console--erp .mc-kpi-grid {
+  gap: 0.75rem;
+}
+
+.mc-console--erp .mc-kpi {
+  padding: 0.85rem;
+  border-radius: 14px;
+}
+
+.mc-console--erp .mc-kpi__value {
+  font-size: 1.35rem;
+}
+
+.mc-console--erp .mc-layout {
+  gap: 0.85rem;
+  grid-template-columns: minmax(0, 1.56fr) minmax(320px, 0.9fr);
+}
+
+.mc-console--erp .mc-layout__rail {
+  top: 0.25rem;
+  max-height: calc(100vh - 1rem);
+}
+
+.mc-console--erp .mc-secondary-grid {
+  gap: 0.85rem;
+}
+
+.mc-console--erp .mc-table-head,
+.mc-console--erp .mc-table-row {
+  gap: 0.5rem;
+}
+
+.mc-console--erp .mc-table-row {
+  min-height: 68px;
+  padding: 0.55rem 0.6rem;
+  border-radius: 14px;
+}
+
+.mc-console--erp .mc-table-cell,
+.mc-console--erp .mc-table-metric__value {
+  font-size: 0.84rem;
+}
+
+.mc-console--erp .mc-table-cell strong {
+  font-size: 0.88rem;
+}
+
+.mc-console--erp .mc-notification-card,
+.mc-console--erp .mc-playback {
+  border-radius: 14px;
+}
+
+@media (max-width: 1440px) {
+  .mc-erp-mini-grid,
+  .mc-console--erp .mc-filter-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1180px) {
+  .mc-header__row,
+  .mc-erp-shell,
+  .mc-console--erp .mc-layout,
+  .mc-erp-focus-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .mc-erp-banner,
+  .mc-erp-mini-grid,
+  .mc-console--erp .mc-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .mc-erp-banner,
+  .mc-erp-mini-grid,
+  .mc-erp-focus-grid,
+  .mc-console--erp .mc-filter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .mc-erp-employee-head,
+  .mc-erp-card__head,
+  .mc-erp-feed__row,
+  .mc-erp-device-row,
+  .mc-erp-department-row {
+    flex-direction: column;
+  }
+
+  .mc-erp-device-row__meta,
+  .mc-erp-feed__meta,
+  .mc-erp-department-row__meta {
+    justify-items: start;
+    text-align: left;
+  }
+}

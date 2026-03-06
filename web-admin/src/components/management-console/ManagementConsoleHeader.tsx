@@ -1,6 +1,5 @@
 import { Link } from 'react-router-dom'
 
-import { PageHeader } from '../PageHeader'
 import { formatDateTime, systemStatusClass, systemStatusLabel } from './utils'
 
 export function ManagementConsoleHeader({
@@ -13,43 +12,49 @@ export function ManagementConsoleHeader({
   onRefresh: () => void
 }) {
   return (
-    <div className="mc-header">
-      <PageHeader
-        title="Ana Panel"
-        description="Yönetim Konsolu. Operasyon akışı, risk analizi, harita izleme ve müdahale araçları tek kontrol yüzeyinde birleşir."
-        action={
-          <div className="mc-header__actions">
-            <div className={`mc-status-pill ${systemStatusClass(systemStatus)}`}>
-              Sistem durumu: {systemStatusLabel(systemStatus)}
-            </div>
-            <Link to="/notifications" className="mc-button mc-button--ghost">
-              Bildirimler
-            </Link>
-            <Link to="/attendance-events" className="mc-button mc-button--ghost">
-              Yoklama kayıtları
-            </Link>
-            <button type="button" className="mc-button mc-button--secondary" onClick={onRefresh}>
-              Yenile
-            </button>
-          </div>
-        }
-      />
-
-      <section className="mc-hero">
-        <div className="mc-hero__copy">
-          <p className="mc-kicker">YÖNETİM KONSOLU</p>
-          <h2 className="mc-hero__title">Tüm organizasyonun canlı akışı burada toplanır.</h2>
-          <p className="mc-hero__text">
-            Operasyonel Güvenlik Matrisi, risk yoğunluğu, personel hareketleri, bildirim akışı ve
-            müdahale araçları tek merkezde birlikte çalışır.
+    <header className="mc-header">
+      <div className="mc-header__row">
+        <div className="mc-header__copy">
+          <p className="mc-kicker">ERP OPERASYON MERKEZİ</p>
+          <h2>Ana Panel</h2>
+          <p>
+            Yönetim konsolu, canlı risk matrisi, claim işlemleri, konum izleme ve bildirim akışı tek sayfada toplandı.
           </p>
         </div>
-        <div className="mc-hero__meta">
-          <span>Son güncelleme</span>
-          <strong>{formatDateTime(generatedAtUtc)}</strong>
-          <small>Kontrol katmanı çevrim içi ve izleme aktif</small>
+
+        <div className="mc-header__actions">
+          <span className={`mc-status-pill ${systemStatusClass(systemStatus)}`}>
+            Sistem: {systemStatusLabel(systemStatus)}
+          </span>
+          <Link to="/notifications" className="mc-button mc-button--ghost">
+            Bildirimler
+          </Link>
+          <Link to="/attendance-events" className="mc-button mc-button--ghost">
+            Yoklama Kayıtları
+          </Link>
+          <button type="button" className="mc-button mc-button--primary" onClick={onRefresh}>
+            Veriyi Yenile
+          </button>
         </div>
-      </section>
-    </div>
+      </div>
+
+      <div className="mc-erp-banner">
+        <article className="mc-erp-banner__item">
+          <span>Son senkron</span>
+          <strong>{formatDateTime(generatedAtUtc)}</strong>
+          <small>Panel verisi güncel tutuluyor</small>
+        </article>
+        <article className="mc-erp-banner__item">
+          <span>Çalışma modu</span>
+          <strong>ERP görünümü</strong>
+          <small>Yoğun bilgi, dar boşluk, tek odak</small>
+        </article>
+        <article className="mc-erp-banner__item">
+          <span>Operasyon hattı</span>
+          <strong>Risk + Yoklama + Cihaz</strong>
+          <small>Ayrı dashboard akışları birleştirildi</small>
+        </article>
+      </div>
+    </header>
   )
 }

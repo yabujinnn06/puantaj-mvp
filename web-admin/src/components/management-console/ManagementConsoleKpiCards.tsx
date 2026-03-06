@@ -25,28 +25,16 @@ export function ManagementConsoleKpiCards({ summary }: { summary: ControlRoomSum
   return (
     <section className="mc-kpi-grid" aria-label="Genel bakış metrikleri">
       <KpiCard
-        label="Toplam aktif çalışan"
+        label="Aktif çalışan"
         value={summary.active_employees}
-        meta={`${summary.total_employees} kayıt içinden`}
+        meta={`${summary.total_employees} kayıttan filtrelendi`}
         emphasis
       />
-      <KpiCard label="Kritik riskli çalışan" value={summary.critical_count} meta="Anlık kritik eşik" />
-      <KpiCard label="İzlemeli çalışan" value={summary.watch_count} meta="Yakın takip gereken" />
-      <KpiCard
-        label="Ortalama risk skoru"
-        value={summary.average_risk_score.toFixed(1)}
-        meta="Filtrelenen evren ortalaması"
-      />
-      <KpiCard
-        label="Aktif mesai sayısı"
-        value={summary.active_overtime_count}
-        meta="Planlı süreyi aşan açık vardiya"
-      />
-      <KpiCard
-        label="Günlük ihlal sayısı"
-        value={summary.daily_violation_count}
-        meta="Bugün oluşan toplam ihlal"
-      />
+      <KpiCard label="Kritik risk" value={summary.critical_count} meta="Anlık kritik eşik" />
+      <KpiCard label="İzlemeli" value={summary.watch_count} meta="Yakın takip gereken" />
+      <KpiCard label="Ortalama risk" value={summary.average_risk_score.toFixed(1)} meta="Filtreli evren ortalaması" />
+      <KpiCard label="Aktif mesai" value={summary.active_overtime_count} meta="Açık ve plan üstü vardiya" />
+      <KpiCard label="Günlük ihlal" value={summary.daily_violation_count} meta="Bugün oluşan toplam ihlal" />
       <KpiCard
         label="Sistem durumu"
         value={systemStatusLabel(summary.system_status)}

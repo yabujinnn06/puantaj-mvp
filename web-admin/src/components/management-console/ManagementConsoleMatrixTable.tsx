@@ -13,7 +13,7 @@ import {
   todayStatusLabel,
 } from './utils'
 
-const WIDE_ROW_HEIGHT = 92
+const WIDE_ROW_HEIGHT = 80
 const VIEWPORT_HEIGHT = 620
 const OVERSCAN = 6
 
@@ -67,9 +67,7 @@ function CompactRow({
         </div>
         <div className="mc-table-compact__risk">
           <span className={`mc-risk-pill ${riskClass(item.risk_status)}`}>{item.risk_score}</span>
-          <span className={`mc-status-pill ${riskClass(item.risk_status)}`}>
-            {riskStatusLabel(item.risk_status)}
-          </span>
+          <span className={`mc-status-pill ${riskClass(item.risk_status)}`}>{riskStatusLabel(item.risk_status)}</span>
         </div>
       </div>
 
@@ -149,9 +147,7 @@ function WideRow({
         <span className={`mc-risk-pill ${riskClass(item.risk_status)}`}>{item.risk_score}</span>
       </div>
       <div className="mc-table-cell">
-        <span className={`mc-status-pill ${riskClass(item.risk_status)}`}>
-          {riskStatusLabel(item.risk_status)}
-        </span>
+        <span className={`mc-status-pill ${riskClass(item.risk_status)}`}>{riskStatusLabel(item.risk_status)}</span>
       </div>
       <div className="mc-table-cell">
         <MinuteDisplay minutes={item.worked_today_minutes} />
@@ -254,8 +250,8 @@ export function ManagementConsoleMatrixTable({
     <section ref={panelRef} className={`mc-panel mc-panel--table mc-panel--table-${layoutMode}`}>
       <div className="mc-panel__head">
         <div>
-          <p className="mc-kicker">OPERASYONEL GÜVENLİK MATRİSİ</p>
-          <h3 className="mc-panel__title">Risk bazlı davranış, ihlal ve vardiya uyumu tablosu</h3>
+          <p className="mc-kicker">OPERASYON MATRİSİ</p>
+          <h3 className="mc-panel__title">Risk, vardiya uyumu ve ihlal yoğunluğu</h3>
         </div>
         <div className="mc-meta">
           <span>{total} kayıt</span>
@@ -291,7 +287,7 @@ export function ManagementConsoleMatrixTable({
         </div>
       ) : (
         <div className="mc-table-compact__toolbar">
-          <span>Dar görünüm etkin. Satırlar okunabilir kart düzenine alındı.</span>
+          <span>Dar görünüm etkin. Satırlar kart düzenine alındı.</span>
           <span>{visibleStart} - {visibleEnd} gösteriliyor</span>
         </div>
       )}

@@ -6,10 +6,7 @@ import type { LocationStatus } from '../../types/api'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { MAP_EVENT_PAGE_SIZE } from './types'
 import { formatDate, formatDateTime, locationStatusLabel } from './utils'
-import {
-  ManagementConsoleMap,
-  type ManagementConsoleMapEvent,
-} from './ManagementConsoleMap'
+import { ManagementConsoleMap, type ManagementConsoleMapEvent } from './ManagementConsoleMap'
 
 export function ManagementConsoleMapPanel({
   selectedEmployeeId,
@@ -67,10 +64,7 @@ export function ManagementConsoleMapPanel({
   })
 
   const loadedEvents = useMemo(
-    () =>
-      (eventsQuery.data?.pages.flat() ?? []).filter(
-        (event) => event.lat != null && event.lon != null,
-      ),
+    () => (eventsQuery.data?.pages.flat() ?? []).filter((event) => event.lat != null && event.lon != null),
     [eventsQuery.data?.pages],
   )
 
@@ -130,9 +124,7 @@ export function ManagementConsoleMapPanel({
   const playbackEvent = selectedEmployeeEvents[playbackIndex] ?? null
   const focusedEventId =
     playbackEvent?.id ??
-    (selectedEmployeeId == null
-      ? null
-      : mapEvents.find((event) => event.employeeId === selectedEmployeeId)?.id ?? null)
+    (selectedEmployeeId == null ? null : mapEvents.find((event) => event.employeeId === selectedEmployeeId)?.id ?? null)
 
   return (
     <section className="mc-panel">
@@ -166,10 +158,7 @@ export function ManagementConsoleMapPanel({
         </label>
         <label className="mc-field">
           <span>Konum durumu</span>
-          <select
-            value={locationStatus}
-            onChange={(event) => setLocationStatus(event.target.value as LocationStatus | '')}
-          >
+          <select value={locationStatus} onChange={(event) => setLocationStatus(event.target.value as LocationStatus | '')}>
             <option value="">Tüm durumlar</option>
             <option value="VERIFIED_HOME">Doğrulandı</option>
             <option value="UNVERIFIED_LOCATION">Sapma</option>
@@ -186,7 +175,7 @@ export function ManagementConsoleMapPanel({
             onChange={(event) => setSelectedOnly(event.target.checked)}
             disabled={selectedEmployeeId == null}
           />
-          <span>Seçili personeli filtrele</span>
+          <span>Sadece seçili personeli filtrele</span>
         </label>
         <label className="mc-check">
           <input

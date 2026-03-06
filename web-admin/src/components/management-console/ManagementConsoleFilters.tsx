@@ -20,11 +20,11 @@ export function ManagementConsoleFilters({
   onReset: () => void
 }) {
   return (
-    <section className="mc-panel">
+    <section className="mc-panel mc-panel--filters">
       <div className="mc-panel__head">
         <div>
-          <p className="mc-kicker">FİLTRE VE KAPSAM</p>
-          <h3 className="mc-panel__title">Analiz alanını ve görünüm davranışını yönetin</h3>
+          <p className="mc-kicker">FİLTRE MERKEZİ</p>
+          <h3 className="mc-panel__title">Analiz kapsamı ve görünüm davranışı</h3>
         </div>
       </div>
 
@@ -66,7 +66,7 @@ export function ManagementConsoleFilters({
           </select>
         </label>
         <label className="mc-field">
-          <span>Başlangıç tarihi</span>
+          <span>Başlangıç</span>
           <input
             type="date"
             value={filterForm.start_date}
@@ -74,7 +74,7 @@ export function ManagementConsoleFilters({
           />
         </label>
         <label className="mc-field">
-          <span>Bitiş tarihi</span>
+          <span>Bitiş</span>
           <input
             type="date"
             value={filterForm.end_date}
