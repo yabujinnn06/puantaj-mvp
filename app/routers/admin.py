@@ -6,7 +6,7 @@ from math import ceil
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, delete as sa_delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -2468,8 +2468,16 @@ def delete_employee_record(
 
     device_count = len(list(employee.devices or []))
     active_device_count = sum(1 for device in list(employee.devices or []) if device.is_active)
-    db.delete(employee)
-    db.commit()
+    try:
+        db.execute(sa_delete(Employee).where(Employee.id == employee_id))
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise ApiError(
+            status_code=409,
+            code="EMPLOYEE_DELETE_CONFLICT",
+            message="Employee could not be deleted because related records are still locked.",
+        ) from exc
 
     log_audit(
         db,
@@ -3474,8 +3482,16 @@ def delete_device_record(
 
     employee_id = device.employee_id
     device_fingerprint = device.device_fingerprint
-    db.delete(device)
-    db.commit()
+    try:
+        db.execute(sa_delete(Device).where(Device.id == device_id))
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise ApiError(
+            status_code=409,
+            code="DEVICE_DELETE_CONFLICT",
+            message="Device could not be deleted because related records are still locked.",
+        ) from exc
 
     log_audit(
         db,

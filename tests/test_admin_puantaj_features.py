@@ -264,6 +264,14 @@ class _FakeEmployeeHardDeleteDB:
             self.deleted_employee_ids.append(self.employee.id)
             self.employee = None  # type: ignore[assignment]
 
+    def execute(self, stmt):  # type: ignore[no-untyped-def]
+        params = stmt.compile().params
+        if stmt.table.name == "employees":
+            employee_id = next(iter(params.values()))
+            self.deleted_employee_ids.append(employee_id)
+            self.employee = None  # type: ignore[assignment]
+        return None
+
     def add(self, obj: object) -> None:
         self.audit_rows.append(obj)
 
@@ -289,6 +297,14 @@ class _FakeDeviceHardDeleteDB:
         if self.device is not None and obj is self.device:
             self.deleted_device_ids.append(self.device.id)
             self.device = None  # type: ignore[assignment]
+
+    def execute(self, stmt):  # type: ignore[no-untyped-def]
+        params = stmt.compile().params
+        if stmt.table.name == "devices":
+            device_id = next(iter(params.values()))
+            self.deleted_device_ids.append(device_id)
+            self.device = None  # type: ignore[assignment]
+        return None
 
     def add(self, obj: object) -> None:
         self.audit_rows.append(obj)
