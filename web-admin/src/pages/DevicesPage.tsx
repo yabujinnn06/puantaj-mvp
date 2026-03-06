@@ -1,7 +1,7 @@
 ﻿import { Fragment, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { getEmployeeDeviceOverview, getEmployees, getRegions, updateDeviceActive } from '../api/admin'
+import { deleteDevice, getEmployeeDeviceOverview, getEmployees, getRegions, updateDeviceActive } from '../api/admin'
 import { parseApiError } from '../api/error'
 import { EmployeeAutocompleteField } from '../components/EmployeeAutocompleteField'
 import { ErrorBlock } from '../components/ErrorBlock'
@@ -103,6 +103,29 @@ export function DevicesPage() {
         variant: 'error',
         title: 'Cihaz durumu güncellenemedi',
         description: parseApiError(error, 'İşlem başarısız.').message,
+      })
+    },
+  })
+
+  const deleteDeviceMutation = useMutation({
+    mutationFn: (deviceId: number) => deleteDevice(deviceId),
+    onSuccess: (_result, deletedDeviceId) => {
+      pushToast({
+        variant: 'success',
+        title: 'Cihaz kalici olarak silindi',
+        description: `Arsivli cihaz #${deletedDeviceId} sistemden kaldirildi.`,
+      })
+      if (selectedDeviceDetail?.id === deletedDeviceId) {
+        setSelectedDeviceDetail(null)
+      }
+      void queryClient.invalidateQueries({ queryKey: ['employee-device-overview-summary'] })
+      void queryClient.invalidateQueries({ queryKey: ['employee-device-overview-detail'] })
+    },
+    onError: (error) => {
+      pushToast({
+        variant: 'error',
+        title: 'Cihaz silinemedi',
+        description: parseApiError(error, 'Kalici silme basarisiz.').message,
       })
     },
   })
@@ -356,6 +379,24 @@ export function DevicesPage() {
                                           >
                                             {device.is_active ? 'Pasife Al' : 'Aktif Et'}
                                           </button>
+                                          {!device.is_active ? (
+                                            <button
+                                              type="button"
+                                              disabled={deleteDeviceMutation.isPending}
+                                              onClick={() => {
+                                                const confirmed = window.confirm(
+                                                  `Cihaz #${device.id} kalici olarak silinsin mi? Bu islem bu cihaza bagli eski puantaj zincirini de kaldirabilir.`,
+                                                )
+                                                if (!confirmed) {
+                                                  return
+                                                }
+                                                deleteDeviceMutation.mutate(device.id)
+                                              }}
+                                              className="employee-action-btn employee-action-delete"
+                                            >
+                                              Kalici Sil
+                                            </button>
+                                          ) : null}
                                         </div>
                                       </td>
                                     </tr>

@@ -110,6 +110,35 @@ class PasskeyEndpointsTests(unittest.TestCase):
         self.assertEqual(body['code_count'], 2)
         self.assertEqual(body['recovery_codes'], ['AB3D-9K2M', 'HT7L-Q2PW'])
 
+    @patch('app.routers.attendance.log_audit')
+    @patch('app.routers.attendance.reveal_recovery_codes')
+    def test_recovery_code_reveal_endpoint(self, mock_reveal_recovery_codes, _mock_log_audit) -> None:
+        expires_at = datetime(2026, 12, 31, 12, 0, 0, tzinfo=timezone.utc)
+        mock_reveal_recovery_codes.return_value = {
+            'employee_id': 9,
+            'device_id': 22,
+            'active_code_count': 2,
+            'expires_at': expires_at,
+            'recovery_codes': ['AB3D-9K2M', 'HT7L-Q2PW'],
+        }
+
+        fake_db = _FakeDB()
+        app.dependency_overrides[get_db] = _override_get_db(fake_db)
+        client = TestClient(app)
+
+        response = client.post(
+            '/api/device/recovery-codes/reveal',
+            json={'device_fingerprint': 'fp-rec-issue', 'recovery_pin': '123456'},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body['ok'])
+        self.assertEqual(body['employee_id'], 9)
+        self.assertEqual(body['device_id'], 22)
+        self.assertEqual(body['active_code_count'], 2)
+        self.assertEqual(body['recovery_codes'], ['AB3D-9K2M', 'HT7L-Q2PW'])
+
     @patch('app.routers.attendance.recover_device_with_code')
     def test_recovery_code_recover_endpoint(self, mock_recover_with_code) -> None:
         device = Device(id=23, employee_id=10, device_fingerprint='fp-rec-ok', is_active=True)

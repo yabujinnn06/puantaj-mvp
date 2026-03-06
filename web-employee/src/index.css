@@ -864,6 +864,42 @@ textarea:focus {
   font-weight: 700;
 }
 
+.recovery-vault {
+  margin-top: 0.3rem;
+  border: 1px solid rgba(128, 174, 194, 0.34);
+  border-radius: 12px;
+  padding: 0.85rem;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.9), rgba(239, 248, 253, 0.82)),
+    rgba(255, 255, 255, 0.88);
+  display: grid;
+  gap: 0.55rem;
+}
+
+.recovery-vault-title {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #1d4f67;
+}
+
+.recovery-vault-text {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.42;
+  color: #355d73;
+}
+
+.recovery-vault-form {
+  display: grid;
+  gap: 0.65rem;
+  align-items: end;
+}
+
+.recovery-vault-btn {
+  min-width: 148px;
+}
+
 .status-cta-row {
   margin-top: 10px;
   display: grid;
@@ -1994,6 +2030,10 @@ textarea:focus {
 @media (min-width: 560px) {
   .status-cta-row {
     grid-template-columns: 1fr auto;
+  }
+
+  .recovery-vault-form {
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 }
 

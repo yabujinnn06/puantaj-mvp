@@ -201,6 +201,20 @@ export interface RecoveryCodeStatusResponse {
   expires_at: string | null
 }
 
+export interface RecoveryCodeRevealRequest {
+  device_fingerprint: string
+  recovery_pin: string
+}
+
+export interface RecoveryCodeRevealResponse {
+  ok: boolean
+  employee_id: number
+  device_id: number
+  active_code_count: number
+  expires_at: string | null
+  recovery_codes: string[]
+}
+
 export interface RecoveryCodeRecoverRequest {
   employee_id: number
   recovery_pin: string

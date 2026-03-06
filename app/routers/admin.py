@@ -2446,6 +2446,50 @@ def update_employee_active_status(
     return _to_employee_read(employee)
 
 
+@router.delete(
+    "/api/admin/employees/{employee_id}",
+    response_model=SoftDeleteResponse,
+    dependencies=[Depends(require_admin_permission("employees", write=True))],
+)
+def delete_employee_record(
+    employee_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> SoftDeleteResponse:
+    employee = db.get(Employee, employee_id)
+    if employee is None:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    if employee.is_active:
+        raise ApiError(
+            status_code=409,
+            code="EMPLOYEE_ACTIVE_DELETE_FORBIDDEN",
+            message="Active employee cannot be deleted. Archive first.",
+        )
+
+    device_count = len(list(employee.devices or []))
+    active_device_count = sum(1 for device in list(employee.devices or []) if device.is_active)
+    db.delete(employee)
+    db.commit()
+
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=str(getattr(request.state, "actor_id", "admin")),
+        action="EMPLOYEE_HARD_DELETED",
+        success=True,
+        entity_type="employee",
+        entity_id=str(employee_id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "device_count": device_count,
+            "active_device_count": active_device_count,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return SoftDeleteResponse(ok=True, id=employee_id)
+
+
 @router.patch(
     "/api/admin/employees/{employee_id}/shift",
     response_model=EmployeeRead,
@@ -3406,6 +3450,50 @@ def update_device_active_status(
         request_id=getattr(request.state, "request_id", None),
     )
     return device
+
+
+@router.delete(
+    "/api/admin/devices/{device_id}",
+    response_model=SoftDeleteResponse,
+    dependencies=[Depends(require_admin_permission("devices", write=True))],
+)
+def delete_device_record(
+    device_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> SoftDeleteResponse:
+    device = db.get(Device, device_id)
+    if device is None:
+        raise HTTPException(status_code=404, detail="Device not found")
+    if device.is_active:
+        raise ApiError(
+            status_code=409,
+            code="DEVICE_ACTIVE_DELETE_FORBIDDEN",
+            message="Active device cannot be deleted. Archive first.",
+        )
+
+    employee_id = device.employee_id
+    device_fingerprint = device.device_fingerprint
+    db.delete(device)
+    db.commit()
+
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=str(getattr(request.state, "actor_id", "admin")),
+        action="DEVICE_HARD_DELETED",
+        success=True,
+        entity_type="device",
+        entity_id=str(device_id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "employee_id": employee_id,
+            "device_fingerprint": device_fingerprint,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return SoftDeleteResponse(ok=True, id=device_id)
 
 
 @router.put(

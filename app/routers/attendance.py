@@ -41,6 +41,8 @@ from app.schemas import (
     PasskeyRegisterVerifyResponse,
     RecoveryCodeIssueRequest,
     RecoveryCodeIssueResponse,
+    RecoveryCodeRevealRequest,
+    RecoveryCodeRevealResponse,
     RecoveryCodeRecoverRequest,
     RecoveryCodeRecoverResponse,
     RecoveryCodeStatusResponse,
@@ -70,6 +72,7 @@ from app.services.passkeys import (
 from app.services.recovery_codes import (
     get_recovery_status,
     issue_recovery_codes,
+    reveal_recovery_codes,
     recover_device_with_code,
 )
 
@@ -759,6 +762,45 @@ def device_recovery_codes_status(
     status_data = get_recovery_status(db, device_fingerprint=device_fingerprint)
     request.state.employee_id = status_data["employee_id"]
     return RecoveryCodeStatusResponse(**status_data)
+
+
+@router.post(
+    "/api/device/recovery-codes/reveal",
+    response_model=RecoveryCodeRevealResponse,
+)
+def device_recovery_codes_reveal(
+    payload: RecoveryCodeRevealRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> RecoveryCodeRevealResponse:
+    request.state.actor = "employee"
+    reveal_data = reveal_recovery_codes(
+        db,
+        device_fingerprint=payload.device_fingerprint,
+        recovery_pin=payload.recovery_pin,
+    )
+    request.state.employee_id = reveal_data["employee_id"]
+    log_audit(
+        db,
+        actor_type=AuditActorType.SYSTEM,
+        actor_id=str(reveal_data["employee_id"]),
+        action="RECOVERY_CODES_VIEWED",
+        success=True,
+        entity_type="device",
+        entity_id=str(reveal_data["device_id"]),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "active_code_count": reveal_data["active_code_count"],
+            "expires_at": (
+                reveal_data["expires_at"].isoformat()
+                if isinstance(reveal_data.get("expires_at"), datetime)
+                else None
+            ),
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return RecoveryCodeRevealResponse(ok=True, **reveal_data)
 
 
 @router.post(

@@ -11,6 +11,7 @@ import {
   issueRecoveryCodes,
   postEmployeeInstallFunnelEvent,
   parseApiError,
+  revealRecoveryCodes,
   scanEmployeeQr,
   subscribeEmployeePush,
   verifyPasskeyRegistration,
@@ -470,6 +471,8 @@ export function HomePage() {
   const [recoveryExpiresAt, setRecoveryExpiresAt] = useState<string | null>(null)
   const [recoveryNotice, setRecoveryNotice] = useState<string | null>(null)
   const [recoveryCodesPreview, setRecoveryCodesPreview] = useState<string[] | null>(null)
+  const [recoveryRevealPin, setRecoveryRevealPin] = useState('')
+  const [isRecoveryRevealBusy, setIsRecoveryRevealBusy] = useState(false)
 
   const [isPushBusy, setIsPushBusy] = useState(false)
   const [pushEnabled, setPushEnabled] = useState(false)
@@ -596,6 +599,7 @@ export function HomePage() {
     setRecoveryExpiresAt(null)
     setRecoveryNotice(null)
     setRecoveryCodesPreview(null)
+    setRecoveryRevealPin('')
     setPushNotice(null)
     return true
   }, [])
@@ -1372,6 +1376,50 @@ export function HomePage() {
     }
   }
 
+  const runRecoveryCodeReveal = async () => {
+    if (!deviceFingerprint) {
+      setErrorMessage('Cihaz bagli degil. Davet linkine tiklayin.')
+      return
+    }
+    if (!recoveryReady) {
+      setErrorMessage('Once aktif bir recovery seti olusturun.')
+      return
+    }
+
+    const normalizedPin = recoveryRevealPin.trim()
+    if (normalizedPin.length < 6 || normalizedPin.length > 12 || !/^\d+$/.test(normalizedPin)) {
+      setErrorMessage('Recovery PIN 6-12 hane olmali ve sadece rakam icermeli.')
+      return
+    }
+
+    setIsRecoveryRevealBusy(true)
+    setRecoveryNotice(null)
+    setErrorMessage(null)
+    setRequestId(null)
+
+    try {
+      const result = await revealRecoveryCodes({
+        device_fingerprint: deviceFingerprint,
+        recovery_pin: normalizedPin,
+      })
+      setRecoveryCodeCount(result.active_code_count)
+      setRecoveryExpiresAt(result.expires_at)
+      setRecoveryCodesPreview(result.recovery_codes)
+      setRecoveryRevealPin('')
+      setRecoveryNotice(
+        'Mevcut recovery kodlari acildi. Bu kodlar cihaz sifirlanirsa hesabi geri yuklemek icin gereklidir.',
+      )
+    } catch (error) {
+      const parsed = parseApiError(error, 'Recovery kodlari acilamadi.')
+      handleDeviceNotClaimed(parsed)
+      setRecoveryCodesPreview(null)
+      setErrorMessage(parsed.message)
+      setRequestId(parsed.requestId ?? null)
+    } finally {
+      setIsRecoveryRevealBusy(false)
+    }
+  }
+
   const runPushSubscription = async (isSecondAttempt = false) => {
     if (!deviceFingerprint) {
       setErrorMessage('Cihaz bağlı değil. Davet linkine tıklayın.')
@@ -2005,11 +2053,43 @@ export function HomePage() {
                   Kurtarma ekranina git
                 </Link>
               </div>
+              {recoveryReady ? (
+                <div className="recovery-vault">
+                  <p className="recovery-vault-title">Mevcut recovery tokenini ac</p>
+                  <p className="recovery-vault-text">
+                    Bu kodlar telefon degisirse, cihaz sifirlanirsa veya tarayici verisi silinirse hesabi
+                    kurtarmak icin gereklidir. Gormek icin daha once belirledigin recovery PIN&apos;ini gir.
+                  </p>
+                  <div className="recovery-vault-form">
+                    <label className="field" htmlFor="recoveryRevealPinInput">
+                      <span>Recovery PIN</span>
+                      <input
+                        id="recoveryRevealPinInput"
+                        type="password"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        value={recoveryRevealPin}
+                        onChange={(event) => setRecoveryRevealPin(event.target.value)}
+                        placeholder="6-12 hane"
+                        disabled={isRecoveryRevealBusy || isRecoveryBusy}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="btn btn-soft recovery-vault-btn"
+                      disabled={!deviceFingerprint || isRecoveryRevealBusy || isRecoveryBusy}
+                      onClick={() => void runRecoveryCodeReveal()}
+                    >
+                      {isRecoveryRevealBusy ? 'Kodlar aciliyor...' : 'Tokeni Goster'}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
               {recoveryNotice ? <p className="small-text mt-2">{recoveryNotice}</p> : null}
               {recoveryCodesPreview && recoveryCodesPreview.length > 0 ? (
                 <div className="notice-box notice-box-warning mt-2">
                   <p className="small-text">
-                    Kodlari bir kez goruyorsun. Guvenli yere kaydet:
+                    Aktif recovery kodlari. Bunlar cihaz kurtarma icin gereklidir, guvenli yerde saklayin:
                   </p>
                   <p className="small-text">
                     <strong>{recoveryCodesPreview.join(' | ')}</strong>

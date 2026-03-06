@@ -853,6 +853,15 @@ export async function updateEmployeeActive(
   return response.data;
 }
 
+export async function deleteEmployee(
+  employeeId: number,
+): Promise<{ ok: boolean; id: number }> {
+  const response = await apiClient.delete<{ ok: boolean; id: number }>(
+    `/api/admin/employees/${employeeId}`,
+  );
+  return response.data;
+}
+
 export async function updateEmployeeShift(
   employeeId: number,
   payload: UpdateEmployeeShiftPayload,
@@ -1570,6 +1579,15 @@ export async function updateDeviceActive(
   const response = await apiClient.patch<Device>(
     `/api/admin/devices/${deviceId}/active`,
     payload,
+  );
+  return response.data;
+}
+
+export async function deleteDevice(
+  deviceId: number,
+): Promise<{ ok: boolean; id: number }> {
+  const response = await apiClient.delete<{ ok: boolean; id: number }>(
+    `/api/admin/devices/${deviceId}`,
   );
   return response.data;
 }

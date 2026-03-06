@@ -614,6 +614,20 @@ class RecoveryCodeStatusResponse(BaseModel):
     expires_at: datetime | None = None
 
 
+class RecoveryCodeRevealRequest(BaseModel):
+    device_fingerprint: str
+    recovery_pin: str = Field(min_length=6, max_length=12)
+
+
+class RecoveryCodeRevealResponse(BaseModel):
+    ok: bool
+    employee_id: int
+    device_id: int
+    active_code_count: int
+    expires_at: datetime | None = None
+    recovery_codes: list[str] = Field(default_factory=list)
+
+
 class RecoveryCodeRecoverRequest(BaseModel):
     employee_id: int = Field(ge=1)
     recovery_pin: str = Field(min_length=6, max_length=12)

@@ -219,6 +219,85 @@ def get_recovery_status(
     }
 
 
+def reveal_recovery_codes(
+    db: Session,
+    *,
+    device_fingerprint: str,
+    recovery_pin: str,
+) -> dict[str, Any]:
+    device = _resolve_active_device(db, device_fingerprint=device_fingerprint)
+    normalized_pin = _normalize_pin(recovery_pin)
+    if not device.recovery_pin_hash or not verify_password(normalized_pin, device.recovery_pin_hash):
+        raise ApiError(
+            status_code=401,
+            code="RECOVERY_PIN_INVALID",
+            message="Recovery PIN is invalid.",
+        )
+
+    now_utc = _utc_now()
+    active_codes = list(
+        db.scalars(
+            select(DeviceRecoveryCode).where(
+                DeviceRecoveryCode.device_id == device.id,
+                DeviceRecoveryCode.is_active.is_(True),
+                DeviceRecoveryCode.used_at.is_(None),
+                DeviceRecoveryCode.expires_at >= now_utc,
+            )
+        ).all()
+    )
+    if not active_codes:
+        raise ApiError(
+            status_code=409,
+            code="RECOVERY_CODES_NOT_READY",
+            message="Recovery codes are not configured or expired for this account.",
+        )
+
+    payload = _decrypt_admin_vault(device.recovery_admin_vault)
+    raw_codes = payload.get("recovery_codes") if isinstance(payload, dict) else None
+    if not isinstance(raw_codes, list):
+        raise ApiError(
+            status_code=409,
+            code="RECOVERY_CODES_REVEAL_UNAVAILABLE",
+            message="Recovery codes cannot be revealed. Generate a new recovery set.",
+        )
+
+    visible_codes: list[str] = []
+    unmatched_active = list(active_codes)
+    for item in raw_codes:
+        if not isinstance(item, str):
+            continue
+        formatted = _format_code(item)
+        try:
+            normalized_code = _normalize_code(formatted)
+        except ApiError:
+            continue
+        matched_index = None
+        for index, candidate in enumerate(unmatched_active):
+            if verify_password(normalized_code, candidate.code_hash):
+                matched_index = index
+                break
+        if matched_index is None:
+            continue
+        unmatched_active.pop(matched_index)
+        visible_codes.append(formatted)
+
+    if not visible_codes:
+        raise ApiError(
+            status_code=409,
+            code="RECOVERY_CODES_REVEAL_UNAVAILABLE",
+            message="Recovery codes cannot be revealed. Generate a new recovery set.",
+        )
+
+    nearest_expiry = min((row.expires_at for row in active_codes), default=None)
+    return {
+        "employee_id": device.employee_id,
+        "device_id": device.id,
+        "active_code_count": len(active_codes),
+        "expires_at": nearest_expiry,
+        "recovery_codes": visible_codes,
+    }
+
+
 def get_admin_recovery_snapshot(
     db: Session,
     *,

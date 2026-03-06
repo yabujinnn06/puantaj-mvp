@@ -29,6 +29,8 @@ import type {
   PasskeyRegisterVerifyResponse,
   RecoveryCodeIssueRequest,
   RecoveryCodeIssueResponse,
+  RecoveryCodeRevealRequest,
+  RecoveryCodeRevealResponse,
   RecoveryCodeRecoverRequest,
   RecoveryCodeRecoverResponse,
   RecoveryCodeStatusResponse,
@@ -63,6 +65,8 @@ const errorCodeMap: Record<string, string> = {
   RECOVERY_PIN_INVALID: 'Recovery PIN hatali.',
   RECOVERY_CODE_INVALID: 'Recovery code hatali.',
   RECOVERY_CODES_NOT_READY: 'Bu hesapta aktif recovery code yok veya suresi dolmus.',
+  RECOVERY_CODES_REVEAL_UNAVAILABLE:
+    'Mevcut recovery kodlari gosterilemiyor. Yeni bir recovery seti olusturun.',
   QR_POINT_OUT_OF_RANGE: 'Bu QR kod sadece tanımlı konum içinde okutulabilir.',
   QR_CODE_NOT_FOUND: 'QR kod bulunamadı veya pasif durumda.',
   QR_CODE_HAS_NO_ACTIVE_POINTS: 'Bu QR koda aktif konum noktası atanmadı.',
@@ -272,6 +276,16 @@ export async function getRecoveryCodeStatus(
   const response = await apiClient.get<RecoveryCodeStatusResponse>(
     '/api/device/recovery-codes/status',
     { params: { device_fingerprint: deviceFingerprint } },
+  )
+  return response.data
+}
+
+export async function revealRecoveryCodes(
+  payload: RecoveryCodeRevealRequest,
+): Promise<RecoveryCodeRevealResponse> {
+  const response = await apiClient.post<RecoveryCodeRevealResponse>(
+    '/api/device/recovery-codes/reveal',
+    payload,
   )
   return response.data
 }

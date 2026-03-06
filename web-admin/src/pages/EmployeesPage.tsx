@@ -5,6 +5,7 @@ import { z } from 'zod'
 
 import {
   createEmployee,
+  deleteEmployee,
   getDepartments,
   getEmployees,
   getRegions,
@@ -103,6 +104,26 @@ export function EmployeesPage() {
       pushToast({
         variant: 'error',
         title: 'Islem basarisiz',
+        description: message,
+      })
+    },
+  })
+
+  const deleteEmployeeMutation = useMutation({
+    mutationFn: (employeeId: number) => deleteEmployee(employeeId),
+    onSuccess: () => {
+      pushToast({
+        variant: 'success',
+        title: 'Calisan kalici olarak silindi',
+        description: 'Arsivli calisan kaydi sistemden kaldirildi.',
+      })
+      void queryClient.invalidateQueries({ queryKey: ['employees'] })
+    },
+    onError: (mutationError) => {
+      const message = parseApiError(mutationError, 'Calisan silinemedi.').message
+      pushToast({
+        variant: 'error',
+        title: 'Kalici silme basarisiz',
         description: message,
       })
     },
@@ -423,6 +444,24 @@ export function EmployeesPage() {
                       >
                         {employee.is_active ? 'Arsivle' : 'Arsivden Cikar'}
                       </button>
+                      {!employee.is_active ? (
+                        <button
+                          type="button"
+                          disabled={deleteEmployeeMutation.isPending}
+                          onClick={() => {
+                            const confirmed = window.confirm(
+                              `${employee.full_name} kalici olarak silinsin mi? Bu islem bagli cihaz ve eski kayitlari da veritabanindan kaldirabilir.`,
+                            )
+                            if (!confirmed) {
+                              return
+                            }
+                            deleteEmployeeMutation.mutate(employee.id)
+                          }}
+                          className="employee-action-btn employee-action-delete"
+                        >
+                          Kalici Sil
+                        </button>
+                      ) : null}
                     </div>
                   </td>
                 </tr>

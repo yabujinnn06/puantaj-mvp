@@ -248,6 +248,58 @@ class _FakeScheduledNotificationTaskDB:
         return
 
 
+class _FakeEmployeeHardDeleteDB:
+    def __init__(self, employee: Employee):
+        self.employee = employee
+        self.deleted_employee_ids: list[int] = []
+        self.audit_rows: list[object] = []
+
+    def get(self, model, pk):  # type: ignore[no-untyped-def]
+        if model is Employee and self.employee is not None and self.employee.id == pk:
+            return self.employee
+        return None
+
+    def delete(self, obj: object) -> None:
+        if self.employee is not None and obj is self.employee:
+            self.deleted_employee_ids.append(self.employee.id)
+            self.employee = None  # type: ignore[assignment]
+
+    def add(self, obj: object) -> None:
+        self.audit_rows.append(obj)
+
+    def commit(self) -> None:
+        return
+
+    def rollback(self) -> None:
+        return
+
+
+class _FakeDeviceHardDeleteDB:
+    def __init__(self, device: Device):
+        self.device = device
+        self.deleted_device_ids: list[int] = []
+        self.audit_rows: list[object] = []
+
+    def get(self, model, pk):  # type: ignore[no-untyped-def]
+        if model is Device and self.device is not None and self.device.id == pk:
+            return self.device
+        return None
+
+    def delete(self, obj: object) -> None:
+        if self.device is not None and obj is self.device:
+            self.deleted_device_ids.append(self.device.id)
+            self.device = None  # type: ignore[assignment]
+
+    def add(self, obj: object) -> None:
+        self.audit_rows.append(obj)
+
+    def commit(self) -> None:
+        return
+
+    def rollback(self) -> None:
+        return
+
+
 class _FakeDepartmentRegionListDB:
     def __init__(self, departments):
         self.departments = departments
@@ -851,6 +903,65 @@ class AdminPuantajFeatureTests(unittest.TestCase):
         self.assertEqual(payload["ok"], True)
         self.assertEqual(payload["id"], 91)
         self.assertEqual(fake_db.deleted_ids, [91])
+
+    def test_delete_inactive_employee_returns_soft_delete_payload(self) -> None:
+        employee = Employee(id=14, full_name="Arsiv Kisi", department_id=None, is_active=False)
+        employee.devices = [
+            Device(
+                id=51,
+                employee_id=14,
+                device_fingerprint="archived-device",
+                is_active=False,
+                created_at=datetime(2026, 2, 10, 10, 0, tzinfo=timezone.utc),
+            )
+        ]
+        fake_db = _FakeEmployeeHardDeleteDB(employee)
+        app.dependency_overrides[get_db] = _override_get_db(fake_db)
+        app.dependency_overrides[require_admin] = lambda: _super_admin_claims()
+        client = TestClient(app)
+
+        response = client.delete("/api/admin/employees/14")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["ok"], True)
+        self.assertEqual(payload["id"], 14)
+        self.assertEqual(fake_db.deleted_employee_ids, [14])
+
+    def test_delete_active_employee_is_blocked(self) -> None:
+        employee = Employee(id=15, full_name="Aktif Kisi", department_id=None, is_active=True)
+        employee.devices = []
+        fake_db = _FakeEmployeeHardDeleteDB(employee)
+        app.dependency_overrides[get_db] = _override_get_db(fake_db)
+        app.dependency_overrides[require_admin] = lambda: _super_admin_claims()
+        client = TestClient(app)
+
+        response = client.delete("/api/admin/employees/15")
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["error"]["code"], "EMPLOYEE_ACTIVE_DELETE_FORBIDDEN")
+        self.assertEqual(fake_db.deleted_employee_ids, [])
+
+    def test_delete_inactive_device_returns_soft_delete_payload(self) -> None:
+        device = Device(
+            id=61,
+            employee_id=16,
+            device_fingerprint="deleted-device",
+            is_active=False,
+            created_at=datetime(2026, 2, 11, 11, 0, tzinfo=timezone.utc),
+        )
+        fake_db = _FakeDeviceHardDeleteDB(device)
+        app.dependency_overrides[get_db] = _override_get_db(fake_db)
+        app.dependency_overrides[require_admin] = lambda: _super_admin_claims()
+        client = TestClient(app)
+
+        response = client.delete("/api/admin/devices/61")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["ok"], True)
+        self.assertEqual(payload["id"], 61)
+        self.assertEqual(fake_db.deleted_device_ids, [61])
 
 
 if __name__ == "__main__":
