@@ -18,6 +18,7 @@ class MonthlyServiceTests(unittest.TestCase):
             last_out_ts=last_out,
             planned_minutes=540,
             break_minutes=60,
+            overtime_grace_minutes=0,
         )
 
         self.assertEqual(status, "OK")
@@ -33,6 +34,7 @@ class MonthlyServiceTests(unittest.TestCase):
             last_out_ts=last_out,
             planned_minutes=540,
             break_minutes=60,
+            overtime_grace_minutes=0,
         )
 
         self.assertEqual(status, "OK")
@@ -48,6 +50,7 @@ class MonthlyServiceTests(unittest.TestCase):
             last_out_ts=last_out,
             planned_minutes=540,
             break_minutes=60,
+            overtime_grace_minutes=0,
         )
 
         self.assertEqual(status, "OK")
@@ -62,6 +65,7 @@ class MonthlyServiceTests(unittest.TestCase):
             last_out_ts=None,
             planned_minutes=540,
             break_minutes=60,
+            overtime_grace_minutes=0,
         )
 
         self.assertEqual(status, "INCOMPLETE")
@@ -100,6 +104,7 @@ class MonthlyServiceTests(unittest.TestCase):
             last_out_ts=last_out,
             planned_minutes=540,
             break_minutes=30,
+            overtime_grace_minutes=0,
             daily_max_minutes=11 * 60,
             night_work_max_minutes=int(7.5 * 60),
             enforce_min_break=True,
@@ -121,6 +126,7 @@ class MonthlyServiceTests(unittest.TestCase):
             last_out_ts=last_out,
             planned_minutes=480,
             break_minutes=60,
+            overtime_grace_minutes=0,
             daily_max_minutes=11 * 60,
             night_work_max_minutes=int(7.5 * 60),
             enforce_min_break=False,
@@ -132,6 +138,38 @@ class MonthlyServiceTests(unittest.TestCase):
         self.assertEqual(result.worked_minutes_net, 495)
         self.assertEqual(result.early_arrival_minutes, 15)
         self.assertEqual(result.overtime_minutes, 0)
+
+    def test_overtime_grace_absorbs_short_overrun(self) -> None:
+        first_in = datetime(2026, 2, 1, 9, 0, tzinfo=timezone.utc)
+        last_out = datetime(2026, 2, 1, 19, 15, tzinfo=timezone.utc)
+
+        status, worked, overtime = calculate_work_and_overtime(
+            first_in_ts=first_in,
+            last_out_ts=last_out,
+            planned_minutes=540,
+            break_minutes=60,
+            overtime_grace_minutes=15,
+        )
+
+        self.assertEqual(status, "OK")
+        self.assertEqual(worked, 555)
+        self.assertEqual(overtime, 0)
+
+    def test_overtime_grace_counts_only_minutes_above_threshold(self) -> None:
+        first_in = datetime(2026, 2, 1, 9, 0, tzinfo=timezone.utc)
+        last_out = datetime(2026, 2, 1, 19, 22, tzinfo=timezone.utc)
+
+        status, worked, overtime = calculate_work_and_overtime(
+            first_in_ts=first_in,
+            last_out_ts=last_out,
+            planned_minutes=540,
+            break_minutes=60,
+            overtime_grace_minutes=15,
+        )
+
+        self.assertEqual(status, "OK")
+        self.assertEqual(worked, 562)
+        self.assertEqual(overtime, 7)
 
 
 if __name__ == "__main__":

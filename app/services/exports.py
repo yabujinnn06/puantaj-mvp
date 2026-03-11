@@ -29,6 +29,7 @@ RangeSheetMode = Literal["consolidated", "employee_sheets", "department_sheets"]
 
 DEFAULT_DAILY_MINUTES_PLANNED = 540
 DEFAULT_BREAK_MINUTES = 60
+DEFAULT_OVERTIME_GRACE_MINUTES = 0
 DURATION_NUMBER_FORMAT = "[h]:mm"
 
 DAILY_HEADERS = [
@@ -643,20 +644,36 @@ def _apply_conditional_formatting(
         )
 
 
-def _work_rule_minutes(db: Session, department_id: int | None, cache: dict[int | None, tuple[int, int]]) -> tuple[int, int]:
+def _work_rule_minutes(
+    db: Session,
+    department_id: int | None,
+    cache: dict[int | None, tuple[int, int, int]],
+) -> tuple[int, int, int]:
     if department_id in cache:
         return cache[department_id]
 
     if department_id is None:
-        cache[department_id] = (DEFAULT_DAILY_MINUTES_PLANNED, DEFAULT_BREAK_MINUTES)
+        cache[department_id] = (
+            DEFAULT_DAILY_MINUTES_PLANNED,
+            DEFAULT_BREAK_MINUTES,
+            DEFAULT_OVERTIME_GRACE_MINUTES,
+        )
         return cache[department_id]
 
     rule = db.scalar(select(WorkRule).where(WorkRule.department_id == department_id))
     if rule is None:
-        cache[department_id] = (DEFAULT_DAILY_MINUTES_PLANNED, DEFAULT_BREAK_MINUTES)
+        cache[department_id] = (
+            DEFAULT_DAILY_MINUTES_PLANNED,
+            DEFAULT_BREAK_MINUTES,
+            DEFAULT_OVERTIME_GRACE_MINUTES,
+        )
         return cache[department_id]
 
-    cache[department_id] = (rule.daily_minutes_planned, rule.break_minutes)
+    cache[department_id] = (
+        rule.daily_minutes_planned,
+        rule.break_minutes,
+        max(0, int(rule.overtime_grace_minutes or 0)),
+    )
     return cache[department_id]
 
 
@@ -1865,7 +1882,7 @@ def _build_date_range_export(
     )
     _style_header(ws_daily, daily_header_row)
 
-    work_rule_cache: dict[int | None, tuple[int, int]] = {}
+    work_rule_cache: dict[int | None, tuple[int, int, int]] = {}
     monthly_report_cache: dict[tuple[int, int, int], MonthlyEmployeeResponse] = {}
     monthly_day_lookup_cache: dict[tuple[int, int, int], dict[date, object]] = {}
     monthly_legal_lookup_cache: dict[tuple[int, int, int], dict[date, tuple[int, int]]] = {}
@@ -1904,7 +1921,7 @@ def _build_date_range_export(
         if not isinstance(employee_ref, Employee):
             continue
 
-        planned_minutes, break_minutes = _work_rule_minutes(
+        planned_minutes, break_minutes, overtime_grace_minutes = _work_rule_minutes(
             db,
             bucket["department_id"],
             work_rule_cache,
@@ -1914,6 +1931,7 @@ def _build_date_range_export(
             last_out_ts=last_out,
             planned_minutes=planned_minutes,
             break_minutes=break_minutes,
+            overtime_grace_minutes=overtime_grace_minutes,
         )
         plan_overtime_minutes = max(0, int(calculated_plan_overtime_minutes))
         monthly_day_lookup, monthly_legal_lookup = _resolve_monthly_context(employee_ref, day_date)

@@ -46,6 +46,7 @@ from app.services.weekday_shift_assignments import (
 
 DEFAULT_DAILY_MINUTES_PLANNED = 540
 DEFAULT_BREAK_MINUTES = 60
+DEFAULT_OVERTIME_GRACE_MINUTES = 0
 DEFAULT_WEEKLY_NORMAL_MINUTES = 45 * 60
 DEFAULT_DAILY_MAX_MINUTES = 11 * 60
 DEFAULT_NIGHT_WORK_MAX_MINUTES = int(7.5 * 60)
@@ -138,14 +139,14 @@ def _local_date_range_to_utc_bounds(start_date: date, end_date: date) -> tuple[d
     return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
 
 
-def _resolve_work_rule(db: Session, department_id: int | None) -> tuple[int, int]:
+def _resolve_work_rule(db: Session, department_id: int | None) -> tuple[int, int, int]:
     if department_id is None:
-        return DEFAULT_DAILY_MINUTES_PLANNED, DEFAULT_BREAK_MINUTES
+        return DEFAULT_DAILY_MINUTES_PLANNED, DEFAULT_BREAK_MINUTES, DEFAULT_OVERTIME_GRACE_MINUTES
 
     rule = db.scalar(select(WorkRule).where(WorkRule.department_id == department_id))
     if rule is None:
-        return DEFAULT_DAILY_MINUTES_PLANNED, DEFAULT_BREAK_MINUTES
-    return rule.daily_minutes_planned, rule.break_minutes
+        return DEFAULT_DAILY_MINUTES_PLANNED, DEFAULT_BREAK_MINUTES, DEFAULT_OVERTIME_GRACE_MINUTES
+    return rule.daily_minutes_planned, rule.break_minutes, max(0, int(rule.overtime_grace_minutes or 0))
 
 
 def _resolve_weekly_rule_map(db: Session, department_id: int | None) -> dict[int, DepartmentWeeklyRule]:
@@ -467,6 +468,7 @@ def _build_day_records(
     end_date: date,
     planned_minutes: int,
     break_minutes: int,
+    overtime_grace_minutes: int,
     labor_profile: LaborProfile | None,
 ) -> list[_InternalDayRecord]:
     start_dt, end_dt = _local_date_range_to_utc_bounds(start_date, end_date)
@@ -577,6 +579,11 @@ def _build_day_records(
             if schedule_plan is not None and schedule_plan.break_minutes is not None
             else break_minutes
         )
+        day_overtime_grace_minutes = (
+            max(0, int(schedule_plan.overtime_grace_minutes))
+            if schedule_plan is not None and schedule_plan.overtime_grace_minutes is not None
+            else overtime_grace_minutes
+        )
 
         event_shift = _resolve_event_shift(
             first_in=first_in,
@@ -626,7 +633,11 @@ def _build_day_records(
             rule_source_flags.append("SCHEDULE_PLAN_APPLIED")
             if schedule_plan.shift_id is not None:
                 rule_source_flags.append("SCHEDULE_PLAN_SHIFT")
-            if schedule_plan.daily_minutes_planned is not None or schedule_plan.break_minutes is not None:
+            if (
+                schedule_plan.daily_minutes_planned is not None
+                or schedule_plan.break_minutes is not None
+                or schedule_plan.overtime_grace_minutes is not None
+            ):
                 rule_source_flags.append("SCHEDULE_PLAN_RULE")
             if schedule_plan.is_locked:
                 rule_source_flags.append("SCHEDULE_PLAN_LOCKED")
@@ -672,6 +683,7 @@ def _build_day_records(
                     last_out_ts=last_out_ts,
                     planned_minutes=day_planned_minutes,
                     break_minutes=day_break_minutes,
+                    overtime_grace_minutes=day_overtime_grace_minutes,
                     daily_max_minutes=daily_max_minutes,
                     night_work_max_minutes=night_work_max_minutes,
                     enforce_min_break=enforce_min_break,
@@ -786,6 +798,7 @@ def _build_day_records(
                 last_out_ts=last_out.ts_utc if last_out else None,
                 planned_minutes=day_planned_minutes,
                 break_minutes=day_break_minutes,
+                overtime_grace_minutes=day_overtime_grace_minutes,
                 daily_max_minutes=daily_max_minutes,
                 night_work_max_minutes=night_work_max_minutes,
                 enforce_min_break=enforce_min_break,
@@ -943,7 +956,7 @@ def _employee_monthly_from_model(
     month_end_date = date(year, month, days_in_month)
     year_start_date = date(year, 1, 1)
 
-    planned_minutes, break_minutes = _resolve_work_rule(db, employee.department_id)
+    planned_minutes, break_minutes, overtime_grace_minutes = _resolve_work_rule(db, employee.department_id)
     labor_profile = _resolve_labor_profile(db)
 
     year_day_records = _build_day_records(
@@ -953,6 +966,7 @@ def _employee_monthly_from_model(
         end_date=month_end_date,
         planned_minutes=planned_minutes,
         break_minutes=break_minutes,
+        overtime_grace_minutes=overtime_grace_minutes,
         labor_profile=labor_profile,
     )
     month_day_records = [

@@ -43,6 +43,7 @@ def _build_assessment(
     override_active: bool,
     checkout_ts_utc: datetime | None,
     first_checkin_ts_utc: datetime | None = None,
+    overtime_grace_minutes: int = 0,
 ) -> DayAssessment:
     employee = Employee(id=7, full_name="Ahmet Yilmaz", department_id=10, shift_id=101, is_active=True)
     shift = DepartmentShift(
@@ -81,6 +82,7 @@ def _build_assessment(
         shift_end_local_dt=datetime(2026, 3, 1, 18, 0, tzinfo=timezone.utc),
         default_shift_end_local_dt=datetime(2026, 3, 1, 19, 0, tzinfo=timezone.utc),
         grace_minutes=5,
+        overtime_grace_minutes=overtime_grace_minutes,
         off_shift_tolerance_minutes=0,
         planned_minutes=480,
         override_active=override_active,
@@ -173,6 +175,38 @@ class AttendanceNotificationMonitorTests(unittest.TestCase):
         self.assertEqual(auto_event.type, AttendanceType.OUT)
         self.assertEqual(auto_event.device_id, 17)
         self.assertEqual(auto_event.ts_utc, datetime(2026, 3, 2, 0, 0, tzinfo=timezone.utc))
+
+    def test_overtime_auto_close_respects_overtime_grace(self) -> None:
+        session = _DummySession(scalar_values=[None, None])
+        assessment = _build_assessment(override_active=False, checkout_ts_utc=None, overtime_grace_minutes=15)
+        created_jobs: list[NotificationJob] = []
+        open_event = AttendanceEvent(
+            id=502,
+            employee_id=7,
+            device_id=17,
+            type=AttendanceType.IN,
+            ts_utc=datetime(2026, 3, 1, 7, 0, tzinfo=timezone.utc),
+            location_status=LocationStatus.NO_LOCATION,
+            flags={"SHIFT_ID": 101},
+        )
+
+        closed = _schedule_overtime_auto_close(
+            session,  # type: ignore[arg-type]
+            created_jobs=created_jobs,
+            assessment=assessment,
+            now_utc=assessment.shift_end_local_dt.astimezone(timezone.utc) + timedelta(hours=6, minutes=14),
+            open_event=open_event,
+        )
+        self.assertFalse(closed)
+
+        closed = _schedule_overtime_auto_close(
+            session,  # type: ignore[arg-type]
+            created_jobs=created_jobs,
+            assessment=assessment,
+            now_utc=assessment.shift_end_local_dt.astimezone(timezone.utc) + timedelta(hours=6, minutes=15),
+            open_event=open_event,
+        )
+        self.assertTrue(closed)
 
     def test_off_shift_tolerance_allows_small_early_checkin(self) -> None:
         shift = DepartmentShift(

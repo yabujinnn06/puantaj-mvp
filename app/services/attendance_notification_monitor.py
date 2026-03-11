@@ -57,6 +57,7 @@ TYPE_OFF_SHIFT_ACTIVITY = "vardiya_disinda_aktivite"
 
 DEFAULT_DAILY_MINUTES_PLANNED = 540
 DEFAULT_GRACE_MINUTES = 5
+DEFAULT_OVERTIME_GRACE_MINUTES = 0
 DEFAULT_OFF_SHIFT_TOLERANCE_MINUTES = 0
 OVERTIME_WARNING_HOURS = 3
 OVERTIME_MAX_HOURS = 6
@@ -84,6 +85,7 @@ class DayAssessment:
     shift_end_local_dt: datetime
     default_shift_end_local_dt: datetime | None
     grace_minutes: int
+    overtime_grace_minutes: int
     off_shift_tolerance_minutes: int
     planned_minutes: int
     override_active: bool
@@ -106,6 +108,12 @@ class DayAssessment:
 
 def _minutes_between(later: datetime, earlier: datetime) -> int:
     return max(0, int((later - earlier).total_seconds() // 60))
+
+
+def _overtime_start_utc(assessment: DayAssessment) -> datetime:
+    return (
+        assessment.shift_end_local_dt + timedelta(minutes=max(0, assessment.overtime_grace_minutes))
+    ).astimezone(timezone.utc)
 
 
 def _format_local_dt(value: datetime | None) -> str:
@@ -202,14 +210,26 @@ def _resolve_shift_for_day(
     employee: Employee,
     local_day: date,
     first_checkin_event: AttendanceEvent | None,
-) -> tuple[DepartmentSchedulePlan | None, DepartmentShift | None, DepartmentShift | None, int, int, int, bool, str | None]:
+) -> tuple[
+    DepartmentSchedulePlan | None,
+    DepartmentShift | None,
+    DepartmentShift | None,
+    int,
+    int,
+    int,
+    int,
+    bool,
+    str | None,
+]:
     planned_minutes = DEFAULT_DAILY_MINUTES_PLANNED
     grace_minutes = DEFAULT_GRACE_MINUTES
+    overtime_grace_minutes = DEFAULT_OVERTIME_GRACE_MINUTES
     off_shift_tolerance_minutes = DEFAULT_OFF_SHIFT_TOLERANCE_MINUTES
     work_rule = _resolve_department_work_rule(session, employee)
     if work_rule is not None:
         planned_minutes = max(1, int(work_rule.daily_minutes_planned))
         grace_minutes = max(0, int(work_rule.grace_minutes))
+        overtime_grace_minutes = max(0, int(work_rule.overtime_grace_minutes or 0))
         off_shift_tolerance_minutes = max(0, int(work_rule.off_shift_tolerance_minutes or 0))
 
     plan = resolve_effective_plan_for_employee_day(session, employee=employee, day_date=local_day)
@@ -218,6 +238,8 @@ def _resolve_shift_for_day(
             planned_minutes = max(1, int(plan.daily_minutes_planned))
         if plan.grace_minutes is not None:
             grace_minutes = max(0, int(plan.grace_minutes))
+        if plan.overtime_grace_minutes is not None:
+            overtime_grace_minutes = max(0, int(plan.overtime_grace_minutes))
         if plan.off_shift_tolerance_minutes is not None:
             off_shift_tolerance_minutes = max(0, int(plan.off_shift_tolerance_minutes))
 
@@ -248,6 +270,7 @@ def _resolve_shift_for_day(
         or plan.daily_minutes_planned is not None
         or plan.break_minutes is not None
         or plan.grace_minutes is not None
+        or plan.overtime_grace_minutes is not None
         or plan.off_shift_tolerance_minutes is not None
         or bool((plan.note or "").strip())
     )
@@ -258,6 +281,7 @@ def _resolve_shift_for_day(
         default_shift,
         planned_minutes,
         grace_minutes,
+        overtime_grace_minutes,
         off_shift_tolerance_minutes,
         override_active,
         override_note,
@@ -400,6 +424,7 @@ def _build_day_assessment(
         default_shift,
         planned_minutes,
         grace_minutes,
+        overtime_grace_minutes,
         off_shift_tolerance_minutes,
         override_active,
         override_note,
@@ -453,7 +478,8 @@ def _build_day_assessment(
             session,
             employee_id=employee.id,
             first_checkin_ts_utc=first_checkin_ts_utc,
-            search_until_utc=shift_end_local_dt.astimezone(timezone.utc) + timedelta(hours=OVERTIME_MAX_HOURS, minutes=1),
+            search_until_utc=shift_end_local_dt.astimezone(timezone.utc)
+            + timedelta(hours=OVERTIME_MAX_HOURS, minutes=max(0, overtime_grace_minutes) + 1),
         )
 
     if manual_override is not None and manual_override.out_ts is not None:
@@ -506,6 +532,7 @@ def _build_day_assessment(
         shift_end_local_dt=shift_end_local_dt,
         default_shift_end_local_dt=default_shift_end_local_dt,
         grace_minutes=grace_minutes,
+        overtime_grace_minutes=overtime_grace_minutes,
         off_shift_tolerance_minutes=off_shift_tolerance_minutes,
         planned_minutes=planned_minutes,
         override_active=override_active,
@@ -951,29 +978,32 @@ def _schedule_overtime_started(
 ) -> None:
     if assessment.first_checkin_ts_utc is None or assessment.checkout_ts_utc is not None:
         return
-    shift_end_utc = assessment.shift_end_local_dt.astimezone(timezone.utc)
-    if now_utc < shift_end_utc:
+    overtime_start_utc = _overtime_start_utc(assessment)
+    if now_utc < overtime_start_utc:
         return
-    overtime_minutes = _minutes_between(now_utc, shift_end_utc)
-    actual_summary = f"Planlanan bitis: {_format_time(shift_end_utc)} | Guncel fazla mesai: {_format_minutes_label(overtime_minutes)}"
+    overtime_minutes = _minutes_between(now_utc, overtime_start_utc)
+    actual_summary = (
+        f"Mesai esigi: {_format_time(overtime_start_utc)} | "
+        f"Guncel fazla mesai: {_format_minutes_label(overtime_minutes)}"
+    )
     _schedule_for_both_audiences(
         session,
         created_jobs=created_jobs,
         assessment=assessment,
         notification_type=TYPE_OVERTIME_STARTED,
-        event_ts_utc=shift_end_utc,
-        scheduled_at_utc=shift_end_utc,
+        event_ts_utc=overtime_start_utc,
+        scheduled_at_utc=overtime_start_utc,
         employee_risk=RISK_INFO,
         employee_title="Fazla Mesai Basladi",
         employee_description=(
-            f"Planlanan vardiya bitis saati {_format_time(shift_end_utc)} itibariyla fazla mesainiz basladi. "
+            f"Fazla mesai esigi {_format_time(overtime_start_utc)} itibariyla fazla mesainiz basladi. "
             "Maksimum 6 saate kadar devam edebilirsiniz."
         ),
         admin_risk=RISK_INFO,
         admin_title="Fazla Mesai Basladi",
         admin_description=(
             f"{assessment.employee.full_name} icin fazla mesai basladi. "
-            f"Planlanan vardiya bitisi: {_format_time(shift_end_utc)}."
+            f"Fazla mesai esigi: {_format_time(overtime_start_utc)}."
         ),
         actual_time_summary=actual_summary,
         employee_action="Fazla mesai sona erdiginde cikis kaydini tamamlayin.",
@@ -990,13 +1020,13 @@ def _schedule_overtime_warning(
 ) -> None:
     if assessment.first_checkin_ts_utc is None or assessment.checkout_ts_utc is not None:
         return
-    shift_end_utc = assessment.shift_end_local_dt.astimezone(timezone.utc)
-    warning_utc = shift_end_utc + timedelta(hours=OVERTIME_WARNING_HOURS)
+    overtime_start_utc = _overtime_start_utc(assessment)
+    warning_utc = overtime_start_utc + timedelta(hours=OVERTIME_WARNING_HOURS)
     if now_utc < warning_utc:
         return
 
     actual_summary = (
-        f"Planlanan bitis: {_format_time(shift_end_utc)} | "
+        f"Mesai esigi: {_format_time(overtime_start_utc)} | "
         f"3 saat esigi: {_format_time(warning_utc)}"
     )
     _schedule_for_both_audiences(
@@ -1072,8 +1102,8 @@ def _schedule_overtime_auto_close(
 ) -> bool:
     if assessment.first_checkin_ts_utc is None or assessment.checkout_ts_utc is not None or open_event is None:
         return False
-    shift_end_utc = assessment.shift_end_local_dt.astimezone(timezone.utc)
-    auto_close_utc = shift_end_utc + timedelta(hours=OVERTIME_MAX_HOURS)
+    overtime_start_utc = _overtime_start_utc(assessment)
+    auto_close_utc = overtime_start_utc + timedelta(hours=OVERTIME_MAX_HOURS)
     if now_utc < auto_close_utc:
         return False
 
@@ -1084,7 +1114,7 @@ def _schedule_overtime_auto_close(
         auto_close_utc=auto_close_utc,
     )
     actual_summary = (
-        f"Planlanan bitis: {_format_time(shift_end_utc)} | "
+        f"Mesai esigi: {_format_time(overtime_start_utc)} | "
         f"Otomatik kapatma: {_format_time(auto_close_utc)}"
     )
     _schedule_for_both_audiences(

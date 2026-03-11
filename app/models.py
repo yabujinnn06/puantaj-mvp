@@ -378,6 +378,12 @@ class WorkRule(Base):
     )
     break_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=60, server_default=text("60"))
     grace_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=5, server_default=text("5"))
+    overtime_grace_minutes: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
     off_shift_tolerance_minutes: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
@@ -548,6 +554,7 @@ class DepartmentSchedulePlan(Base):
     daily_minutes_planned: Mapped[int | None] = mapped_column(Integer, nullable=True)
     break_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     grace_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    overtime_grace_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     off_shift_tolerance_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     start_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     end_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)

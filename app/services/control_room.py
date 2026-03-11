@@ -101,6 +101,7 @@ class ScheduleContext:
         planned_minutes: int,
         break_minutes: int,
         grace_minutes: int,
+        overtime_grace_minutes: int,
         off_shift_tolerance_minutes: int,
         is_workday: bool,
     ) -> None:
@@ -111,6 +112,7 @@ class ScheduleContext:
         self.planned_minutes = planned_minutes
         self.break_minutes = break_minutes
         self.grace_minutes = grace_minutes
+        self.overtime_grace_minutes = overtime_grace_minutes
         self.off_shift_tolerance_minutes = off_shift_tolerance_minutes
         self.is_workday = is_workday
 
@@ -412,6 +414,11 @@ def _resolve_shift_context(*, employee: Employee, day_date: date, work_rule_map:
     if shift is None:
         shift = employee.shift
     grace_minutes = max(0, int(department_work_rule.grace_minutes)) if department_work_rule is not None else 5
+    overtime_grace_minutes = (
+        max(0, int(department_work_rule.overtime_grace_minutes or 0))
+        if department_work_rule is not None
+        else 0
+    )
     off_shift_tolerance_minutes = (
         max(0, int(department_work_rule.off_shift_tolerance_minutes or 0))
         if department_work_rule is not None
@@ -419,6 +426,8 @@ def _resolve_shift_context(*, employee: Employee, day_date: date, work_rule_map:
     )
     if effective_plan is not None and effective_plan.grace_minutes is not None:
         grace_minutes = max(0, int(effective_plan.grace_minutes))
+    if effective_plan is not None and effective_plan.overtime_grace_minutes is not None:
+        overtime_grace_minutes = max(0, int(effective_plan.overtime_grace_minutes))
     if effective_plan is not None and effective_plan.off_shift_tolerance_minutes is not None:
         off_shift_tolerance_minutes = max(0, int(effective_plan.off_shift_tolerance_minutes))
     planned_minutes = 0
@@ -460,6 +469,7 @@ def _resolve_shift_context(*, employee: Employee, day_date: date, work_rule_map:
         planned_minutes=planned_minutes,
         break_minutes=break_minutes,
         grace_minutes=grace_minutes,
+        overtime_grace_minutes=overtime_grace_minutes,
         off_shift_tolerance_minutes=off_shift_tolerance_minutes,
         is_workday=is_workday,
     )
@@ -798,7 +808,7 @@ def build_control_room_overview(
             employee_today_status == "IN_PROGRESS"
             and today_schedule.is_workday
             and today_schedule.planned_minutes > 0
-            and worked_today_minutes > today_schedule.planned_minutes
+            and worked_today_minutes > (today_schedule.planned_minutes + today_schedule.overtime_grace_minutes)
         )
 
         risk_daily_events: dict[date, list[AttendanceEvent]] = defaultdict(list)
