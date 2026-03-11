@@ -7049,6 +7049,46 @@ button[class*="bg-slate-900"] {
   grid-template-columns: 1fr;
 }
 
+.mc-panel--table-condensed .mc-table-head,
+.mc-panel--table-condensed .mc-table-row:not(.mc-table-row--compact) {
+  grid-template-columns:
+    minmax(148px, 1.3fr)
+    minmax(98px, 0.86fr)
+    minmax(58px, 0.44fr)
+    minmax(88px, 0.66fr)
+    minmax(86px, 0.66fr)
+    minmax(86px, 0.66fr)
+    minmax(98px, 0.72fr)
+    minmax(124px, 0.9fr)
+    minmax(92px, 0.72fr)
+    minmax(140px, 0.98fr);
+  gap: 0.42rem;
+}
+
+.mc-panel--table-condensed .mc-table-head__cell {
+  font-size: 0.66rem;
+}
+
+.mc-panel--table-condensed .mc-table-cell {
+  font-size: 0.78rem;
+  line-height: 1.28;
+}
+
+.mc-panel--table-condensed .mc-table-cell strong {
+  font-size: 0.84rem;
+}
+
+.mc-panel--table-condensed .mc-risk-pill,
+.mc-panel--table-condensed .mc-status-pill {
+  padding: 0.25rem 0.46rem;
+  font-size: 0.68rem;
+}
+
+.mc-panel--table-condensed .mc-table-row {
+  min-height: 64px;
+  padding: 0.5rem 0.44rem;
+}
+
 .mc-panel--table-condensed .mc-table-compact__metrics,
 .mc-panel--table-condensed .mc-table-compact__footer {
   grid-template-columns: repeat(2, minmax(0, 1fr));

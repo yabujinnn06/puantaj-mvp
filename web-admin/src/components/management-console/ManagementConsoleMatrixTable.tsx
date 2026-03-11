@@ -20,8 +20,8 @@ const OVERSCAN = 6
 type TableLayoutMode = 'wide' | 'condensed' | 'stacked'
 
 function resolveLayoutMode(width: number): TableLayoutMode {
-  if (width <= 920) return 'stacked'
-  if (width <= 1380) return 'condensed'
+  if (width <= 760) return 'stacked'
+  if (width <= 1280) return 'condensed'
   return 'wide'
 }
 
@@ -236,6 +236,7 @@ export function ManagementConsoleMatrixTable({
     }
   }, [layoutMode])
 
+  const renderAsTable = layoutMode !== 'stacked'
   const isVirtualized = layoutMode === 'wide'
   const startIndex = isVirtualized ? Math.max(0, Math.floor(scrollTop / WIDE_ROW_HEIGHT) - OVERSCAN) : 0
   const visibleCount = isVirtualized ? Math.ceil(VIEWPORT_HEIGHT / WIDE_ROW_HEIGHT) + OVERSCAN * 2 : items.length
@@ -259,7 +260,7 @@ export function ManagementConsoleMatrixTable({
         </div>
       </div>
 
-      {layoutMode === 'wide' ? (
+      {renderAsTable ? (
         <div className="mc-table-head" role="row">
           {[
             ['employee_name', 'Personel'],
@@ -298,7 +299,7 @@ export function ManagementConsoleMatrixTable({
       >
         <div style={{ height: topSpacer }} aria-hidden="true" />
         {visibleItems.map((item) =>
-          layoutMode === 'wide' ? (
+          renderAsTable ? (
             <WideRow
               key={item.employee.id}
               item={item}
