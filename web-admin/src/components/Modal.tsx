@@ -14,7 +14,7 @@ export function Modal({
   panelClassName = '',
 }: {
   open: boolean
-  title: string
+  title: ReactNode
   onClose: () => void
   children: ReactNode
   placement?: 'center' | 'right'
