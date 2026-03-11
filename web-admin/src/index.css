@@ -4091,6 +4091,21 @@ button[class*="bg-slate-900"] {
 
 .mc-panel--table {
   min-width: 0;
+  overflow-x: hidden;
+}
+
+.mc-table-shell {
+  min-width: 0;
+}
+
+.mc-table-shell.is-table {
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+}
+
+.mc-table-canvas.is-table {
+  min-width: 1180px;
 }
 
 .mc-table-head {
@@ -4136,6 +4151,12 @@ button[class*="bg-slate-900"] {
   height: 620px;
   overflow: auto;
   padding: 0 0.25rem;
+}
+
+.mc-table-viewport.is-table {
+  min-width: 1180px;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .mc-table-viewport.is-auto {
@@ -7065,6 +7086,11 @@ button[class*="bg-slate-900"] {
   gap: 0.42rem;
 }
 
+.mc-panel--table-condensed .mc-table-canvas.is-table,
+.mc-panel--table-condensed .mc-table-viewport.is-table {
+  min-width: 980px;
+}
+
 .mc-panel--table-condensed .mc-table-head__cell {
   font-size: 0.66rem;
 }
@@ -7098,6 +7124,10 @@ button[class*="bg-slate-900"] {
 .mc-panel--table-stacked .mc-table-compact__metrics,
 .mc-panel--table-stacked .mc-table-compact__footer {
   grid-template-columns: 1fr;
+}
+
+.mc-panel--table-stacked .mc-table-shell {
+  overflow: visible;
 }
 
 .mc-panel--table-stacked .mc-table-compact__risk {

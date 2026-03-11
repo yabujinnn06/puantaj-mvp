@@ -19,9 +19,9 @@ const OVERSCAN = 6
 
 type TableLayoutMode = 'wide' | 'condensed' | 'stacked'
 
-function resolveLayoutMode(width: number): TableLayoutMode {
-  if (width <= 760) return 'stacked'
-  if (width <= 1280) return 'condensed'
+function resolveLayoutMode(width: number, viewportWidth: number): TableLayoutMode {
+  if (width <= 640 || viewportWidth <= 820) return 'stacked'
+  if (width <= 1180 || viewportWidth <= 1440) return 'condensed'
   return 'wide'
 }
 
@@ -204,15 +204,14 @@ export function ManagementConsoleMatrixTable({
     if (!panel) return
 
     const applyLayout = (width: number) => {
-      setLayoutMode(resolveLayoutMode(width))
+      const viewportWidth = window.innerWidth || width
+      setLayoutMode(resolveLayoutMode(width, viewportWidth))
     }
 
     applyLayout(panel.getBoundingClientRect().width)
 
     if (typeof ResizeObserver === 'undefined') {
-      const handleResize = () => {
-        applyLayout(panel.getBoundingClientRect().width)
-      }
+      const handleResize = () => applyLayout(panel.getBoundingClientRect().width)
       window.addEventListener('resize', handleResize)
       return () => {
         window.removeEventListener('resize', handleResize)
@@ -252,7 +251,7 @@ export function ManagementConsoleMatrixTable({
       <div className="mc-panel__head">
         <div>
           <p className="mc-kicker">OPERASYON MATRİSİ</p>
-          <h3 className="mc-panel__title">Risk, vardiya uyumu ve ihlal yoğunluğu</h3>
+          <h3 className="mc-panel__title">Çalışan operasyon matrisi</h3>
         </div>
         <div className="mc-meta">
           <span>{total} kayıt</span>
@@ -260,62 +259,68 @@ export function ManagementConsoleMatrixTable({
         </div>
       </div>
 
-      {renderAsTable ? (
-        <div className="mc-table-head" role="row">
-          {[
-            ['employee_name', 'Personel'],
-            ['department_name', 'Departman'],
-            ['risk_score', 'Risk'],
-            ['risk_status', 'Durum'],
-            ['worked_today', 'Bugün'],
-            ['weekly_total', 'Hafta'],
-            ['violation_count_7d', 'İhlal'],
-            ['last_activity', 'Son aktivite'],
-            ['recent_ip', 'IP'],
-            ['location_label', 'Konum'],
-          ].map(([field, label]) => (
-            <div key={field} className="mc-table-head__cell">
-              {field === 'risk_status' || field === 'recent_ip' || field === 'location_label' ? (
-                label
-              ) : (
-                <button type="button" className="mc-table-head__button" onClick={() => onSort(field as SortField)}>
-                  {label}
-                  <span>{sortIcon(filters.sort_by === field, filters.sort_dir)}</span>
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="mc-table-compact__toolbar">
-          <span>Dar görünüm etkin. Satırlar kart düzenine alındı.</span>
-          <span>{visibleStart} - {visibleEnd} gösteriliyor</span>
-        </div>
-      )}
-
-      <div
-        className={`mc-table-viewport ${isVirtualized ? '' : 'is-auto'}`}
-        onScroll={isVirtualized ? (event) => setScrollTop(event.currentTarget.scrollTop) : undefined}
-      >
-        <div style={{ height: topSpacer }} aria-hidden="true" />
-        {visibleItems.map((item) =>
-          renderAsTable ? (
-            <WideRow
-              key={item.employee.id}
-              item={item}
-              onOpenEmployee={onOpenEmployee}
-              selected={selectedEmployeeId === item.employee.id}
-            />
-          ) : (
-            <CompactRow
-              key={item.employee.id}
-              item={item}
-              onOpenEmployee={onOpenEmployee}
-              selected={selectedEmployeeId === item.employee.id}
-            />
-          ),
+      <div className={`mc-table-shell ${renderAsTable ? 'is-table' : 'is-cards'}`}>
+        {renderAsTable ? (
+          <div className="mc-table-head" role="row">
+            {[
+              ['employee_name', 'Personel'],
+              ['department_name', 'Departman'],
+              ['risk_score', 'Risk'],
+              ['risk_status', 'Durum'],
+              ['worked_today', 'Bugün'],
+              ['weekly_total', 'Hafta'],
+              ['violation_count_7d', 'İhlal'],
+              ['last_activity', 'Son aktivite'],
+              ['recent_ip', 'IP'],
+              ['location_label', 'Konum'],
+            ].map(([field, label]) => (
+              <div key={field} className="mc-table-head__cell">
+                {field === 'risk_status' || field === 'recent_ip' || field === 'location_label' ? (
+                  label
+                ) : (
+                  <button type="button" className="mc-table-head__button" onClick={() => onSort(field as SortField)}>
+                    {label}
+                    <span>{sortIcon(filters.sort_by === field, filters.sort_dir)}</span>
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="mc-table-compact__toolbar">
+            <span>Dar görünüm etkin. Satırlar kart düzenine alındı.</span>
+            <span>
+              {visibleStart} - {visibleEnd} gösteriliyor
+            </span>
+          </div>
         )}
-        <div style={{ height: bottomSpacer }} aria-hidden="true" />
+
+        <div
+          className={`mc-table-viewport ${isVirtualized ? '' : 'is-auto'} ${renderAsTable ? 'is-table' : ''}`}
+          onScroll={isVirtualized ? (event) => setScrollTop(event.currentTarget.scrollTop) : undefined}
+        >
+          <div className={`mc-table-canvas ${renderAsTable ? 'is-table' : ''}`}>
+            <div style={{ height: topSpacer }} aria-hidden="true" />
+            {visibleItems.map((item) =>
+              renderAsTable ? (
+                <WideRow
+                  key={item.employee.id}
+                  item={item}
+                  onOpenEmployee={onOpenEmployee}
+                  selected={selectedEmployeeId === item.employee.id}
+                />
+              ) : (
+                <CompactRow
+                  key={item.employee.id}
+                  item={item}
+                  onOpenEmployee={onOpenEmployee}
+                  selected={selectedEmployeeId === item.employee.id}
+                />
+              ),
+            )}
+            <div style={{ height: bottomSpacer }} aria-hidden="true" />
+          </div>
+        </div>
       </div>
 
       <div className="mc-pagination">
