@@ -4567,6 +4567,7 @@ button[class*="bg-slate-900"] {
   justify-content: center;
   align-items: center;
   padding: clamp(1rem, 2vw, 2rem);
+  max-height: 90vh;
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -4589,7 +4590,7 @@ button[class*="bg-slate-900"] {
   position: relative;
   z-index: 1;
   width: min(100%, 880px);
-  max-height: min(92vh, 1040px);
+  max-height: 90vh;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
@@ -4607,7 +4608,7 @@ button[class*="bg-slate-900"] {
 
 .mc-modal__panel--detail {
   width: min(1460px, calc(100vw - 2.5rem));
-  max-height: min(90vh, 1040px);
+  max-height: 90vh;
   container-type: inline-size;
   container-name: detail-modal;
   border-radius: 28px;
@@ -4661,6 +4662,12 @@ button[class*="bg-slate-900"] {
   white-space: nowrap;
 }
 
+.risk-badge {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
 .mc-risk-badge.is-normal {
   background: var(--mc-success-soft);
   color: var(--mc-success);
@@ -4672,6 +4679,24 @@ button[class*="bg-slate-900"] {
 }
 
 .mc-risk-badge.is-critical {
+  background: var(--mc-danger-soft);
+  color: var(--mc-danger);
+}
+
+.risk-badge.is-normal,
+.risk-badge--normal {
+  background: var(--mc-success-soft);
+  color: var(--mc-success);
+}
+
+.risk-badge.is-watch,
+.risk-badge--watch {
+  background: var(--mc-watch-soft);
+  color: var(--mc-watch);
+}
+
+.risk-badge.is-critical,
+.risk-badge--critical {
   background: var(--mc-danger-soft);
   color: var(--mc-danger);
 }
@@ -5649,11 +5674,12 @@ button[class*="bg-slate-900"] {
   align-content: start;
 }
 
-.mc-ops__aside--sticky {
+.mc-ops__aside--sticky,
+.operasyon-dosyasi__right-column {
   position: sticky;
   top: 0;
   align-self: start;
-  max-height: calc(90vh - 8rem);
+  max-height: 100vh;
   overflow-y: auto;
   padding-right: 0.2rem;
 }

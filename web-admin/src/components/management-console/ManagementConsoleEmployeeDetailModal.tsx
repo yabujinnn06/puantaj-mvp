@@ -459,7 +459,7 @@ export function ManagementConsoleEmployeeDetailModal({
         employee ? (
           <span className="mc-modal__title-group">
             <span>{employee.employee.full_name} Â· Operasyon dosyasÄ±</span>
-            <span className={`mc-risk-badge ${riskClass(employee.risk_status)}`}>
+            <span className={`mc-risk-badge risk-badge ${riskClass(employee.risk_status)}`}>
               {employee.risk_score} Â· {riskStatusLabel(employee.risk_status)}
             </span>
           </span>
@@ -655,7 +655,7 @@ export function ManagementConsoleEmployeeDetailModal({
               </section>
             </main>
 
-            <aside className="mc-ops__aside mc-ops__aside--sticky">
+            <aside className="mc-ops__aside mc-ops__aside--sticky operasyon-dosyasi__right-column">
               <section className="mc-ops__section mc-ops__section--sticky">
                 <div className="mc-ops__section-head">
                   <div><h4>MÃ¼dahale merkezi</h4><p>Ä°nceleme, kontrol ve aÃ§Ä±klama kayÄ±tlarÄ±</p></div>
