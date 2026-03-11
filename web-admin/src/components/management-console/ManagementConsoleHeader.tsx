@@ -12,13 +12,14 @@ export function ManagementConsoleHeader({
   onRefresh: () => void
 }) {
   return (
-    <header className="mc-header">
+    <header className="mc-header mc-header--control-room">
       <div className="mc-header__row">
         <div className="mc-header__copy">
-          <p className="mc-kicker">ERP OPERASYON MERKEZİ</p>
+          <p className="mc-kicker">YÖNETİM KONSOLU</p>
           <h2>Ana Panel</h2>
           <p>
-            Yönetim konsolu, canlı risk matrisi, claim işlemleri, konum izleme ve bildirim akışı tek sayfada toplandı.
+            Çalışan operasyon matrisi ana odak olarak korunur; harita, bildirim ve yardımcı analitik
+            katmanları ikincil rolde çalışır.
           </p>
         </div>
 
@@ -30,30 +31,18 @@ export function ManagementConsoleHeader({
             Bildirimler
           </Link>
           <Link to="/attendance-events" className="mc-button mc-button--ghost">
-            Yoklama Kayıtları
+            Yoklama kayıtları
           </Link>
           <button type="button" className="mc-button mc-button--primary" onClick={onRefresh}>
-            Veriyi Yenile
+            Veriyi yenile
           </button>
         </div>
       </div>
 
-      <div className="mc-erp-banner">
-        <article className="mc-erp-banner__item">
-          <span>Son senkron</span>
-          <strong>{formatDateTime(generatedAtUtc)}</strong>
-          <small>Panel verisi güncel tutuluyor</small>
-        </article>
-        <article className="mc-erp-banner__item">
-          <span>Çalışma modu</span>
-          <strong>ERP görünümü</strong>
-          <small>Yoğun bilgi, dar boşluk, tek odak</small>
-        </article>
-        <article className="mc-erp-banner__item">
-          <span>Operasyon hattı</span>
-          <strong>Risk + Yoklama + Cihaz</strong>
-          <small>Ayrı dashboard akışları birleştirildi</small>
-        </article>
+      <div className="mc-header__meta-strip">
+        <span>Son senkron: {formatDateTime(generatedAtUtc)}</span>
+        <span>Görünüm: operasyon matrisi öncelikli</span>
+        <span>Rail: harita ve bildirim izlemesi</span>
       </div>
     </header>
   )

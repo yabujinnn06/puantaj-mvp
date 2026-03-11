@@ -20,156 +20,165 @@ export function ManagementConsoleFilters({
   onReset: () => void
 }) {
   return (
-    <section className="mc-panel mc-panel--filters">
-      <div className="mc-panel__head">
+    <section className="mc-panel mc-panel--filters mc-panel--form-first">
+      <div className="mc-panel__head mc-panel__head--tight">
         <div>
           <p className="mc-kicker">FİLTRE MERKEZİ</p>
           <h3 className="mc-panel__title">Analiz kapsamı ve görünüm davranışı</h3>
         </div>
+        <div className="mc-meta">
+          <span>{activeFilterEntries.length} aktif filtre</span>
+          <span>Form öncelikli görünüm</span>
+        </div>
       </div>
 
-      <div className="mc-filter-grid">
-        <label className="mc-field">
-          <span>Personel / ID</span>
-          <input
-            value={filterForm.q}
-            onChange={(event) => onChange({ ...filterForm, q: event.target.value })}
-            placeholder="Ad, soyad veya #ID"
-          />
-        </label>
-        <label className="mc-field">
-          <span>Bölge</span>
-          <select
-            value={filterForm.region_id}
-            onChange={(event) => onChange({ ...filterForm, region_id: event.target.value })}
-          >
-            <option value="">Tüm bölgeler</option>
-            {regions.map((region) => (
-              <option key={region.id} value={region.id}>
-                {region.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="mc-field">
-          <span>Departman</span>
-          <select
-            value={filterForm.department_id}
-            onChange={(event) => onChange({ ...filterForm, department_id: event.target.value })}
-          >
-            <option value="">Tüm departmanlar</option>
-            {departments.map((department) => (
-              <option key={department.id} value={department.id}>
-                {department.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="mc-field">
-          <span>Başlangıç</span>
-          <input
-            type="date"
-            value={filterForm.start_date}
-            onChange={(event) => onChange({ ...filterForm, start_date: event.target.value })}
-          />
-        </label>
-        <label className="mc-field">
-          <span>Bitiş</span>
-          <input
-            type="date"
-            value={filterForm.end_date}
-            min={filterForm.start_date || undefined}
-            onChange={(event) => onChange({ ...filterForm, end_date: event.target.value })}
-          />
-        </label>
-        <label className="mc-field">
-          <span>Harita günü</span>
-          <input
-            type="date"
-            value={filterForm.map_date}
-            onChange={(event) => onChange({ ...filterForm, map_date: event.target.value })}
-          />
-        </label>
-        <label className="mc-field">
-          <span>Risk alt sınır</span>
-          <input
-            type="number"
-            min={0}
-            max={100}
-            value={filterForm.risk_min}
-            onChange={(event) => onChange({ ...filterForm, risk_min: event.target.value })}
-            placeholder="0"
-          />
-        </label>
-        <label className="mc-field">
-          <span>Risk üst sınır</span>
-          <input
-            type="number"
-            min={0}
-            max={100}
-            value={filterForm.risk_max}
-            onChange={(event) => onChange({ ...filterForm, risk_max: event.target.value })}
-            placeholder="100"
-          />
-        </label>
-        <label className="mc-field">
-          <span>Risk seviyesi</span>
-          <select
-            value={filterForm.risk_status}
-            onChange={(event) =>
-              onChange({
-                ...filterForm,
-                risk_status: event.target.value as FilterFormState['risk_status'],
-              })
-            }
-          >
-            <option value="">Tüm seviyeler</option>
-            <option value="NORMAL">Normal</option>
-            <option value="WATCH">İzlemeli</option>
-            <option value="CRITICAL">Kritik</option>
-          </select>
-        </label>
-        <label className="mc-field">
-          <span>Sıralama</span>
-          <select
-            value={filterForm.sort_by}
-            onChange={(event) => onChange({ ...filterForm, sort_by: event.target.value as SortField })}
-          >
-            {SORT_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="mc-field">
-          <span>Yön</span>
-          <select
-            value={filterForm.sort_dir}
-            onChange={(event) =>
-              onChange({
-                ...filterForm,
-                sort_dir: event.target.value as FilterFormState['sort_dir'],
-              })
-            }
-          >
-            <option value="desc">Azalan</option>
-            <option value="asc">Artan</option>
-          </select>
-        </label>
-        <label className="mc-field">
-          <span>Sayfa limiti</span>
-          <select
-            value={filterForm.limit}
-            onChange={(event) => onChange({ ...filterForm, limit: Number(event.target.value) })}
-          >
-            {LIMIT_OPTIONS.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
-        </label>
+      <div className="mc-filter-stack">
+        <div className="mc-filter-grid mc-filter-grid--primary">
+          <label className="mc-field">
+            <span>Personel / ID</span>
+            <input
+              value={filterForm.q}
+              onChange={(event) => onChange({ ...filterForm, q: event.target.value })}
+              placeholder="Ad, soyad veya #ID"
+            />
+          </label>
+          <label className="mc-field">
+            <span>Bölge</span>
+            <select
+              value={filterForm.region_id}
+              onChange={(event) => onChange({ ...filterForm, region_id: event.target.value })}
+            >
+              <option value="">Tüm bölgeler</option>
+              {regions.map((region) => (
+                <option key={region.id} value={region.id}>
+                  {region.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="mc-field">
+            <span>Departman</span>
+            <select
+              value={filterForm.department_id}
+              onChange={(event) => onChange({ ...filterForm, department_id: event.target.value })}
+            >
+              <option value="">Tüm departmanlar</option>
+              {departments.map((department) => (
+                <option key={department.id} value={department.id}>
+                  {department.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="mc-field">
+            <span>Başlangıç</span>
+            <input
+              type="date"
+              value={filterForm.start_date}
+              onChange={(event) => onChange({ ...filterForm, start_date: event.target.value })}
+            />
+          </label>
+          <label className="mc-field">
+            <span>Bitiş</span>
+            <input
+              type="date"
+              value={filterForm.end_date}
+              min={filterForm.start_date || undefined}
+              onChange={(event) => onChange({ ...filterForm, end_date: event.target.value })}
+            />
+          </label>
+          <label className="mc-field">
+            <span>Harita günü</span>
+            <input
+              type="date"
+              value={filterForm.map_date}
+              onChange={(event) => onChange({ ...filterForm, map_date: event.target.value })}
+            />
+          </label>
+        </div>
+
+        <div className="mc-filter-grid mc-filter-grid--secondary">
+          <label className="mc-field">
+            <span>Risk alt sınır</span>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={filterForm.risk_min}
+              onChange={(event) => onChange({ ...filterForm, risk_min: event.target.value })}
+              placeholder="0"
+            />
+          </label>
+          <label className="mc-field">
+            <span>Risk üst sınır</span>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={filterForm.risk_max}
+              onChange={(event) => onChange({ ...filterForm, risk_max: event.target.value })}
+              placeholder="100"
+            />
+          </label>
+          <label className="mc-field">
+            <span>Risk seviyesi</span>
+            <select
+              value={filterForm.risk_status}
+              onChange={(event) =>
+                onChange({
+                  ...filterForm,
+                  risk_status: event.target.value as FilterFormState['risk_status'],
+                })
+              }
+            >
+              <option value="">Tüm seviyeler</option>
+              <option value="NORMAL">Normal</option>
+              <option value="WATCH">İzlemeli</option>
+              <option value="CRITICAL">Kritik</option>
+            </select>
+          </label>
+          <label className="mc-field">
+            <span>Sıralama</span>
+            <select
+              value={filterForm.sort_by}
+              onChange={(event) => onChange({ ...filterForm, sort_by: event.target.value as SortField })}
+            >
+              {SORT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="mc-field">
+            <span>Yön</span>
+            <select
+              value={filterForm.sort_dir}
+              onChange={(event) =>
+                onChange({
+                  ...filterForm,
+                  sort_dir: event.target.value as FilterFormState['sort_dir'],
+                })
+              }
+            >
+              <option value="desc">Azalan</option>
+              <option value="asc">Artan</option>
+            </select>
+          </label>
+          <label className="mc-field">
+            <span>Sayfa limiti</span>
+            <select
+              value={filterForm.limit}
+              onChange={(event) => onChange({ ...filterForm, limit: Number(event.target.value) })}
+            >
+              {LIMIT_OPTIONS.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
 
       <div className="mc-filter-footer">

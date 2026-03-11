@@ -27,7 +27,15 @@ import { ManagementConsoleMapPanel } from '../components/management-console/Mana
 import { ManagementConsoleMatrixTable } from '../components/management-console/ManagementConsoleMatrixTable'
 import { ManagementConsoleNotificationPanel } from '../components/management-console/ManagementConsoleNotificationPanel'
 import { defaultFilters, parseNumber, toOverviewParams, type FilterFormState, type SortField } from '../components/management-console/types'
-import { formatClockMinutes, formatDateTime, locationStatusLabel, riskStatusLabel, systemStatusClass, systemStatusLabel } from '../components/management-console/utils'
+import {
+  formatClockMinutes,
+  formatDateTime,
+  locationStatusLabel,
+  riskClass,
+  riskStatusLabel,
+  systemStatusClass,
+  systemStatusLabel,
+} from '../components/management-console/utils'
 import { useToast } from '../hooks/useToast'
 
 const inviteSchema = z.object({
@@ -43,7 +51,11 @@ const todayLabel = (status: 'NOT_STARTED' | 'IN_PROGRESS' | 'FINISHED') =>
 const leaveLabel = (status: 'APPROVED' | 'PENDING' | 'REJECTED') =>
   status === 'APPROVED' ? 'Onaylı' : status === 'REJECTED' ? 'Reddedildi' : 'Bekliyor'
 const leaveClass = (status: 'APPROVED' | 'PENDING' | 'REJECTED') =>
-  status === 'APPROVED' ? 'mc-status-pill is-normal' : status === 'REJECTED' ? 'mc-status-pill is-critical' : 'mc-status-pill is-watch'
+  status === 'APPROVED'
+    ? 'mc-status-pill is-normal'
+    : status === 'REJECTED'
+      ? 'mc-status-pill is-critical'
+      : 'mc-status-pill is-watch'
 const shortFingerprint = (value: string) => (value.length <= 18 ? value : `${value.slice(0, 8)}...${value.slice(-8)}`)
 
 function copyWithFallback(text: string): Promise<void> {
@@ -85,7 +97,10 @@ export function ControlRoomPage() {
   const leavesQuery = useQuery({ queryKey: ['leaves', 'management-console'], queryFn: () => getLeaves({}) })
 
   const overviewParams = useMemo(() => toOverviewParams(appliedFilters, page), [appliedFilters, page])
-  const overviewQuery = useQuery({ queryKey: ['control-room-overview', overviewParams], queryFn: () => getControlRoomOverview(overviewParams) })
+  const overviewQuery = useQuery({
+    queryKey: ['control-room-overview', overviewParams],
+    queryFn: () => getControlRoomOverview(overviewParams),
+  })
   const snapshotQuery = useQuery({
     queryKey: ['dashboard-employee-snapshot', employeeTargetId],
     queryFn: () => getDashboardEmployeeSnapshot({ employee_id: Number(employeeTargetId) }),
@@ -111,26 +126,37 @@ export function ControlRoomPage() {
     setEmployeeTargetId(String(employeeId))
     setDetailOpen(true)
   }
+
   const applyFilters = () => {
     const next = { ...filterForm }
     setAppliedFilters(next)
     setPage(1)
-    filterAuditMutation.mutate({ filters: { ...toOverviewParams(next, 1) } as Record<string, unknown>, total_results: overviewQuery.data?.total })
+    filterAuditMutation.mutate({
+      filters: { ...toOverviewParams(next, 1) } as Record<string, unknown>,
+      total_results: overviewQuery.data?.total,
+    })
   }
+
   const resetFilters = () => {
     const next = defaultFilters()
     setFilterForm(next)
     setAppliedFilters(next)
     setPage(1)
   }
+
   const handleSort = (field: SortField) => {
-    const sort_dir: FilterFormState['sort_dir'] = appliedFilters.sort_by === field && appliedFilters.sort_dir === 'desc' ? 'asc' : 'desc'
+    const sort_dir: FilterFormState['sort_dir'] =
+      appliedFilters.sort_by === field && appliedFilters.sort_dir === 'desc' ? 'asc' : 'desc'
     const next = { ...appliedFilters, sort_by: field, sort_dir }
     setFilterForm(next)
     setAppliedFilters(next)
     setPage(1)
-    filterAuditMutation.mutate({ filters: { ...toOverviewParams(next, 1) } as Record<string, unknown>, total_results: overviewQuery.data?.total })
+    filterAuditMutation.mutate({
+      filters: { ...toOverviewParams(next, 1) } as Record<string, unknown>,
+      total_results: overviewQuery.data?.total,
+    })
   }
+
   const createInvite = () => {
     setInviteResult(null)
     setActionError(null)
@@ -147,7 +173,11 @@ export function ControlRoomPage() {
       await copyWithFallback(value)
       pushToast({ variant: 'success', title: 'Kopyalandı', description: 'Değer panoya alındı.' })
     } catch {
-      pushToast({ variant: 'error', title: 'Kopyalama başarısız', description: 'Tarayıcı panoya kopyalamaya izin vermedi.' })
+      pushToast({
+        variant: 'error',
+        title: 'Kopyalama başarısız',
+        description: 'Tarayıcı panoya kopyalamaya izin vermedi.',
+      })
     }
   }
 
@@ -158,7 +188,9 @@ export function ControlRoomPage() {
     devicesQuery.isLoading ||
     leavesQuery.isLoading ||
     overviewQuery.isLoading
-  ) return <LoadingBlock label="ERP paneli yükleniyor..." />
+  ) {
+    return <LoadingBlock label="ERP paneli yükleniyor..." />
+  }
 
   if (
     regionsQuery.isError ||
@@ -168,57 +200,105 @@ export function ControlRoomPage() {
     leavesQuery.isError ||
     overviewQuery.isError ||
     !overviewQuery.data
-  ) return <ErrorBlock message="Ana panel verileri alınamadı." />
+  ) {
+    return <ErrorBlock message="Ana panel verileri alınamadı." />
+  }
 
   const employees = employeesQuery.data ?? []
   const devices = devicesQuery.data ?? []
   const leaves = leavesQuery.data ?? []
   const summary = overviewQuery.data.summary
-  const totalPages = Math.max(1, Math.ceil((overviewQuery.data.total ?? 0) / (overviewQuery.data.limit || appliedFilters.limit)))
+  const totalPages = Math.max(
+    1,
+    Math.ceil((overviewQuery.data.total ?? 0) / (overviewQuery.data.limit || appliedFilters.limit)),
+  )
   const histogramMax = Math.max(1, ...(summary.risk_histogram ?? []).map((item) => item.count))
   const trendMax = Math.max(1, ...(summary.weekly_trend ?? []).map((item) => item.value))
   const selectedEmployee = employees.find((item) => String(item.id) === employeeTargetId) ?? null
-  const selectedOverviewItem = overviewQuery.data.items.find((item) => String(item.employee.id) === employeeTargetId) ?? null
-  const departmentNameById = new Map((departmentsQuery.data ?? []).map((department) => [department.id, department.name]))
+  const selectedOverviewItem =
+    overviewQuery.data.items.find((item) => String(item.employee.id) === employeeTargetId) ?? null
+  const focusEmployee = selectedOverviewItem ?? overviewQuery.data.items[0] ?? null
+  const departmentNameById = new Map(
+    (departmentsQuery.data ?? []).map((department) => [department.id, department.name]),
+  )
   const selectedDepartmentName =
-    selectedEmployee?.department_id != null ? (departmentNameById.get(selectedEmployee.department_id) ?? `Departman #${selectedEmployee.department_id}`) : 'Atanmamış'
+    selectedEmployee?.department_id != null
+      ? (departmentNameById.get(selectedEmployee.department_id) ?? `Departman #${selectedEmployee.department_id}`)
+      : 'Atanmamış'
+
   const activeFilterEntries = [
     overviewQuery.data.active_filters.q ? `Sorgu: ${overviewQuery.data.active_filters.q}` : null,
     overviewQuery.data.active_filters.start_date && overviewQuery.data.active_filters.end_date
       ? `Analiz: ${overviewQuery.data.active_filters.start_date} - ${overviewQuery.data.active_filters.end_date}`
       : null,
-    overviewQuery.data.active_filters.map_date ? `Harita günü: ${overviewQuery.data.active_filters.map_date}` : null,
-    overviewQuery.data.active_filters.region_id ? `Bölge #${overviewQuery.data.active_filters.region_id}` : null,
-    overviewQuery.data.active_filters.department_id ? `Departman #${overviewQuery.data.active_filters.department_id}` : null,
-    overviewQuery.data.active_filters.risk_status ? `Durum: ${riskStatusLabel(overviewQuery.data.active_filters.risk_status)}` : null,
+    overviewQuery.data.active_filters.map_date
+      ? `Harita günü: ${overviewQuery.data.active_filters.map_date}`
+      : null,
+    overviewQuery.data.active_filters.region_id
+      ? `Bölge #${overviewQuery.data.active_filters.region_id}`
+      : null,
+    overviewQuery.data.active_filters.department_id
+      ? `Departman #${overviewQuery.data.active_filters.department_id}`
+      : null,
+    overviewQuery.data.active_filters.risk_status
+      ? `Durum: ${riskStatusLabel(overviewQuery.data.active_filters.risk_status)}`
+      : null,
     overviewQuery.data.active_filters.include_inactive ? 'Pasif personel dahil' : null,
     `Sıralama: ${overviewQuery.data.active_filters.sort_by} / ${overviewQuery.data.active_filters.sort_dir === 'desc' ? 'Azalan' : 'Artan'}`,
     `Limit: ${overviewQuery.data.active_filters.limit}`,
   ].filter(Boolean) as string[]
+
   const recentLeaves = [...leaves].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 5)
+  const recentEvents = overviewQuery.data.recent_events.slice(0, 4)
   const pendingLeaveCount = leaves.filter((leave) => leave.status === 'PENDING').length
-  const recentEvents = overviewQuery.data.recent_events.slice(0, 6)
   const topDepartments = summary.department_metrics.slice(0, 5)
   const activeDeviceCount = devices.filter((device) => device.is_active).length
+  const focusSignals = focusEmployee
+    ? [focusEmployee.active_measure?.label, ...focusEmployee.attention_flags.slice(0, 2).map((flag) => flag.label)]
+        .filter(Boolean)
+        .slice(0, 3)
+    : []
 
   return (
     <>
-      <div className="mc-console mc-console--erp">
-        <ManagementConsoleHeader generatedAtUtc={overviewQuery.data.generated_at_utc} systemStatus={summary.system_status} onRefresh={() => void overviewQuery.refetch()} />
+      <div className="mc-console mc-console--erp mc-console--control-room">
+        <ManagementConsoleHeader
+          generatedAtUtc={overviewQuery.data.generated_at_utc}
+          systemStatus={summary.system_status}
+          onRefresh={() => void overviewQuery.refetch()}
+        />
+
         <ManagementConsoleKpiCards summary={summary} />
 
-        <section className="mc-erp-shell">
-          <section className="mc-panel mc-erp-focus">
-            <div className="mc-panel__head">
+        <ManagementConsoleFilters
+          filterForm={filterForm}
+          regions={regionsQuery.data ?? []}
+          departments={departmentsQuery.data ?? []}
+          activeFilterEntries={activeFilterEntries}
+          onChange={setFilterForm}
+          onApply={applyFilters}
+          onReset={resetFilters}
+        />
+
+        <section className="mc-workbench">
+          <section className="mc-panel mc-workbench__focus">
+            <div className="mc-panel__head mc-panel__head--tight">
               <div>
                 <p className="mc-kicker">PERSONEL ODAĞI</p>
-                <h3 className="mc-panel__title">Tek personel görünümü ve claim aksiyonu</h3>
+                <h3 className="mc-panel__title">Seçili personel özeti ve operasyon bağlamı</h3>
               </div>
-              {selectedOverviewItem ? (
-                <div className="mc-erp-chip-row">
-                  <span className="mc-chip">Risk {selectedOverviewItem.risk_score}</span>
-                  <span className="mc-chip">{todayLabel(selectedOverviewItem.today_status)}</span>
-                  <span className="mc-chip">{riskStatusLabel(selectedOverviewItem.risk_status)}</span>
+              {focusEmployee ? (
+                <div className="mc-workbench__head-actions">
+                  <span className={`mc-status-pill ${riskClass(focusEmployee.risk_status)}`}>
+                    {riskStatusLabel(focusEmployee.risk_status)}
+                  </span>
+                  <button
+                    type="button"
+                    className="mc-button mc-button--secondary"
+                    onClick={() => openEmployee(focusEmployee.employee.id)}
+                  >
+                    Operasyon dosyasını aç
+                  </button>
                 </div>
               ) : null}
             </div>
@@ -229,100 +309,291 @@ export function ControlRoomPage() {
               value={employeeTargetId}
               onChange={setEmployeeTargetId}
               placeholder="Çalışan adı veya #ID"
-              helperText="Tablodan satır seçimi de bu alanı otomatik doldurur."
+              helperText="Matriste seçtiğiniz satır bu alanı otomatik doldurur."
             />
 
-            {!employeeTargetId ? <div className="mc-empty-state">Özeti açmak için bir personel seçin.</div> : null}
-            {employeeTargetId && snapshotQuery.isLoading ? <LoadingBlock label="Personel özeti yükleniyor..." /> : null}
-            {employeeTargetId && snapshotQuery.isError ? <ErrorBlock message="Personel özeti alınamadı." /> : null}
-
-            {snapshotQuery.data ? (
+            {focusEmployee ? (
               <>
-                <div className="mc-erp-employee-head">
-                  <div>
-                    <strong>{selectedEmployee?.full_name ?? snapshotQuery.data.employee.full_name}</strong>
-                    <p>#{snapshotQuery.data.employee.id} · {selectedDepartmentName} · {formatDateTime(snapshotQuery.data.generated_at_utc)}</p>
-                  </div>
-                  <div className="mc-erp-chip-row">
-                    <span className="mc-chip">{todayLabel(snapshotQuery.data.today_status)}</span>
-                    <span className="mc-chip">Cihaz {snapshotQuery.data.active_devices}/{snapshotQuery.data.total_devices}</span>
-                  </div>
-                </div>
-
-                <div className="mc-erp-mini-grid">
-                  <article className="mc-erp-stat"><span>Bu ay net süre</span><strong><MinuteDisplay minutes={snapshotQuery.data.current_month.worked_minutes} /></strong><small>{snapshotQuery.data.current_month.incomplete_days} eksik gün</small></article>
-                  <article className="mc-erp-stat"><span>Plan üstü süre</span><strong><MinuteDisplay minutes={snapshotQuery.data.current_month.plan_overtime_minutes} /></strong><small>Kurala göre ekstra</small></article>
-                  <article className="mc-erp-stat"><span>Yasal fazla mesai</span><strong><MinuteDisplay minutes={snapshotQuery.data.current_month.overtime_minutes} /></strong><small>Bordro takibi</small></article>
-                  <article className="mc-erp-stat"><span>Son konum</span><strong>{snapshotQuery.data.latest_location ? `${snapshotQuery.data.latest_location.lat.toFixed(5)}, ${snapshotQuery.data.latest_location.lon.toFixed(5)}` : '-'}</strong><small>{snapshotQuery.data.latest_location ? locationStatusLabel(snapshotQuery.data.latest_location.location_status) : 'Konum yok'}</small></article>
-                </div>
-
-                <div className="mc-erp-focus-grid">
-                  <section className="mc-erp-card">
-                    <div className="mc-erp-card__head"><strong>Aylık karşılaştırma</strong><span>{monthLabel(snapshotQuery.data.current_month.year, snapshotQuery.data.current_month.month)}</span></div>
-                    <div className="mc-erp-card__body">
-                      <div className="mc-erp-data-row"><span>Bu ay net</span><strong><MinuteDisplay minutes={snapshotQuery.data.current_month.worked_minutes} /></strong></div>
-                      <div className="mc-erp-data-row"><span>Bu ay plan üstü</span><strong><MinuteDisplay minutes={snapshotQuery.data.current_month.plan_overtime_minutes} /></strong></div>
-                      <div className="mc-erp-data-row"><span>Geçen ay net</span><strong><MinuteDisplay minutes={snapshotQuery.data.previous_month.worked_minutes} /></strong></div>
-                      <div className="mc-erp-data-row"><span>Geçen ay yasal</span><strong><MinuteDisplay minutes={snapshotQuery.data.previous_month.overtime_minutes} /></strong></div>
+                <section className="mc-focus-card">
+                  <div className="mc-focus-card__identity">
+                    <div>
+                      <p className="mc-focus-card__eyebrow">
+                        {selectedOverviewItem ? 'Seçili personel' : 'Önerilen odak'}
+                      </p>
+                      <h3>{focusEmployee.employee.full_name}</h3>
+                      <p>
+                        #{focusEmployee.employee.id} · {focusEmployee.department_name ?? 'Departman atanmadı'} ·{' '}
+                        {focusEmployee.shift_window_label ?? 'Plan bilgisi yok'}
+                      </p>
                     </div>
-                  </section>
-                  <section className="mc-erp-card">
-                    <div className="mc-erp-card__head"><strong>Canlı sinyal</strong><span>Son olay ve konum</span></div>
-                    <div className="mc-erp-card__body">
-                      <div className="mc-erp-data-row"><span>Son puantaj</span><strong>{snapshotQuery.data.last_event ? `${attendanceTypeLabel(snapshotQuery.data.last_event.event_type)} · ${formatDateTime(snapshotQuery.data.last_event.ts_utc)}` : 'Kayıt yok'}</strong></div>
-                      <div className="mc-erp-data-row"><span>Konum durumu</span><strong>{snapshotQuery.data.last_event ? locationStatusLabel(snapshotQuery.data.last_event.location_status) : '-'}</strong></div>
-                      <div className="mc-erp-data-row"><span>Doğruluk</span><strong>{snapshotQuery.data.latest_location?.accuracy_m != null ? `${Math.round(snapshotQuery.data.latest_location.accuracy_m)} m` : '-'}</strong></div>
-                      <div className="mc-erp-data-row"><span>Cihaz</span><strong>{snapshotQuery.data.last_event ? `#${snapshotQuery.data.last_event.device_id}` : '-'}</strong></div>
+                    <div className="mc-focus-card__status">
+                      <strong>Risk {focusEmployee.risk_score}</strong>
+                      <span>{todayLabel(focusEmployee.today_status)}</span>
                     </div>
-                  </section>
-                </div>
+                  </div>
 
-                <section className="mc-erp-card">
-                  <div className="mc-erp-card__head"><strong>Cihaz parkuru</strong><span>İlk 6 kayıt</span></div>
-                  {snapshotQuery.data.devices.length === 0 ? <div className="mc-empty-state">Bu personele bağlı cihaz bulunmuyor.</div> : (
-                    <div className="mc-erp-device-list">
-                      {snapshotQuery.data.devices.slice(0, 6).map((device) => (
-                        <article key={device.id} className="mc-erp-device-row">
-                          <div><strong>#{device.id} · {shortFingerprint(device.device_fingerprint)}</strong><p>Oluşturma: {formatDateTime(device.created_at)}</p></div>
-                          <div className="mc-erp-device-row__meta"><span className={device.is_active ? 'mc-status-pill is-normal' : 'mc-status-pill is-critical'}>{device.is_active ? 'Aktif' : 'Pasif'}</span><small>Portal izi: {formatDateTime(device.last_seen_at_utc)}</small></div>
-                        </article>
+                  <div className="mc-focus-card__metrics">
+                    <article className="mc-focus-metric">
+                      <span>Bugün</span>
+                      <strong>
+                        <MinuteDisplay minutes={focusEmployee.worked_today_minutes} />
+                      </strong>
+                      <small>{focusEmployee.shift_name ?? 'Varsayılan vardiya'}</small>
+                    </article>
+                    <article className="mc-focus-metric">
+                      <span>Hafta</span>
+                      <strong>
+                        <MinuteDisplay minutes={focusEmployee.weekly_total_minutes} />
+                      </strong>
+                      <small>{focusEmployee.violation_count_7d} ihlal / 7 gün</small>
+                    </article>
+                    <article className="mc-focus-metric">
+                      <span>Son aktivite</span>
+                      <strong>{formatDateTime(focusEmployee.last_activity_utc)}</strong>
+                      <small>{focusEmployee.recent_ip ?? 'IP yok'}</small>
+                    </article>
+                    <article className="mc-focus-metric">
+                      <span>Konum</span>
+                      <strong>{focusEmployee.location_label ?? '-'}</strong>
+                      <small>
+                        {locationStatusLabel(focusEmployee.latest_location?.location_status ?? 'NO_LOCATION')}
+                      </small>
+                    </article>
+                  </div>
+
+                  {focusSignals.length ? (
+                    <div className="mc-focus-card__signals">
+                      {focusSignals.map((label) => (
+                        <span key={label} className="mc-chip">
+                          {label}
+                        </span>
                       ))}
                     </div>
-                  )}
+                  ) : null}
                 </section>
+
+                {employeeTargetId && snapshotQuery.isLoading ? (
+                  <LoadingBlock label="Personel özeti yükleniyor..." />
+                ) : null}
+                {employeeTargetId && snapshotQuery.isError ? (
+                  <ErrorBlock message="Personel özeti alınamadı." />
+                ) : null}
+
+                {snapshotQuery.data ? (
+                  <div className="mc-focus-support">
+                    <article className="mc-panel mc-panel--subtle">
+                      <div className="mc-panel__head mc-panel__head--tight">
+                        <div>
+                          <p className="mc-kicker">AYLIK RİTİM</p>
+                          <h3 className="mc-panel__title">
+                            {monthLabel(
+                              snapshotQuery.data.current_month.year,
+                              snapshotQuery.data.current_month.month,
+                            )}
+                          </h3>
+                        </div>
+                      </div>
+                      <div className="mc-focus-data-list">
+                        <div className="mc-focus-data-row">
+                          <span>Bu ay net</span>
+                          <strong>
+                            <MinuteDisplay minutes={snapshotQuery.data.current_month.worked_minutes} />
+                          </strong>
+                        </div>
+                        <div className="mc-focus-data-row">
+                          <span>Plan üstü</span>
+                          <strong>
+                            <MinuteDisplay minutes={snapshotQuery.data.current_month.plan_overtime_minutes} />
+                          </strong>
+                        </div>
+                        <div className="mc-focus-data-row">
+                          <span>Yasal mesai</span>
+                          <strong>
+                            <MinuteDisplay minutes={snapshotQuery.data.current_month.overtime_minutes} />
+                          </strong>
+                        </div>
+                        <div className="mc-focus-data-row">
+                          <span>Eksik gün</span>
+                          <strong>{snapshotQuery.data.current_month.incomplete_days}</strong>
+                        </div>
+                      </div>
+                    </article>
+
+                    <article className="mc-panel mc-panel--subtle">
+                      <div className="mc-panel__head mc-panel__head--tight">
+                        <div>
+                          <p className="mc-kicker">SON SİNYAL</p>
+                          <h3 className="mc-panel__title">Puantaj ve konum görünümü</h3>
+                        </div>
+                      </div>
+                      <div className="mc-focus-data-list">
+                        <div className="mc-focus-data-row">
+                          <span>Son puantaj</span>
+                          <strong>
+                            {snapshotQuery.data.last_event
+                              ? `${attendanceTypeLabel(snapshotQuery.data.last_event.event_type)} · ${formatDateTime(snapshotQuery.data.last_event.ts_utc)}`
+                              : 'Kayıt yok'}
+                          </strong>
+                        </div>
+                        <div className="mc-focus-data-row">
+                          <span>Konum durumu</span>
+                          <strong>
+                            {snapshotQuery.data.last_event
+                              ? locationStatusLabel(snapshotQuery.data.last_event.location_status)
+                              : '-'}
+                          </strong>
+                        </div>
+                        <div className="mc-focus-data-row">
+                          <span>Doğruluk</span>
+                          <strong>
+                            {snapshotQuery.data.latest_location?.accuracy_m != null
+                              ? `${Math.round(snapshotQuery.data.latest_location.accuracy_m)} m`
+                              : '-'}
+                          </strong>
+                        </div>
+                        <div className="mc-focus-data-row">
+                          <span>Cihaz</span>
+                          <strong>
+                            {snapshotQuery.data.last_event ? `#${snapshotQuery.data.last_event.device_id}` : '-'}
+                          </strong>
+                        </div>
+                      </div>
+                    </article>
+
+                    <article className="mc-panel mc-panel--subtle">
+                      <div className="mc-panel__head mc-panel__head--tight">
+                        <div>
+                          <p className="mc-kicker">CİHAZ AYAK İZİ</p>
+                          <h3 className="mc-panel__title">Portal ve cihaz parkuru</h3>
+                        </div>
+                      </div>
+                      <div className="mc-focus-data-list">
+                        <div className="mc-focus-data-row">
+                          <span>Aktif cihaz</span>
+                          <strong>
+                            {snapshotQuery.data.active_devices}/{snapshotQuery.data.total_devices}
+                          </strong>
+                        </div>
+                        <div className="mc-focus-data-row">
+                          <span>Portal izi</span>
+                          <strong>{formatDateTime(focusEmployee.last_portal_seen_utc)}</strong>
+                        </div>
+                        <div className="mc-focus-data-row">
+                          <span>Son konum</span>
+                          <strong>
+                            {snapshotQuery.data.latest_location
+                              ? `${snapshotQuery.data.latest_location.lat.toFixed(5)}, ${snapshotQuery.data.latest_location.lon.toFixed(5)}`
+                              : '-'}
+                          </strong>
+                        </div>
+                        <div className="mc-focus-data-row">
+                          <span>İlk cihaz izi</span>
+                          <strong>
+                            {snapshotQuery.data.devices[0]
+                              ? shortFingerprint(snapshotQuery.data.devices[0].device_fingerprint)
+                              : 'Cihaz yok'}
+                          </strong>
+                        </div>
+                      </div>
+                    </article>
+                  </div>
+                ) : null}
               </>
-            ) : null}
+            ) : (
+              <div className="mc-empty-state">Odak kartı için matriste bir personel seçin.</div>
+            )}
           </section>
 
-          <aside className="mc-erp-side">
-            <section className="mc-panel mc-erp-panel">
-              <div className="mc-panel__head"><div><p className="mc-kicker">HIZLI AKSİYON</p><h3 className="mc-panel__title">Claim token üretimi</h3></div></div>
-              <label className="mc-field"><span>Token süresi (dakika)</span><input value={expiresInMinutes} onChange={(event) => setExpiresInMinutes(event.target.value)} placeholder="30" /></label>
-              {selectedEmployee ? <div className="mc-erp-summary-card"><strong>{selectedEmployee.full_name}</strong><p>#{selectedEmployee.id} · {selectedDepartmentName} · {selectedEmployee.is_active ? 'Aktif' : 'Pasif'}</p></div> : <div className="mc-empty-state">Token için önce personel seçin.</div>}
-              <button type="button" className="mc-button mc-button--primary" disabled={inviteMutation.isPending || !employeeTargetId} onClick={createInvite}>{inviteMutation.isPending ? 'Oluşturuluyor...' : 'Claim token oluştur'}</button>
-              {inviteResult ? <div className="mc-erp-copy-stack"><CopyField label="Token" value={inviteResult.token} onCopy={(value) => void copyText(value)} /><CopyField label="URL" value={inviteResult.invite_url} onCopy={(value) => void copyText(value)} /><div className="mc-erp-inline-note">Tahmini geçerlilik sonu: {formatDateTime(inviteResult.expires_at)}</div></div> : null}
+          <aside className="mc-workbench__utility">
+            <section className="mc-panel mc-panel--utility">
+              <div className="mc-panel__head mc-panel__head--tight">
+                <div>
+                  <p className="mc-kicker">UTILITY PANEL</p>
+                  <h3 className="mc-panel__title">Claim token üretimi</h3>
+                </div>
+              </div>
+              <div className="mc-utility-callout">
+                <strong>{selectedEmployee ? selectedEmployee.full_name : 'Personel seçimi bekleniyor'}</strong>
+                <p>
+                  {selectedEmployee
+                    ? `#${selectedEmployee.id} · ${selectedDepartmentName} · ${selectedEmployee.is_active ? 'Aktif' : 'Pasif'}`
+                    : 'Token üretmek için odak personeli seçin.'}
+                </p>
+              </div>
+              <label className="mc-field">
+                <span>Token süresi (dakika)</span>
+                <input
+                  value={expiresInMinutes}
+                  onChange={(event) => setExpiresInMinutes(event.target.value)}
+                  placeholder="30"
+                />
+              </label>
+              <button
+                type="button"
+                className="mc-button mc-button--primary"
+                disabled={inviteMutation.isPending || !employeeTargetId}
+                onClick={createInvite}
+              >
+                {inviteMutation.isPending ? 'Oluşturuluyor...' : 'Claim token oluştur'}
+              </button>
+              {inviteResult ? (
+                <div className="mc-utility-copy-stack">
+                  <CopyField label="Token" value={inviteResult.token} onCopy={(value) => void copyText(value)} />
+                  <CopyField label="URL" value={inviteResult.invite_url} onCopy={(value) => void copyText(value)} />
+                  <div className="mc-inline-note">
+                    Geçerlilik sonu: {formatDateTime(inviteResult.expires_at)}
+                  </div>
+                </div>
+              ) : null}
               {actionError ? <div className="form-validation">{actionError}</div> : null}
             </section>
 
-            <section className="mc-panel mc-erp-panel">
-              <div className="mc-panel__head"><div><p className="mc-kicker">CANLI AKIŞ</p><h3 className="mc-panel__title">Son yoklama kayıtları</h3></div></div>
-              <div className="mc-erp-feed">
+            <section className="mc-panel mc-panel--secondary-card">
+              <div className="mc-panel__head mc-panel__head--tight">
+                <div>
+                  <p className="mc-kicker">CANLI AKIŞ</p>
+                  <h3 className="mc-panel__title">Son yoklama kayıtları</h3>
+                </div>
+              </div>
+              <div className="mc-utility-list">
                 {recentEvents.map((event) => (
-                  <article key={event.event_id} className="mc-erp-feed__row">
-                    <div><strong>{event.employee_name}</strong><p>{event.department_name ?? 'Departman yok'} · cihaz #{event.device_id}</p></div>
-                    <div className="mc-erp-feed__meta"><strong>{attendanceTypeLabel(event.event_type)}</strong><small>{formatDateTime(event.ts_utc)}</small></div>
+                  <article key={event.event_id} className="mc-utility-list__row">
+                    <div>
+                      <strong>{event.employee_name}</strong>
+                      <p>
+                        {event.department_name ?? 'Departman yok'} · cihaz #{event.device_id}
+                      </p>
+                    </div>
+                    <div className="mc-utility-list__meta">
+                      <strong>{attendanceTypeLabel(event.event_type)}</strong>
+                      <small>{formatDateTime(event.ts_utc)}</small>
+                    </div>
                   </article>
                 ))}
               </div>
             </section>
 
-            <section className="mc-panel mc-erp-panel">
-              <div className="mc-panel__head"><div><p className="mc-kicker">İZİN RADARI</p><h3 className="mc-panel__title">Bekleyen ve son açılan izinler</h3></div><span className="mc-status-pill is-watch">{pendingLeaveCount} bekleyen</span></div>
-              <div className="mc-erp-feed">
-                {recentLeaves.map((leave) => (
-                  <article key={leave.id} className="mc-erp-feed__row">
-                    <div><strong>Personel #{leave.employee_id}</strong><p>{leave.start_date} - {leave.end_date}</p></div>
-                    <div className="mc-erp-feed__meta"><span className={leaveClass(leave.status)}>{leaveLabel(leave.status)}</span><small>{formatDateTime(leave.created_at)}</small></div>
+            <section className="mc-panel mc-panel--secondary-card">
+              <div className="mc-panel__head mc-panel__head--tight">
+                <div>
+                  <p className="mc-kicker">İZİN RADARI</p>
+                  <h3 className="mc-panel__title">Bekleyen ve son açılan izinler</h3>
+                </div>
+                <span className="mc-status-pill is-watch">{pendingLeaveCount} bekleyen</span>
+              </div>
+              <div className="mc-utility-list">
+                {recentLeaves.slice(0, 3).map((leave) => (
+                  <article key={leave.id} className="mc-utility-list__row">
+                    <div>
+                      <strong>Personel #{leave.employee_id}</strong>
+                      <p>
+                        {leave.start_date} - {leave.end_date}
+                      </p>
+                    </div>
+                    <div className="mc-utility-list__meta">
+                      <span className={leaveClass(leave.status)}>{leaveLabel(leave.status)}</span>
+                      <small>{formatDateTime(leave.created_at)}</small>
+                    </div>
                   </article>
                 ))}
               </div>
@@ -330,36 +601,110 @@ export function ControlRoomPage() {
           </aside>
         </section>
 
-        <ManagementConsoleFilters filterForm={filterForm} regions={regionsQuery.data ?? []} departments={departmentsQuery.data ?? []} activeFilterEntries={activeFilterEntries} onChange={setFilterForm} onApply={applyFilters} onReset={resetFilters} />
-
-        <div className="mc-layout-toolbar">
+        <div className="mc-layout-toolbar mc-layout-toolbar--control-room">
           <div className="mc-layout-toolbar__summary">
             <strong>Canlı kapsam</strong>
-            <span>Son güncelleme {formatDateTime(overviewQuery.data.generated_at_utc)} · Sistem durumu <span className={`mc-status-pill ${systemStatusClass(summary.system_status)}`}>{systemStatusLabel(summary.system_status)}</span></span>
+            <span>
+              Son güncelleme {formatDateTime(overviewQuery.data.generated_at_utc)} · Sistem durumu{' '}
+              <span className={`mc-status-pill ${systemStatusClass(summary.system_status)}`}>
+                {systemStatusLabel(summary.system_status)}
+              </span>
+            </span>
           </div>
-          <button type="button" className="mc-button mc-button--ghost" onClick={() => setSideRailCollapsed((current) => !current)}>{sideRailCollapsed ? 'Sağ paneli aç' : 'Sağ paneli daralt'}</button>
+          <button
+            type="button"
+            className="mc-button mc-button--ghost"
+            onClick={() => setSideRailCollapsed((current) => !current)}
+          >
+            {sideRailCollapsed ? 'Sağ raili aç' : 'Sağ raili daralt'}
+          </button>
         </div>
 
-        <div className={`mc-layout ${sideRailCollapsed ? 'is-collapsed' : ''}`}>
-          <div className="mc-layout__main">
-            <ManagementConsoleMatrixTable items={overviewQuery.data.items} total={overviewQuery.data.total} page={page} totalPages={totalPages} filters={appliedFilters} onSort={handleSort} onOpenEmployee={openEmployee} selectedEmployeeId={selectedEmployeeId} onPageChange={setPage} />
+        <div className={`mc-layout mc-layout--control-room ${sideRailCollapsed ? 'is-collapsed' : ''}`}>
+          <div className="mc-layout__main mc-layout__main--control-room">
+            <ManagementConsoleMatrixTable
+              items={overviewQuery.data.items}
+              total={overviewQuery.data.total}
+              page={page}
+              totalPages={totalPages}
+              filters={appliedFilters}
+              onSort={handleSort}
+              onOpenEmployee={openEmployee}
+              selectedEmployeeId={selectedEmployeeId}
+              onPageChange={setPage}
+            />
 
-            <div className="mc-secondary-grid">
-              <section className="mc-panel">
-                <div className="mc-panel__head"><div><p className="mc-kicker">RİSK DAĞILIMI</p><h3 className="mc-panel__title">Skor yoğunluğu</h3></div></div>
-                <div className="mc-histogram">{summary.risk_histogram.map((bucket) => <article key={bucket.label} className="mc-histogram__row"><span>{bucket.label}</span><div className="mc-histogram__track"><div className="mc-histogram__fill" style={{ width: `${(bucket.count / histogramMax) * 100}%` }} /></div><strong>{bucket.count}</strong></article>)}</div>
+            <div className="mc-secondary-grid mc-secondary-grid--control-room">
+              <section className="mc-panel mc-panel--secondary-card">
+                <div className="mc-panel__head mc-panel__head--tight">
+                  <div>
+                    <p className="mc-kicker">RİSK DAĞILIMI</p>
+                    <h3 className="mc-panel__title">Skor yoğunluğu</h3>
+                  </div>
+                </div>
+                <div className="mc-histogram">
+                  {summary.risk_histogram.map((bucket) => (
+                    <article key={bucket.label} className="mc-histogram__row">
+                      <span>{bucket.label}</span>
+                      <div className="mc-histogram__track">
+                        <div
+                          className="mc-histogram__fill"
+                          style={{ width: `${(bucket.count / histogramMax) * 100}%` }}
+                        />
+                      </div>
+                      <strong>{bucket.count}</strong>
+                    </article>
+                  ))}
+                </div>
               </section>
-              <section className="mc-panel">
-                <div className="mc-panel__head"><div><p className="mc-kicker">HAFTALIK EĞİLİM</p><h3 className="mc-panel__title">Risk ve ihlal trendi</h3></div></div>
-                <div className="mc-trend">{summary.weekly_trend.map((point) => <article key={point.label} className="mc-trend__item"><strong>{point.value.toFixed(1)}</strong><div className="mc-trend__bar"><div className="mc-trend__fill" style={{ height: `${Math.max(12, (point.value / trendMax) * 100)}%` }} /></div><span>{point.label}</span></article>)}</div>
+
+              <section className="mc-panel mc-panel--secondary-card">
+                <div className="mc-panel__head mc-panel__head--tight">
+                  <div>
+                    <p className="mc-kicker">HAFTALIK EĞİLİM</p>
+                    <h3 className="mc-panel__title">Risk ve ihlal trendi</h3>
+                  </div>
+                </div>
+                <div className="mc-trend">
+                  {summary.weekly_trend.map((point) => (
+                    <article key={point.label} className="mc-trend__item">
+                      <strong>{point.value.toFixed(1)}</strong>
+                      <div className="mc-trend__bar">
+                        <div
+                          className="mc-trend__fill"
+                          style={{ height: `${Math.max(12, (point.value / trendMax) * 100)}%` }}
+                        />
+                      </div>
+                      <span>{point.label}</span>
+                    </article>
+                  ))}
+                </div>
               </section>
-              <section className="mc-panel mc-panel--wide">
-                <div className="mc-panel__head"><div><p className="mc-kicker">DEPARTMAN YOĞUNLUĞU</p><h3 className="mc-panel__title">Operasyon ve vardiya disiplini özeti</h3></div><span className="mc-chip">{activeDeviceCount}/{devices.length} aktif cihaz</span></div>
+
+              <section className="mc-panel mc-panel--wide mc-panel--secondary-card">
+                <div className="mc-panel__head mc-panel__head--tight">
+                  <div>
+                    <p className="mc-kicker">DEPARTMAN ÖZETİ</p>
+                    <h3 className="mc-panel__title">Operasyon ve vardiya disiplini görünümü</h3>
+                  </div>
+                  <span className="mc-chip">
+                    {activeDeviceCount}/{devices.length} aktif cihaz
+                  </span>
+                </div>
                 <div className="mc-erp-department-list">
                   {topDepartments.map((metric) => (
                     <article key={metric.department_name} className="mc-erp-department-row">
-                      <div><strong>{metric.department_name}</strong><p>{metric.employee_count} personel</p></div>
-                      <div className="mc-erp-department-row__meta"><span>Giriş {formatClockMinutes(metric.average_checkin_minutes)}</span><span>Geç kalma %{metric.late_rate_percent}</span><span>Aktif süre <MinuteDisplay minutes={metric.average_active_minutes} /></span></div>
+                      <div>
+                        <strong>{metric.department_name}</strong>
+                        <p>{metric.employee_count} personel</p>
+                      </div>
+                      <div className="mc-erp-department-row__meta">
+                        <span>Giriş {formatClockMinutes(metric.average_checkin_minutes)}</span>
+                        <span>Geç kalma %{metric.late_rate_percent}</span>
+                        <span>
+                          Aktif süre <MinuteDisplay minutes={metric.average_active_minutes} />
+                        </span>
+                      </div>
                     </article>
                   ))}
                 </div>
@@ -368,15 +713,31 @@ export function ControlRoomPage() {
           </div>
 
           {!sideRailCollapsed ? (
-            <aside className="mc-layout__rail">
-              <ManagementConsoleMapPanel selectedEmployeeId={selectedEmployeeId} departmentId={parseNumber(appliedFilters.department_id)} regionId={parseNumber(appliedFilters.region_id)} startDate={appliedFilters.start_date} endDate={appliedFilters.end_date} onSelectEmployee={openEmployee} />
-              <ManagementConsoleNotificationPanel selectedEmployeeId={selectedEmployeeId} startDate={appliedFilters.start_date} endDate={appliedFilters.end_date} onOpenEmployee={openEmployee} />
+            <aside className="mc-layout__rail mc-layout__rail--control-room">
+              <ManagementConsoleMapPanel
+                selectedEmployeeId={selectedEmployeeId}
+                departmentId={parseNumber(appliedFilters.department_id)}
+                regionId={parseNumber(appliedFilters.region_id)}
+                startDate={appliedFilters.start_date}
+                endDate={appliedFilters.end_date}
+                onSelectEmployee={openEmployee}
+              />
+              <ManagementConsoleNotificationPanel
+                selectedEmployeeId={selectedEmployeeId}
+                startDate={appliedFilters.start_date}
+                endDate={appliedFilters.end_date}
+                onOpenEmployee={openEmployee}
+              />
             </aside>
           ) : null}
         </div>
       </div>
 
-      <ManagementConsoleEmployeeDetailModal employeeId={selectedEmployeeId} open={detailOpen && selectedEmployeeId != null} onClose={() => setDetailOpen(false)} />
+      <ManagementConsoleEmployeeDetailModal
+        employeeId={selectedEmployeeId}
+        open={detailOpen && selectedEmployeeId != null}
+        onClose={() => setDetailOpen(false)}
+      />
     </>
   )
 }
