@@ -5579,7 +5579,6 @@ button[class*="bg-slate-900"] {
 .mc-ops__issue-metrics,
 .mc-ops__placeholder,
 .mc-ops__composer-head span,
-.mc-ops__factor p,
 .mc-ops__factor-side span,
 .mc-ops__feed-row p,
 .mc-ops__feed-side span {
@@ -5669,6 +5668,40 @@ button[class*="bg-slate-900"] {
   background: rgba(255, 255, 255, 0.94);
 }
 
+.mc-ops__factor {
+  gap: 0.45rem;
+}
+
+.mc-ops__factor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.mc-ops__factor-header strong {
+  min-width: 0;
+}
+
+.mc-ops__factor-desc {
+  margin: 0.25rem 0 0;
+  max-width: 100%;
+  color: #666;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.mc-ops__factor-score {
+  margin-left: 8px;
+  flex-shrink: 0;
+  color: #e53e3e;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .mc-ops__signal.is-normal,
 .mc-ops__issue.is-normal {
   border-color: #d8e6ff;
@@ -5730,6 +5763,12 @@ button[class*="bg-slate-900"] {
   gap: 0.2rem;
   justify-items: end;
   text-align: right;
+}
+
+.mc-ops__factor .mc-ops__factor-side {
+  gap: 0;
+  justify-items: start;
+  text-align: left;
 }
 
 .mc-ops__composer {

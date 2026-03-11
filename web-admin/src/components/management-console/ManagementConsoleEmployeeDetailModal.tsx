@@ -105,6 +105,21 @@ const ACTION_PRESETS: Record<'REVIEW' | 'DISABLE_TEMP' | 'SUSPEND' | 'RISK_OVERR
   },
 }
 
+const riskStatusLabels: Record<string, string> = {
+  RISK_CRITICAL: 'Risk skoru kritik eşikte',
+  RISK_HIGH: 'Yüksek risk seviyesi',
+  RISK_MEDIUM: 'Orta risk seviyesi',
+  RISK_LOW: 'Düşük risk seviyesi',
+}
+
+const riskFactorLabels: Record<string, string> = {
+  VIOLATION_DENSITY: 'İhlal yoğunluğu',
+  ABSENCE_MINUTES: 'Devamsızlık süresi',
+  EARLY_CHECKOUT: 'Erken çıkış',
+  LATE_CHECKIN: 'Geç giriş',
+  LOCATION_DEVIATION: 'Lokasyon sapması',
+}
+
 function currentMonthBounds() {
   const now = new Date()
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -165,6 +180,14 @@ function riskStatusLabel(value: 'NORMAL' | 'WATCH' | 'CRITICAL'): string {
   if (value === 'CRITICAL') return 'Kritik'
   if (value === 'WATCH') return 'İzlemeli'
   return 'Normal'
+}
+
+function riskStatusCodeLabel(value: string): string {
+  return riskStatusLabels[value] ?? value
+}
+
+function riskFactorLabel(code: string, fallback: string): string {
+  return riskFactorLabels[code] ?? fallback
 }
 
 function todayStatusLabel(value: 'NOT_STARTED' | 'IN_PROGRESS' | 'FINISHED'): string {
@@ -461,7 +484,7 @@ export function ManagementConsoleEmployeeDetailModal({
                   {employee.attention_flags.length ? employee.attention_flags.map((alert) => (
                     <article key={alert.code} className={`mc-ops__signal ${alert.severity === 'critical' ? 'is-critical' : alert.severity === 'warning' ? 'is-watch' : 'is-normal'}`}>
                       <strong>{alert.label}</strong>
-                      <span>{alert.code}</span>
+                      <span>{riskStatusCodeLabel(alert.code)}</span>
                     </article>
                   )) : <div className="mc-empty-state">Aktif operasyon sinyali bulunmuyor.</div>}
                 </div>
@@ -593,8 +616,14 @@ export function ManagementConsoleEmployeeDetailModal({
                 <div className="mc-ops__factor-list">
                   {employee.risk_factors.map((factor) => (
                     <article key={factor.code} className="mc-ops__factor">
-                      <div><strong>{factor.label}</strong><p>{factor.description}</p></div>
-                      <div className="mc-ops__factor-side"><strong>{factor.value}</strong><span>+{factor.impact_score}</span></div>
+                      <div className="mc-ops__factor-header">
+                        <strong>{riskFactorLabel(factor.code, factor.label)}</strong>
+                        <span className="mc-ops__factor-score">+{factor.impact_score}</span>
+                      </div>
+                      <p className="mc-ops__factor-desc">{factor.description}</p>
+                      <div className="mc-ops__factor-side">
+                        <strong>{factor.value}</strong>
+                      </div>
                     </article>
                   ))}
                   {!employee.risk_factors.length ? <div className="mc-empty-state">Risk faktörü bulunmuyor.</div> : null}
