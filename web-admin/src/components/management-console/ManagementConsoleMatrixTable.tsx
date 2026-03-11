@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type UIEvent } from 'react'
 
 import { MinuteDisplay } from '../MinuteDisplay'
 import type { ControlRoomEmployeeState } from '../../types/api'
@@ -16,8 +16,39 @@ import {
 const WIDE_ROW_HEIGHT = 80
 const VIEWPORT_HEIGHT = 620
 const OVERSCAN = 6
+const TABLE_COLUMN_GAP = 12
+const TABLE_INLINE_PADDING = 12
 
 type TableLayoutMode = 'wide' | 'condensed' | 'stacked'
+
+type MatrixColumn = {
+  field: SortField | 'risk_status' | 'recent_ip' | 'location_label'
+  label: string
+  minWidth: number
+  flex: string
+  sortable: boolean
+  sticky?: boolean
+}
+
+const MATRIX_COLUMNS: readonly MatrixColumn[] = [
+  { field: 'employee_name', label: 'Personel', minWidth: 160, flex: '1.55fr', sortable: true, sticky: true },
+  { field: 'department_name', label: 'Departman', minWidth: 120, flex: '1fr', sortable: true },
+  { field: 'risk_score', label: 'Risk', minWidth: 80, flex: '0.65fr', sortable: true },
+  { field: 'risk_status', label: 'Durum', minWidth: 100, flex: '0.85fr', sortable: false },
+  { field: 'worked_today', label: 'Bugün', minWidth: 130, flex: '0.95fr', sortable: true },
+  { field: 'weekly_total', label: 'Hafta', minWidth: 130, flex: '0.95fr', sortable: true },
+  { field: 'violation_count_7d', label: 'İhlal', minWidth: 110, flex: '0.82fr', sortable: true },
+  { field: 'last_activity', label: 'Son aktivite', minWidth: 160, flex: '1.08fr', sortable: true },
+  { field: 'recent_ip', label: 'IP', minWidth: 120, flex: '0.86fr', sortable: false },
+  { field: 'location_label', label: 'Konum', minWidth: 160, flex: '1.12fr', sortable: false },
+]
+
+const TABLE_MIN_WIDTH =
+  MATRIX_COLUMNS.reduce((total, column) => total + column.minWidth, 0) +
+  TABLE_COLUMN_GAP * (MATRIX_COLUMNS.length - 1) +
+  TABLE_INLINE_PADDING * 2
+
+const TABLE_GRID_TEMPLATE = MATRIX_COLUMNS.map((column) => `minmax(${column.minWidth}px, ${column.flex})`).join(' ')
 
 function resolveLayoutMode(width: number, viewportWidth: number): TableLayoutMode {
   if (width <= 640 || viewportWidth <= 820) return 'stacked'
@@ -138,7 +169,7 @@ function WideRow({
       className={`mc-table-row ${selected ? 'is-selected' : ''}`}
       onClick={() => onOpenEmployee(item.employee.id)}
     >
-      <div className="mc-table-cell mc-table-cell--stack">
+      <div className="mc-table-cell mc-table-cell--stack mc-table-cell--sticky">
         <strong>{item.employee.full_name}</strong>
         <span>{todayStatusLabel(item.today_status)}</span>
       </div>
@@ -196,6 +227,7 @@ export function ManagementConsoleMatrixTable({
   onPageChange: (page: number) => void
 }) {
   const panelRef = useRef<HTMLElement | null>(null)
+  const shellRef = useRef<HTMLDivElement | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [layoutMode, setLayoutMode] = useState<TableLayoutMode>('wide')
 
@@ -235,6 +267,13 @@ export function ManagementConsoleMatrixTable({
     }
   }, [layoutMode])
 
+  useEffect(() => {
+    const shell = shellRef.current
+    if (!shell) return
+    shell.style.setProperty('--mc-table-sticky-offset', '0px')
+    shell.scrollLeft = 0
+  }, [layoutMode, page, filters.limit])
+
   const renderAsTable = layoutMode !== 'stacked'
   const isVirtualized = layoutMode === 'wide'
   const startIndex = isVirtualized ? Math.max(0, Math.floor(scrollTop / WIDE_ROW_HEIGHT) - OVERSCAN) : 0
@@ -245,9 +284,23 @@ export function ManagementConsoleMatrixTable({
   const bottomSpacer = isVirtualized ? Math.max(0, (items.length - endIndex) * WIDE_ROW_HEIGHT) : 0
   const visibleStart = items.length ? (page - 1) * filters.limit + 1 : 0
   const visibleEnd = items.length ? Math.min(page * filters.limit, total) : 0
+  const tableStyle = {
+    '--mc-table-grid-columns': TABLE_GRID_TEMPLATE,
+    '--mc-table-min-width': `${TABLE_MIN_WIDTH}px`,
+    '--mc-table-column-gap': `${TABLE_COLUMN_GAP}px`,
+    '--mc-table-inline-pad': `${TABLE_INLINE_PADDING}px`,
+  } as CSSProperties
+
+  const handleShellScroll = (event: UIEvent<HTMLDivElement>) => {
+    event.currentTarget.style.setProperty('--mc-table-sticky-offset', `${event.currentTarget.scrollLeft}px`)
+  }
 
   return (
-    <section ref={panelRef} className={`mc-panel mc-panel--table mc-panel--table-${layoutMode}`}>
+    <section
+      ref={panelRef}
+      className={`mc-panel mc-panel--table mc-panel--table-${layoutMode}`}
+      style={tableStyle}
+    >
       <div className="mc-panel__head">
         <div>
           <p className="mc-kicker">OPERASYON MATRİSİ</p>
@@ -259,29 +312,29 @@ export function ManagementConsoleMatrixTable({
         </div>
       </div>
 
-      <div className={`mc-table-shell ${renderAsTable ? 'is-table' : 'is-cards'}`}>
+      <div
+        ref={shellRef}
+        className={`mc-table-shell ${renderAsTable ? 'is-table' : 'is-cards'}`}
+        onScroll={renderAsTable ? handleShellScroll : undefined}
+      >
         {renderAsTable ? (
           <div className="mc-table-head" role="row">
-            {[
-              ['employee_name', 'Personel'],
-              ['department_name', 'Departman'],
-              ['risk_score', 'Risk'],
-              ['risk_status', 'Durum'],
-              ['worked_today', 'Bugün'],
-              ['weekly_total', 'Hafta'],
-              ['violation_count_7d', 'İhlal'],
-              ['last_activity', 'Son aktivite'],
-              ['recent_ip', 'IP'],
-              ['location_label', 'Konum'],
-            ].map(([field, label]) => (
-              <div key={field} className="mc-table-head__cell">
-                {field === 'risk_status' || field === 'recent_ip' || field === 'location_label' ? (
-                  label
-                ) : (
-                  <button type="button" className="mc-table-head__button" onClick={() => onSort(field as SortField)}>
-                    {label}
-                    <span>{sortIcon(filters.sort_by === field, filters.sort_dir)}</span>
+            {MATRIX_COLUMNS.map((column) => (
+              <div
+                key={column.field}
+                className={`mc-table-head__cell ${column.sticky ? 'mc-table-head__cell--sticky' : ''}`}
+              >
+                {column.sortable ? (
+                  <button
+                    type="button"
+                    className="mc-table-head__button"
+                    onClick={() => onSort(column.field as SortField)}
+                  >
+                    {column.label}
+                    <span>{sortIcon(filters.sort_by === column.field, filters.sort_dir)}</span>
                   </button>
+                ) : (
+                  column.label
                 )}
               </div>
             ))}
