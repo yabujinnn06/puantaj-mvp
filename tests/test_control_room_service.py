@@ -3,14 +3,22 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import date, datetime, time, timezone
 import unittest
+from zoneinfo import ZoneInfo
 
-from app.models import AuditActorType, AuditLog, DepartmentShift, Employee
+from app.models import AttendanceEvent, AttendanceType, AuditActorType, AuditLog, DepartmentShift, Employee
 from app.schemas import (
     ControlRoomEmployeeActionRequest,
     ControlRoomNoteCreateRequest,
     ControlRoomRiskOverrideRequest,
 )
-from app.services.control_room import _measure_from_audit, _resolve_shift_context
+from app.services.control_room import (
+    ScheduleContext,
+    _is_heavy_overtime_day,
+    _is_risk_late_checkin,
+    _max_consecutive_flags,
+    _measure_from_audit,
+    _resolve_shift_context,
+)
 
 
 class ControlRoomServiceTests(unittest.TestCase):
@@ -127,6 +135,78 @@ class ControlRoomServiceTests(unittest.TestCase):
         payload = ControlRoomNoteCreateRequest(employee_id=7, note="   ")
 
         self.assertEqual(payload.note, "Operasyon dosyasina admin notu eklendi.")
+
+    def test_risk_late_checkin_starts_at_fifteen_minutes(self) -> None:
+        tz = ZoneInfo("Europe/Istanbul")
+        schedule = ScheduleContext(
+            shift_name="Sabah",
+            shift_window_label="09:00 - 18:00",
+            shift_start_local=datetime(2026, 3, 2, 9, 0, tzinfo=tz),
+            shift_end_local=datetime(2026, 3, 2, 18, 0, tzinfo=tz),
+            planned_minutes=480,
+            break_minutes=60,
+            grace_minutes=5,
+            overtime_grace_minutes=0,
+            off_shift_tolerance_minutes=15,
+            is_workday=True,
+        )
+
+        self.assertFalse(
+            _is_risk_late_checkin(
+                first_in=AttendanceEvent(
+                    id=10,
+                    employee_id=7,
+                    type=AttendanceType.IN,
+                    ts_utc=datetime(2026, 3, 2, 6, 14, tzinfo=timezone.utc),
+                ),
+                schedule=schedule,
+                tz=tz,
+            )
+        )
+        self.assertTrue(
+            _is_risk_late_checkin(
+                first_in=AttendanceEvent(
+                    id=11,
+                    employee_id=7,
+                    type=AttendanceType.IN,
+                    ts_utc=datetime(2026, 3, 2, 6, 15, tzinfo=timezone.utc),
+                ),
+                schedule=schedule,
+                tz=tz,
+            )
+        )
+
+    def test_heavy_overtime_requires_more_than_three_hours(self) -> None:
+        schedule = ScheduleContext(
+            shift_name="Sabah",
+            shift_window_label="09:00 - 18:00",
+            shift_start_local=datetime(2026, 3, 2, 9, 0, tzinfo=timezone.utc),
+            shift_end_local=datetime(2026, 3, 2, 18, 0, tzinfo=timezone.utc),
+            planned_minutes=480,
+            break_minutes=60,
+            grace_minutes=5,
+            overtime_grace_minutes=0,
+            off_shift_tolerance_minutes=15,
+            is_workday=True,
+        )
+
+        self.assertFalse(
+            _is_heavy_overtime_day(
+                schedule=schedule,
+                worked_day_minutes=660,
+                has_presence=True,
+            )
+        )
+        self.assertTrue(
+            _is_heavy_overtime_day(
+                schedule=schedule,
+                worked_day_minutes=661,
+                has_presence=True,
+            )
+        )
+
+    def test_max_consecutive_flags_returns_longest_streak(self) -> None:
+        self.assertEqual(_max_consecutive_flags([True, True, False, True, True, True, False]), 3)
 
 
 if __name__ == "__main__":

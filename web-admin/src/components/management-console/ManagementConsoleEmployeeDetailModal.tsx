@@ -107,9 +107,18 @@ const ACTION_PRESETS: Record<'REVIEW' | 'DISABLE_TEMP' | 'SUSPEND' | 'RISK_OVERR
 
 const riskStatusLabels: Record<string, string> = {
   RISK_CRITICAL: 'Risk skoru kritik eşikte',
+  RISK_WATCH: 'Risk skoru izleme seviyesinde',
+  RISK_NORMAL: 'Risk profili normal',
   RISK_HIGH: 'Yüksek risk seviyesi',
   RISK_MEDIUM: 'Orta risk seviyesi',
   RISK_LOW: 'Düşük risk seviyesi',
+  MISSING_CHECKIN: 'Giriş kaydı eksik',
+  MISSING_CHECKOUT: 'Çıkış kaydı eksik',
+  NO_DEVICE: 'Kayıtlı cihaz bulunmuyor',
+  NO_ACTIVE_DEVICE: 'Aktif cihaz görünmüyor',
+  MISSING_TODAY_CHECKIN: 'Bugün giriş görünmüyor',
+  LONG_OPEN_SHIFT: 'Açık vardiya uzadı',
+  UNVERIFIED_LOCATION: 'Son lokasyon doğrulanamadı',
 }
 
 const riskFactorLabels: Record<string, string> = {
@@ -117,7 +126,14 @@ const riskFactorLabels: Record<string, string> = {
   ABSENCE_MINUTES: 'Devamsızlık süresi',
   EARLY_CHECKOUT: 'Erken çıkış',
   LATE_CHECKIN: 'Geç giriş',
+  LATE_STREAK: 'Geç giriş serisi',
+  HEAVY_OVERTIME: 'Yoğun mesai',
+  ONTIME_RECOVERY: 'Zamanında giriş dengesi',
+  OVERTIME_RECOVERY: 'Mesai dengesi',
   LOCATION_DEVIATION: 'Lokasyon sapması',
+  IP_VARIATION: 'IP değişimi',
+  OFF_HOURS_ACTIVITY: 'Mesai dışı aktivite',
+  MANUAL_OVERRIDE: 'Risk override',
 }
 
 function defaultExpandedTimelineKeys(): string[] {
@@ -204,6 +220,17 @@ function riskStatusCodeLabel(value: string): string {
 
 function riskFactorLabel(code: string, fallback: string): string {
   return riskFactorLabels[code] ?? fallback
+}
+
+function formatRiskImpact(score: number): string {
+  if (score > 0) return `+${score}`
+  return `${score}`
+}
+
+function riskImpactClass(score: number): string {
+  if (score < 0) return 'is-recovery'
+  if (score > 0) return 'is-risk'
+  return 'is-neutral'
 }
 
 function dailyStatusLabel(value: string | null | undefined): string {
@@ -390,6 +417,7 @@ export function ManagementConsoleEmployeeDetailModal({
   const timeline = useMemo(() => buildTimeline(attendanceQuery.data ?? [], monthDays), [attendanceQuery.data, monthDays])
   const operationalDays = useMemo(() => buildOperationalDays(monthDays), [monthDays])
   const riskHistoryMax = Math.max(1, ...(detail?.risk_history ?? []).map((item) => item.value))
+  const riskMeterWidth = `${Math.max(0, Math.min(100, employee?.risk_score ?? 0))}%`
   const failedNotificationCount = notificationJobs.filter((job) => job.status === 'FAILED').length
 
   const toggleTimelineDay = (dateKey: string) => {
@@ -493,7 +521,10 @@ export function ManagementConsoleEmployeeDetailModal({
             <div className={`mc-ops__score ${riskClass(employee.risk_status)}`}>
               <span>Risk skoru</span>
               <strong>{employee.risk_score}</strong>
-              <small>{formatRelative(employee.last_activity_utc)}</small>
+              <div className="mc-ops__score-meter" aria-hidden="true">
+                <span style={{ width: riskMeterWidth }} />
+              </div>
+              <small>{riskStatusLabel(employee.risk_status)} · {formatRelative(employee.last_activity_utc)}</small>
             </div>
           </header>
 
@@ -710,10 +741,12 @@ export function ManagementConsoleEmployeeDetailModal({
                 </div>
                 <div className="mc-ops__factor-list">
                   {employee.risk_factors.map((factor) => (
-                    <article key={factor.code} className="mc-ops__factor">
+                    <article key={factor.code} className={`mc-ops__factor ${riskImpactClass(factor.impact_score)}`}>
                       <div className="mc-ops__factor-header">
                         <strong>{riskFactorLabel(factor.code, factor.label)}</strong>
-                        <span className="mc-ops__factor-score">+{factor.impact_score}</span>
+                        <span className={`mc-ops__factor-score ${riskImpactClass(factor.impact_score)}`}>
+                          {formatRiskImpact(factor.impact_score)}
+                        </span>
                       </div>
                       <p className="mc-ops__factor-desc">{factor.description}</p>
                       <div className="mc-ops__factor-side">

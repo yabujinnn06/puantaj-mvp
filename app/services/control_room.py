@@ -79,14 +79,21 @@ CONTROL_ROOM_AUDIT_LABELS: dict[str, str] = {
     CONTROL_ROOM_OVERRIDE_AUDIT: "Risk override",
 }
 
+RISK_LATE_THRESHOLD_MINUTES = 15
+RISK_HEAVY_OVERTIME_THRESHOLD_MINUTES = 180
+
 RISK_FORMULA_ITEMS = [
-    ControlRoomRiskFormulaItemRead(code="LATE_CHECKIN", label="Gec giris", max_score=24, description="Son 7 gundeki gec giris sayisi x8, ust sinir 24 puan."),
+    ControlRoomRiskFormulaItemRead(code="LATE_CHECKIN", label="Gec giris", max_score=24, description="Son 7 gunde vardiya baslangicindan 15 dakika veya daha gec yapilan girisler x8, ust sinir 24 puan."),
+    ControlRoomRiskFormulaItemRead(code="LATE_STREAK", label="Gec giris serisi", max_score=8, description="Ust uste iki gun ve uzeri 15+ dakika gec giris serileri ek risk uretir, ust sinir 8 puan."),
     ControlRoomRiskFormulaItemRead(code="EARLY_CHECKOUT", label="Erken cikis", max_score=16, description="Son 7 gundeki erken cikis sayisi x8, ust sinir 16 puan."),
+    ControlRoomRiskFormulaItemRead(code="HEAVY_OVERTIME", label="Yogun mesai", max_score=20, description="Gunluk 3 saati asan net mesai gunleri x10, ust sinir 20 puan."),
     ControlRoomRiskFormulaItemRead(code="IP_VARIATION", label="IP degisimi", max_score=15, description="Son 7 gundeki ek farkli IP kumeleri x10, ust sinir 15 puan."),
     ControlRoomRiskFormulaItemRead(code="LOCATION_DEVIATION", label="Lokasyon sapmasi", max_score=20, description="Dogrulanamayan konum gunu x10, ust sinir 20 puan."),
     ControlRoomRiskFormulaItemRead(code="OFF_HOURS_ACTIVITY", label="Mesai disi aktivite", max_score=12, description="Mesai penceresi disindaki aktivite gunu x6, ust sinir 12 puan."),
     ControlRoomRiskFormulaItemRead(code="VIOLATION_DENSITY", label="Ihlal yogunlugu", max_score=20, description="Son 7 gun toplam ihlal sayisi x4, ust sinir 20 puan."),
     ControlRoomRiskFormulaItemRead(code="ABSENCE_MINUTES", label="Devamsizlik suresi", max_score=18, description="Son 7 gun eksik/devamsiz sure icin saat bazli puanlama, ust sinir 18 puan."),
+    ControlRoomRiskFormulaItemRead(code="ONTIME_RECOVERY", label="Zamaninda giris dengesi", max_score=8, description="Zamaninda yapilan girisler risk skorundan dusum uretir, ust sinir 8 puan."),
+    ControlRoomRiskFormulaItemRead(code="OVERTIME_RECOVERY", label="Mesai dengesi", max_score=9, description="Ust uste iki gun ve uzeri 3 saati asmayan mesai duzeni risk skorundan dusum uretir, ust sinir 9 puan."),
 ]
 
 
@@ -548,6 +555,50 @@ def _location_label(event: AttendanceEvent | None) -> str | None:
     return f"{status_label} ({event.lat:.5f}, {event.lon:.5f})"
 
 
+def _max_consecutive_flags(values: list[bool]) -> int:
+    longest = 0
+    current = 0
+    for value in values:
+        if value:
+            current += 1
+            if current > longest:
+                longest = current
+        else:
+            current = 0
+    return longest
+
+
+def _is_risk_late_checkin(
+    *,
+    first_in: AttendanceEvent | None,
+    schedule: ScheduleContext,
+    tz: Any,
+) -> bool:
+    if first_in is None or not schedule.is_workday or schedule.shift_start_local is None:
+        return False
+    first_in_local = _normalize_utc(first_in.ts_utc)
+    if first_in_local is None:
+        return False
+    late_cutoff = schedule.shift_start_local + timedelta(minutes=RISK_LATE_THRESHOLD_MINUTES)
+    return first_in_local.astimezone(tz) >= late_cutoff
+
+
+def _is_heavy_overtime_day(
+    *,
+    schedule: ScheduleContext,
+    worked_day_minutes: int,
+    has_presence: bool,
+) -> bool:
+    if not schedule.is_workday or schedule.planned_minutes <= 0 or not has_presence:
+        return False
+    heavy_overtime_cutoff = (
+        schedule.planned_minutes
+        + schedule.overtime_grace_minutes
+        + RISK_HEAVY_OVERTIME_THRESHOLD_MINUTES
+    )
+    return worked_day_minutes > heavy_overtime_cutoff
+
+
 def _risk_factor(
     *,
     code: str,
@@ -560,7 +611,7 @@ def _risk_factor(
         code=code,
         label=label,
         value=value,
-        impact_score=max(0, int(impact_score)),
+        impact_score=int(impact_score),
         description=description,
     )
 
@@ -831,6 +882,10 @@ def build_control_room_overview(
         absence_minutes_7d = 0
         late_observations = 0
         checkin_minutes_samples: list[int] = []
+        late_risk_flags: list[bool] = []
+        heavy_overtime_flags: list[bool] = []
+        on_time_flags: list[bool] = []
+        stable_overtime_flags: list[bool] = []
         tooltip_items: list[ControlRoomTooltipRead] = []
         attention_flags: list[ControlRoomEmployeeAlertRead] = []
         risk_factors: list[ControlRoomRiskFactorRead] = []
@@ -873,6 +928,7 @@ def build_control_room_overview(
             )
             first_in = next((item for item in day_events if item.type == AttendanceType.IN), None)
             last_out = next((item for item in reversed(day_events) if item.type == AttendanceType.OUT), None)
+            has_presence = bool(day_events) or worked_day_minutes > 0
             if first_in is not None:
                 checkin_value = _minutes_since_midnight(first_in.ts_utc, tz)
                 if checkin_value is not None:
@@ -880,17 +936,37 @@ def build_control_room_overview(
 
             day_violation_count = 0
             if schedule.is_workday and schedule.shift_start_local is not None and first_in is not None:
-                late_cutoff = schedule.shift_start_local + timedelta(minutes=schedule.grace_minutes)
                 first_in_local = _normalize_utc(first_in.ts_utc)
                 if first_in_local is not None:
                     first_in_local = first_in_local.astimezone(tz)
                     late_observations += 1
-                    if first_in_local > late_cutoff:
+                    late_risk_detected = _is_risk_late_checkin(first_in=first_in, schedule=schedule, tz=tz)
+                    late_risk_flags.append(late_risk_detected)
+                    on_time_flags.append(not late_risk_detected)
+                    if late_risk_detected:
                         late_days += 1
                         violation_count_7d += 1
                         day_violation_count += 1
                         violation_hour_counter[first_in_local.hour] += 1
-                        add_tooltip("Gec giris", f"{day_date:%d.%m.%Y} tarihinde vardiya baslangicindan sonra giris yapildi.")
+                        add_tooltip("Gec giris", f"{day_date:%d.%m.%Y} tarihinde vardiya baslangicindan 15 dakika veya daha gec giris yapildi.")
+            else:
+                late_risk_flags.append(False)
+                on_time_flags.append(False)
+
+            heavy_overtime_detected = _is_heavy_overtime_day(
+                schedule=schedule,
+                worked_day_minutes=worked_day_minutes,
+                has_presence=has_presence,
+            )
+            heavy_overtime_flags.append(heavy_overtime_detected)
+            stable_overtime_flags.append(
+                schedule.is_workday
+                and schedule.planned_minutes > 0
+                and has_presence
+                and not heavy_overtime_detected
+            )
+            if heavy_overtime_detected:
+                add_tooltip("Yogun mesai", f"{day_date:%d.%m.%Y} tarihinde 3 saati asan gunluk mesai goruldu.")
 
             if schedule.is_workday and schedule.shift_end_local is not None and last_out is not None:
                 last_out_local = _normalize_utc(last_out.ts_utc)
@@ -998,24 +1074,49 @@ def build_control_room_overview(
             if item.ip and (day_value := _local_day(item.ts_utc, tz)) is not None and risk_window_start <= day_value <= today_local_date
         }
         ip_variation_count = max(0, len(recent_ip_set) - 1)
+        heavy_overtime_days = sum(1 for item in heavy_overtime_flags if item)
+        on_time_days = sum(1 for item in on_time_flags if item)
+        late_streak_max = _max_consecutive_flags(late_risk_flags)
+        stable_overtime_streak_max = _max_consecutive_flags(stable_overtime_flags)
         late_score = min(late_days * 8, 24)
+        late_streak_score = min(max(0, late_streak_max - 1) * 4, 8)
         early_score = min(early_days * 8, 16)
+        heavy_overtime_score = min(heavy_overtime_days * 10, 20)
         ip_score = min(ip_variation_count * 10, 15)
         location_score = min(location_deviation_days * 10, 20)
         off_hours_score = min(off_hours_days * 6, 12)
         violation_density_score = min(violation_count_7d * 4, 20)
         absence_score = min(max(0, ceil(absence_minutes_7d / 60)) * 3, 18)
-        raw_risk_score = min(100, late_score + early_score + ip_score + location_score + off_hours_score + violation_density_score + absence_score)
+        on_time_recovery_score = min(on_time_days * 2, 8)
+        overtime_recovery_score = min(max(0, stable_overtime_streak_max - 1) * 3, 9)
+        raw_risk_score = min(
+            100,
+            late_score
+            + late_streak_score
+            + early_score
+            + heavy_overtime_score
+            + ip_score
+            + location_score
+            + off_hours_score
+            + violation_density_score
+            + absence_score
+            - on_time_recovery_score
+            - overtime_recovery_score,
+        )
 
         risk_factors.extend(
             [
-                _risk_factor(code="LATE_CHECKIN", label="Gec giris", value=f"{late_days} gun", impact_score=late_score, description="Son 7 gundeki gec giris sayisi risk skoruna dogrudan yansitilir."),
+                _risk_factor(code="LATE_CHECKIN", label="Gec giris", value=f"{late_days} gun", impact_score=late_score, description="Son 7 gunde vardiya baslangicindan 15 dakika veya daha gec yapilan girisler risk skoruna yansitilir."),
+                _risk_factor(code="LATE_STREAK", label="Gec giris serisi", value=f"{late_streak_max} gun seri", impact_score=late_streak_score, description="Ust uste tekrar eden 15+ dakika gec giris serisi ek risk uretir."),
                 _risk_factor(code="EARLY_CHECKOUT", label="Erken cikis", value=f"{early_days} gun", impact_score=early_score, description="Planli bitis oncesi cikis gorulen gunler skor uretir."),
+                _risk_factor(code="HEAVY_OVERTIME", label="Yogun mesai", value=f"{heavy_overtime_days} gun", impact_score=heavy_overtime_score, description="Gunluk 3 saati asan net mesai gorulen gunler risk skorunu artis yonunde etkiler."),
                 _risk_factor(code="IP_VARIATION", label="IP degisimi", value=f"{len(recent_ip_set)} farkli IP", impact_score=ip_score, description="Son 7 gunde farkli IP kaynaklari arttikca risk skoru yukselir."),
                 _risk_factor(code="LOCATION_DEVIATION", label="Lokasyon sapmasi", value=f"{location_deviation_days} gun", impact_score=location_score, description="Dogrulanamayan konum bildirimi olan gunler risk uretir."),
                 _risk_factor(code="OFF_HOURS_ACTIVITY", label="Mesai disi aktivite", value=f"{off_hours_days} gun", impact_score=off_hours_score, description="Mesai disi zamanlarda gorulen aktivite risk puani ekler."),
                 _risk_factor(code="VIOLATION_DENSITY", label="Ihlal yogunlugu", value=f"{violation_count_7d} ihlal", impact_score=violation_density_score, description="Son 7 gundeki toplam ihlal yogunlugu risk skorunu yukselten bir carpandir."),
                 _risk_factor(code="ABSENCE_MINUTES", label="Devamsizlik suresi", value=_format_minutes_hhmm(absence_minutes_7d) or "00:00", impact_score=absence_score, description="Planlanan sureye gore eksik kalan toplam sure puanlandirilir."),
+                _risk_factor(code="ONTIME_RECOVERY", label="Zamaninda giris dengesi", value=f"{on_time_days} gun", impact_score=-on_time_recovery_score, description="Zamaninda yapilan girisler risk skorunu kontrollu bicimde asagi ceker."),
+                _risk_factor(code="OVERTIME_RECOVERY", label="Mesai dengesi", value=f"{stable_overtime_streak_max} gun seri", impact_score=-overtime_recovery_score, description="Ust uste 3 saati asmayan mesai gunleri risk skorunda toparlanma etkisi yaratir."),
             ]
         )
 
@@ -1422,6 +1523,8 @@ def _build_employee_risk_history(
             daily_ips[row_day].add(row.ip.strip())
 
     trend: list[ControlRoomTrendPointRead] = []
+    late_streak = 0
+    stable_overtime_streak = 0
     for day_index in range(lookback_days):
         day_date = start_day + timedelta(days=day_index)
         day_events = risk_daily_events.get(day_date, [])
@@ -1447,12 +1550,31 @@ def _build_employee_risk_history(
         last_out = next((item for item in reversed(day_events) if item.type == AttendanceType.OUT), None)
 
         daily_score = 0
-        if schedule.is_workday and schedule.shift_start_local is not None and first_in is not None:
-            first_in_local = _normalize_utc(first_in.ts_utc)
-            if first_in_local is not None:
-                late_cutoff = schedule.shift_start_local + timedelta(minutes=schedule.grace_minutes)
-                if first_in_local.astimezone(tz) > late_cutoff:
-                    daily_score += 8
+        has_presence = bool(day_events) or worked_day_minutes > 0
+        late_risk_detected = _is_risk_late_checkin(first_in=first_in, schedule=schedule, tz=tz)
+        heavy_overtime_detected = _is_heavy_overtime_day(
+            schedule=schedule,
+            worked_day_minutes=worked_day_minutes,
+            has_presence=has_presence,
+        )
+        on_time_detected = (
+            schedule.is_workday
+            and schedule.shift_start_local is not None
+            and first_in is not None
+            and not late_risk_detected
+        )
+
+        if late_risk_detected:
+            late_streak += 1
+            daily_score += 8
+            if late_streak >= 2:
+                daily_score += 4
+        else:
+            late_streak = 0
+
+        if heavy_overtime_detected:
+            stable_overtime_streak = 0
+            daily_score += 10
 
         if schedule.is_workday and schedule.shift_end_local is not None and last_out is not None:
             last_out_local = _normalize_utc(last_out.ts_utc)
@@ -1499,10 +1621,19 @@ def _build_employee_risk_history(
         if ip_count > 1:
             daily_score += min((ip_count - 1) * 10, 10)
 
+        if on_time_detected:
+            daily_score -= 2
+        if schedule.is_workday and schedule.planned_minutes > 0 and has_presence and not heavy_overtime_detected:
+            stable_overtime_streak += 1
+            if stable_overtime_streak >= 2:
+                daily_score -= 3
+        elif not heavy_overtime_detected:
+            stable_overtime_streak = 0
+
         trend.append(
             ControlRoomTrendPointRead(
                 label=day_date.strftime("%d.%m"),
-                value=min(100, int(daily_score)),
+                value=max(0, min(100, int(daily_score))),
             )
         )
     return trend
