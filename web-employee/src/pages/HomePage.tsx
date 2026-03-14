@@ -2539,41 +2539,51 @@ export function HomePage() {
           </div>
         ) : null}
 
-        {isCheckoutConfirmOpen ? (
-          <div
-            className="modal-backdrop"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="checkout-confirm-title"
-            aria-describedby="checkout-confirm-description"
-          >
-            <div className="help-modal">
-              <h2 id="checkout-confirm-title">Mesaiyi bitirmek istediğinize emin misiniz?</h2>
-              <p id="checkout-confirm-description">
-                "Mesaiyi Güvenli Bitir" işlemi bugünkü çıkışı kaydeder. Devam etmek istiyor musunuz?
-              </p>
-              <div className="stack">
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  onClick={() => {
-                    setIsCheckoutConfirmOpen(false)
-                    void runCheckout()
-                  }}
-                >
-                  Evet, mesaiyi bitir
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-soft"
-                  onClick={() => setIsCheckoutConfirmOpen(false)}
-                >
-                  Hayır
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : null}
+        {isCheckoutConfirmOpen && typeof document !== 'undefined'
+          ? createPortal(
+              <div
+                className="modal-backdrop checkout-confirm-backdrop"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="checkout-confirm-title"
+                aria-describedby="checkout-confirm-description"
+                onClick={() => setIsCheckoutConfirmOpen(false)}
+              >
+                <div className="checkout-confirm-lights" aria-hidden="true">
+                  <span className="checkout-confirm-light checkout-confirm-light-left" />
+                  <span className="checkout-confirm-light checkout-confirm-light-center" />
+                  <span className="checkout-confirm-light checkout-confirm-light-right" />
+                </div>
+                <div className="help-modal checkout-confirm-modal" onClick={(event) => event.stopPropagation()}>
+                  <p className="checkout-confirm-kicker">GUVENLI CIKIS ONAYI</p>
+                  <h2 id="checkout-confirm-title">Mesaiyi bitirmek istediğinize emin misiniz?</h2>
+                  <p id="checkout-confirm-description">
+                    "Mesaiyi Güvenli Bitir" işlemi bugünkü çıkışı kaydeder. Devam etmek istiyor musunuz?
+                  </p>
+                  <div className="stack">
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={() => {
+                        setIsCheckoutConfirmOpen(false)
+                        void runCheckout()
+                      }}
+                    >
+                      Evet, mesaiyi bitir
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-soft"
+                      onClick={() => setIsCheckoutConfirmOpen(false)}
+                    >
+                      Hayır
+                    </button>
+                  </div>
+                </div>
+              </div>,
+              document.body,
+            )
+          : null}
 
         {isHelpOpen ? (
           <div className="modal-backdrop" role="dialog" aria-modal="true">
