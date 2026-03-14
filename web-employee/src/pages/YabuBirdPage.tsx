@@ -416,6 +416,32 @@ function drawWorldShift(ctx: CanvasRenderingContext2D, theme: WorldTheme, intens
   ctx.restore()
 }
 
+type RetroTone = {
+  frequency: number
+  durationMs: number
+  delayMs?: number
+  gain?: number
+  waveform?: OscillatorType
+}
+
+function createRetroTonePlayer(audioContext: AudioContext, tones: RetroTone[]): void {
+  const now = audioContext.currentTime
+  tones.forEach((tone) => {
+    const oscillator = audioContext.createOscillator()
+    const gainNode = audioContext.createGain()
+    const startAt = now + (tone.delayMs ?? 0) / 1000
+    const endAt = startAt + tone.durationMs / 1000
+    oscillator.type = tone.waveform ?? 'square'
+    oscillator.frequency.setValueAtTime(tone.frequency, startAt)
+    gainNode.gain.setValueAtTime(Math.max(0.0001, tone.gain ?? 0.045), startAt)
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, endAt)
+    oscillator.connect(gainNode)
+    gainNode.connect(audioContext.destination)
+    oscillator.start(startAt)
+    oscillator.stop(endAt)
+  })
+}
+
 export function YabuBirdPage() {
   const navigate = useNavigate()
   const [deviceFingerprint] = useState<string | null>(() => getStoredDeviceFingerprint())
@@ -434,6 +460,7 @@ export function YabuBirdPage() {
   const [joinCode, setJoinCode] = useState('')
   const [statusMessage, setStatusMessage] = useState('Oda sec, ekranin her yerine dokun ve ucmaya basla.')
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [feedMessage, setFeedMessage] = useState<string | null>(null)
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const phaseRef = useRef<Phase>('menu')
@@ -455,6 +482,11 @@ export function YabuBirdPage() {
   const locationRef = useRef<CurrentLocation | null>(null)
   const worldIndexRef = useRef(0)
   const worldShiftAtRef = useRef(0)
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const feedTimerRef = useRef<number | null>(null)
+  const previousScoreLabelRef = useRef(0)
+  const previousPhaseRef = useRef<Phase>('menu')
+  const previousPlayerScoresRef = useRef<Record<number, number>>({})
 
   const playerList = useMemo(
     () => (phase === 'menu' ? menuPublicPlayers : players),
@@ -467,14 +499,80 @@ export function YabuBirdPage() {
         .sort((left, right) => right.player_count - left.player_count),
     [menuLiveRooms],
   )
+  const liveScoreboard = useMemo(
+    () =>
+      [...players]
+        .sort((left, right) => right.latest_score - left.latest_score || left.employee_name.localeCompare(right.employee_name))
+        .slice(0, 5),
+    [players],
+  )
 
   function resetEngine(): void {
     engineRef.current = { ...INITIAL_ENGINE, y: BIRD_START_Y }
     frameTimeRef.current = null
     setScoreLabel(0)
     setElapsedLabel(0)
+    setFeedMessage(null)
     scoreLabelRef.current = 0
     elapsedLabelRef.current = 0
+    previousScoreLabelRef.current = 0
+    previousPlayerScoresRef.current = {}
+  }
+
+  function ensureAudioContext(): AudioContext | null {
+    const ExistingAudioContext =
+      window.AudioContext ??
+      (window as Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (!ExistingAudioContext) {
+      return null
+    }
+    if (audioContextRef.current === null) {
+      audioContextRef.current = new ExistingAudioContext()
+    }
+    if (audioContextRef.current.state === 'suspended') {
+      void audioContextRef.current.resume()
+    }
+    return audioContextRef.current
+  }
+
+  function playSfx(kind: 'menu' | 'join' | 'flap' | 'score' | 'crash'): void {
+    const context = ensureAudioContext()
+    if (!context) {
+      return
+    }
+    if (kind === 'menu') {
+      createRetroTonePlayer(context, [
+        { frequency: 420, durationMs: 32, gain: 0.03 },
+        { frequency: 560, durationMs: 42, delayMs: 28, gain: 0.025 },
+      ])
+      return
+    }
+    if (kind === 'join') {
+      createRetroTonePlayer(context, [
+        { frequency: 392, durationMs: 80, gain: 0.03 },
+        { frequency: 494, durationMs: 90, delayMs: 70, gain: 0.03 },
+        { frequency: 622, durationMs: 120, delayMs: 150, gain: 0.032 },
+      ])
+      return
+    }
+    if (kind === 'score') {
+      createRetroTonePlayer(context, [
+        { frequency: 660, durationMs: 40, gain: 0.03 },
+        { frequency: 880, durationMs: 60, delayMs: 36, gain: 0.03 },
+      ])
+      return
+    }
+    if (kind === 'crash') {
+      createRetroTonePlayer(context, [
+        { frequency: 220, durationMs: 110, gain: 0.04, waveform: 'sawtooth' },
+        { frequency: 160, durationMs: 160, delayMs: 70, gain: 0.035, waveform: 'triangle' },
+      ])
+      return
+    }
+    createRetroTonePlayer(context, [
+      { frequency: 520, durationMs: 28, gain: 0.022 },
+      { frequency: 390, durationMs: 34, delayMs: 18, gain: 0.018 },
+    ])
   }
 
   function applyOverview(overview: YabuBirdLeaderboardResponse): void {
@@ -525,16 +623,15 @@ export function YabuBirdPage() {
     if (!deviceFingerprint || phaseRef.current === 'joining') {
       return
     }
-    if (presenceRef.current && roomRef.current) {
-      await leaveRoom(false, true)
-    }
     setDrawerView(null)
     setErrorMessage(null)
     setStatusMessage('Oda hazirlaniyor...')
     setPhase('joining')
     phaseRef.current = 'joining'
     resetEngine()
-    await refreshLocation(true)
+    if (locationRef.current === null) {
+      void refreshLocation(true)
+    }
     try {
       const state = await joinYabuBirdLiveRoom({
         device_fingerprint: deviceFingerprint,
@@ -576,6 +673,7 @@ export function YabuBirdPage() {
     setPhase('crashed')
     phaseRef.current = 'crashed'
     setStatusMessage(`Tur bitti. Skor ${snapshot.score}.`)
+    playSfx('crash')
     window.navigator.vibrate?.(90)
     try {
       const overview = await finishYabuBirdRun({
@@ -641,6 +739,9 @@ export function YabuBirdPage() {
   }
 
   function startRun(withOpeningFlap: boolean): void {
+    if (withOpeningFlap) {
+      playSfx('flap')
+    }
     engineRef.current = {
       y: BIRD_START_Y,
       velocity: withOpeningFlap ? FLAP_VELOCITY : 0,
@@ -667,6 +768,7 @@ export function YabuBirdPage() {
     if (phaseRef.current !== 'playing') {
       return
     }
+    playSfx('flap')
     engineRef.current = {
       ...engineRef.current,
       velocity: FLAP_VELOCITY,
@@ -676,6 +778,7 @@ export function YabuBirdPage() {
 
   function handleStagePointerDown(event: ReactPointerEvent<HTMLDivElement>): void {
     event.preventDefault()
+    ensureAudioContext()
     if (phaseRef.current === 'joining' || phaseRef.current === 'menu' || phaseRef.current === 'crashed') {
       return
     }
@@ -688,6 +791,7 @@ export function YabuBirdPage() {
   function handleUiPointerDown(event: ReactPointerEvent<HTMLElement>): void {
     event.preventDefault()
     event.stopPropagation()
+    playSfx('menu')
   }
 
   useEffect(() => {
@@ -717,6 +821,49 @@ export function YabuBirdPage() {
   useEffect(() => {
     playersRef.current = players
   }, [players])
+
+  useEffect(() => {
+    if (phase === 'playing' && scoreLabel > previousScoreLabelRef.current) {
+      playSfx('score')
+    }
+    previousScoreLabelRef.current = scoreLabel
+  }, [phase, scoreLabel])
+
+  useEffect(() => {
+    if (phase === 'ready' && previousPhaseRef.current !== 'ready') {
+      playSfx('join')
+    }
+    previousPhaseRef.current = phase
+  }, [phase])
+
+  useEffect(() => {
+    const nextScores: Record<number, number> = {}
+    let nextFeed: string | null = null
+    for (const player of players) {
+      nextScores[player.id] = player.latest_score
+      const previousScore = previousPlayerScoresRef.current[player.id]
+      if (
+        phase === 'playing' &&
+        previousScore !== undefined &&
+        player.latest_score > previousScore &&
+        player.id !== you?.id
+      ) {
+        nextFeed = `${player.employee_name.toUpperCase()} +${player.latest_score - previousScore}`
+      }
+    }
+    previousPlayerScoresRef.current = nextScores
+    if (!nextFeed) {
+      return
+    }
+    setFeedMessage(nextFeed)
+    if (feedTimerRef.current !== null) {
+      window.clearTimeout(feedTimerRef.current)
+    }
+    feedTimerRef.current = window.setTimeout(() => {
+      setFeedMessage(null)
+      feedTimerRef.current = null
+    }, 1200)
+  }, [phase, players, you?.id])
 
   useEffect(() => {
     resetEngine()
@@ -819,6 +966,15 @@ export function YabuBirdPage() {
       }
     }
   }, [deviceFingerprint])
+
+  useEffect(() => {
+    return () => {
+      if (feedTimerRef.current !== null) {
+        window.clearTimeout(feedTimerRef.current)
+      }
+      void audioContextRef.current?.close()
+    }
+  }, [])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -1075,6 +1231,22 @@ export function YabuBirdPage() {
             </div>
           </div>
 
+          {liveScoreboard.length > 0 && phase !== 'menu' ? (
+            <div className="yabubird-live-counter">
+              <p className="yabubird-live-counter-title">ROOM SCORE</p>
+              {liveScoreboard.map((player) => (
+                <div key={player.id} className="yabubird-live-counter-row">
+                  <span>{player.employee_name.slice(0, 8).toUpperCase()}{player.id === you?.id ? '*' : ''}</span>
+                  <strong>{player.latest_score}</strong>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {feedMessage && phase === 'playing' && drawerView === null ? (
+            <div className="yabubird-score-feed">{feedMessage}</div>
+          ) : null}
+
           {phase === 'playing' && drawerView === null ? (
             <div className="yabubird-touch-tip">Tap anywhere. Her dokunus aninda flap.</div>
           ) : null}
@@ -1102,9 +1274,9 @@ export function YabuBirdPage() {
                         </button>
                       ) : null}
                     </div>
-                    <p className="yabubird-arcade-panel-kicker">YabuBird</p>
-                    <h2>{phase === 'ready' ? 'Tur hazir' : 'Bir oda sec'}</h2>
-                    <p>{phase === 'ready' ? roomLine : 'Tek oyna, public havuza gir ya da kendi server kodunu ac.'}</p>
+                    <p className="yabubird-arcade-panel-kicker">ARCADE ROM</p>
+                    <h2>{phase === 'ready' ? 'RUN READY' : 'SELECT MODE'}</h2>
+                    <p>{phase === 'ready' ? roomLine : 'Tek oyna, ortak odaya dal ya da kendi server kodunu ac.'}</p>
                     <div className="yabubird-room-strip">
                       <span>{roomSummary}</span>
                       <strong>Kisisel rekor {personalBest}</strong>
@@ -1207,7 +1379,7 @@ export function YabuBirdPage() {
                       <button type="button" onPointerDown={(event) => { handleUiPointerDown(event); setDrawerView('players') }}>Oyuncular</button>
                       <button type="button" onPointerDown={(event) => { handleUiPointerDown(event); setDrawerView(null) }}>Kapat</button>
                     </div>
-                    <p className="yabubird-arcade-panel-kicker">Top Score</p>
+                    <p className="yabubird-arcade-panel-kicker">HI SCORE</p>
                     <h2>En iyi YabuBird turlari</h2>
                     <div className="yabubird-drawer-list yabubird-drawer-list--compact">
                       {leaderboard.length === 0 ? (
@@ -1235,7 +1407,7 @@ export function YabuBirdPage() {
                       <button type="button" className="is-active">Oyuncular</button>
                       <button type="button" onPointerDown={(event) => { handleUiPointerDown(event); setDrawerView(null) }}>Kapat</button>
                     </div>
-                    <p className="yabubird-arcade-panel-kicker">Live</p>
+                    <p className="yabubird-arcade-panel-kicker">LIVE ROOM</p>
                     <h2>Aktif oyuncular</h2>
                     <div className="yabubird-drawer-list yabubird-drawer-list--compact">
                       {playerList.length === 0 ? (
@@ -1257,7 +1429,7 @@ export function YabuBirdPage() {
 
                 {panelScreen === 'joining' && (
                   <>
-                    <p className="yabubird-arcade-panel-kicker">Baglaniyor</p>
+                    <p className="yabubird-arcade-panel-kicker">LOADING</p>
                     <h2>Oda aciliyor...</h2>
                     <p>Sunucu ve canli akıs hazirlaniyor.</p>
                   </>

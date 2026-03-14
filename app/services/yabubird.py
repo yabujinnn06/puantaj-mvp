@@ -577,6 +577,36 @@ def _build_live_state(db: Session, *, room: YabuBirdRoom, presence: YabuBirdPres
     }
 
 
+def _close_other_active_presences(
+    db: Session,
+    *,
+    employee_id: int,
+    device_id: int,
+    keep_room_id: int,
+    now: datetime,
+) -> None:
+    active_presences = list(
+        db.scalars(
+            select(YabuBirdPresence)
+            .options(selectinload(YabuBirdPresence.room))
+            .where(
+                YabuBirdPresence.employee_id == employee_id,
+                YabuBirdPresence.device_id == device_id,
+                YabuBirdPresence.finished_at.is_(None),
+                YabuBirdPresence.room_id != keep_room_id,
+            )
+            .order_by(YabuBirdPresence.started_at.desc(), YabuBirdPresence.id.desc())
+        ).all()
+    )
+    for active_presence in active_presences:
+        active_presence.is_connected = False
+        active_presence.is_alive = False
+        active_presence.last_seen_at = now
+        active_presence.finished_at = active_presence.finished_at or now
+        if active_presence.room is not None:
+            _close_room_if_idle(db, room=active_presence.room, now=now)
+
+
 def join_yabubird_live_room(
     db: Session,
     *,
@@ -599,6 +629,13 @@ def join_yabubird_live_room(
         room_code=room_code,
         now=now,
         employee_id=employee.id,
+    )
+    _close_other_active_presences(
+        db,
+        employee_id=employee.id,
+        device_id=device.id,
+        keep_room_id=room.id,
+        now=now,
     )
     presence = db.scalar(
         select(YabuBirdPresence)
