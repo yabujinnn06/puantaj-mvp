@@ -50,20 +50,30 @@ def upgrade() -> None:
 
     op.execute(
         """
-        UPDATE audit_logs
-        SET employee_id = actor_id::integer
-        WHERE employee_id IS NULL
-          AND actor_type = 'SYSTEM'
-          AND actor_id ~ '^[0-9]+$'
+        UPDATE audit_logs AS audit
+        SET employee_id = audit.actor_id::integer
+        WHERE audit.employee_id IS NULL
+          AND audit.actor_type = 'SYSTEM'
+          AND audit.actor_id ~ '^[0-9]+$'
+          AND EXISTS (
+              SELECT 1
+              FROM employees
+              WHERE employees.id = audit.actor_id::integer
+          )
         """
     )
     op.execute(
         """
-        UPDATE audit_logs
-        SET device_id = entity_id::integer
-        WHERE device_id IS NULL
-          AND entity_type = 'device'
-          AND entity_id ~ '^[0-9]+$'
+        UPDATE audit_logs AS audit
+        SET device_id = audit.entity_id::integer
+        WHERE audit.device_id IS NULL
+          AND audit.entity_type = 'device'
+          AND audit.entity_id ~ '^[0-9]+$'
+          AND EXISTS (
+              SELECT 1
+              FROM devices
+              WHERE devices.id = audit.entity_id::integer
+          )
         """
     )
     op.execute(
