@@ -147,6 +147,13 @@ export interface YabuBirdLeaveRequest {
   accuracy_m?: number | null
 }
 
+export interface YabuBirdReactionRequest {
+  device_fingerprint: string
+  room_id: number
+  presence_id: number
+  emoji: '😀' | '😂' | '😎' | '😭' | '👏' | '🔥' | '👍' | '😡'
+}
+
 export interface YabuBirdRoom {
   id: number
   room_key: string
@@ -197,11 +204,22 @@ export interface YabuBirdScore {
   created_at: string
 }
 
+export interface YabuBirdReaction {
+  id: number
+  room_id: number
+  presence_id: number | null
+  employee_id: number
+  employee_name: string
+  emoji: '😀' | '😂' | '😎' | '😭' | '👏' | '🔥' | '👍' | '😡'
+  created_at: string
+}
+
 export interface YabuBirdLiveStateResponse {
   room: YabuBirdRoom
   you: YabuBirdPresence
   players: YabuBirdPresence[]
   leaderboard: YabuBirdScore[]
+  reactions: YabuBirdReaction[]
   personal_best: number
 }
 

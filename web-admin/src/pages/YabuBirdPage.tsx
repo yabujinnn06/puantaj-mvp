@@ -36,6 +36,27 @@ function formatCoords(lat: number | null | undefined, lon: number | null | undef
   return `${lat.toFixed(5)}, ${lon.toFixed(5)}`
 }
 
+function formatEventLabel(value: string | null | undefined): string {
+  switch (value) {
+    case 'app_login':
+      return 'App Login'
+    case 'game_login':
+      return 'Game Login'
+    case 'game_session_start':
+      return 'Session Start'
+    case 'game_session_end':
+      return 'Session End'
+    case 'game_logout':
+      return 'Game Logout'
+    case 'emoji_reaction':
+      return 'Emoji'
+    case 'game_score_update':
+      return 'Score'
+    default:
+      return value ?? '-'
+  }
+}
+
 export function YabuBirdPage() {
   const [overview, setOverview] = useState<AdminYabuBirdOverview | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -79,6 +100,7 @@ export function YabuBirdPage() {
   const liveLocations = overview?.live_player_locations ?? []
   const recentLocations = overview?.recent_player_locations ?? []
   const appEntries = overview?.app_entry_locations ?? []
+  const recentActivity = overview?.recent_activity ?? []
 
   const liveMarkers = useMemo<EmployeeLiveLocationMapMarker[]>(
     () =>
@@ -341,6 +363,39 @@ export function YabuBirdPage() {
                 <strong className="rounded-full bg-emerald-100 px-3 py-1 text-sm text-emerald-700">{entry.score}</strong>
               </div>
             ))}
+          </div>
+        </Panel>
+      </div>
+
+      <div className="mt-4">
+        <Panel>
+          <p className="text-xs font-black uppercase tracking-[0.22em] text-sky-700">Recent Activity</p>
+          <h3 className="mt-1 text-lg font-semibold text-slate-900">App ve oyun event akisi</h3>
+          <div className="mt-4 space-y-3">
+            {recentActivity.length === 0 ? (
+              <p className="text-sm text-slate-500">Son activity event yok.</p>
+            ) : (
+              recentActivity.map((entry) => (
+                <div key={entry.audit_id} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-white">
+                      {entry.module}
+                    </span>
+                    <span className="rounded-full bg-sky-100 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-sky-700">
+                      {formatEventLabel(entry.event_type)}
+                    </span>
+                    <span className="text-xs text-slate-500">{formatClock(entry.logged_at)}</span>
+                  </div>
+                  <p className="mt-2 text-sm font-semibold text-slate-900">
+                    {entry.employee_name ?? `Calisan ${entry.employee_id ?? '-'}`}
+                  </p>
+                  <p className="mt-1 text-sm text-slate-600">{entry.summary}</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    entity {entry.entity_type ?? '-'} / {entry.entity_id ?? '-'} / device {entry.device_id ?? '-'}
+                  </p>
+                </div>
+              ))
+            )}
           </div>
         </Panel>
       </div>

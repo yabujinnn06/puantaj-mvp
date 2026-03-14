@@ -516,7 +516,8 @@
 .yabubird-menu-tabs button,
 .yabubird-mode-inline-btn,
 .yabubird-mode-card,
-.yabubird-room-row {
+.yabubird-room-row,
+.yabubird-reaction-btn {
   font: inherit;
   color: #eaf6ff;
   border: 2px solid #9ad7ff;
@@ -537,7 +538,8 @@
 .yabubird-menu-tabs button:active,
 .yabubird-mode-inline-btn:active,
 .yabubird-mode-card:active,
-.yabubird-room-row:active {
+.yabubird-room-row:active,
+.yabubird-reaction-btn:active {
   transform: translateY(2px);
   box-shadow:
     inset -2px -2px 0 rgba(0, 0, 0, 0.48),
@@ -873,6 +875,60 @@
   letter-spacing: 0.08em;
 }
 
+.yabubird-reaction-burst {
+  position: absolute;
+  top: 5.15rem;
+  left: 0.8rem;
+  z-index: 3;
+  display: grid;
+  gap: 0.28rem;
+  width: min(8.4rem, calc(100% - 10.8rem));
+}
+
+.yabubird-reaction-burst-row {
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+  min-height: 1.75rem;
+  padding: 0.28rem 0.45rem;
+  border: 2px solid rgba(147, 219, 255, 0.2);
+  background: rgba(5, 11, 20, 0.94);
+  color: #eaf6ff;
+  font-size: 0.64rem;
+  box-shadow:
+    inset -2px -2px 0 rgba(0, 0, 0, 0.34),
+    inset 2px 2px 0 rgba(255, 255, 255, 0.06);
+}
+
+.yabubird-reaction-burst-emoji {
+  display: inline-grid;
+  place-items: center;
+  width: 1.15rem;
+  font-size: 0.84rem;
+}
+
+.yabubird-reaction-dock {
+  position: absolute;
+  left: 0.8rem;
+  right: 0.8rem;
+  bottom: 3.2rem;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.35rem;
+  pointer-events: none;
+}
+
+.yabubird-reaction-btn {
+  min-height: 2rem;
+  padding: 0.18rem 0.2rem;
+  border-radius: 3px;
+  font-size: 1rem;
+  line-height: 1;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+
 @media (min-width: 720px) {
   .yabubird-arcade-hud {
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -914,6 +970,19 @@
 
   .yabubird-score-feed {
     top: 7.8rem;
+  }
+
+  .yabubird-reaction-burst {
+    top: 7.8rem;
+    left: 0.7rem;
+    width: 7.2rem;
+  }
+
+  .yabubird-reaction-dock {
+    left: 0.7rem;
+    right: 0.7rem;
+    bottom: 3.1rem;
+    grid-template-columns: repeat(8, minmax(0, 1fr));
   }
 
   .yabubird-arcade-panel {

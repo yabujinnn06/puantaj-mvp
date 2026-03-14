@@ -5074,7 +5074,11 @@ def soft_delete_attendance_event_endpoint(
     dependencies=[Depends(require_admin_permission("audit"))],
 )
 def list_audit_logs(
+    module: str | None = Query(default=None),
+    event_type: str | None = Query(default=None),
     action: str | None = Query(default=None),
+    employee_id: int | None = Query(default=None, ge=1),
+    device_id: int | None = Query(default=None, ge=1),
     entity_type: str | None = Query(default=None),
     entity_id: str | None = Query(default=None),
     success: bool | None = Query(default=None),
@@ -5083,8 +5087,16 @@ def list_audit_logs(
     db: Session = Depends(get_db),
 ) -> AuditLogPageResponse:
     conditions: list[Any] = []
+    if module:
+        conditions.append(AuditLog.module == module)
+    if event_type:
+        conditions.append(AuditLog.event_type == event_type)
     if action:
         conditions.append(AuditLog.action == action)
+    if employee_id is not None:
+        conditions.append(AuditLog.employee_id == employee_id)
+    if device_id is not None:
+        conditions.append(AuditLog.device_id == device_id)
     if entity_type:
         conditions.append(AuditLog.entity_type == entity_type)
     if entity_id:

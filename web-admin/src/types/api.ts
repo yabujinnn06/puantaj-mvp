@@ -265,6 +265,10 @@ export interface AuditLog {
   ts_utc: string
   actor_type: AuditActorType
   actor_id: string
+  module: string
+  event_type: string | null
+  employee_id: number | null
+  device_id: number | null
   action: string
   entity_type: string | null
   entity_id: string | null
@@ -917,6 +921,21 @@ export interface AdminYabuBirdAppEntry {
   location: YabuBirdLocation | null
 }
 
+export interface AdminYabuBirdActivityEvent {
+  audit_id: number
+  module: string
+  event_type: string | null
+  action: string
+  employee_id: number | null
+  employee_name: string | null
+  device_id: number | null
+  entity_type: string | null
+  entity_id: string | null
+  logged_at: string
+  summary: string
+  details: Record<string, unknown>
+}
+
 export interface AdminYabuBirdOverview {
   live_room: YabuBirdRoom | null
   live_rooms: YabuBirdRoom[]
@@ -926,6 +945,7 @@ export interface AdminYabuBirdOverview {
   live_player_locations: AdminYabuBirdPlayerLocation[]
   recent_player_locations: AdminYabuBirdPlayerLocation[]
   app_entry_locations: AdminYabuBirdAppEntry[]
+  recent_activity: AdminYabuBirdActivityEvent[]
 }
 
 export interface MonthlyEmployeeDay {

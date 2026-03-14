@@ -41,6 +41,7 @@ import type {
   YabuBirdLeaderboardResponse,
   YabuBirdLeaveRequest,
   YabuBirdLiveStateResponse,
+  YabuBirdReactionRequest,
   YabuBirdStateUpdateRequest,
 } from '../types/api'
 
@@ -255,6 +256,16 @@ export async function leaveYabuBirdLiveRoom(
 ): Promise<YabuBirdLeaderboardResponse> {
   const response = await apiClient.post<YabuBirdLeaderboardResponse>(
     '/api/employee/yabubird/live/leave',
+    payload,
+  )
+  return response.data
+}
+
+export async function reactYabuBirdLiveRoom(
+  payload: YabuBirdReactionRequest,
+): Promise<YabuBirdLiveStateResponse> {
+  const response = await apiClient.post<YabuBirdLiveStateResponse>(
+    '/api/employee/yabubird/live/react',
     payload,
   )
   return response.data

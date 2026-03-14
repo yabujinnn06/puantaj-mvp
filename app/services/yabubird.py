@@ -5,11 +5,34 @@ import secrets
 import string
 from typing import Any, Literal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.errors import ApiError
-from app.models import AuditActorType, AuditLog, Device, Employee, YabuBirdPresence, YabuBirdRoom, YabuBirdScore
+from app.models import (
+    AuditActorType,
+    AuditLog,
+    Device,
+    Employee,
+    YabuBirdPresence,
+    YabuBirdReaction,
+    YabuBirdRoom,
+    YabuBirdScore,
+)
+from app.services.activity_events import (
+    APP_ACTIVITY_EVENTS,
+    EVENT_APP_LOGIN,
+    EVENT_EMOJI_REACTION,
+    EVENT_GAME_LOGIN,
+    EVENT_GAME_LOGOUT,
+    EVENT_GAME_SCORE_UPDATE,
+    EVENT_GAME_SESSION_END,
+    EVENT_GAME_SESSION_START,
+    GAME_ACTIVITY_EVENTS,
+    MODULE_APP,
+    MODULE_GAME,
+    YABUBIRD_REACTION_EMOJIS,
+)
 
 RoomType = Literal["PUBLIC", "PARTY", "SOLO"]
 JoinMode = Literal["PUBLIC", "HOST", "ROOM", "SOLO"]
@@ -27,6 +50,13 @@ LOCATION_LIVE_WINDOW = timedelta(seconds=45)
 LOCATION_STALE_WINDOW = timedelta(minutes=12)
 LEADERBOARD_SAMPLE_LIMIT = 250
 APP_ENTRY_AUDIT_ACTION = "EMPLOYEE_APP_LOCATION_PING"
+LEGACY_GAME_JOIN_AUDIT_ACTION = "YABUBIRD_JOINED"
+LEGACY_GAME_FINISH_AUDIT_ACTION = "YABUBIRD_FINISHED"
+LEGACY_GAME_LEAVE_AUDIT_ACTION = "YABUBIRD_LEFT"
+REACTION_RECENT_WINDOW = timedelta(seconds=10)
+REACTION_RATE_LIMIT_WINDOW = timedelta(milliseconds=900)
+REACTION_RATE_LIMIT_BURST_WINDOW = timedelta(seconds=20)
+REACTION_RATE_LIMIT_BURST_COUNT = 12
 
 PLAYER_COLORS = (
     "#67d3ff",
@@ -186,6 +216,23 @@ def _score_to_read(score: YabuBirdScore) -> dict[str, Any]:
         "room_label": _room_label(room_type, share_code),
         "share_code": share_code,
         "created_at": score.created_at,
+    }
+
+
+def _reaction_to_read(reaction: YabuBirdReaction) -> dict[str, Any]:
+    employee_name = (
+        reaction.employee.full_name
+        if reaction.employee is not None and reaction.employee.full_name
+        else f"Calisan {reaction.employee_id}"
+    )
+    return {
+        "id": reaction.id,
+        "room_id": reaction.room_id,
+        "presence_id": reaction.presence_id,
+        "employee_id": reaction.employee_id,
+        "employee_name": employee_name,
+        "emoji": reaction.emoji,
+        "created_at": reaction.created_at,
     }
 
 
@@ -563,6 +610,26 @@ def get_yabubird_personal_best(db: Session, *, employee_id: int) -> int:
     return int(best_score or 0)
 
 
+def _list_room_reactions(db: Session, *, room_id: int, now: datetime) -> list[YabuBirdReaction]:
+    reaction_threshold = now - REACTION_RECENT_WINDOW
+    return list(
+        reversed(
+            list(
+                db.scalars(
+                    select(YabuBirdReaction)
+                    .options(selectinload(YabuBirdReaction.employee))
+                    .where(
+                        YabuBirdReaction.room_id == room_id,
+                        YabuBirdReaction.created_at >= reaction_threshold,
+                    )
+                    .order_by(YabuBirdReaction.created_at.desc(), YabuBirdReaction.id.desc())
+                    .limit(18)
+                ).all()
+            )
+        )
+    )
+
+
 def _build_live_state(db: Session, *, room: YabuBirdRoom, presence: YabuBirdPresence) -> dict[str, Any]:
     now = _utcnow()
     db.refresh(room)
@@ -573,6 +640,7 @@ def _build_live_state(db: Session, *, room: YabuBirdRoom, presence: YabuBirdPres
         "you": _presence_to_read(presence),
         "players": [_presence_to_read(item) for item in room_players],
         "leaderboard": get_yabubird_leaderboard(db, limit=12),
+        "reactions": [_reaction_to_read(item) for item in _list_room_reactions(db, room_id=room.id, now=now)],
         "personal_best": get_yabubird_personal_best(db, employee_id=presence.employee_id),
     }
 
@@ -840,6 +908,78 @@ def leave_yabubird_live_room(
     return build_employee_yabubird_overview(db, device_fingerprint=device_fingerprint)
 
 
+def react_yabubird_live_room(
+    db: Session,
+    *,
+    device_fingerprint: str,
+    room_id: int,
+    presence_id: int,
+    emoji: str,
+) -> dict[str, Any]:
+    now = _utcnow()
+    normalized_emoji = (emoji or "").strip()
+    if normalized_emoji not in YABUBIRD_REACTION_EMOJIS:
+        raise ApiError(status_code=422, code="YABUBIRD_REACTION_INVALID", message="Reaction is not allowed.")
+
+    device = _resolve_active_device(db, device_fingerprint=device_fingerprint)
+    employee = device.employee
+    if employee is None:
+        raise ApiError(status_code=404, code="EMPLOYEE_NOT_FOUND", message="Employee not found.")
+
+    presence = db.scalar(
+        select(YabuBirdPresence)
+        .options(selectinload(YabuBirdPresence.room), selectinload(YabuBirdPresence.employee))
+        .where(
+            YabuBirdPresence.id == presence_id,
+            YabuBirdPresence.room_id == room_id,
+            YabuBirdPresence.employee_id == employee.id,
+            YabuBirdPresence.device_id == device.id,
+        )
+    )
+    if presence is None or presence.room is None:
+        raise ApiError(status_code=404, code="YABUBIRD_PRESENCE_NOT_FOUND", message="Live YabuBird run not found.")
+    if presence.room.status != "OPEN":
+        raise ApiError(status_code=409, code="YABUBIRD_ROOM_CLOSED", message="Live room is closed.")
+
+    last_reaction = db.scalar(
+        select(YabuBirdReaction)
+        .where(
+            YabuBirdReaction.room_id == room_id,
+            YabuBirdReaction.employee_id == employee.id,
+            YabuBirdReaction.device_id == device.id,
+        )
+        .order_by(YabuBirdReaction.created_at.desc(), YabuBirdReaction.id.desc())
+    )
+    if last_reaction is not None and now - last_reaction.created_at < REACTION_RATE_LIMIT_WINDOW:
+        raise ApiError(status_code=429, code="YABUBIRD_REACTION_RATE_LIMIT", message="Reaction is cooling down.")
+
+    burst_count = int(
+        db.scalar(
+            select(func.count(YabuBirdReaction.id)).where(
+                YabuBirdReaction.room_id == room_id,
+                YabuBirdReaction.employee_id == employee.id,
+                YabuBirdReaction.created_at >= now - REACTION_RATE_LIMIT_BURST_WINDOW,
+            )
+        )
+        or 0
+    )
+    if burst_count >= REACTION_RATE_LIMIT_BURST_COUNT:
+        raise ApiError(status_code=429, code="YABUBIRD_REACTION_RATE_LIMIT", message="Reaction limit reached.")
+
+    db.add(
+        YabuBirdReaction(
+            room_id=room_id,
+            presence_id=presence.id,
+            employee_id=employee.id,
+            device_id=device.id,
+            emoji=normalized_emoji,
+            created_at=now,
+        )
+    )
+    db.commit()
+    return _build_live_state(db, room=presence.room, presence=presence)
+
+
 def build_employee_yabubird_overview(db: Session, *, device_fingerprint: str) -> dict[str, Any]:
     device = _resolve_active_device(db, device_fingerprint=device_fingerprint)
     employee = device.employee
@@ -852,6 +992,11 @@ def build_employee_yabubird_overview(db: Session, *, device_fingerprint: str) ->
         None,
     )
     public_players = players_by_room_id.get(public_room.id, []) if public_room is not None else []
+    menu_rooms = [
+        _room_to_read(room, player_count=len(players_by_room_id.get(room.id, [])))
+        for room in rooms
+        if _room_type_from_key(room.room_key)[0] != "SOLO"
+    ]
 
     return {
         "leaderboard": get_yabubird_leaderboard(db, limit=12),
@@ -860,14 +1005,42 @@ def build_employee_yabubird_overview(db: Session, *, device_fingerprint: str) ->
             if public_room is not None
             else None
         ),
-        "live_rooms": (
-            [_room_to_read(public_room, player_count=len(public_players))]
-            if public_room is not None
-            else []
-        ),
+        "live_rooms": menu_rooms,
         "live_players": [_presence_to_read(item) for item in public_players],
         "personal_best": get_yabubird_personal_best(db, employee_id=employee.id),
     }
+
+
+def _audit_employee_id(log_item: AuditLog) -> int | None:
+    if log_item.employee_id is not None:
+        return int(log_item.employee_id)
+    actor_id_raw = str(log_item.actor_id or "").strip()
+    if actor_id_raw.isdigit():
+        return int(actor_id_raw)
+    return None
+
+
+def _build_activity_summary(log_item: AuditLog) -> str:
+    event_type = (log_item.event_type or "").strip().lower()
+    details = log_item.details if isinstance(log_item.details, dict) else {}
+    if event_type == EVENT_APP_LOGIN:
+        return f"Uygulamaya giris / {details.get('source') or 'APP_OPEN'}"
+    if event_type == EVENT_GAME_LOGIN:
+        return "YabuBird acildi"
+    if event_type == EVENT_GAME_SESSION_START:
+        room_label = details.get("room_label") or details.get("room_key") or "oda"
+        return f"Oyun oturumu basladi / {room_label}"
+    if event_type == EVENT_GAME_SESSION_END:
+        score = details.get("score")
+        return f"Oyun oturumu bitti / skor {score if score is not None else '-'}"
+    if event_type == EVENT_GAME_LOGOUT:
+        return "YabuBird odasindan cikildi"
+    if event_type == EVENT_GAME_SCORE_UPDATE:
+        score = details.get("score")
+        return f"Skor guncellendi / {score if score is not None else '-'}"
+    if event_type == EVENT_EMOJI_REACTION:
+        return f"Emoji tepkisi / {details.get('emoji') or '-'}"
+    return log_item.action
 
 
 def build_admin_yabubird_overview(db: Session) -> dict[str, Any]:
@@ -913,18 +1086,44 @@ def build_admin_yabubird_overview(db: Session) -> dict[str, Any]:
             select(AuditLog)
             .where(
                 AuditLog.actor_type == AuditActorType.SYSTEM,
-                AuditLog.action == APP_ENTRY_AUDIT_ACTION,
                 AuditLog.success.is_(True),
+                or_(
+                    AuditLog.event_type == EVENT_APP_LOGIN,
+                    AuditLog.action == APP_ENTRY_AUDIT_ACTION,
+                ),
             )
             .order_by(AuditLog.ts_utc.desc(), AuditLog.id.desc())
             .limit(72)
         ).all()
     )
+    recent_activity_logs = list(
+        db.scalars(
+            select(AuditLog)
+            .where(
+                AuditLog.actor_type == AuditActorType.SYSTEM,
+                AuditLog.success.is_(True),
+                or_(
+                    AuditLog.module.in_((MODULE_APP, MODULE_GAME)),
+                    AuditLog.action.in_(
+                        (
+                            APP_ENTRY_AUDIT_ACTION,
+                            LEGACY_GAME_JOIN_AUDIT_ACTION,
+                            LEGACY_GAME_FINISH_AUDIT_ACTION,
+                            LEGACY_GAME_LEAVE_AUDIT_ACTION,
+                        )
+                    ),
+                ),
+            )
+            .order_by(AuditLog.ts_utc.desc(), AuditLog.id.desc())
+            .limit(80)
+        ).all()
+    )
     employee_ids = sorted(
         {
-            int(item.actor_id)
-            for item in app_entry_logs
-            if str(item.actor_id or "").strip().isdigit()
+            employee_id
+            for item in [*app_entry_logs, *recent_activity_logs]
+            for employee_id in [_audit_employee_id(item)]
+            if employee_id is not None
         }
     )
     employees_by_id = {
@@ -933,10 +1132,9 @@ def build_admin_yabubird_overview(db: Session) -> dict[str, Any]:
     } if employee_ids else {}
     app_entry_locations: list[dict[str, Any]] = []
     for log_item in app_entry_logs:
-        actor_id_raw = str(log_item.actor_id or "").strip()
-        if not actor_id_raw.isdigit():
+        employee_id = _audit_employee_id(log_item)
+        if employee_id is None:
             continue
-        employee_id = int(actor_id_raw)
         details = log_item.details if isinstance(log_item.details, dict) else {}
         lat = _coerce_float(details.get("lat"))
         lon = _coerce_float(details.get("lon"))
@@ -961,6 +1159,32 @@ def build_admin_yabubird_overview(db: Session) -> dict[str, Any]:
             }
         )
 
+    recent_activity: list[dict[str, Any]] = []
+    for log_item in recent_activity_logs:
+        employee_id = _audit_employee_id(log_item)
+        employee_name = (
+            employees_by_id[employee_id].full_name
+            if employee_id is not None and employee_id in employees_by_id
+            else None
+        )
+        details = log_item.details if isinstance(log_item.details, dict) else {}
+        recent_activity.append(
+            {
+                "audit_id": log_item.id,
+                "module": log_item.module,
+                "event_type": log_item.event_type,
+                "action": log_item.action,
+                "employee_id": employee_id,
+                "employee_name": employee_name,
+                "device_id": log_item.device_id,
+                "entity_type": log_item.entity_type,
+                "entity_id": log_item.entity_id,
+                "logged_at": log_item.ts_utc,
+                "summary": _build_activity_summary(log_item),
+                "details": details,
+            }
+        )
+
     return {
         "live_room": room_reads[0] if room_reads else None,
         "live_rooms": room_reads,
@@ -970,4 +1194,5 @@ def build_admin_yabubird_overview(db: Session) -> dict[str, Any]:
         "live_player_locations": live_player_locations[:25],
         "recent_player_locations": recent_player_locations[:25],
         "app_entry_locations": app_entry_locations,
+        "recent_activity": recent_activity,
     }

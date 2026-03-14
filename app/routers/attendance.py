@@ -53,9 +53,20 @@ from app.schemas import (
     YabuBirdLeaderboardResponse,
     YabuBirdLeaveRequest,
     YabuBirdLiveStateResponse,
+    YabuBirdReactionRequest,
     YabuBirdStateUpdateRequest,
 )
 from app.settings import get_settings
+from app.services.activity_events import (
+    EVENT_EMOJI_REACTION,
+    EVENT_GAME_LOGOUT,
+    EVENT_GAME_SESSION_END,
+    EVENT_GAME_SESSION_START,
+    MODULE_APP,
+    MODULE_GAME,
+    app_presence_event_type,
+    log_employee_activity,
+)
 from app.services.push_notifications import (
     deactivate_device_push_subscription,
     get_push_public_config,
@@ -88,6 +99,7 @@ from app.services.yabubird import (
     finish_yabubird_run,
     join_yabubird_live_room,
     leave_yabubird_live_room,
+    react_yabubird_live_room,
     update_yabubird_presence_state,
 )
 
@@ -122,6 +134,15 @@ def _is_secure_request(request: Request) -> bool:
     if forwarded_proto:
         return forwarded_proto.split(",")[0].strip() == "https"
     return request.url.scheme == "https"
+
+
+def _active_device_by_fingerprint(db: Session, *, device_fingerprint: str) -> Device | None:
+    return db.scalar(
+        select(Device).where(
+            Device.device_fingerprint == device_fingerprint,
+            Device.is_active.is_(True),
+        )
+    )
 
 
 def _set_device_fingerprint_cookie(
@@ -884,12 +905,7 @@ def employee_app_presence_ping(
     db: Session = Depends(get_db),
 ) -> EmployeeAppPresencePingResponse:
     request.state.actor = "employee"
-    device = db.scalar(
-        select(Device).where(
-            Device.device_fingerprint == payload.device_fingerprint,
-            Device.is_active.is_(True),
-        )
-    )
+    device = _active_device_by_fingerprint(db, device_fingerprint=payload.device_fingerprint)
     if device is None:
         raise ApiError(
             status_code=404,
@@ -912,13 +928,16 @@ def employee_app_presence_ping(
         )
 
     logged_at = datetime.now(timezone.utc)
+    event_type = app_presence_event_type(payload.source)
     request.state.employee_id = employee.id
     request.state.flags = {"source": payload.source}
-    log_audit(
+    log_employee_activity(
         db,
-        actor_type=AuditActorType.SYSTEM,
-        actor_id=str(employee.id),
+        employee_id=employee.id,
+        device_id=device.id,
         action="EMPLOYEE_APP_LOCATION_PING",
+        module=MODULE_GAME if event_type == "game_login" else MODULE_APP,
+        event_type=event_type,
         success=True,
         entity_type="device",
         entity_id=str(device.id),
@@ -953,6 +972,7 @@ def employee_yabubird_join(
     db: Session = Depends(get_db),
 ) -> YabuBirdLiveStateResponse:
     request.state.actor = "employee"
+    device = _active_device_by_fingerprint(db, device_fingerprint=payload.device_fingerprint)
     state_data = join_yabubird_live_room(
         db,
         device_fingerprint=payload.device_fingerprint,
@@ -967,11 +987,13 @@ def employee_yabubird_join(
         "room_id": state_data["room"]["id"],
         "presence_id": state_data["you"]["id"],
     }
-    log_audit(
+    log_employee_activity(
         db,
-        actor_type=AuditActorType.SYSTEM,
-        actor_id=str(state_data["you"]["employee_id"]),
+        employee_id=state_data["you"]["employee_id"],
+        device_id=device.id if device is not None else None,
         action="YABUBIRD_JOINED",
+        module=MODULE_GAME,
+        event_type=EVENT_GAME_SESSION_START,
         success=True,
         entity_type="yabubird_room",
         entity_id=str(state_data["room"]["id"]),
@@ -980,6 +1002,7 @@ def employee_yabubird_join(
         details={
             "presence_id": state_data["you"]["id"],
             "room_key": state_data["room"]["room_key"],
+            "room_label": state_data["room"]["room_label"],
             "mode": payload.mode,
             "room_code": payload.room_code,
         },
@@ -1020,6 +1043,7 @@ def employee_yabubird_finish(
     db: Session = Depends(get_db),
 ) -> YabuBirdLeaderboardResponse:
     request.state.actor = "employee"
+    device = _active_device_by_fingerprint(db, device_fingerprint=payload.device_fingerprint)
     overview = finish_yabubird_run(
         db,
         device_fingerprint=payload.device_fingerprint,
@@ -1031,23 +1055,26 @@ def employee_yabubird_finish(
         lon=payload.lon,
         accuracy_m=payload.accuracy_m,
     )
-    log_audit(
-        db,
-        actor_type=AuditActorType.SYSTEM,
-        actor_id="employee",
-        action="YABUBIRD_FINISHED",
-        success=True,
-        entity_type="yabubird_presence",
-        entity_id=str(payload.presence_id),
-        ip=_client_ip(request),
-        user_agent=_user_agent(request),
-        details={
-            "room_id": payload.room_id,
-            "score": payload.score,
-            "survived_ms": payload.survived_ms,
-        },
-        request_id=getattr(request.state, "request_id", None),
-    )
+    if device is not None and device.employee_id is not None:
+        log_employee_activity(
+            db,
+            employee_id=device.employee_id,
+            device_id=device.id,
+            action="YABUBIRD_FINISHED",
+            module=MODULE_GAME,
+            event_type=EVENT_GAME_SESSION_END,
+            success=True,
+            entity_type="yabubird_presence",
+            entity_id=str(payload.presence_id),
+            ip=_client_ip(request),
+            user_agent=_user_agent(request),
+            details={
+                "room_id": payload.room_id,
+                "score": payload.score,
+                "survived_ms": payload.survived_ms,
+            },
+            request_id=getattr(request.state, "request_id", None),
+        )
     return YabuBirdLeaderboardResponse(**overview)
 
 
@@ -1058,6 +1085,7 @@ def employee_yabubird_leave(
     db: Session = Depends(get_db),
 ) -> YabuBirdLeaderboardResponse:
     request.state.actor = "employee"
+    device = _active_device_by_fingerprint(db, device_fingerprint=payload.device_fingerprint)
     overview = leave_yabubird_live_room(
         db,
         device_fingerprint=payload.device_fingerprint,
@@ -1067,20 +1095,62 @@ def employee_yabubird_leave(
         lon=payload.lon,
         accuracy_m=payload.accuracy_m,
     )
-    log_audit(
-        db,
-        actor_type=AuditActorType.SYSTEM,
-        actor_id="employee",
-        action="YABUBIRD_LEFT",
-        success=True,
-        entity_type="yabubird_presence",
-        entity_id=str(payload.presence_id),
-        ip=_client_ip(request),
-        user_agent=_user_agent(request),
-        details={"room_id": payload.room_id},
-        request_id=getattr(request.state, "request_id", None),
-    )
+    if device is not None and device.employee_id is not None:
+        log_employee_activity(
+            db,
+            employee_id=device.employee_id,
+            device_id=device.id,
+            action="YABUBIRD_LEFT",
+            module=MODULE_GAME,
+            event_type=EVENT_GAME_LOGOUT,
+            success=True,
+            entity_type="yabubird_presence",
+            entity_id=str(payload.presence_id),
+            ip=_client_ip(request),
+            user_agent=_user_agent(request),
+            details={"room_id": payload.room_id},
+            request_id=getattr(request.state, "request_id", None),
+        )
     return YabuBirdLeaderboardResponse(**overview)
+
+
+@router.post("/api/employee/yabubird/live/react", response_model=YabuBirdLiveStateResponse)
+def employee_yabubird_react(
+    payload: YabuBirdReactionRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> YabuBirdLiveStateResponse:
+    request.state.actor = "employee"
+    device = _active_device_by_fingerprint(db, device_fingerprint=payload.device_fingerprint)
+    state_data = react_yabubird_live_room(
+        db,
+        device_fingerprint=payload.device_fingerprint,
+        room_id=payload.room_id,
+        presence_id=payload.presence_id,
+        emoji=payload.emoji,
+    )
+    request.state.employee_id = state_data["you"]["employee_id"]
+    if device is not None and device.employee_id is not None:
+        log_employee_activity(
+            db,
+            employee_id=device.employee_id,
+            device_id=device.id,
+            action="YABUBIRD_REACTION",
+            module=MODULE_GAME,
+            event_type=EVENT_EMOJI_REACTION,
+            success=True,
+            entity_type="yabubird_room",
+            entity_id=str(payload.room_id),
+            ip=_client_ip(request),
+            user_agent=_user_agent(request),
+            details={
+                "presence_id": payload.presence_id,
+                "room_id": payload.room_id,
+                "emoji": payload.emoji,
+            },
+            request_id=getattr(request.state, "request_id", None),
+        )
+    return YabuBirdLiveStateResponse(**state_data)
 
 
 @router.post(

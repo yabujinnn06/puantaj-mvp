@@ -10,7 +10,11 @@ import { Panel } from '../components/Panel'
 import type { AuditLog } from '../types/api'
 
 interface LogFilters {
+  module: string
+  eventType: string
   action: string
+  employeeId: string
+  deviceId: string
   entityType: string
   entityId: string
   success: 'all' | 'success' | 'failed'
@@ -25,7 +29,11 @@ interface ConsoleMessage {
 }
 
 const DEFAULT_FILTERS: LogFilters = {
+  module: '',
+  eventType: '',
   action: '',
+  employeeId: '',
+  deviceId: '',
   entityType: '',
   entityId: '',
   success: 'all',
@@ -44,6 +52,29 @@ const ACTION_OPTIONS: { value: string; label: string }[] = [
   { value: 'DEVICE_CLAIMED', label: 'Cihaz eslestirildi' },
   { value: 'LEAVE_CREATED', label: 'Izin olusturuldu' },
   { value: 'LEAVE_DELETED', label: 'Izin silindi' },
+  { value: 'EMPLOYEE_APP_LOCATION_PING', label: 'Employee app/game giris pingi' },
+  { value: 'YABUBIRD_JOINED', label: 'YabuBird session start' },
+  { value: 'YABUBIRD_FINISHED', label: 'YabuBird session end' },
+  { value: 'YABUBIRD_LEFT', label: 'YabuBird logout' },
+  { value: 'YABUBIRD_REACTION', label: 'YabuBird emoji reaction' },
+]
+
+const MODULE_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: 'Tum moduller' },
+  { value: 'CORE', label: 'CORE' },
+  { value: 'APP', label: 'APP' },
+  { value: 'GAME', label: 'GAME' },
+]
+
+const EVENT_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: 'Tum event tipleri' },
+  { value: 'app_login', label: 'app_login' },
+  { value: 'game_login', label: 'game_login' },
+  { value: 'game_session_start', label: 'game_session_start' },
+  { value: 'game_session_end', label: 'game_session_end' },
+  { value: 'game_logout', label: 'game_logout' },
+  { value: 'emoji_reaction', label: 'emoji_reaction' },
+  { value: 'game_score_update', label: 'game_score_update' },
 ]
 
 const ACTION_LABELS: Record<string, string> = {
@@ -56,6 +87,11 @@ const ACTION_LABELS: Record<string, string> = {
   DEVICE_CLAIMED: 'Cihaz eslestirildi',
   LEAVE_CREATED: 'Izin olusturuldu',
   LEAVE_DELETED: 'Izin silindi',
+  EMPLOYEE_APP_LOCATION_PING: 'Employee app/game giris pingi',
+  YABUBIRD_JOINED: 'YabuBird session start',
+  YABUBIRD_FINISHED: 'YabuBird session end',
+  YABUBIRD_LEFT: 'YabuBird logout',
+  YABUBIRD_REACTION: 'YabuBird emoji reaction',
 }
 
 function formatDateTime(value: string): string {
@@ -99,7 +135,11 @@ function actionLabel(action: string): string {
 function toQueryParams(filters: LogFilters, page: number): AuditLogParams {
   const safePage = Number.isInteger(page) && page > 0 ? page : 1
   return {
+    module: filters.module || undefined,
+    event_type: filters.eventType || undefined,
     action: filters.action || undefined,
+    employee_id: filters.employeeId ? Number(filters.employeeId) : undefined,
+    device_id: filters.deviceId ? Number(filters.deviceId) : undefined,
     entity_type: filters.entityType || undefined,
     entity_id: filters.entityId || undefined,
     success: filters.success === 'all' ? undefined : filters.success === 'success',
@@ -112,7 +152,7 @@ function toTerminalLine(item: AuditLog): string {
   const actor = `${item.actor_type}:${item.actor_id}`
   const entity = item.entity_type ? `${item.entity_type}${item.entity_id ? `#${item.entity_id}` : ''}` : '-'
   const ip = item.ip ?? '-'
-  return `[${formatTerminalTimestamp(item.ts_utc)}] ${item.action} actor=${actor} entity=${entity} ip=${ip}`
+  return `[${formatTerminalTimestamp(item.ts_utc)}] ${item.module}/${item.event_type ?? item.action} actor=${actor} entity=${entity} ip=${ip}`
 }
 
 function consoleMessageClass(level: ConsoleMessageLevel): string {
@@ -160,7 +200,11 @@ export function SystemLogsPage() {
     const needle = textSearch.trim().toLowerCase()
     return logs.filter((item) => {
       const haystack = [
+        item.module,
+        item.event_type ?? '',
         item.action,
+        String(item.employee_id ?? ''),
+        String(item.device_id ?? ''),
         item.actor_type,
         item.actor_id,
         item.entity_type ?? '',
@@ -189,11 +233,13 @@ export function SystemLogsPage() {
     const failed = logs.filter((item) => !item.success).length
     const loginEvents = logs.filter((item) => item.action.startsWith('ADMIN_LOGIN')).length
     const attendanceEvents = logs.filter((item) => item.action === 'ATTENDANCE_EVENT_CREATED').length
+    const gameEvents = logs.filter((item) => item.module === 'GAME').length
     return {
       total: logsTotal,
       failed,
       loginEvents,
       attendanceEvents,
+      gameEvents,
     }
   }, [logs, logsTotal])
 
@@ -254,7 +300,7 @@ export function SystemLogsPage() {
     const value = command.slice(nameRaw.length).trim()
 
     if (name === 'help' || name === 'yardim') {
-      pushConsoleMessage('info', 'Komutlar: help, clear, apply, reset, refresh, follow on|off, status all|success|failed, action <AKSIYON>, search <METIN>, page <N>')
+      pushConsoleMessage('info', 'Komutlar: help, clear, apply, reset, refresh, follow on|off, status all|success|failed, action <AKSIYON>, search <METIN>, page <N>. Modul/event filtreleri formdan uygulanir.')
       return
     }
 
@@ -381,8 +427,8 @@ export function SystemLogsPage() {
             <p className="text-sm font-semibold text-slate-900">{summary.loginEvents}</p>
           </div>
           <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-            <p className="text-xs text-slate-500">Yoklama eventleri</p>
-            <p className="text-sm font-semibold text-slate-900">{summary.attendanceEvents}</p>
+            <p className="text-xs text-slate-500">Game eventleri</p>
+            <p className="text-sm font-semibold text-slate-900">{summary.gameEvents}</p>
           </div>
         </div>
 
@@ -452,6 +498,36 @@ export function SystemLogsPage() {
         <form className="mt-3 space-y-3" onSubmit={applyFilters}>
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
             <label className="text-sm text-slate-700">
+              Modul
+              <select
+                value={draftFilters.module}
+                onChange={(event) => setDraftFilters((prev) => ({ ...prev, module: event.target.value }))}
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+              >
+                {MODULE_OPTIONS.map((option) => (
+                  <option key={option.label} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="text-sm text-slate-700">
+              Event tipi
+              <select
+                value={draftFilters.eventType}
+                onChange={(event) => setDraftFilters((prev) => ({ ...prev, eventType: event.target.value }))}
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+              >
+                {EVENT_OPTIONS.map((option) => (
+                  <option key={option.label} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="text-sm text-slate-700">
               Aksiyon
               <select
                 value={draftFilters.action}
@@ -464,6 +540,32 @@ export function SystemLogsPage() {
                   </option>
                 ))}
               </select>
+            </label>
+
+            <label className="text-sm text-slate-700">
+              Employee ID
+              <input
+                type="number"
+                min={1}
+                value={draftFilters.employeeId}
+                onChange={(event) => setDraftFilters((prev) => ({ ...prev, employeeId: event.target.value }))}
+                placeholder="Orn: 42"
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+              />
+            </label>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+            <label className="text-sm text-slate-700">
+              Device ID
+              <input
+                type="number"
+                min={1}
+                value={draftFilters.deviceId}
+                onChange={(event) => setDraftFilters((prev) => ({ ...prev, deviceId: event.target.value }))}
+                placeholder="Orn: 17"
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+              />
             </label>
 
             <label className="text-sm text-slate-700">
@@ -617,7 +719,19 @@ export function SystemLogsPage() {
                       <span className="font-semibold">Aktor:</span> {selectedLog.actor_type}:{selectedLog.actor_id}
                     </p>
                     <p>
+                      <span className="font-semibold">Modul:</span> {selectedLog.module}
+                    </p>
+                    <p>
+                      <span className="font-semibold">Event tipi:</span> {selectedLog.event_type ?? '-'}
+                    </p>
+                    <p>
                       <span className="font-semibold">Durum:</span> {successLabel(selectedLog.success)}
+                    </p>
+                    <p>
+                      <span className="font-semibold">Employee:</span> {selectedLog.employee_id ?? '-'}
+                    </p>
+                    <p>
+                      <span className="font-semibold">Device:</span> {selectedLog.device_id ?? '-'}
                     </p>
                     <p>
                       <span className="font-semibold">Varlik:</span>{' '}

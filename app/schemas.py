@@ -1132,6 +1132,10 @@ class AuditLogRead(BaseModel):
     ts_utc: datetime
     actor_type: AuditActorType
     actor_id: str
+    module: str
+    event_type: str | None = None
+    employee_id: int | None = None
+    device_id: int | None = None
     action: str
     entity_type: str | None = None
     entity_id: str | None = None
@@ -1827,6 +1831,13 @@ class YabuBirdLeaveRequest(BaseModel):
     accuracy_m: float | None = Field(default=None, ge=0)
 
 
+class YabuBirdReactionRequest(BaseModel):
+    device_fingerprint: str
+    room_id: int = Field(ge=1)
+    presence_id: int = Field(ge=1)
+    emoji: Literal["😀", "😂", "😎", "😭", "👏", "🔥", "👍", "😡"]
+
+
 class YabuBirdRoomRead(BaseModel):
     id: int
     room_key: str
@@ -1879,11 +1890,22 @@ class YabuBirdScoreRead(BaseModel):
     created_at: datetime
 
 
+class YabuBirdReactionRead(BaseModel):
+    id: int
+    room_id: int
+    presence_id: int | None = None
+    employee_id: int
+    employee_name: str
+    emoji: Literal["😀", "😂", "😎", "😭", "👏", "🔥", "👍", "😡"]
+    created_at: datetime
+
+
 class YabuBirdLiveStateResponse(BaseModel):
     room: YabuBirdRoomRead
     you: YabuBirdPresenceRead
     players: list[YabuBirdPresenceRead]
     leaderboard: list[YabuBirdScoreRead]
+    reactions: list[YabuBirdReactionRead] = Field(default_factory=list)
     personal_best: int
 
 
@@ -1932,6 +1954,21 @@ class AdminYabuBirdAppEntryRead(BaseModel):
     location: YabuBirdLocationRead | None = None
 
 
+class AdminYabuBirdActivityEventRead(BaseModel):
+    audit_id: int
+    module: str
+    event_type: str | None = None
+    action: str
+    employee_id: int | None = None
+    employee_name: str | None = None
+    device_id: int | None = None
+    entity_type: str | None = None
+    entity_id: str | None = None
+    logged_at: datetime
+    summary: str
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
 class AdminYabuBirdOverviewResponse(BaseModel):
     live_room: YabuBirdRoomRead | None = None
     live_rooms: list[YabuBirdRoomRead] = Field(default_factory=list)
@@ -1941,4 +1978,5 @@ class AdminYabuBirdOverviewResponse(BaseModel):
     live_player_locations: list[AdminYabuBirdPlayerLocationRead] = Field(default_factory=list)
     recent_player_locations: list[AdminYabuBirdPlayerLocationRead] = Field(default_factory=list)
     app_entry_locations: list[AdminYabuBirdAppEntryRead] = Field(default_factory=list)
+    recent_activity: list[AdminYabuBirdActivityEventRead] = Field(default_factory=list)
 

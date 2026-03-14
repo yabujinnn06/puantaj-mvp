@@ -278,7 +278,11 @@ export interface ManualAttendanceEventUpdatePayload {
 }
 
 export interface AuditLogParams {
+  module?: string;
+  event_type?: string;
   action?: string;
+  employee_id?: number;
+  device_id?: number;
   entity_type?: string;
   entity_id?: string;
   success?: boolean;

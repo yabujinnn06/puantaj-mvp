@@ -7,12 +7,15 @@ import {
   joinYabuBirdLiveRoom,
   leaveYabuBirdLiveRoom,
   parseApiError,
+  postEmployeeAppPresencePing,
+  reactYabuBirdLiveRoom,
   updateYabuBirdLiveState,
 } from '../api/attendance'
 import type {
   YabuBirdLeaderboardResponse,
   YabuBirdLiveStateResponse,
   YabuBirdPresence,
+  YabuBirdReaction,
   YabuBirdRoom,
   YabuBirdScore,
 } from '../types/api'
@@ -69,16 +72,17 @@ const PLAY_HEIGHT = VIEW_HEIGHT - FLOOR_HEIGHT
 const BIRD_X = 42
 const BIRD_SIZE = 12
 const BIRD_START_Y = 104
-const GRAVITY = 710
-const FLAP_VELOCITY = -214
-const TERMINAL_VELOCITY = 228
-const PIPE_SPEED = 74
+const GRAVITY = 630
+const FLAP_VELOCITY = -196
+const TERMINAL_VELOCITY = 214
+const PIPE_SPEED = 68
 const PIPE_WIDTH = 22
-const PIPE_SPACING = 88
-const PIPE_GAP = 74
+const PIPE_SPACING = 94
+const PIPE_GAP = 80
 const PIPE_START_X = VIEW_WIDTH + 32
-const NETWORK_SYNC_MS = 320
+const NETWORK_SYNC_MS = 260
 const LOCATION_REFRESH_MS = 12000
+const REACTION_EMOJIS = ['😀', '😂', '😎', '😭', '👏', '🔥', '👍', '😡'] as const
 
 const INITIAL_ENGINE: EngineState = {
   y: BIRD_START_Y,
@@ -453,6 +457,7 @@ export function YabuBirdPage() {
   const [room, setRoom] = useState<YabuBirdRoom | null>(null)
   const [you, setYou] = useState<YabuBirdPresence | null>(null)
   const [players, setPlayers] = useState<YabuBirdPresence[]>([])
+  const [reactions, setReactions] = useState<YabuBirdReaction[]>([])
   const [leaderboard, setLeaderboard] = useState<YabuBirdScore[]>([])
   const [personalBest, setPersonalBest] = useState(0)
   const [scoreLabel, setScoreLabel] = useState(0)
@@ -487,6 +492,7 @@ export function YabuBirdPage() {
   const previousScoreLabelRef = useRef(0)
   const previousPhaseRef = useRef<Phase>('menu')
   const previousPlayerScoresRef = useRef<Record<number, number>>({})
+  const gameEntryPingRef = useRef(false)
 
   const playerList = useMemo(
     () => (phase === 'menu' ? menuPublicPlayers : players),
@@ -506,6 +512,7 @@ export function YabuBirdPage() {
         .slice(0, 5),
     [players],
   )
+  const reactionBurst = useMemo(() => reactions.slice(-4), [reactions])
 
   function resetEngine(): void {
     engineRef.current = { ...INITIAL_ENGINE, y: BIRD_START_Y }
@@ -517,6 +524,7 @@ export function YabuBirdPage() {
     elapsedLabelRef.current = 0
     previousScoreLabelRef.current = 0
     previousPlayerScoresRef.current = {}
+    setReactions([])
   }
 
   function ensureAudioContext(): AudioContext | null {
@@ -583,6 +591,7 @@ export function YabuBirdPage() {
     menuPlayersRef.current = overview.live_players
     setLeaderboard(overview.leaderboard)
     setPersonalBest(overview.personal_best)
+    setReactions([])
   }
 
   function applyLiveState(state: YabuBirdLiveStateResponse): void {
@@ -591,6 +600,7 @@ export function YabuBirdPage() {
     setPlayers(state.players)
     playersRef.current = state.players
     setLeaderboard(state.leaderboard)
+    setReactions(state.reactions)
     setPersonalBest(state.personal_best)
     roomRef.current = state.room
     presenceRef.current = state.you
@@ -617,6 +627,31 @@ export function YabuBirdPage() {
         setErrorMessage(parseApiError(error, 'YabuBird verileri alinamadi.').message)
       }
     }
+  }
+
+  async function announceGameEntry(): Promise<void> {
+    if (!deviceFingerprint || gameEntryPingRef.current) {
+      return
+    }
+    gameEntryPingRef.current = true
+    const sessionKey = 'yabubird_last_game_login_ping_at'
+    const lastPingAtRaw = window.sessionStorage.getItem(sessionKey)
+    if (lastPingAtRaw) {
+      const lastPingAt = Number(lastPingAtRaw)
+      if (Number.isFinite(lastPingAt) && Date.now() - lastPingAt < 10 * 60 * 1000) {
+        return
+      }
+    }
+    const locationResult = await getCurrentLocation(3500)
+    locationRef.current = locationResult.location
+    await postEmployeeAppPresencePing({
+      device_fingerprint: deviceFingerprint,
+      source: 'YABUBIRD_ENTER',
+      lat: locationResult.location?.lat,
+      lon: locationResult.location?.lon,
+      accuracy_m: locationResult.location?.accuracy_m ?? null,
+    }).catch(() => undefined)
+    window.sessionStorage.setItem(sessionKey, String(Date.now()))
   }
 
   async function enterRoom(intent: JoinIntent): Promise<void> {
@@ -660,6 +695,29 @@ export function YabuBirdPage() {
       phaseRef.current = 'menu'
       setErrorMessage(parsed.message)
       setStatusMessage('Baglanti kurulamadigi icin oda acilamadi.')
+    }
+  }
+
+  async function sendReaction(emoji: (typeof REACTION_EMOJIS)[number]): Promise<void> {
+    const currentRoom = roomRef.current
+    const currentPresence = presenceRef.current
+    if (!deviceFingerprint || !currentRoom || !currentPresence || phaseRef.current === 'joining') {
+      return
+    }
+    playSfx('menu')
+    try {
+      const state = await reactYabuBirdLiveRoom({
+        device_fingerprint: deviceFingerprint,
+        room_id: currentRoom.id,
+        presence_id: currentPresence.id,
+        emoji,
+      })
+      applyLiveState(state)
+    } catch (error) {
+      const parsed = parseApiError(error, 'Emoji gonderilemedi.')
+      if (parsed.code !== 'YABUBIRD_REACTION_RATE_LIMIT') {
+        setErrorMessage(parsed.message)
+      }
     }
   }
 
@@ -868,6 +926,7 @@ export function YabuBirdPage() {
   useEffect(() => {
     resetEngine()
     void refreshLocation(true)
+    void announceGameEntry()
     void refreshOverview()
   }, [])
 
@@ -1243,6 +1302,17 @@ export function YabuBirdPage() {
             </div>
           ) : null}
 
+          {reactionBurst.length > 0 && phase !== 'menu' ? (
+            <div className="yabubird-reaction-burst" aria-live="polite">
+              {reactionBurst.map((reaction) => (
+                <div key={reaction.id} className="yabubird-reaction-burst-row">
+                  <span className="yabubird-reaction-burst-emoji">{reaction.emoji}</span>
+                  <strong>{reaction.employee_name.slice(0, 8).toUpperCase()}</strong>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
           {feedMessage && phase === 'playing' && drawerView === null ? (
             <div className="yabubird-score-feed">{feedMessage}</div>
           ) : null}
@@ -1255,28 +1325,46 @@ export function YabuBirdPage() {
             <div className="yabubird-pixel-toast yabubird-pixel-toast-error">{errorMessage}</div>
           ) : null}
 
+          {room && you && (phase === 'ready' || phase === 'playing') ? (
+            <div className="yabubird-reaction-dock">
+              {REACTION_EMOJIS.map((emoji) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  className="yabubird-reaction-btn"
+                  onPointerDown={(event) => {
+                    handleUiPointerDown(event)
+                    void sendReaction(emoji)
+                  }}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
           {overlayVisible ? (
             <div className="yabubird-arcade-overlay" onPointerDown={handleUiPointerDown}>
               <div className="yabubird-arcade-panel yabubird-arcade-panel--pixel" onPointerDown={handleUiPointerDown}>
                 {panelScreen === 'rooms' && (
                   <>
                     <div className="yabubird-menu-tabs">
-                      <button type="button" className="is-active">Odalar</button>
+                      <button type="button" className="is-active">ROOM</button>
                       <button type="button" onPointerDown={(event) => { handleUiPointerDown(event); setDrawerView('leaderboard') }}>
-                        Leaderboard
+                        HI-SCORE
                       </button>
                       <button type="button" onPointerDown={(event) => { handleUiPointerDown(event); setDrawerView('players') }}>
-                        Oyuncular
+                        P1 LIST
                       </button>
                       {phase === 'playing' ? (
                         <button type="button" onPointerDown={(event) => { handleUiPointerDown(event); setDrawerView(null) }}>
-                          Kapat
+                          BACK
                         </button>
                       ) : null}
                     </div>
-                    <p className="yabubird-arcade-panel-kicker">ARCADE ROM</p>
-                    <h2>{phase === 'ready' ? 'RUN READY' : 'SELECT MODE'}</h2>
-                    <p>{phase === 'ready' ? roomLine : 'Tek oyna, ortak odaya dal ya da kendi server kodunu ac.'}</p>
+                    <p className="yabubird-arcade-panel-kicker">YABUBIRD ARCADE</p>
+                    <h2>{phase === 'ready' ? 'RUN READY' : 'INSERT MODE'}</h2>
+                    <p>{phase === 'ready' ? roomLine : 'Klasik mod sec. Tek uc, ortak akisa dal veya kendi server kodunu ac.'}</p>
                     <div className="yabubird-room-strip">
                       <span>{roomSummary}</span>
                       <strong>Kisisel rekor {personalBest}</strong>
@@ -1284,15 +1372,15 @@ export function YabuBirdPage() {
                     <div className="yabubird-arcade-mode-grid">
                       <button type="button" className="yabubird-mode-card" onPointerDown={(event) => { handleUiPointerDown(event); void enterRoom({ mode: 'SOLO' }) }}>
                         <strong>Tek Oyna</strong>
-                        <span>Pipe ritmine odaklan, kendi PB'ni zorla.</span>
+                        <span>Tek hat, temiz fizik, kendi rekorunu kovala.</span>
                       </button>
                       <button type="button" className="yabubird-mode-card" onPointerDown={(event) => { handleUiPointerDown(event); void enterRoom({ mode: 'PUBLIC' }) }}>
                         <strong>Beraber Oyna</strong>
-                        <span>Public akista diger calisanlarla ayni tempoda ilerle.</span>
+                        <span>Public odada ayni anda uc, anlik skor tabelesini izle.</span>
                       </button>
                       <button type="button" className="yabubird-mode-card" onPointerDown={(event) => { handleUiPointerDown(event); void enterRoom({ mode: 'HOST' }) }}>
                         <strong>Server Ac</strong>
-                        <span>Kendi kodunu uret, odayi sen yonet.</span>
+                        <span>Kodu uretilen odani ac, birden fazla kisi ayni anda girsin.</span>
                       </button>
                     </div>
                     <div className="yabubird-join-box">
@@ -1344,12 +1432,12 @@ export function YabuBirdPage() {
                     <div className="yabubird-arcade-ready-actions">
                       {phase === 'ready' ? (
                         <button type="button" className="yabubird-mode-inline-btn is-primary" onPointerDown={(event) => { handleUiPointerDown(event); startRun(true); setDrawerView(null) }}>
-                          Basla
+                          START
                         </button>
                       ) : null}
                       {phase === 'playing' ? (
                         <button type="button" className="yabubird-mode-inline-btn" onPointerDown={(event) => { handleUiPointerDown(event); setDrawerView(null) }}>
-                          Oyuna Don
+                          GAME
                         </button>
                       ) : null}
                       <button
@@ -1364,7 +1452,7 @@ export function YabuBirdPage() {
                           navigate('/')
                         }}
                       >
-                        Cik
+                        EXIT
                       </button>
                     </div>
                     {statusMessage ? <p className="yabubird-panel-note">{statusMessage}</p> : null}
@@ -1374,10 +1462,10 @@ export function YabuBirdPage() {
                 {panelScreen === 'leaderboard' && (
                   <>
                     <div className="yabubird-menu-tabs">
-                      <button type="button" onPointerDown={(event) => { handleUiPointerDown(event); setDrawerView('rooms') }}>Odalar</button>
-                      <button type="button" className="is-active">Leaderboard</button>
-                      <button type="button" onPointerDown={(event) => { handleUiPointerDown(event); setDrawerView('players') }}>Oyuncular</button>
-                      <button type="button" onPointerDown={(event) => { handleUiPointerDown(event); setDrawerView(null) }}>Kapat</button>
+                      <button type="button" onPointerDown={(event) => { handleUiPointerDown(event); setDrawerView('rooms') }}>ROOM</button>
+                      <button type="button" className="is-active">HI-SCORE</button>
+                      <button type="button" onPointerDown={(event) => { handleUiPointerDown(event); setDrawerView('players') }}>P1 LIST</button>
+                      <button type="button" onPointerDown={(event) => { handleUiPointerDown(event); setDrawerView(null) }}>BACK</button>
                     </div>
                     <p className="yabubird-arcade-panel-kicker">HI SCORE</p>
                     <h2>En iyi YabuBird turlari</h2>
@@ -1402,10 +1490,10 @@ export function YabuBirdPage() {
                 {panelScreen === 'players' && (
                   <>
                     <div className="yabubird-menu-tabs">
-                      <button type="button" onPointerDown={(event) => { handleUiPointerDown(event); setDrawerView('rooms') }}>Odalar</button>
-                      <button type="button" onPointerDown={(event) => { handleUiPointerDown(event); setDrawerView('leaderboard') }}>Leaderboard</button>
-                      <button type="button" className="is-active">Oyuncular</button>
-                      <button type="button" onPointerDown={(event) => { handleUiPointerDown(event); setDrawerView(null) }}>Kapat</button>
+                      <button type="button" onPointerDown={(event) => { handleUiPointerDown(event); setDrawerView('rooms') }}>ROOM</button>
+                      <button type="button" onPointerDown={(event) => { handleUiPointerDown(event); setDrawerView('leaderboard') }}>HI-SCORE</button>
+                      <button type="button" className="is-active">P1 LIST</button>
+                      <button type="button" onPointerDown={(event) => { handleUiPointerDown(event); setDrawerView(null) }}>BACK</button>
                     </div>
                     <p className="yabubird-arcade-panel-kicker">LIVE ROOM</p>
                     <h2>Aktif oyuncular</h2>

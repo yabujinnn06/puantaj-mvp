@@ -1111,6 +1111,24 @@ class AuditLog(Base):
         nullable=False,
     )
     actor_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    module: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+        default="CORE",
+        server_default=text("'CORE'"),
+        index=True,
+    )
+    event_type: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    employee_id: Mapped[int | None] = mapped_column(
+        ForeignKey("employees.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    device_id: Mapped[int | None] = mapped_column(
+        ForeignKey("devices.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     action: Mapped[str] = mapped_column(String(255), nullable=False)
     entity_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
     entity_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -1123,6 +1141,9 @@ class AuditLog(Base):
         default=dict,
         server_default=text("'{}'::jsonb"),
     )
+
+    employee: Mapped[Employee | None] = relationship()
+    device: Mapped[Device | None] = relationship()
 
 
 class NotificationJob(Base):
@@ -1474,6 +1495,7 @@ class YabuBirdRoom(Base):
 
     participants: Mapped[list["YabuBirdPresence"]] = relationship(back_populates="room")
     scores: Mapped[list["YabuBirdScore"]] = relationship(back_populates="room")
+    reactions: Mapped[list["YabuBirdReaction"]] = relationship(back_populates="room")
 
 
 class YabuBirdPresence(Base):
@@ -1525,6 +1547,7 @@ class YabuBirdPresence(Base):
     room: Mapped[YabuBirdRoom] = relationship(back_populates="participants")
     employee: Mapped[Employee] = relationship()
     device: Mapped[Device] = relationship()
+    reactions: Mapped[list["YabuBirdReaction"]] = relationship(back_populates="presence")
 
 
 class YabuBirdScore(Base):
@@ -1555,6 +1578,44 @@ class YabuBirdScore(Base):
 
     room: Mapped[YabuBirdRoom | None] = relationship(back_populates="scores")
     presence: Mapped[YabuBirdPresence | None] = relationship()
+    employee: Mapped[Employee] = relationship()
+    device: Mapped[Device] = relationship()
+
+
+class YabuBirdReaction(Base):
+    __tablename__ = "yabubird_reactions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    room_id: Mapped[int] = mapped_column(
+        ForeignKey("yabubird_rooms.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    presence_id: Mapped[int | None] = mapped_column(
+        ForeignKey("yabubird_presences.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    employee_id: Mapped[int] = mapped_column(
+        ForeignKey("employees.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    device_id: Mapped[int] = mapped_column(
+        ForeignKey("devices.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    emoji: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        index=True,
+    )
+
+    room: Mapped[YabuBirdRoom] = relationship(back_populates="reactions")
+    presence: Mapped[YabuBirdPresence | None] = relationship(back_populates="reactions")
     employee: Mapped[Employee] = relationship()
     device: Mapped[Device] = relationship()
 
