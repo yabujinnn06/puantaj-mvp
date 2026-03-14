@@ -20,6 +20,8 @@ from app.schemas import (
     AttendanceEventRead,
     DeviceClaimRequest,
     DeviceClaimResponse,
+    EmployeeAppPresencePingRequest,
+    EmployeeAppPresencePingResponse,
     EmployeeHomeLocationSetRequest,
     EmployeeHomeLocationSetResponse,
     EmployeePushConfigResponse,
@@ -875,6 +877,64 @@ def employee_status(
     return EmployeeStatusResponse(**status_data)
 
 
+@router.post("/api/employee/app-presence/ping", response_model=EmployeeAppPresencePingResponse)
+def employee_app_presence_ping(
+    payload: EmployeeAppPresencePingRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> EmployeeAppPresencePingResponse:
+    request.state.actor = "employee"
+    device = db.scalar(
+        select(Device).where(
+            Device.device_fingerprint == payload.device_fingerprint,
+            Device.is_active.is_(True),
+        )
+    )
+    if device is None:
+        raise ApiError(
+            status_code=404,
+            code="DEVICE_NOT_CLAIMED",
+            message="Device must be claimed first.",
+        )
+
+    employee = device.employee
+    if employee is None:
+        raise ApiError(
+            status_code=404,
+            code="EMPLOYEE_NOT_FOUND",
+            message="Employee not found for this device.",
+        )
+    if not employee.is_active:
+        raise ApiError(
+            status_code=403,
+            code="EMPLOYEE_INACTIVE",
+            message="Inactive employee cannot send presence updates.",
+        )
+
+    logged_at = datetime.now(timezone.utc)
+    request.state.employee_id = employee.id
+    request.state.flags = {"source": payload.source}
+    log_audit(
+        db,
+        actor_type=AuditActorType.SYSTEM,
+        actor_id=str(employee.id),
+        action="EMPLOYEE_APP_LOCATION_PING",
+        success=True,
+        entity_type="device",
+        entity_id=str(device.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "source": payload.source,
+            "lat": payload.lat,
+            "lon": payload.lon,
+            "accuracy_m": payload.accuracy_m,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return EmployeeAppPresencePingResponse(ok=True, employee_id=employee.id, logged_at=logged_at)
+
+
 @router.get("/api/employee/yabubird", response_model=YabuBirdLeaderboardResponse)
 def employee_yabubird_overview(
     device_fingerprint: str,
@@ -893,7 +953,15 @@ def employee_yabubird_join(
     db: Session = Depends(get_db),
 ) -> YabuBirdLiveStateResponse:
     request.state.actor = "employee"
-    state_data = join_yabubird_live_room(db, device_fingerprint=payload.device_fingerprint)
+    state_data = join_yabubird_live_room(
+        db,
+        device_fingerprint=payload.device_fingerprint,
+        join_mode=payload.mode,
+        room_code=payload.room_code,
+        lat=payload.lat,
+        lon=payload.lon,
+        accuracy_m=payload.accuracy_m,
+    )
     request.state.employee_id = state_data["you"]["employee_id"]
     request.state.flags = {
         "room_id": state_data["room"]["id"],
@@ -912,6 +980,8 @@ def employee_yabubird_join(
         details={
             "presence_id": state_data["you"]["id"],
             "room_key": state_data["room"]["room_key"],
+            "mode": payload.mode,
+            "room_code": payload.room_code,
         },
         request_id=getattr(request.state, "request_id", None),
     )
@@ -935,6 +1005,9 @@ def employee_yabubird_live_state(
         score=payload.score,
         flap_count=payload.flap_count,
         is_alive=payload.is_alive,
+        lat=payload.lat,
+        lon=payload.lon,
+        accuracy_m=payload.accuracy_m,
     )
     request.state.employee_id = state_data["you"]["employee_id"]
     return YabuBirdLiveStateResponse(**state_data)
@@ -954,6 +1027,9 @@ def employee_yabubird_finish(
         presence_id=payload.presence_id,
         score=payload.score,
         survived_ms=payload.survived_ms,
+        lat=payload.lat,
+        lon=payload.lon,
+        accuracy_m=payload.accuracy_m,
     )
     log_audit(
         db,
@@ -987,6 +1063,9 @@ def employee_yabubird_leave(
         device_fingerprint=payload.device_fingerprint,
         room_id=payload.room_id,
         presence_id=payload.presence_id,
+        lat=payload.lat,
+        lon=payload.lon,
+        accuracy_m=payload.accuracy_m,
     )
     log_audit(
         db,

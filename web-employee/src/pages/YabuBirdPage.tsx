@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 
 import {
   finishYabuBirdRun,
@@ -9,7 +9,6 @@ import {
   parseApiError,
   updateYabuBirdLiveState,
 } from '../api/attendance'
-import { BrandSignature } from '../components/BrandSignature'
 import type {
   YabuBirdLeaderboardResponse,
   YabuBirdLiveStateResponse,
@@ -18,22 +17,11 @@ import type {
   YabuBirdScore,
 } from '../types/api'
 import { getStoredDeviceFingerprint } from '../utils/device'
+import { getCurrentLocation, type CurrentLocation } from '../utils/location'
 
-const STAGE_WIDTH = 320
-const STAGE_HEIGHT = 560
-const FLOOR_HEIGHT = 92
-const PLAY_HEIGHT = STAGE_HEIGHT - FLOOR_HEIGHT
-const BIRD_X = 82
-const BIRD_SIZE = 32
-const GRAVITY = 1180
-const FLAP_VELOCITY = -330
-const TERMINAL_VELOCITY = 420
-const PIPE_SPEED = 156
-const PIPE_WIDTH = 62
-const PIPE_SPACING = 210
-const PIPE_GAP = 154
-const PIPE_START_X = STAGE_WIDTH + 120
-const START_Y = PLAY_HEIGHT * 0.42
+type JoinMode = 'PUBLIC' | 'HOST' | 'ROOM' | 'SOLO'
+type Phase = 'menu' | 'joining' | 'ready' | 'playing' | 'crashed'
+type DrawerView = 'leaderboard' | 'players' | 'tracking' | null
 
 interface PipeSprite {
   index: number
@@ -42,23 +30,44 @@ interface PipeSprite {
   gapBottom: number
 }
 
-interface GameFrame {
+interface EngineState {
   y: number
   velocity: number
   score: number
   flapCount: number
   elapsedMs: number
-  worldElapsedMs: number
   alive: boolean
 }
 
-const INITIAL_FRAME: GameFrame = {
-  y: START_Y,
+interface JoinIntent {
+  mode: JoinMode
+  roomCode?: string | null
+}
+
+const VIEW_WIDTH = 160
+const VIEW_HEIGHT = 284
+const FLOOR_HEIGHT = 36
+const PLAY_HEIGHT = VIEW_HEIGHT - FLOOR_HEIGHT
+const BIRD_X = 42
+const BIRD_SIZE = 12
+const BIRD_START_Y = 108
+const GRAVITY = 640
+const FLAP_VELOCITY = -185
+const TERMINAL_VELOCITY = 210
+const PIPE_SPEED = 72
+const PIPE_WIDTH = 22
+const PIPE_SPACING = 86
+const PIPE_GAP = 66
+const PIPE_START_X = VIEW_WIDTH + 32
+const NETWORK_SYNC_MS = 320
+const LOCATION_REFRESH_MS = 12000
+
+const INITIAL_ENGINE: EngineState = {
+  y: BIRD_START_Y,
   velocity: 0,
   score: 0,
   flapCount: 0,
   elapsedMs: 0,
-  worldElapsedMs: 0,
   alive: false,
 }
 
@@ -67,39 +76,36 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function seededUnit(seed: number, index: number): number {
-  const raw = Math.sin(seed * 0.00137 + index * 12.9898) * 43758.5453
+  const raw = Math.sin(seed * 0.00091 + index * 12.9898) * 43758.5453
   return raw - Math.floor(raw)
 }
 
-function getPipeGapCenter(seed: number, index: number): number {
-  const minCenter = 110
-  const maxCenter = PLAY_HEIGHT - FLOOR_HEIGHT - 20
-  const availableRange = Math.max(0, maxCenter - minCenter)
-  return minCenter + seededUnit(seed, index) * availableRange
-}
-
-function getVisiblePipes(seed: number, worldElapsedMs: number): PipeSprite[] {
-  const distance = (PIPE_SPEED * Math.max(0, worldElapsedMs)) / 1000
+function getVisiblePipes(seed: number, elapsedMs: number): PipeSprite[] {
+  const distance = (PIPE_SPEED * Math.max(0, elapsedMs)) / 1000
   const roughIndex = Math.floor((distance - PIPE_START_X) / PIPE_SPACING)
   const startIndex = Math.max(0, roughIndex - 1)
   const pipes: PipeSprite[] = []
 
-  for (let index = startIndex; index < startIndex + 8; index += 1) {
+  for (let index = startIndex; index < startIndex + 7; index += 1) {
     const x = PIPE_START_X + index * PIPE_SPACING - distance
-    if (x > STAGE_WIDTH + 120 || x + PIPE_WIDTH < -120) {
+    if (x > VIEW_WIDTH + 48 || x + PIPE_WIDTH < -48) {
       continue
     }
-    const gapCenter = getPipeGapCenter(seed, index)
-    const gapTop = clamp(gapCenter - PIPE_GAP / 2, 52, PLAY_HEIGHT - PIPE_GAP - 42)
-    const gapBottom = clamp(PLAY_HEIGHT - (gapTop + PIPE_GAP), 42, PLAY_HEIGHT - 52)
-    pipes.push({ index, x, gapTop, gapBottom })
+    const gapCenter = 64 + seededUnit(seed, index) * Math.max(0, PLAY_HEIGHT - 122)
+    const gapTop = clamp(gapCenter - PIPE_GAP / 2, 24, PLAY_HEIGHT - PIPE_GAP - 20)
+    pipes.push({
+      index,
+      x,
+      gapTop,
+      gapBottom: Math.max(20, PLAY_HEIGHT - (gapTop + PIPE_GAP)),
+    })
   }
 
   return pipes
 }
 
-function getLastPassedPipeIndex(worldElapsedMs: number): number {
-  const distance = (PIPE_SPEED * Math.max(0, worldElapsedMs)) / 1000
+function getLastPassedPipeIndex(elapsedMs: number): number {
+  const distance = (PIPE_SPEED * Math.max(0, elapsedMs)) / 1000
   return Math.floor((distance + BIRD_X - PIPE_START_X - PIPE_WIDTH) / PIPE_SPACING)
 }
 
@@ -125,86 +131,138 @@ function formatDuration(ms: number): string {
   return `${(ms / 1000).toFixed(1)} sn`
 }
 
+function formatCoords(location: CurrentLocation | null): string {
+  if (!location) {
+    return 'Konum yok'
+  }
+  return `${location.lat.toFixed(4)}, ${location.lon.toFixed(4)}`
+}
+
+function buildLocationPayload(location: CurrentLocation | null): {
+  lat?: number
+  lon?: number
+  accuracy_m?: number | null
+} {
+  if (!location) {
+    return {}
+  }
+  return {
+    lat: location.lat,
+    lon: location.lon,
+    accuracy_m: location.accuracy_m,
+  }
+}
+
+function drawBird(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, wingFrame: number): void {
+  ctx.fillStyle = color
+  ctx.fillRect(Math.round(x + 2), Math.round(y + 3), 8, 6)
+  ctx.fillStyle = '#111827'
+  ctx.fillRect(Math.round(x + 8), Math.round(y + 4), 1, 1)
+  ctx.fillStyle = '#f97316'
+  ctx.fillRect(Math.round(x + 10), Math.round(y + 5), 2, 1)
+  ctx.fillStyle = '#111827'
+  ctx.fillRect(Math.round(x + 3), Math.round(y + 5 + wingFrame), 4, 2)
+}
+
+function drawPipe(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number): void {
+  ctx.fillStyle = '#163b22'
+  ctx.fillRect(Math.round(x), Math.round(y), width, Math.round(height))
+  ctx.fillStyle = '#3ddc84'
+  ctx.fillRect(Math.round(x + 2), Math.round(y), width - 4, Math.round(height))
+  ctx.fillStyle = '#6df6ad'
+  ctx.fillRect(Math.round(x + 4), Math.round(y), 2, Math.round(height))
+}
+
 export function YabuBirdPage() {
+  const navigate = useNavigate()
   const [deviceFingerprint] = useState<string | null>(() => getStoredDeviceFingerprint())
+  const [phase, setPhase] = useState<Phase>('menu')
+  const [drawerView, setDrawerView] = useState<DrawerView>(null)
+  const [menuPublicRoom, setMenuPublicRoom] = useState<YabuBirdRoom | null>(null)
+  const [menuPublicPlayers, setMenuPublicPlayers] = useState<YabuBirdPresence[]>([])
   const [room, setRoom] = useState<YabuBirdRoom | null>(null)
   const [you, setYou] = useState<YabuBirdPresence | null>(null)
   const [players, setPlayers] = useState<YabuBirdPresence[]>([])
   const [leaderboard, setLeaderboard] = useState<YabuBirdScore[]>([])
   const [personalBest, setPersonalBest] = useState(0)
-  const [phase, setPhase] = useState<'idle' | 'joining' | 'playing' | 'crashed'>('idle')
-  const [frame, setFrame] = useState<GameFrame>(INITIAL_FRAME)
-  const [isRefreshing, setIsRefreshing] = useState(true)
+  const [scoreLabel, setScoreLabel] = useState(0)
+  const [elapsedLabel, setElapsedLabel] = useState(0)
+  const [joinCode, setJoinCode] = useState('')
+  const [statusMessage, setStatusMessage] = useState('Oda sec, ekranin her yerine dokun ve ucmaya basla.')
+  const [locationMessage, setLocationMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [statusMessage, setStatusMessage] = useState<string | null>(
-    'Canli odaya baglanip YabuBird turunu baslatabilirsin.',
-  )
 
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const phaseRef = useRef<Phase>('menu')
+  const menuRoomRef = useRef<YabuBirdRoom | null>(null)
+  const menuPlayersRef = useRef<YabuBirdPresence[]>([])
   const roomRef = useRef<YabuBirdRoom | null>(null)
   const presenceRef = useRef<YabuBirdPresence | null>(null)
-  const phaseRef = useRef<'idle' | 'joining' | 'playing' | 'crashed'>('idle')
-  const gameStateRef = useRef<GameFrame>(INITIAL_FRAME)
-  const lastTickRef = useRef<number | null>(null)
-  const gameStartAtRef = useRef<number | null>(null)
-  const lastPassedPipeIndexRef = useRef(-1)
-  const rafRef = useRef<number | null>(null)
+  const playersRef = useRef<YabuBirdPresence[]>([])
+  const engineRef = useRef<EngineState>(INITIAL_ENGINE)
+  const frameTimeRef = useRef<number | null>(null)
+  const hudCommitRef = useRef(0)
+  const scoreLabelRef = useRef(0)
+  const elapsedLabelRef = useRef(0)
   const syncInFlightRef = useRef(false)
-  const finishingRef = useRef(false)
-  const leavingRef = useRef(false)
+  const finishInFlightRef = useRef(false)
+  const leaveInFlightRef = useRef(false)
+  const joinIntentRef = useRef<JoinIntent | null>(null)
+  const locationRef = useRef<CurrentLocation | null>(null)
 
-  const visiblePipes = useMemo(
-    () => (room ? getVisiblePipes(room.seed, frame.worldElapsedMs) : []),
-    [frame.worldElapsedMs, room],
+  const playerList = useMemo(
+    () => (phase === 'menu' ? menuPublicPlayers : players),
+    [menuPublicPlayers, phase, players],
   )
 
-  const livePlayers = players.filter((player) => player.is_connected)
-  const ghostPlayers = livePlayers
-    .filter((player) => player.id !== you?.id && player.is_alive)
-    .slice(0, 5)
+  function resetEngine(): void {
+    engineRef.current = { ...INITIAL_ENGINE, y: BIRD_START_Y }
+    frameTimeRef.current = null
+    setScoreLabel(0)
+    setElapsedLabel(0)
+    scoreLabelRef.current = 0
+    elapsedLabelRef.current = 0
+  }
 
-  function stopAnimation(): void {
-    if (rafRef.current !== null) {
-      window.cancelAnimationFrame(rafRef.current)
-      rafRef.current = null
+  function applyOverview(overview: YabuBirdLeaderboardResponse): void {
+    setMenuPublicRoom(overview.live_room)
+    setMenuPublicPlayers(overview.live_players)
+    menuRoomRef.current = overview.live_room
+    menuPlayersRef.current = overview.live_players
+    setLeaderboard(overview.leaderboard)
+    setPersonalBest(overview.personal_best)
+  }
+
+  function applyLiveState(state: YabuBirdLiveStateResponse): void {
+    setRoom(state.room)
+    setYou(state.you)
+    setPlayers(state.players)
+    playersRef.current = state.players
+    setLeaderboard(state.leaderboard)
+    setPersonalBest(state.personal_best)
+    roomRef.current = state.room
+    presenceRef.current = state.you
+  }
+
+  async function refreshLocation(silent = false): Promise<void> {
+    const result = await getCurrentLocation(4500)
+    locationRef.current = result.location
+    if (result.warning) {
+      setLocationMessage(result.warning)
+      if (!silent) {
+        setStatusMessage(result.warning)
+      }
+      return
     }
-    lastTickRef.current = null
-  }
-
-  function clearPresence(): void {
-    presenceRef.current = null
-    setYou(null)
-  }
-
-  function applyOverview(data: YabuBirdLeaderboardResponse): void {
-    setLeaderboard(data.leaderboard)
-    setPlayers(data.live_players)
-    setPersonalBest(data.personal_best)
-    if (phaseRef.current !== 'playing') {
-      roomRef.current = data.live_room
-      setRoom(data.live_room)
+    if (result.location) {
+      setLocationMessage(`Son konum ${formatCoords(result.location)}`)
     }
-  }
-
-  function applyLiveState(data: YabuBirdLiveStateResponse): void {
-    roomRef.current = data.room
-    presenceRef.current = data.you
-    setRoom(data.room)
-    setYou(data.you)
-    setPlayers(data.players)
-    setLeaderboard(data.leaderboard)
-    setPersonalBest(data.personal_best)
   }
 
   async function refreshOverview(silent = false): Promise<void> {
     if (!deviceFingerprint) {
-      setIsRefreshing(false)
       return
     }
-
-    if (!silent) {
-      setIsRefreshing(true)
-    }
-
     try {
       const overview = await getEmployeeYabuBirdOverview(deviceFingerprint)
       applyOverview(overview)
@@ -213,136 +271,147 @@ export function YabuBirdPage() {
       }
     } catch (error) {
       if (!silent) {
-        setErrorMessage(parseApiError(error, 'YabuBird durumu alinamadi.').message)
-      }
-    } finally {
-      if (!silent) {
-        setIsRefreshing(false)
+        setErrorMessage(parseApiError(error, 'YabuBird verileri alinamadi.').message)
       }
     }
   }
 
-  async function finishCurrentRun(snapshot: GameFrame): Promise<void> {
-    const activeRoom = roomRef.current
-    const activePresence = presenceRef.current
-    if (
-      finishingRef.current ||
-      !deviceFingerprint ||
-      activeRoom === null ||
-      activePresence === null
-    ) {
-      return
-    }
-
-    finishingRef.current = true
-    stopAnimation()
-    phaseRef.current = 'crashed'
-    setPhase('crashed')
-    setStatusMessage(`Tur bitti. Skorun ${snapshot.score}. Liderlik listesi guncelleniyor...`)
-
-    try {
-      const overview = await finishYabuBirdRun({
-        device_fingerprint: deviceFingerprint,
-        room_id: activeRoom.id,
-        presence_id: activePresence.id,
-        score: snapshot.score,
-        survived_ms: snapshot.elapsedMs,
-      })
-      clearPresence()
-      applyOverview(overview)
-      setErrorMessage(null)
-      setStatusMessage(`Tur bitti. Skor ${snapshot.score}. En iyi skorun ${overview.personal_best}.`)
-    } catch (error) {
-      setErrorMessage(parseApiError(error, 'Skor kaydedilemedi.').message)
-    } finally {
-      finishingRef.current = false
-    }
-  }
-
-  async function leaveCurrentRoom(silent = false): Promise<void> {
-    const activeRoom = roomRef.current
-    const activePresence = presenceRef.current
-    if (
-      leavingRef.current ||
-      finishingRef.current ||
-      !deviceFingerprint ||
-      activeRoom === null ||
-      activePresence === null
-    ) {
-      return
-    }
-
-    leavingRef.current = true
-    try {
-      const overview = await leaveYabuBirdLiveRoom({
-        device_fingerprint: deviceFingerprint,
-        room_id: activeRoom.id,
-        presence_id: activePresence.id,
-      })
-      clearPresence()
-      applyOverview(overview)
-      if (!silent) {
-        setStatusMessage('Canli odadan ayrildin.')
-      }
-    } catch (error) {
-      if (!silent) {
-        setErrorMessage(parseApiError(error, 'Canli odadan cikis yapilamadi.').message)
-      }
-    } finally {
-      leavingRef.current = false
-    }
-  }
-
-  function performFlap(): void {
-    if (phaseRef.current !== 'playing') {
-      return
-    }
-    const nextFrame = {
-      ...gameStateRef.current,
-      velocity: FLAP_VELOCITY,
-      flapCount: gameStateRef.current.flapCount + 1,
-    }
-    gameStateRef.current = nextFrame
-    setFrame(nextFrame)
-  }
-
-  async function handleStartGame(): Promise<void> {
+  async function enterRoom(intent: JoinIntent): Promise<void> {
     if (!deviceFingerprint || phaseRef.current === 'joining') {
       return
     }
-
-    stopAnimation()
-    clearPresence()
+    setDrawerView(null)
     setErrorMessage(null)
-    setStatusMessage('Canli odaya baglaniyorsun...')
-    phaseRef.current = 'joining'
+    setStatusMessage('Oda hazirlaniyor...')
     setPhase('joining')
-
+    phaseRef.current = 'joining'
+    resetEngine()
+    await refreshLocation(true)
     try {
-      const liveState = await joinYabuBirdLiveRoom({
+      const state = await joinYabuBirdLiveRoom({
         device_fingerprint: deviceFingerprint,
+        mode: intent.mode,
+        room_code: intent.roomCode ?? null,
+        ...buildLocationPayload(locationRef.current),
       })
-      const worldElapsedMs = Math.max(0, Date.now() - Date.parse(liveState.room.started_at))
-      const nextFrame = {
-        ...INITIAL_FRAME,
-        y: START_Y,
-        alive: true,
-        worldElapsedMs,
-      }
-      gameStateRef.current = nextFrame
-      setFrame(nextFrame)
-      gameStartAtRef.current = Date.now()
-      lastPassedPipeIndexRef.current = getLastPassedPipeIndex(worldElapsedMs)
-      applyLiveState(liveState)
-      setStatusMessage('Canli tur basladi. Ekrana dokun veya bosluk tusuyla kanat cirp.')
-      phaseRef.current = 'playing'
-      setPhase('playing')
+      applyLiveState(state)
+      joinIntentRef.current =
+        intent.mode === 'HOST' && state.room.share_code
+          ? { mode: 'ROOM', roomCode: state.room.share_code }
+          : intent
+      setPhase('ready')
+      phaseRef.current = 'ready'
+      setStatusMessage(
+        state.room.share_code
+          ? `Server kodu ${state.room.share_code}. Ekrana dokun ve uc.`
+          : 'Tur hazir. Ekrana dokun ve uc.',
+      )
     } catch (error) {
-      const parsed = parseApiError(error, 'Canli odaya baglanilamadi.')
-      phaseRef.current = 'idle'
-      setPhase('idle')
+      const parsed = parseApiError(error, 'Odaya baglanilamadi.')
+      setPhase('menu')
+      phaseRef.current = 'menu'
       setErrorMessage(parsed.message)
-      setStatusMessage('Baglanti kurulamadigi icin tur baslatilamadi.')
+      setStatusMessage('Baglanti kurulamadigi icin oda acilamadi.')
+    }
+  }
+
+  async function finishRun(snapshot: EngineState): Promise<void> {
+    const currentRoom = roomRef.current
+    const currentPresence = presenceRef.current
+    if (!deviceFingerprint || !currentRoom || !currentPresence || finishInFlightRef.current) {
+      return
+    }
+    finishInFlightRef.current = true
+    setPhase('crashed')
+    phaseRef.current = 'crashed'
+    setStatusMessage(`Tur bitti. Skor ${snapshot.score}.`)
+    window.navigator.vibrate?.(90)
+    try {
+      const overview = await finishYabuBirdRun({
+        device_fingerprint: deviceFingerprint,
+        room_id: currentRoom.id,
+        presence_id: currentPresence.id,
+        score: snapshot.score,
+        survived_ms: snapshot.elapsedMs,
+        ...buildLocationPayload(locationRef.current),
+      })
+      presenceRef.current = null
+      setYou(null)
+      applyOverview(overview)
+      setPersonalBest((value) => Math.max(value, snapshot.score, overview.personal_best))
+    } catch (error) {
+      setErrorMessage(parseApiError(error, 'Skor kaydedilemedi.').message)
+    } finally {
+      finishInFlightRef.current = false
+    }
+  }
+
+  async function leaveRoom(returnHome = false, silent = false): Promise<void> {
+    const currentRoom = roomRef.current
+    const currentPresence = presenceRef.current
+    if (!deviceFingerprint || !currentRoom || !currentPresence || leaveInFlightRef.current) {
+      if (returnHome) {
+        navigate('/')
+      }
+      return
+    }
+    leaveInFlightRef.current = true
+    try {
+      const overview = await leaveYabuBirdLiveRoom({
+        device_fingerprint: deviceFingerprint,
+        room_id: currentRoom.id,
+        presence_id: currentPresence.id,
+        ...buildLocationPayload(locationRef.current),
+      })
+      presenceRef.current = null
+      setYou(null)
+      applyOverview(overview)
+      if (!silent) {
+        setStatusMessage('Odadan cikildi.')
+      }
+    } catch (error) {
+      if (!silent) {
+        setErrorMessage(parseApiError(error, 'Odadan cikilamadi.').message)
+      }
+    } finally {
+      leaveInFlightRef.current = false
+      if (returnHome) {
+        navigate('/')
+      }
+    }
+  }
+
+  function startRun(withOpeningFlap: boolean): void {
+    engineRef.current = {
+      y: BIRD_START_Y,
+      velocity: withOpeningFlap ? FLAP_VELOCITY : 0,
+      score: 0,
+      flapCount: withOpeningFlap ? 1 : 0,
+      elapsedMs: 0,
+      alive: true,
+    }
+    frameTimeRef.current = null
+    setScoreLabel(0)
+    setElapsedLabel(0)
+    scoreLabelRef.current = 0
+    elapsedLabelRef.current = 0
+    setPhase('playing')
+    phaseRef.current = 'playing'
+    setStatusMessage('Ucus basladi. Ekranin her yerine dokun.')
+  }
+
+  function flap(): void {
+    if (phaseRef.current === 'ready') {
+      startRun(true)
+      return
+    }
+    if (phaseRef.current !== 'playing') {
+      return
+    }
+    engineRef.current = {
+      ...engineRef.current,
+      velocity: FLAP_VELOCITY,
+      flapCount: engineRef.current.flapCount + 1,
     }
   }
 
@@ -359,120 +428,57 @@ export function YabuBirdPage() {
   }, [you])
 
   useEffect(() => {
+    menuRoomRef.current = menuPublicRoom
+  }, [menuPublicRoom])
+
+  useEffect(() => {
+    menuPlayersRef.current = menuPublicPlayers
+  }, [menuPublicPlayers])
+
+  useEffect(() => {
+    playersRef.current = players
+  }, [players])
+
+  useEffect(() => {
+    resetEngine()
+    void refreshLocation(true)
     void refreshOverview()
   }, [])
 
   useEffect(() => {
-    if (phase === 'playing') {
+    if (phase !== 'menu') {
       return undefined
     }
-
     const intervalId = window.setInterval(() => {
       void refreshOverview(true)
-    }, 8000)
-
+    }, 9000)
     return () => {
       window.clearInterval(intervalId)
     }
-  }, [phase, deviceFingerprint])
+  }, [deviceFingerprint, phase])
 
   useEffect(() => {
-    if (phase !== 'playing' || room === null) {
+    if (phase !== 'ready' && phase !== 'playing') {
       return undefined
     }
-
-    const roomStartedAtMs = Date.parse(room.started_at)
-    const tick = (rafTime: number) => {
-      if (phaseRef.current !== 'playing') {
-        return
-      }
-
-      if (lastTickRef.current === null) {
-        lastTickRef.current = rafTime
-      }
-
-      const deltaMs = Math.min(34, rafTime - lastTickRef.current)
-      lastTickRef.current = rafTime
-
-      const elapsedMs =
-        gameStartAtRef.current === null ? 0 : Math.max(0, Date.now() - gameStartAtRef.current)
-      const worldElapsedMs = Math.max(0, Date.now() - roomStartedAtMs)
-      const nextVelocity = clamp(
-        gameStateRef.current.velocity + (GRAVITY * deltaMs) / 1000,
-        -600,
-        TERMINAL_VELOCITY,
-      )
-      const nextY = gameStateRef.current.y + (nextVelocity * deltaMs) / 1000
-
-      let nextScore = gameStateRef.current.score
-      const lastPassedIndex = getLastPassedPipeIndex(worldElapsedMs)
-      if (lastPassedIndex > lastPassedPipeIndexRef.current) {
-        nextScore += lastPassedIndex - lastPassedPipeIndexRef.current
-        lastPassedPipeIndexRef.current = lastPassedIndex
-      }
-
-      const clampedY = clamp(nextY, -12, PLAY_HEIGHT - BIRD_SIZE)
-      let crashed = clampedY <= -2 || clampedY + BIRD_SIZE >= PLAY_HEIGHT
-      if (!crashed) {
-        const pipes = getVisiblePipes(room.seed, worldElapsedMs)
-        const birdLeft = BIRD_X
-        const birdRight = BIRD_X + BIRD_SIZE
-        const birdTop = clampedY
-        const birdBottom = clampedY + BIRD_SIZE
-
-        crashed = pipes.some((pipe) => {
-          const pipeLeft = pipe.x
-          const pipeRight = pipe.x + PIPE_WIDTH
-          const overlapsPipe = birdRight > pipeLeft && birdLeft < pipeRight
-          if (!overlapsPipe) {
-            return false
-          }
-          const gapBottomStart = PLAY_HEIGHT - pipe.gapBottom
-          return birdTop < pipe.gapTop || birdBottom > gapBottomStart
-        })
-      }
-
-      const nextFrame = {
-        y: clampedY,
-        velocity: nextVelocity,
-        score: nextScore,
-        flapCount: gameStateRef.current.flapCount,
-        elapsedMs,
-        worldElapsedMs,
-        alive: !crashed,
-      }
-
-      gameStateRef.current = nextFrame
-      setFrame(nextFrame)
-
-      if (crashed) {
-        void finishCurrentRun(nextFrame)
-        return
-      }
-
-      rafRef.current = window.requestAnimationFrame(tick)
-    }
-
-    rafRef.current = window.requestAnimationFrame(tick)
-
-    return () => {
-      stopAnimation()
-    }
-  }, [phase, room])
-
-  useEffect(() => {
-    if (phase !== 'playing' || !deviceFingerprint || room === null || you === null) {
-      return undefined
-    }
-
     const intervalId = window.setInterval(() => {
-      if (syncInFlightRef.current || finishingRef.current) {
+      void refreshLocation(true)
+    }, LOCATION_REFRESH_MS)
+    return () => {
+      window.clearInterval(intervalId)
+    }
+  }, [phase])
+
+  useEffect(() => {
+    if (!deviceFingerprint || !room || !you || (phase !== 'ready' && phase !== 'playing')) {
+      return undefined
+    }
+    const intervalId = window.setInterval(() => {
+      if (syncInFlightRef.current || finishInFlightRef.current) {
         return
       }
-
       syncInFlightRef.current = true
-      const snapshot = gameStateRef.current
-
+      const snapshot = engineRef.current
       void updateYabuBirdLiveState({
         device_fingerprint: deviceFingerprint,
         room_id: room.id,
@@ -481,22 +487,22 @@ export function YabuBirdPage() {
         velocity: snapshot.velocity,
         score: snapshot.score,
         flap_count: snapshot.flapCount,
-        is_alive: snapshot.alive,
+        is_alive: phaseRef.current === 'playing' ? snapshot.alive : true,
+        ...buildLocationPayload(locationRef.current),
       })
-        .then((liveState) => {
-          if (phaseRef.current === 'playing') {
-            applyLiveState(liveState)
+        .then((state) => {
+          if (phaseRef.current === 'ready' || phaseRef.current === 'playing') {
+            applyLiveState(state)
           }
         })
         .catch((error) => {
-          const parsed = parseApiError(error, 'Canli YabuBird senkronize edilemedi.')
-          if (parsed.code === 'YABUBIRD_ROOM_CLOSED') {
-            stopAnimation()
-            clearPresence()
-            phaseRef.current = 'idle'
-            setPhase('idle')
+          const parsed = parseApiError(error, 'Canli senkronizasyon koptu.')
+          if (parsed.code === 'YABUBIRD_ROOM_CLOSED' || parsed.code === 'YABUBIRD_ROOM_NOT_FOUND') {
+            setPhase('menu')
+            phaseRef.current = 'menu'
+            setYou(null)
+            setRoom(null)
             setErrorMessage(parsed.message)
-            setStatusMessage('Oda kapandigi icin canli tur sona erdi.')
             void refreshOverview(true)
             return
           }
@@ -505,8 +511,7 @@ export function YabuBirdPage() {
         .finally(() => {
           syncInFlightRef.current = false
         })
-    }, 260)
-
+    }, NETWORK_SYNC_MS)
     return () => {
       window.clearInterval(intervalId)
     }
@@ -518,352 +523,462 @@ export function YabuBirdPage() {
         return
       }
       event.preventDefault()
-      performFlap()
+      flap()
     }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [])
-
-  useEffect(() => {
     const handlePageHide = () => {
-      stopAnimation()
-      void leaveCurrentRoom(true)
+      if (presenceRef.current && roomRef.current) {
+        void leaveRoom(false, true)
+      }
     }
-
+    window.addEventListener('keydown', handleKeyDown)
     window.addEventListener('pagehide', handlePageHide)
     return () => {
+      window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('pagehide', handlePageHide)
-      stopAnimation()
-      void leaveCurrentRoom(true)
+      if (presenceRef.current && roomRef.current) {
+        void leaveRoom(false, true)
+      }
     }
   }, [deviceFingerprint])
 
-  const playerBirdStyle: CSSProperties = {
-    top: `${frame.y}px`,
-    left: `${BIRD_X}px`,
-    transform: `translate3d(0, 0, 0) rotate(${clamp(frame.velocity * 0.08, -24, 74)}deg)`,
-  }
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) {
+      return
+    }
+    const context = canvas.getContext('2d', { alpha: false })
+    if (!context) {
+      return
+    }
+    const pixelRatio = Math.max(1, Math.floor(window.devicePixelRatio || 1))
+    const resizeCanvas = () => {
+      canvas.width = VIEW_WIDTH * pixelRatio
+      canvas.height = VIEW_HEIGHT * pixelRatio
+    }
+    resizeCanvas()
+    window.addEventListener('resize', resizeCanvas)
+
+    let animationFrame = 0
+    const tick = (time: number) => {
+      if (phaseRef.current === 'playing' && roomRef.current) {
+        if (frameTimeRef.current === null) {
+          frameTimeRef.current = time
+        }
+        const deltaMs = Math.min(34, time - frameTimeRef.current)
+        frameTimeRef.current = time
+        const nextVelocity = clamp(
+          engineRef.current.velocity + (GRAVITY * deltaMs) / 1000,
+          -260,
+          TERMINAL_VELOCITY,
+        )
+        const nextElapsedMs = engineRef.current.elapsedMs + deltaMs
+        const nextY = engineRef.current.y + (nextVelocity * deltaMs) / 1000
+        let nextScore = engineRef.current.score
+
+        const lastPassedIndex = getLastPassedPipeIndex(nextElapsedMs)
+        const previousPassedIndex = getLastPassedPipeIndex(engineRef.current.elapsedMs)
+        if (lastPassedIndex > previousPassedIndex) {
+          nextScore += lastPassedIndex - previousPassedIndex
+        }
+
+        const clampedY = clamp(nextY, -8, PLAY_HEIGHT - BIRD_SIZE)
+        let crashed = clampedY + BIRD_SIZE >= PLAY_HEIGHT || clampedY <= -2
+        if (!crashed) {
+          crashed = getVisiblePipes(roomRef.current.seed, nextElapsedMs).some((pipe) => {
+            const birdLeft = BIRD_X
+            const birdRight = BIRD_X + BIRD_SIZE
+            const birdTop = clampedY
+            const birdBottom = clampedY + BIRD_SIZE
+            const pipeLeft = pipe.x
+            const pipeRight = pipe.x + PIPE_WIDTH
+            if (birdRight <= pipeLeft || birdLeft >= pipeRight) {
+              return false
+            }
+            const gapBottomStart = PLAY_HEIGHT - pipe.gapBottom
+            return birdTop <= pipe.gapTop || birdBottom >= gapBottomStart
+          })
+        }
+
+        engineRef.current = {
+          y: clampedY,
+          velocity: nextVelocity,
+          score: nextScore,
+          flapCount: engineRef.current.flapCount,
+          elapsedMs: nextElapsedMs,
+          alive: !crashed,
+        }
+
+        if (time - hudCommitRef.current > 80 || nextScore !== scoreLabelRef.current) {
+          hudCommitRef.current = time
+          scoreLabelRef.current = nextScore
+          elapsedLabelRef.current = nextElapsedMs
+          setScoreLabel(nextScore)
+          setElapsedLabel(nextElapsedMs)
+        }
+        if (crashed) {
+          void finishRun(engineRef.current)
+        }
+      } else {
+        frameTimeRef.current = null
+      }
+
+      context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0)
+      context.imageSmoothingEnabled = false
+      context.clearRect(0, 0, VIEW_WIDTH, VIEW_HEIGHT)
+      context.fillStyle = '#06111d'
+      context.fillRect(0, 0, VIEW_WIDTH, VIEW_HEIGHT)
+      context.fillStyle = '#10233a'
+      context.fillRect(0, 0, VIEW_WIDTH, 96)
+      context.fillStyle = '#173759'
+      context.fillRect(0, 96, VIEW_WIDTH, 70)
+      context.fillStyle = '#23455f'
+      context.fillRect(0, 166, VIEW_WIDTH, PLAY_HEIGHT - 166)
+      context.fillStyle = '#f8fafc'
+      for (let index = 0; index < 18; index += 1) {
+        context.fillRect(
+          Math.floor(seededUnit(88, index) * VIEW_WIDTH),
+          Math.floor(seededUnit(133, index) * 72),
+          1,
+          1,
+        )
+      }
+      context.fillStyle = '#bfe6ff'
+      context.fillRect(118, 28, 18, 18)
+      context.fillStyle = '#7dd3fc'
+      context.fillRect(122, 32, 10, 10)
+
+      const farScroll = Math.floor((time * 0.006) % 48)
+      const nearScroll = Math.floor((time * 0.014) % 64)
+      context.fillStyle = '#0f1d31'
+      for (let x = -48; x < VIEW_WIDTH + 48; x += 24) {
+        const baseX = x - farScroll
+        context.fillRect(baseX, 144, 8, 22)
+        context.fillRect(baseX + 8, 136, 8, 30)
+        context.fillRect(baseX + 16, 148, 8, 18)
+      }
+      context.fillStyle = '#13263c'
+      for (let x = -64; x < VIEW_WIDTH + 64; x += 32) {
+        const baseX = x - nearScroll
+        context.fillRect(baseX, 172, 12, 32)
+        context.fillRect(baseX + 12, 164, 12, 40)
+        context.fillRect(baseX + 24, 176, 8, 28)
+      }
+
+      const renderRoom = roomRef.current ?? menuRoomRef.current
+      if (renderRoom) {
+        for (const pipe of getVisiblePipes(renderRoom.seed, engineRef.current.elapsedMs)) {
+          drawPipe(context, pipe.x, 0, PIPE_WIDTH, pipe.gapTop)
+          drawPipe(context, pipe.x, PLAY_HEIGHT - pipe.gapBottom, PIPE_WIDTH, pipe.gapBottom)
+        }
+      }
+
+      context.fillStyle = '#2b4f2d'
+      context.fillRect(0, PLAY_HEIGHT, VIEW_WIDTH, FLOOR_HEIGHT)
+      context.fillStyle = '#78d671'
+      context.fillRect(0, PLAY_HEIGHT, VIEW_WIDTH, 5)
+      for (let x = -24; x < VIEW_WIDTH + 24; x += 12) {
+        const tileX = x - Math.floor((time * 0.05) % 12)
+        context.fillStyle = '#6f5238'
+        context.fillRect(tileX, PLAY_HEIGHT + 6, 8, 12)
+        context.fillStyle = '#8f6b4a'
+        context.fillRect(tileX + 1, PLAY_HEIGHT + 7, 6, 10)
+      }
+
+      const renderedPlayers = (phaseRef.current === 'menu' ? menuPlayersRef.current : playersRef.current)
+      renderedPlayers
+        .filter((player) => player.id !== presenceRef.current?.id && player.is_connected)
+        .slice(0, 5)
+        .forEach((player, index) => {
+          drawBird(context, VIEW_WIDTH - 28 - index * 14, clamp(player.latest_y, 12, PLAY_HEIGHT - 20), player.color_hex, index % 3)
+        })
+
+      const idleBob = phaseRef.current === 'playing' ? 0 : Math.sin(time / 260) * 2
+      const wingFrame = phaseRef.current === 'playing' ? Math.floor(time / 90) % 3 : Math.floor(time / 180) % 3
+      drawBird(context, BIRD_X, engineRef.current.y + idleBob, '#ffd84d', wingFrame)
+
+      context.font = '8px monospace'
+      context.fillStyle = '#e2e8f0'
+      context.fillText(`SCORE ${engineRef.current.score}`, 8, 12)
+      context.fillText(`TIME ${Math.floor(engineRef.current.elapsedMs / 1000)}S`, 8, 22)
+      if (renderRoom?.share_code) {
+        context.fillText(`CODE ${renderRoom.share_code}`, VIEW_WIDTH - 58, 12)
+      }
+
+      animationFrame = window.requestAnimationFrame(tick)
+    }
+
+    animationFrame = window.requestAnimationFrame(tick)
+    return () => {
+      window.cancelAnimationFrame(animationFrame)
+      window.removeEventListener('resize', resizeCanvas)
+    }
+  }, [])
+
+  const roomLine = room
+    ? `${room.room_label}${room.share_code ? ` / ${room.share_code}` : ''}`
+    : menuPublicRoom
+      ? `${menuPublicRoom.room_label} / ${menuPublicRoom.player_count} aktif`
+      : 'Oda secimi bekleniyor'
 
   return (
-    <main className="phone-shell employee-shell">
-      <section className="phone-card employee-home-card yabubird-page-card">
-        <div className="card-topbar">
+    <main className="yabubird-arcade-page">
+      <section className="yabubird-arcade-shell">
+        <header className="yabubird-arcade-topbar">
           <div>
-            <p className="chip">Canli Oyun</p>
-            <h1>YabuBird Arena</h1>
+            <p className="yabubird-arcade-kicker">YABUBIRD PIXEL TRACKER</p>
+            <h1>Canli oda, tam ekran ucus, konum odakli takip.</h1>
           </div>
-          <Link className="topbar-link with-icon" to="/">
-            Uygulamaya Don
-          </Link>
-        </div>
+          <div className="yabubird-arcade-topbar-actions">
+            <button type="button" className="yabubird-chip-btn" onClick={() => setDrawerView('leaderboard')}>
+              Leaderboard
+            </button>
+            <button type="button" className="yabubird-chip-btn" onClick={() => setDrawerView('players')}>
+              Oyuncular
+            </button>
+            <button type="button" className="yabubird-chip-btn" onClick={() => setDrawerView('tracking')}>
+              Konum
+            </button>
+            <button
+              type="button"
+              className="yabubird-exit-btn"
+              onClick={() => {
+                if (presenceRef.current && roomRef.current) {
+                  void leaveRoom(true)
+                  return
+                }
+                navigate('/')
+              }}
+            >
+              Cik
+            </button>
+          </div>
+        </header>
 
-        <section className="yabubird-hero">
-          <div className="yabubird-hero-copy">
-            <p className="yabubird-hero-kicker">ONLINE FLAPPY CORE</p>
-            <h2 className="yabubird-hero-title">Ayni odada beraber uctugunuz, chati olmayan mini arena.</h2>
-            <p className="yabubird-hero-text">
-              Tur baslatinca canli odaya girersin, diger calisanlarin anlik skorlarini gorursun,
-              uygulamadan cikmadan geri donebilirsin.
-            </p>
-          </div>
-          <div className="yabubird-metric-stack">
-            <div className="yabubird-metric-card">
-              <span className="yabubird-metric-label">En iyi skor</span>
-              <strong className="yabubird-metric-value">{personalBest}</strong>
-            </div>
-            <div className="yabubird-metric-card">
-              <span className="yabubird-metric-label">Canli oyuncu</span>
-              <strong className="yabubird-metric-value">{livePlayers.length}</strong>
-            </div>
-          </div>
-        </section>
-
-        {deviceFingerprint ? null : (
-          <div className="warn-box">
-            <p>Oyuna girmek icin once bu cihazin calisana bagli olmasi gerekiyor.</p>
-            <Link className="inline-link" to="/">
-              Ana sayfaya don
-            </Link>
-          </div>
-        )}
-
-        {errorMessage ? (
-          <div className="error-box banner-error">
-            <p>
-              <span className="banner-icon" aria-hidden="true">
-                !
-              </span>
-              {errorMessage}
-            </p>
+        {!deviceFingerprint ? (
+          <div className="yabubird-arcade-warning">
+            <p>Bu cihaz bir calisana bagli degil. Once employee uygulamasina baglanmasi gerekiyor.</p>
+            <Link to="/">Ana sayfaya don</Link>
           </div>
         ) : null}
 
-        <div className="notice-box notice-box-success yabubird-status-strip">
-          <p>
-            <span className="banner-icon" aria-hidden="true">
-              +
-            </span>
-            {statusMessage}
-          </p>
-        </div>
+        {errorMessage ? <div className="yabubird-arcade-banner yabubird-arcade-banner-error">{errorMessage}</div> : null}
+        <div className="yabubird-arcade-banner">{statusMessage}</div>
+        {locationMessage ? <div className="yabubird-arcade-banner yabubird-arcade-banner-soft">{locationMessage}</div> : null}
 
-        <section className="yabubird-stage-panel">
+        <section className="yabubird-arcade-stage-wrap">
           <div
-            className={`yabubird-stage ${phase === 'playing' ? 'is-playing' : ''}`}
+            className={`yabubird-arcade-stage ${phase === 'playing' ? 'is-active' : ''}`}
             role="button"
             tabIndex={0}
-            aria-label="YabuBird oyun alani"
-            onClick={() => {
-              if (phase === 'playing') {
-                performFlap()
-              }
-            }}
+            aria-label="YabuBird piksel oyun alani"
+            onClick={() => flap()}
             onKeyDown={(event) => {
-              if ((event.key === ' ' || event.key === 'ArrowUp') && phase === 'playing') {
+              if (event.key === ' ' || event.key === 'Enter' || event.key === 'ArrowUp') {
                 event.preventDefault()
-                performFlap()
+                flap()
               }
             }}
           >
-            <div className="yabubird-stage-sky" />
-            <div className="yabubird-stage-stars" />
-            <div className="yabubird-stage-haze yabubird-stage-haze-left" />
-            <div className="yabubird-stage-haze yabubird-stage-haze-right" />
+            <canvas ref={canvasRef} className="yabubird-arcade-canvas" />
 
-            {visiblePipes.map((pipe) => (
-              <div key={pipe.index}>
-                <div
-                  className="yabubird-pipe yabubird-pipe-top"
-                  style={{
-                    left: `${pipe.x}px`,
-                    width: `${PIPE_WIDTH}px`,
-                    height: `${pipe.gapTop}px`,
-                  }}
-                />
-                <div
-                  className="yabubird-pipe yabubird-pipe-bottom"
-                  style={{
-                    left: `${pipe.x}px`,
-                    width: `${PIPE_WIDTH}px`,
-                    height: `${pipe.gapBottom}px`,
-                  }}
-                />
-              </div>
-            ))}
-
-            <div className="yabubird-sun" aria-hidden="true" />
-
-            {ghostPlayers.map((player, index) => (
-              <div
-                key={player.id}
-                className="yabubird-ghost-player"
-                style={{
-                  left: `${BIRD_X + 26 + index * 16}px`,
-                  top: `${clamp(player.latest_y, 0, PLAY_HEIGHT - 18)}px`,
-                  backgroundColor: player.color_hex,
-                }}
-                title={`${player.employee_name} / skor ${player.latest_score}`}
-              >
-                <span>{player.employee_name.slice(0, 1).toUpperCase()}</span>
-              </div>
-            ))}
-
-            <div className="yabubird-player" style={playerBirdStyle}>
-              <span className="yabubird-player-eye" />
-              <span className="yabubird-player-wing" />
-            </div>
-
-            <div className="yabubird-floor">
-              <div className="yabubird-floor-line" />
-            </div>
-
-            <div className="yabubird-stage-hud">
-              <div className="yabubird-hud-pill">
+            <div className="yabubird-arcade-hud">
+              <div className="yabubird-arcade-hud-pill">
                 <span>Skor</span>
-                <strong>{frame.score}</strong>
+                <strong>{scoreLabel}</strong>
               </div>
-              <div className="yabubird-hud-pill">
-                <span>Tur</span>
-                <strong>{formatDuration(frame.elapsedMs)}</strong>
+              <div className="yabubird-arcade-hud-pill">
+                <span>Sure</span>
+                <strong>{formatDuration(elapsedLabel)}</strong>
+              </div>
+              <div className="yabubird-arcade-hud-pill">
+                <span>Oda</span>
+                <strong>{room?.room_type ?? menuPublicRoom?.room_type ?? '-'}</strong>
               </div>
             </div>
 
-            <div className="yabubird-stage-overlay">
-              {phase === 'joining' ? (
-                <div className="yabubird-overlay-card">
-                  <p className="yabubird-overlay-kicker">Baglaniyor</p>
-                  <h3>Canli oda aciliyor...</h3>
-                  <p>Diger oyuncularla ayni odaya giriyorsun.</p>
-                </div>
-              ) : null}
+            {(phase === 'menu' || phase === 'joining' || phase === 'ready' || phase === 'crashed') && (
+              <div className="yabubird-arcade-overlay">
+                <div className="yabubird-arcade-panel">
+                  {phase === 'menu' ? (
+                    <>
+                      <p className="yabubird-arcade-panel-kicker">Oyun modu sec</p>
+                      <h2>Kart degil, tam ekran piksel arena.</h2>
+                      <p>Tek oyna, beraber oyna ya da server kodu ac. Her yer dokunmatik flap alani.</p>
+                      <div className="yabubird-arcade-mode-grid">
+                        <button type="button" className="yabubird-mode-card" onClick={() => void enterRoom({ mode: 'SOLO' })}>
+                          <strong>Tek Oyna</strong>
+                          <span>Kendi akisin ve kendi skorun.</span>
+                        </button>
+                        <button type="button" className="yabubird-mode-card" onClick={() => void enterRoom({ mode: 'PUBLIC' })}>
+                          <strong>Beraber Oyna</strong>
+                          <span>Public odada diger calisanlarla yarisa gir.</span>
+                        </button>
+                        <button type="button" className="yabubird-mode-card" onClick={() => void enterRoom({ mode: 'HOST' })}>
+                          <strong>Server Ac</strong>
+                          <span>Kod uret, odayi sen kur.</span>
+                        </button>
+                      </div>
+                      <div className="yabubird-join-box">
+                        <input
+                          value={joinCode}
+                          onChange={(event) => setJoinCode(event.target.value.toUpperCase())}
+                          placeholder="SERVER KODU"
+                          maxLength={12}
+                        />
+                        <button
+                          type="button"
+                          className="yabubird-mode-inline-btn"
+                          disabled={joinCode.trim().length < 4}
+                          onClick={() => void enterRoom({ mode: 'ROOM', roomCode: joinCode.trim() })}
+                        >
+                          Koda Gir
+                        </button>
+                      </div>
+                      <div className="yabubird-arcade-meta-line">
+                        <span>Public oda: {menuPublicRoom?.player_count ?? 0} oyuncu</span>
+                        <span>En iyi skor: {personalBest}</span>
+                      </div>
+                    </>
+                  ) : null}
 
-              {phase === 'idle' ? (
-                <div className="yabubird-overlay-card">
-                  <p className="yabubird-overlay-kicker">
-                    {room ? 'Canli oda acik' : isRefreshing ? 'Arena yukleniyor' : 'Yeni tur hazir'}
-                  </p>
-                  <h3>{room ? 'Canli tura katil' : 'YabuBird turunu baslat'}</h3>
-                  <p>
-                    {room
-                      ? `${livePlayers.length} oyuncu su anda aktif. Tura girip ayni akisa katilabilirsin.`
-                      : 'Tek dokunusla global canli oda acilir ve leaderboard kaydi tutulur.'}
-                  </p>
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    disabled={!deviceFingerprint || isRefreshing}
-                    onClick={() => void handleStartGame()}
-                  >
-                    {room ? 'Canli Odaya Gir' : 'YabuBird Baslat'}
-                  </button>
-                </div>
-              ) : null}
+                  {phase === 'joining' ? (
+                    <>
+                      <p className="yabubird-arcade-panel-kicker">Baglaniyor</p>
+                      <h2>Oda aciliyor...</h2>
+                      <p>Canli kanal ve konum akisi hazirlaniyor.</p>
+                    </>
+                  ) : null}
 
-              {phase === 'crashed' ? (
-                <div className="yabubird-overlay-card">
-                  <p className="yabubird-overlay-kicker">Tur bitti</p>
-                  <h3>Skorun {frame.score}</h3>
-                  <p>
-                    Sure {formatDuration(frame.elapsedMs)} / En iyi skor {personalBest}
-                  </p>
-                  <div className="yabubird-overlay-actions">
-                    <button type="button" className="btn btn-primary" onClick={() => void handleStartGame()}>
-                      Tekrar Oyna
-                    </button>
-                    <Link className="btn btn-soft" to="/">
-                      Uygulamaya Don
-                    </Link>
-                  </div>
-                </div>
-              ) : null}
+                  {phase === 'ready' ? (
+                    <>
+                      <p className="yabubird-arcade-panel-kicker">{room?.room_label ?? 'Hazir'}</p>
+                      <h2>{room?.share_code ? `Server kodu ${room.share_code}` : 'Ucus hazir'}</h2>
+                      <p>Ekrana dokun ve basla. Cik butonu oyun icinde de calisir.</p>
+                      <div className="yabubird-arcade-ready-actions">
+                        <button type="button" className="yabubird-mode-inline-btn is-primary" onClick={() => startRun(true)}>
+                          Basla
+                        </button>
+                        <button type="button" className="yabubird-mode-inline-btn" onClick={() => void leaveRoom(false)}>
+                          Odayi Kapat
+                        </button>
+                      </div>
+                    </>
+                  ) : null}
 
-              {phase === 'playing' ? (
-                <div className="yabubird-live-tip">Dokun veya bosluk tusuna bas.</div>
-              ) : null}
+                  {phase === 'crashed' ? (
+                    <>
+                      <p className="yabubird-arcade-panel-kicker">Tur bitti</p>
+                      <h2>Skor {scoreLabel}</h2>
+                      <p>Oda bilgisi: {roomLine}. Tekrar oyna dersen ayni moda geri baglaniriz.</p>
+                      <div className="yabubird-arcade-ready-actions">
+                        <button
+                          type="button"
+                          className="yabubird-mode-inline-btn is-primary"
+                          onClick={() => void enterRoom(joinIntentRef.current ?? { mode: 'PUBLIC' })}
+                        >
+                          Tekrar Oyna
+                        </button>
+                        <button type="button" className="yabubird-mode-inline-btn" onClick={() => navigate('/')}>
+                          Uygulamaya Don
+                        </button>
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+            )}
+
+            {phase === 'playing' ? <div className="yabubird-touch-tip">Dokun, birak, tekrar dokun. Her dokunus bir flap.</div> : null}
+          </div>
+
+          <div className="yabubird-arcade-status-row">
+            <div className="yabubird-arcade-status-card">
+              <span>Aktif oda</span>
+              <strong>{roomLine}</strong>
+            </div>
+            <div className="yabubird-arcade-status-card">
+              <span>Canli oyuncu</span>
+              <strong>{playerList.length}</strong>
+            </div>
+            <div className="yabubird-arcade-status-card">
+              <span>Son konum</span>
+              <strong>{formatCoords(locationRef.current)}</strong>
             </div>
           </div>
         </section>
 
-        <div className="yabubird-panels">
-          <section className="yabubird-panel">
-            <div className="yabubird-panel-head">
-              <div>
-                <p className="yabubird-panel-kicker">Canli Oda</p>
-                <h3>Aktif arena durumu</h3>
-              </div>
-              <span className={`status-pill ${room ? 'state-ok' : 'state-warn'}`}>
-                {room ? 'Acik' : 'Beklemede'}
-              </span>
-            </div>
-            <dl className="yabubird-meta-grid">
-              <div>
-                <dt>Oda anahtari</dt>
-                <dd>{room?.room_key ?? '-'}</dd>
-              </div>
-              <div>
-                <dt>Baslangic</dt>
-                <dd>{formatClock(room?.started_at)}</dd>
-              </div>
-              <div>
-                <dt>Aktif oyuncu</dt>
-                <dd>{livePlayers.length}</dd>
-              </div>
-              <div>
-                <dt>Durum</dt>
-                <dd>{phase === 'playing' ? 'Sen de oyundasin' : 'Lobidesin'}</dd>
-              </div>
-            </dl>
-            {phase === 'playing' ? (
-              <button type="button" className="btn btn-soft yabubird-leave-btn" onClick={() => void leaveCurrentRoom()}>
-                Odayi Birak
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="btn btn-outline yabubird-leave-btn"
-                disabled={!deviceFingerprint || phase === 'joining'}
-                onClick={() => void handleStartGame()}
-              >
-                Yeni Tur Baslat
-              </button>
-            )}
-          </section>
+        <section className={`yabubird-arcade-drawer ${drawerView ? 'is-open' : ''}`}>
+          <div className="yabubird-arcade-drawer-head">
+            <strong>
+              {drawerView === 'leaderboard'
+                ? 'Leaderboard'
+                : drawerView === 'players'
+                  ? 'Canli Oyuncular'
+                  : 'Konum ve Takip'}
+            </strong>
+            <button type="button" onClick={() => setDrawerView(null)}>
+              Kapat
+            </button>
+          </div>
 
-          <section className="yabubird-panel">
-            <div className="yabubird-panel-head">
-              <div>
-                <p className="yabubird-panel-kicker">Leaderboard</p>
-                <h3>En yuksek skorlar</h3>
-              </div>
-              <span className="status-pill state-info">Top 12</span>
-            </div>
-            <div className="yabubird-list">
+          {drawerView === 'leaderboard' ? (
+            <div className="yabubird-drawer-list">
               {leaderboard.length === 0 ? (
-                <p className="muted small-text">Henuz kayitli skor yok. Ilk turu sen baslat.</p>
+                <p className="yabubird-empty-copy">Henuz skor kaydi yok.</p>
               ) : (
                 leaderboard.map((entry, index) => (
-                  <div key={entry.id} className="yabubird-list-row">
+                  <div key={entry.id} className="yabubird-drawer-row">
                     <div>
-                      <p className="yabubird-list-title">
-                        #{index + 1} {entry.employee_name}
-                      </p>
-                      <p className="yabubird-list-subtitle">{formatClock(entry.created_at)}</p>
+                      <p>#{index + 1} {entry.employee_name}</p>
+                      <span>{entry.room_label ?? 'Oda yok'} / {formatClock(entry.created_at)}</span>
                     </div>
-                    <strong className="yabubird-score-badge">{entry.score}</strong>
+                    <strong>{entry.score}</strong>
                   </div>
                 ))
               )}
             </div>
-          </section>
+          ) : null}
 
-          <section className="yabubird-panel">
-            <div className="yabubird-panel-head">
-              <div>
-                <p className="yabubird-panel-kicker">Canli Oyuncular</p>
-                <h3>Ayni turdaki calisanlar</h3>
-              </div>
-              <span className="status-pill state-info">{livePlayers.length} kisi</span>
-            </div>
-            <div className="yabubird-list">
-              {livePlayers.length === 0 ? (
-                <p className="muted small-text">Su anda aktif oyuncu yok. Odayi acan ilk kisi sen olabilirsin.</p>
+          {drawerView === 'players' ? (
+            <div className="yabubird-drawer-list">
+              {playerList.length === 0 ? (
+                <p className="yabubird-empty-copy">Su an canli oyuncu yok.</p>
               ) : (
-                livePlayers.map((player) => (
-                  <div key={player.id} className="yabubird-list-row">
-                    <div className="yabubird-player-summary">
-                      <span
-                        className="yabubird-player-dot"
-                        style={{ backgroundColor: player.color_hex }}
-                        aria-hidden="true"
-                      />
-                      <div>
-                        <p className="yabubird-list-title">
-                          {player.employee_name}
-                          {player.id === you?.id ? ' (Sen)' : ''}
-                        </p>
-                        <p className="yabubird-list-subtitle">
-                          Son gorulme {formatClock(player.last_seen_at)}
-                        </p>
-                      </div>
+                playerList.map((player) => (
+                  <div key={player.id} className="yabubird-drawer-row">
+                    <div>
+                      <p>{player.employee_name}{player.id === you?.id ? ' (Sen)' : ''}</p>
+                      <span>{player.room_label ?? 'Oda'} / son gorulme {formatClock(player.last_seen_at)}</span>
                     </div>
-                    <strong className="yabubird-score-badge">{player.latest_score}</strong>
+                    <strong>{player.latest_score}</strong>
                   </div>
                 ))
               )}
             </div>
-          </section>
-        </div>
+          ) : null}
 
-        <div className="device-box yabubird-device-box">
-          <p className="muted small-text">
-            Cihaz Parmak Izi: {deviceFingerprint ?? '-'}
-          </p>
-        </div>
-
-        <BrandSignature />
+          {drawerView === 'tracking' ? (
+            <div className="yabubird-drawer-list">
+              <div className="yabubird-drawer-row">
+                <div>
+                  <p>Bu cihazin son konumu</p>
+                  <span>{locationRef.current ? `${locationRef.current.accuracy_m.toFixed(0)}m hassasiyet` : 'Konum izni bekleniyor'}</span>
+                </div>
+                <strong>{formatCoords(locationRef.current)}</strong>
+              </div>
+              <div className="yabubird-drawer-row">
+                <div>
+                  <p>Public oda durumu</p>
+                  <span>{menuPublicRoom?.room_label ?? 'Acik public oda yok'}</span>
+                </div>
+                <strong>{menuPublicRoom?.player_count ?? 0}</strong>
+              </div>
+              <p className="yabubird-empty-copy">
+                Admin panelinde canli oyun konumu, son oynayanlarin son konumu ve uygulama giris konumlari saat saat gorunecek.
+              </p>
+            </div>
+          ) : null}
+        </section>
       </section>
     </main>
   )

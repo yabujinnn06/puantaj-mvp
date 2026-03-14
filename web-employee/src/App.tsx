@@ -1,12 +1,14 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 
+import { postEmployeeAppPresencePing } from './api/attendance'
 import { BrandSignature } from './components/BrandSignature'
 import { ClaimPage } from './pages/ClaimPage'
 import { HomePage } from './pages/HomePage'
 import { RecoverPage } from './pages/RecoverPage'
 import { YabuBirdPage } from './pages/YabuBirdPage'
 import { getStoredDeviceFingerprint } from './utils/device'
+import { getCurrentLocation } from './utils/location'
 
 function EmployeeRouteGuard({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
@@ -95,6 +97,48 @@ function NotFoundPage() {
   )
 }
 
+function EmployeePresenceTracker() {
+  useEffect(() => {
+    const deviceFingerprint = getStoredDeviceFingerprint()
+    if (!deviceFingerprint) {
+      return
+    }
+
+    const sessionKey = 'employee_app_presence_last_ping_at'
+    const lastPingAtRaw = window.sessionStorage.getItem(sessionKey)
+    if (lastPingAtRaw) {
+      const lastPingAt = Number(lastPingAtRaw)
+      if (Number.isFinite(lastPingAt) && Date.now() - lastPingAt < 15 * 60 * 1000) {
+        return
+      }
+    }
+
+    let cancelled = false
+    void (async () => {
+      const locationResult = await getCurrentLocation(5000)
+      if (cancelled) {
+        return
+      }
+      await postEmployeeAppPresencePing({
+        device_fingerprint: deviceFingerprint,
+        source: 'APP_OPEN',
+        lat: locationResult.location?.lat,
+        lon: locationResult.location?.lon,
+        accuracy_m: locationResult.location?.accuracy_m ?? null,
+      }).catch(() => undefined)
+      if (!cancelled) {
+        window.sessionStorage.setItem(sessionKey, String(Date.now()))
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  return null
+}
+
 export default function App() {
   const [showBootLoader, setShowBootLoader] = useState(true)
 
@@ -109,6 +153,8 @@ export default function App() {
 
   return (
     <>
+      <EmployeePresenceTracker />
+
       {showBootLoader ? (
         <div
           className="employee-boot-loader"

@@ -833,8 +833,12 @@ export interface ControlRoomEmployeeDetail {
 export interface YabuBirdRoom {
   id: number
   room_key: string
+  room_type: 'PUBLIC' | 'PARTY' | 'SOLO'
+  room_label: string
+  share_code: string | null
   seed: number
   status: string
+  player_count: number
   started_at: string
   ended_at: string | null
   created_at: string
@@ -844,6 +848,10 @@ export interface YabuBirdRoom {
 export interface YabuBirdPresence {
   id: number
   room_id: number
+  room_key: string | null
+  room_type: 'PUBLIC' | 'PARTY' | 'SOLO' | null
+  room_label: string | null
+  share_code: string | null
   employee_id: number
   employee_name: string
   color_hex: string
@@ -865,14 +873,59 @@ export interface YabuBirdScore {
   score: number
   survived_ms: number
   room_id: number | null
+  room_key: string | null
+  room_type: 'PUBLIC' | 'PARTY' | 'SOLO' | null
+  room_label: string | null
+  share_code: string | null
   created_at: string
+}
+
+export interface YabuBirdLocation {
+  lat: number
+  lon: number
+  accuracy_m: number | null
+  ts_utc: string
+}
+
+export interface AdminYabuBirdPlayerLocation {
+  presence_id: number | null
+  score_id: number | null
+  employee_id: number
+  employee_name: string
+  room_id: number | null
+  room_key: string | null
+  room_type: 'PUBLIC' | 'PARTY' | 'SOLO' | null
+  room_label: string | null
+  share_code: string | null
+  score: number
+  survived_ms: number | null
+  is_connected: boolean
+  is_alive: boolean
+  location_state: 'LIVE' | 'STALE' | 'DORMANT' | 'NONE'
+  played_at: string
+  last_seen_at: string | null
+  location: YabuBirdLocation | null
+}
+
+export interface AdminYabuBirdAppEntry {
+  audit_id: number
+  employee_id: number
+  employee_name: string
+  source: string
+  location_state: 'LIVE' | 'STALE' | 'DORMANT' | 'NONE'
+  logged_at: string
+  location: YabuBirdLocation | null
 }
 
 export interface AdminYabuBirdOverview {
   live_room: YabuBirdRoom | null
+  live_rooms: YabuBirdRoom[]
   live_players: YabuBirdPresence[]
   leaderboard: YabuBirdScore[]
   latest_scores: YabuBirdScore[]
+  live_player_locations: AdminYabuBirdPlayerLocation[]
+  recent_player_locations: AdminYabuBirdPlayerLocation[]
+  app_entry_locations: AdminYabuBirdAppEntry[]
 }
 
 export interface MonthlyEmployeeDay {

@@ -90,8 +90,27 @@ export interface EmployeeStatusResponse {
   passkey_registered?: boolean | null
 }
 
+export interface EmployeeAppPresencePingRequest {
+  device_fingerprint: string
+  source?: 'APP_OPEN' | 'YABUBIRD_ENTER'
+  lat?: number
+  lon?: number
+  accuracy_m?: number | null
+}
+
+export interface EmployeeAppPresencePingResponse {
+  ok: boolean
+  employee_id: number
+  logged_at: string
+}
+
 export interface YabuBirdJoinRequest {
   device_fingerprint: string
+  mode?: 'PUBLIC' | 'HOST' | 'ROOM' | 'SOLO'
+  room_code?: string | null
+  lat?: number
+  lon?: number
+  accuracy_m?: number | null
 }
 
 export interface YabuBirdStateUpdateRequest {
@@ -103,6 +122,9 @@ export interface YabuBirdStateUpdateRequest {
   score: number
   flap_count?: number
   is_alive: boolean
+  lat?: number
+  lon?: number
+  accuracy_m?: number | null
 }
 
 export interface YabuBirdFinishRequest {
@@ -111,19 +133,29 @@ export interface YabuBirdFinishRequest {
   presence_id: number
   score: number
   survived_ms: number
+  lat?: number
+  lon?: number
+  accuracy_m?: number | null
 }
 
 export interface YabuBirdLeaveRequest {
   device_fingerprint: string
   room_id: number
   presence_id: number
+  lat?: number
+  lon?: number
+  accuracy_m?: number | null
 }
 
 export interface YabuBirdRoom {
   id: number
   room_key: string
+  room_type: 'PUBLIC' | 'PARTY' | 'SOLO'
+  room_label: string
+  share_code: string | null
   seed: number
   status: string
+  player_count: number
   started_at: string
   ended_at: string | null
   created_at: string
@@ -133,6 +165,10 @@ export interface YabuBirdRoom {
 export interface YabuBirdPresence {
   id: number
   room_id: number
+  room_key: string | null
+  room_type: 'PUBLIC' | 'PARTY' | 'SOLO' | null
+  room_label: string | null
+  share_code: string | null
   employee_id: number
   employee_name: string
   color_hex: string
@@ -154,6 +190,10 @@ export interface YabuBirdScore {
   score: number
   survived_ms: number
   room_id: number | null
+  room_key: string | null
+  room_type: 'PUBLIC' | 'PARTY' | 'SOLO' | null
+  room_label: string | null
+  share_code: string | null
   created_at: string
 }
 
@@ -168,6 +208,7 @@ export interface YabuBirdLiveStateResponse {
 export interface YabuBirdLeaderboardResponse {
   leaderboard: YabuBirdScore[]
   live_room: YabuBirdRoom | null
+  live_rooms: YabuBirdRoom[]
   live_players: YabuBirdPresence[]
   personal_best: number
 }

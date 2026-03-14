@@ -26,6 +26,395 @@
   background: radial-gradient(circle at top left, #dbeaf1 0%, #eef4f7 42%, #e2ecf2 100%);
 }
 
+.yabubird-arcade-page {
+  min-height: 100vh;
+  padding: calc(env(safe-area-inset-top, 0px) + 0.85rem) 0.85rem calc(env(safe-area-inset-bottom, 0px) + 0.85rem);
+  background:
+    radial-gradient(circle at top, rgba(93, 202, 255, 0.22), transparent 32%),
+    linear-gradient(180deg, #040b14 0%, #09182a 48%, #050a13 100%);
+  color: #eff6ff;
+}
+
+.yabubird-arcade-shell {
+  max-width: 1040px;
+  margin: 0 auto;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.yabubird-arcade-topbar,
+.yabubird-arcade-banner,
+.yabubird-arcade-status-card,
+.yabubird-arcade-drawer {
+  border: 1px solid rgba(137, 211, 255, 0.18);
+  background: rgba(7, 18, 32, 0.82);
+  box-shadow: 0 18px 42px rgba(3, 7, 18, 0.42);
+  backdrop-filter: blur(16px);
+}
+
+.yabubird-arcade-topbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.9rem;
+  padding: 0.95rem 1rem;
+  border-radius: 24px;
+}
+
+.yabubird-arcade-topbar h1,
+.yabubird-arcade-panel h2,
+.yabubird-arcade-warning p {
+  margin: 0;
+}
+
+.yabubird-arcade-kicker,
+.yabubird-arcade-panel-kicker {
+  margin: 0 0 0.35rem;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #7dd3fc;
+}
+
+.yabubird-arcade-topbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.yabubird-chip-btn,
+.yabubird-exit-btn,
+.yabubird-mode-inline-btn,
+.yabubird-mode-card {
+  border: 1px solid rgba(148, 210, 255, 0.22);
+  background: rgba(11, 32, 55, 0.82);
+  color: #e0f2fe;
+  cursor: pointer;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.yabubird-chip-btn:hover,
+.yabubird-exit-btn:hover,
+.yabubird-mode-inline-btn:hover,
+.yabubird-mode-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(125, 211, 252, 0.52);
+}
+
+.yabubird-chip-btn,
+.yabubird-exit-btn,
+.yabubird-mode-inline-btn {
+  min-height: 42px;
+  padding: 0.75rem 0.95rem;
+  border-radius: 16px;
+  font-weight: 700;
+}
+
+.yabubird-exit-btn {
+  background: linear-gradient(180deg, rgba(125, 211, 252, 0.18), rgba(96, 165, 250, 0.12));
+}
+
+.yabubird-arcade-banner {
+  padding: 0.8rem 1rem;
+  border-radius: 18px;
+  font-size: 0.92rem;
+}
+
+.yabubird-arcade-banner-error {
+  border-color: rgba(251, 113, 133, 0.28);
+  color: #fecdd3;
+}
+
+.yabubird-arcade-banner-soft {
+  color: #c7f2ff;
+}
+
+.yabubird-arcade-warning {
+  padding: 0.95rem 1rem;
+  border-radius: 20px;
+  background: rgba(41, 10, 17, 0.88);
+}
+
+.yabubird-arcade-warning a {
+  color: #bae6fd;
+  font-weight: 700;
+}
+
+.yabubird-arcade-stage-wrap {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.yabubird-arcade-stage {
+  position: relative;
+  border-radius: 30px;
+  overflow: hidden;
+  border: 1px solid rgba(125, 211, 252, 0.22);
+  background: #07111f;
+  aspect-ratio: 160 / 284;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 24px 54px rgba(2, 6, 23, 0.5);
+}
+
+.yabubird-arcade-stage.is-active {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 30px 60px rgba(14, 165, 233, 0.22);
+}
+
+.yabubird-arcade-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: pixelated;
+}
+
+.yabubird-arcade-hud,
+.yabubird-touch-tip {
+  position: absolute;
+  z-index: 2;
+}
+
+.yabubird-arcade-hud {
+  top: 0.85rem;
+  left: 0.85rem;
+  right: 0.85rem;
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.yabubird-arcade-hud-pill {
+  padding: 0.52rem 0.72rem;
+  border-radius: 14px;
+  background: rgba(4, 15, 28, 0.82);
+  border: 1px solid rgba(136, 203, 255, 0.2);
+  min-width: 88px;
+}
+
+.yabubird-arcade-hud-pill span,
+.yabubird-arcade-status-card span,
+.yabubird-drawer-row span {
+  display: block;
+  font-size: 0.72rem;
+  color: #93c5fd;
+}
+
+.yabubird-arcade-hud-pill strong,
+.yabubird-arcade-status-card strong,
+.yabubird-drawer-row strong {
+  display: block;
+  margin-top: 0.18rem;
+}
+
+.yabubird-touch-tip {
+  left: 50%;
+  bottom: 1rem;
+  transform: translateX(-50%);
+  width: calc(100% - 2rem);
+  padding: 0.7rem 0.9rem;
+  border-radius: 16px;
+  text-align: center;
+  background: rgba(3, 12, 23, 0.84);
+  border: 1px solid rgba(125, 211, 252, 0.18);
+}
+
+.yabubird-arcade-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: linear-gradient(180deg, rgba(2, 6, 23, 0.24), rgba(2, 6, 23, 0.74));
+}
+
+.yabubird-arcade-panel {
+  width: min(100%, 540px);
+  padding: 1rem;
+  border-radius: 24px;
+  border: 1px solid rgba(136, 203, 255, 0.18);
+  background: rgba(5, 16, 31, 0.9);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.42);
+}
+
+.yabubird-arcade-panel p {
+  color: #cbd5e1;
+}
+
+.yabubird-arcade-mode-grid,
+.yabubird-arcade-status-row {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.yabubird-arcade-mode-grid {
+  margin-top: 0.9rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.yabubird-mode-card {
+  padding: 0.95rem;
+  border-radius: 18px;
+  text-align: left;
+}
+
+.yabubird-mode-card strong,
+.yabubird-drawer-row p {
+  display: block;
+  margin: 0;
+}
+
+.yabubird-mode-card span {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.85rem;
+  color: #bfdaf5;
+}
+
+.yabubird-join-box,
+.yabubird-arcade-ready-actions {
+  margin-top: 0.85rem;
+  display: flex;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.yabubird-join-box input {
+  flex: 1 1 180px;
+  min-height: 46px;
+  border-radius: 16px;
+  border: 1px solid rgba(136, 203, 255, 0.22);
+  background: rgba(7, 20, 37, 0.9);
+  color: #eff6ff;
+  padding: 0 0.9rem;
+  font-size: 1rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.yabubird-mode-inline-btn.is-primary {
+  background: linear-gradient(180deg, rgba(34, 211, 238, 0.26), rgba(14, 165, 233, 0.18));
+}
+
+.yabubird-arcade-meta-line {
+  margin-top: 0.8rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  font-size: 0.84rem;
+  color: #93c5fd;
+}
+
+.yabubird-arcade-status-row {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.yabubird-arcade-status-card {
+  padding: 0.8rem 0.9rem;
+  border-radius: 18px;
+}
+
+.yabubird-arcade-drawer {
+  border-radius: 24px;
+  padding: 0;
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: max-height 220ms ease, opacity 220ms ease;
+}
+
+.yabubird-arcade-drawer.is-open {
+  max-height: 480px;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.yabubird-arcade-drawer-head,
+.yabubird-drawer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.yabubird-arcade-drawer-head {
+  padding: 0.9rem 1rem;
+  border-bottom: 1px solid rgba(136, 203, 255, 0.12);
+}
+
+.yabubird-arcade-drawer-head button {
+  border: 0;
+  background: transparent;
+  color: #93c5fd;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.yabubird-drawer-list {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.8rem 1rem 1rem;
+}
+
+.yabubird-drawer-row {
+  padding: 0.85rem 0.9rem;
+  border-radius: 18px;
+  background: rgba(4, 15, 28, 0.76);
+  border: 1px solid rgba(136, 203, 255, 0.12);
+}
+
+.yabubird-empty-copy {
+  margin: 0;
+  color: #bfdaf5;
+}
+
+@media (max-width: 840px) {
+  .yabubird-arcade-mode-grid,
+  .yabubird-arcade-status-row {
+    grid-template-columns: 1fr;
+  }
+
+  .yabubird-arcade-topbar {
+    display: grid;
+  }
+
+  .yabubird-arcade-topbar-actions {
+    justify-content: stretch;
+  }
+
+  .yabubird-chip-btn,
+  .yabubird-exit-btn,
+  .yabubird-mode-inline-btn {
+    flex: 1 1 140px;
+  }
+}
+
+@media (max-width: 640px) {
+  .yabubird-arcade-page {
+    padding-left: 0.65rem;
+    padding-right: 0.65rem;
+  }
+
+  .yabubird-arcade-topbar,
+  .yabubird-arcade-panel,
+  .yabubird-arcade-banner,
+  .yabubird-arcade-status-card {
+    border-radius: 20px;
+  }
+
+  .yabubird-arcade-hud {
+    left: 0.65rem;
+    right: 0.65rem;
+  }
+
+  .yabubird-drawer-row,
+  .yabubird-arcade-drawer-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
 * {
   box-sizing: border-box;
 }

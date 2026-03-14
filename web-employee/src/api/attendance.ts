@@ -8,6 +8,8 @@ import type {
   AttendanceCheckoutRequest,
   DeviceClaimRequest,
   DeviceClaimResponse,
+  EmployeeAppPresencePingRequest,
+  EmployeeAppPresencePingResponse,
   EmployeeInstallFunnelEventRequest,
   EmployeeInstallFunnelEventResponse,
   EmployeeQrScanRequest,
@@ -84,6 +86,7 @@ const errorCodeMap: Record<string, string> = {
   INVITE_RETRY_TOO_FAST: 'Cok hizli deneme yaptiniz. Birkac saniye sonra tekrar deneyin.',
   YABUBIRD_PRESENCE_NOT_FOUND: 'Canli oyun oturumu bulunamadi. Tekrar baglanin.',
   YABUBIRD_ROOM_CLOSED: 'Canli oda kapandi. Yeni bir tur baslatin.',
+  YABUBIRD_ROOM_NOT_FOUND: 'Oda kodu bulunamadi. Kodun dogru oldugunu kontrol edin.',
 }
 
 const backendDetailMap: Record<string, string> = {
@@ -195,6 +198,16 @@ export async function getEmployeeStatus(deviceFingerprint: string): Promise<Empl
   const response = await apiClient.get<EmployeeStatusResponse>('/api/employee/status', {
     params: { device_fingerprint: deviceFingerprint },
   })
+  return response.data
+}
+
+export async function postEmployeeAppPresencePing(
+  payload: EmployeeAppPresencePingRequest,
+): Promise<EmployeeAppPresencePingResponse> {
+  const response = await apiClient.post<EmployeeAppPresencePingResponse>(
+    '/api/employee/app-presence/ping',
+    payload,
+  )
   return response.data
 }
 

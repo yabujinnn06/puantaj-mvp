@@ -1635,6 +1635,20 @@ class EmployeeStatusResponse(BaseModel):
     passkey_registered: bool | None = None
 
 
+class EmployeeAppPresencePingRequest(BaseModel):
+    device_fingerprint: str
+    source: Literal["APP_OPEN", "YABUBIRD_ENTER"] = "APP_OPEN"
+    lat: float | None = None
+    lon: float | None = None
+    accuracy_m: float | None = Field(default=None, ge=0)
+
+
+class EmployeeAppPresencePingResponse(BaseModel):
+    ok: bool
+    employee_id: int
+    logged_at: datetime
+
+
 class EmployeeInstallFunnelEventRequest(BaseModel):
     device_fingerprint: str = Field(min_length=8, max_length=255)
     event: Literal[
@@ -1772,6 +1786,11 @@ class DepartmentMonthlySummaryItem(BaseModel):
 
 class YabuBirdJoinRequest(BaseModel):
     device_fingerprint: str
+    mode: Literal["PUBLIC", "HOST", "ROOM", "SOLO"] = "PUBLIC"
+    room_code: str | None = Field(default=None, min_length=4, max_length=12)
+    lat: float | None = None
+    lon: float | None = None
+    accuracy_m: float | None = Field(default=None, ge=0)
 
 
 class YabuBirdStateUpdateRequest(BaseModel):
@@ -1783,6 +1802,9 @@ class YabuBirdStateUpdateRequest(BaseModel):
     score: int = Field(ge=0)
     flap_count: int = Field(default=0, ge=0)
     is_alive: bool = True
+    lat: float | None = None
+    lon: float | None = None
+    accuracy_m: float | None = Field(default=None, ge=0)
 
 
 class YabuBirdFinishRequest(BaseModel):
@@ -1791,19 +1813,29 @@ class YabuBirdFinishRequest(BaseModel):
     presence_id: int = Field(ge=1)
     score: int = Field(ge=0)
     survived_ms: int = Field(default=0, ge=0)
+    lat: float | None = None
+    lon: float | None = None
+    accuracy_m: float | None = Field(default=None, ge=0)
 
 
 class YabuBirdLeaveRequest(BaseModel):
     device_fingerprint: str
     room_id: int = Field(ge=1)
     presence_id: int = Field(ge=1)
+    lat: float | None = None
+    lon: float | None = None
+    accuracy_m: float | None = Field(default=None, ge=0)
 
 
 class YabuBirdRoomRead(BaseModel):
     id: int
     room_key: str
+    room_type: Literal["PUBLIC", "PARTY", "SOLO"]
+    room_label: str
+    share_code: str | None = None
     seed: int
     status: str
+    player_count: int = 0
     started_at: datetime
     ended_at: datetime | None = None
     created_at: datetime
@@ -1815,6 +1847,10 @@ class YabuBirdRoomRead(BaseModel):
 class YabuBirdPresenceRead(BaseModel):
     id: int
     room_id: int
+    room_key: str | None = None
+    room_type: Literal["PUBLIC", "PARTY", "SOLO"] | None = None
+    room_label: str | None = None
+    share_code: str | None = None
     employee_id: int
     employee_name: str
     color_hex: str
@@ -1836,6 +1872,10 @@ class YabuBirdScoreRead(BaseModel):
     score: int
     survived_ms: int
     room_id: int | None = None
+    room_key: str | None = None
+    room_type: Literal["PUBLIC", "PARTY", "SOLO"] | None = None
+    room_label: str | None = None
+    share_code: str | None = None
     created_at: datetime
 
 
@@ -1850,13 +1890,55 @@ class YabuBirdLiveStateResponse(BaseModel):
 class YabuBirdLeaderboardResponse(BaseModel):
     leaderboard: list[YabuBirdScoreRead]
     live_room: YabuBirdRoomRead | None = None
+    live_rooms: list[YabuBirdRoomRead] = Field(default_factory=list)
     live_players: list[YabuBirdPresenceRead] = Field(default_factory=list)
     personal_best: int = 0
 
 
+class YabuBirdLocationRead(BaseModel):
+    lat: float
+    lon: float
+    accuracy_m: float | None = None
+    ts_utc: datetime
+
+
+class AdminYabuBirdPlayerLocationRead(BaseModel):
+    presence_id: int | None = None
+    score_id: int | None = None
+    employee_id: int
+    employee_name: str
+    room_id: int | None = None
+    room_key: str | None = None
+    room_type: Literal["PUBLIC", "PARTY", "SOLO"] | None = None
+    room_label: str | None = None
+    share_code: str | None = None
+    score: int = 0
+    survived_ms: int | None = None
+    is_connected: bool = False
+    is_alive: bool = False
+    location_state: Literal["LIVE", "STALE", "DORMANT", "NONE"] = "NONE"
+    played_at: datetime
+    last_seen_at: datetime | None = None
+    location: YabuBirdLocationRead | None = None
+
+
+class AdminYabuBirdAppEntryRead(BaseModel):
+    audit_id: int
+    employee_id: int
+    employee_name: str
+    source: str
+    location_state: Literal["LIVE", "STALE", "DORMANT", "NONE"] = "NONE"
+    logged_at: datetime
+    location: YabuBirdLocationRead | None = None
+
+
 class AdminYabuBirdOverviewResponse(BaseModel):
     live_room: YabuBirdRoomRead | None = None
+    live_rooms: list[YabuBirdRoomRead] = Field(default_factory=list)
     live_players: list[YabuBirdPresenceRead] = Field(default_factory=list)
     leaderboard: list[YabuBirdScoreRead] = Field(default_factory=list)
     latest_scores: list[YabuBirdScoreRead] = Field(default_factory=list)
+    live_player_locations: list[AdminYabuBirdPlayerLocationRead] = Field(default_factory=list)
+    recent_player_locations: list[AdminYabuBirdPlayerLocationRead] = Field(default_factory=list)
+    app_entry_locations: list[AdminYabuBirdAppEntryRead] = Field(default_factory=list)
 

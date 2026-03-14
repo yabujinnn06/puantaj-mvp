@@ -1495,6 +1495,10 @@ class YabuBirdPresence(Base):
     latest_y: Mapped[float] = mapped_column(Float, nullable=False, default=0.0, server_default=text("0"))
     latest_velocity: Mapped[float] = mapped_column(Float, nullable=False, default=0.0, server_default=text("0"))
     flap_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    latest_lat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    latest_lon: Mapped[float | None] = mapped_column(Float, nullable=True)
+    latest_accuracy_m: Mapped[float | None] = mapped_column(Float, nullable=True)
+    latest_location_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
