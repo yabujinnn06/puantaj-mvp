@@ -15,7 +15,6 @@ import type {
   YabuBirdLeaderboardResponse,
   YabuBirdLiveStateResponse,
   YabuBirdPresence,
-  YabuBirdReaction,
   YabuBirdRoom,
   YabuBirdScore,
 } from '../types/api'
@@ -87,13 +86,8 @@ const MENU_RELEASE_MS = 120
 const ROOM_LIST_CAPACITY = 2
 const REACTION_EMOJIS = [
   '\u{1F600}',
-  '\u{1F602}',
-  '\u{1F60E}',
-  '\u{1F62D}',
-  '\u{1F44F}',
   '\u{1F525}',
   '\u{1F44D}',
-  '\u{1F621}',
 ] as const
 
 const INITIAL_ENGINE: EngineState = {
@@ -233,13 +227,6 @@ function getLastPassedPipeIndex(elapsedMs: number): number {
 
 function getWorldIndex(score: number): number {
   return Math.floor(Math.max(0, score) / 6) % WORLD_THEMES.length
-}
-
-function formatDuration(ms: number): string {
-  if (ms <= 0) {
-    return '0.0 SN'
-  }
-  return `${(ms / 1000).toFixed(1)} SN`
 }
 
 function buildLocationPayload(location: CurrentLocation | null): {
@@ -444,14 +431,11 @@ export function YabuBirdPage() {
   const [room, setRoom] = useState<YabuBirdRoom | null>(null)
   const [you, setYou] = useState<YabuBirdPresence | null>(null)
   const [players, setPlayers] = useState<YabuBirdPresence[]>([])
-  const [reactions, setReactions] = useState<YabuBirdReaction[]>([])
   const [leaderboard, setLeaderboard] = useState<YabuBirdScore[]>([])
   const [personalBest, setPersonalBest] = useState(0)
   const [scoreLabel, setScoreLabel] = useState(0)
-  const [elapsedLabel, setElapsedLabel] = useState(0)
   const [statusMessage, setStatusMessage] = useState('TEK OYNA ya da ODA LISTESI sec.')
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [feedMessage, setFeedMessage] = useState<string | null>(null)
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [pressedAction, setPressedAction] = useState<string | null>(null)
 
@@ -467,7 +451,6 @@ export function YabuBirdPage() {
   const frameTimeRef = useRef<number | null>(null)
   const hudCommitRef = useRef(0)
   const scoreLabelRef = useRef(0)
-  const elapsedLabelRef = useRef(0)
   const syncInFlightRef = useRef(false)
   const finishInFlightRef = useRef(false)
   const leaveInFlightRef = useRef(false)
@@ -476,10 +459,8 @@ export function YabuBirdPage() {
   const worldIndexRef = useRef(0)
   const worldShiftAtRef = useRef(0)
   const audioContextRef = useRef<AudioContext | null>(null)
-  const feedTimerRef = useRef<number | null>(null)
   const previousScoreLabelRef = useRef(0)
   const previousPhaseRef = useRef<Phase>('menu')
-  const previousPlayerScoresRef = useRef<Record<number, number>>({})
   const gameEntryPingRef = useRef(false)
   const menuLockRef = useRef(false)
   const menuTimerRefs = useRef<number[]>([])
@@ -494,18 +475,24 @@ export function YabuBirdPage() {
         ),
     [menuLiveRooms],
   )
-  const liveScoreboard = useMemo(
-    () =>
-      [...players]
-        .sort(
-          (left, right) =>
-            right.latest_score - left.latest_score || left.employee_name.localeCompare(right.employee_name),
-        )
-        .slice(0, 5),
-    [players],
-  )
-  const reactionBurst = useMemo(() => reactions.slice(-4), [reactions])
   const topScorer = useMemo(() => leaderboard[0] ?? null, [leaderboard])
+  const compactPlayerScores = useMemo(() => {
+    if (!room || room.room_type === 'SOLO') {
+      return null
+    }
+    const items = [...players]
+      .filter((player) => player.is_connected)
+      .sort(
+        (left, right) =>
+          right.latest_score - left.latest_score || left.employee_name.localeCompare(right.employee_name),
+      )
+      .slice(0, 3)
+      .map((player) => {
+        const name = player.employee_name.split(' ')[0]?.slice(0, 6).toUpperCase() || `P${player.id}`
+        return `${name}${player.id === you?.id ? '*' : ''} ${player.latest_score}`
+      })
+    return items.length > 0 ? items.join(' | ') : null
+  }, [players, room, you?.id])
 
   function clearMenuTimers(): void {
     menuTimerRefs.current.forEach((timerId) => window.clearTimeout(timerId))
@@ -516,20 +503,14 @@ export function YabuBirdPage() {
     engineRef.current = { ...INITIAL_ENGINE, y: BIRD_START_Y }
     frameTimeRef.current = null
     setScoreLabel(0)
-    setElapsedLabel(0)
-    setFeedMessage(null)
     scoreLabelRef.current = 0
-    elapsedLabelRef.current = 0
     previousScoreLabelRef.current = 0
-    previousPlayerScoresRef.current = {}
-    setReactions([])
   }
 
   function clearLiveState(): void {
     setRoom(null)
     setYou(null)
     setPlayers([])
-    setReactions([])
     roomRef.current = null
     presenceRef.current = null
     playersRef.current = []
@@ -661,7 +642,6 @@ export function YabuBirdPage() {
     setYou(state.you)
     setPlayers(state.players)
     setLeaderboard(state.leaderboard)
-    setReactions(state.reactions)
     setPersonalBest(state.personal_best)
     roomRef.current = state.room
     presenceRef.current = state.you
@@ -767,12 +747,7 @@ export function YabuBirdPage() {
         emoji,
       })
       applyLiveState(state)
-    } catch (error) {
-      const parsed = parseApiError(error, 'Emoji gonderilemedi.')
-      if (parsed.code !== 'YABUBIRD_REACTION_RATE_LIMIT') {
-        setErrorMessage(parsed.message)
-      }
-    }
+    } catch {}
   }
 
   async function finishRun(snapshot: EngineState): Promise<void> {
@@ -793,14 +768,14 @@ export function YabuBirdPage() {
         room_id: currentRoom.id,
         presence_id: currentPresence.id,
         score: snapshot.score,
-        survived_ms: snapshot.elapsedMs,
+        survived_ms: Math.max(0, Math.floor(snapshot.elapsedMs)),
         ...buildLocationPayload(locationRef.current),
       })
       applyOverview(overview)
       clearLiveState()
       setPersonalBest((value) => Math.max(value, snapshot.score, overview.personal_best))
-    } catch (error) {
-      setErrorMessage(parseApiError(error, 'Skor kaydedilemedi.').message)
+    } catch {
+      setErrorMessage(null)
     } finally {
       finishInFlightRef.current = false
     }
@@ -851,9 +826,7 @@ export function YabuBirdPage() {
     }
     frameTimeRef.current = null
     setScoreLabel(0)
-    setElapsedLabel(0)
     scoreLabelRef.current = 0
-    elapsedLabelRef.current = 0
     setPhase('playing')
     phaseRef.current = 'playing'
     setStatusMessage('UCUS BASLADI.')
@@ -930,35 +903,6 @@ export function YabuBirdPage() {
     }
     previousPhaseRef.current = phase
   }, [phase])
-
-  useEffect(() => {
-    const nextScores: Record<number, number> = {}
-    let nextFeed: string | null = null
-    for (const player of players) {
-      nextScores[player.id] = player.latest_score
-      const previousScore = previousPlayerScoresRef.current[player.id]
-      if (
-        phase === 'playing' &&
-        previousScore !== undefined &&
-        player.latest_score > previousScore &&
-        player.id !== you?.id
-      ) {
-        nextFeed = `${player.employee_name.toUpperCase()} +${player.latest_score - previousScore}`
-      }
-    }
-    previousPlayerScoresRef.current = nextScores
-    if (!nextFeed) {
-      return
-    }
-    setFeedMessage(nextFeed)
-    if (feedTimerRef.current !== null) {
-      window.clearTimeout(feedTimerRef.current)
-    }
-    feedTimerRef.current = window.setTimeout(() => {
-      setFeedMessage(null)
-      feedTimerRef.current = null
-    }, 1200)
-  }, [phase, players, you?.id])
 
   useEffect(() => {
     resetEngine()
@@ -1062,9 +1006,6 @@ export function YabuBirdPage() {
   useEffect(() => {
     return () => {
       clearMenuTimers()
-      if (feedTimerRef.current !== null) {
-        window.clearTimeout(feedTimerRef.current)
-      }
       void audioContextRef.current?.close()
     }
   }, [])
@@ -1139,9 +1080,7 @@ export function YabuBirdPage() {
         if (time - hudCommitRef.current > 80 || nextScore !== scoreLabelRef.current) {
           hudCommitRef.current = time
           scoreLabelRef.current = nextScore
-          elapsedLabelRef.current = nextElapsedMs
           setScoreLabel(nextScore)
-          setElapsedLabel(nextElapsedMs)
         }
         if (crashed) {
           void finishRun(engineRef.current)
@@ -1238,9 +1177,6 @@ export function YabuBirdPage() {
       context.font = '8px monospace'
       context.fillStyle = '#f8f4d6'
       context.fillText(`SCORE ${engineRef.current.score}`, 8, 12)
-      context.fillText(`TIME ${Math.floor(engineRef.current.elapsedMs / 1000)}S`, 8, 22)
-      context.fillText(theme.name.slice(0, 10), 8, 32)
-      context.fillText(`ZONE ${worldIndex + 1}`, VIEW_WIDTH - 58, 22)
       if (roomRef.current?.share_code) {
         context.fillText(`ROOM ${roomRef.current.share_code}`, VIEW_WIDTH - 58, 12)
       }
@@ -1255,8 +1191,9 @@ export function YabuBirdPage() {
     }
   }, [])
 
-  const roomTitle = room?.share_code ? `ROOM ${room.share_code}` : room?.room_label ?? 'SOLO'
-  const currentWorld = WORLD_THEMES[getWorldIndex(scoreLabel)]
+  const roomLabel =
+    room?.share_code ??
+    (room?.room_type === 'PUBLIC' ? 'LIVE' : room?.room_type === 'PARTY' ? room.room_label ?? 'ROOM' : null)
 
   return (
     <main className="yabubird-arcade-page">
@@ -1291,56 +1228,18 @@ export function YabuBirdPage() {
               </button>
 
               <div className="yabubird-arcade-hud">
-                <div className="yabubird-arcade-hud-pill">
-                  <span>SKOR</span>
-                  <strong>{scoreLabel}</strong>
-                </div>
-                <div className="yabubird-arcade-hud-pill">
-                  <span>SURE</span>
-                  <strong>{formatDuration(elapsedLabel)}</strong>
-                </div>
-                <div className="yabubird-arcade-hud-pill">
-                  <span>EVREN</span>
-                  <strong>{currentWorld.name}</strong>
-                </div>
-                <div className="yabubird-arcade-hud-pill">
-                  <span>ODA</span>
-                  <strong>{roomTitle}</strong>
-                </div>
+                <span className="yabubird-arcade-hud-line yabubird-arcade-hud-line--score">SKOR {scoreLabel}</span>
+                {roomLabel ? (
+                  <span className="yabubird-arcade-hud-line yabubird-arcade-hud-line--room">ODA {roomLabel}</span>
+                ) : null}
+                {compactPlayerScores ? (
+                  <span className="yabubird-arcade-hud-line yabubird-arcade-hud-line--players">
+                    {compactPlayerScores}
+                  </span>
+                ) : null}
               </div>
 
-              {liveScoreboard.length > 0 ? (
-                <div className="yabubird-live-counter">
-                  <p className="yabubird-live-counter-title">ROOM SCORE</p>
-                  {liveScoreboard.map((player) => (
-                    <div key={player.id} className="yabubird-live-counter-row">
-                      <span>
-                        {player.employee_name.slice(0, 8).toUpperCase()}
-                        {player.id === you.id ? '*' : ''}
-                      </span>
-                      <strong>{player.latest_score}</strong>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-
-              {reactionBurst.length > 0 ? (
-                <div className="yabubird-reaction-burst" aria-live="polite">
-                  {reactionBurst.map((reaction) => (
-                    <div key={reaction.id} className="yabubird-reaction-burst-row">
-                      <span className="yabubird-reaction-burst-emoji">{reaction.emoji}</span>
-                      <strong>{reaction.employee_name.slice(0, 8).toUpperCase()}</strong>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-
-              {feedMessage && phase === 'playing' ? <div className="yabubird-score-feed">{feedMessage}</div> : null}
-              {phase === 'playing' ? <div className="yabubird-touch-tip">TAP TAP UC.</div> : null}
               {phase === 'ready' ? <div className="yabubird-ready-callout">DOKUN VE BASLA</div> : null}
-              {phase === 'playing' && errorMessage ? (
-                <div className="yabubird-pixel-toast yabubird-pixel-toast-error">{errorMessage}</div>
-              ) : null}
 
               <div className="yabubird-reaction-dock">
                 {REACTION_EMOJIS.map((emoji) => (
@@ -1522,7 +1421,6 @@ export function YabuBirdPage() {
                 <span>SON SKOR {scoreLabel}</span>
                 <span>REKOR {personalBest}</span>
               </div>
-              {errorMessage ? <p className="yabubird-boot-error">{errorMessage}</p> : null}
             </div>
           ) : null}
         </div>

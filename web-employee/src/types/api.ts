@@ -151,15 +151,7 @@ export interface YabuBirdReactionRequest {
   device_fingerprint: string
   room_id: number
   presence_id: number
-  emoji:
-    | '\u{1F600}'
-    | '\u{1F602}'
-    | '\u{1F60E}'
-    | '\u{1F62D}'
-    | '\u{1F44F}'
-    | '\u{1F525}'
-    | '\u{1F44D}'
-    | '\u{1F621}'
+  emoji: '\u{1F600}' | '\u{1F525}' | '\u{1F44D}'
 }
 
 export interface YabuBirdRoom {

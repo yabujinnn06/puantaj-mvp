@@ -4325,11 +4325,6 @@ textarea:focus {
 }
 
 .yabubird-ready-callout,
-.yabubird-touch-tip,
-.yabubird-score-feed,
-.yabubird-pixel-toast,
-.yabubird-live-counter,
-.yabubird-reaction-burst,
 .yabubird-reaction-dock,
 .yabubird-arcade-hud {
   position: absolute;
@@ -4337,143 +4332,90 @@ textarea:focus {
 }
 
 .yabubird-arcade-hud {
-  top: 10px;
-  right: 10px;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  width: min(236px, calc(100% - 70px));
-}
-
-.yabubird-arcade-hud-pill,
-.yabubird-live-counter,
-.yabubird-reaction-burst,
-.yabubird-score-feed,
-.yabubird-pixel-toast,
-.yabubird-ready-callout,
-.yabubird-touch-tip {
-  border: 2px solid #8e8459;
-  background: rgba(10, 10, 10, 0.9);
-  box-shadow: 3px 3px 0 rgba(46, 40, 18, 0.92);
-}
-
-.yabubird-arcade-hud-pill {
-  padding: 7px 8px;
-  min-width: 0;
-}
-
-.yabubird-arcade-hud-pill span,
-.yabubird-live-counter-title {
-  display: block;
-  margin-bottom: 3px;
-  color: #d8c98f;
-  font-size: 0.56rem;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
-.yabubird-arcade-hud-pill strong,
-.yabubird-live-counter-row strong,
-.yabubird-reaction-burst-row strong {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.74rem;
-  letter-spacing: 0.08em;
-}
-
-.yabubird-live-counter {
-  top: 108px;
-  right: 10px;
-  width: min(150px, calc(100% - 20px));
-  padding: 8px;
-}
-
-.yabubird-live-counter-row,
-.yabubird-reaction-burst-row {
+  top: 12px;
+  left: 58px;
+  right: 12px;
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 0.68rem;
-  letter-spacing: 0.08em;
+  pointer-events: none;
+  color: #f8f4d6;
+  font-size: 0.64rem;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-}
-
-.yabubird-reaction-burst {
-  top: 10px;
-  left: 10px;
-  width: min(166px, calc(100% - 260px));
-  padding: 8px;
-}
-
-.yabubird-reaction-burst-emoji {
-  margin-right: 6px;
-}
-
-.yabubird-score-feed {
-  top: 214px;
-  right: 10px;
-  padding: 8px 10px;
-  font-size: 0.7rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.yabubird-touch-tip {
-  right: 10px;
-  bottom: 72px;
-  padding: 8px 10px;
-  font-size: 0.68rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  text-shadow: 1px 1px 0 rgba(16, 12, 6, 0.92);
 }
 
 .yabubird-ready-callout {
   left: 50%;
-  bottom: 112px;
+  bottom: 104px;
   transform: translateX(-50%);
-  width: min(220px, calc(100% - 32px));
-  padding: 12px 14px;
   text-align: center;
-  font-size: 0.88rem;
+  color: #fff3b0;
+  font-size: 0.76rem;
   letter-spacing: 0.18em;
   text-transform: uppercase;
+  text-shadow: 2px 2px 0 rgba(23, 16, 8, 0.95);
+  animation: yabubird-loader 0.9s steps(2, end) infinite;
 }
 
-.yabubird-pixel-toast {
-  left: 50%;
-  bottom: 154px;
-  transform: translateX(-50%);
-  width: min(260px, calc(100% - 32px));
-  padding: 10px 12px;
-  text-align: center;
-  font-size: 0.72rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.yabubird-arcade-hud-line {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.yabubird-pixel-toast-error {
-  color: #ff9b8b;
+.yabubird-arcade-hud-line--score {
+  color: #fff3b0;
+}
+
+.yabubird-arcade-hud-line--room,
+.yabubird-arcade-hud-line--players {
+  color: #d8c98f;
+  opacity: 0.96;
 }
 
 .yabubird-reaction-dock {
-  left: 50%;
+  right: 10px;
   bottom: 10px;
-  transform: translateX(-50%);
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-  width: min(288px, calc(100% - 20px));
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 4px 6px;
+  border: 1px solid rgba(214, 196, 124, 0.55);
+  background: rgba(8, 8, 8, 0.78);
+  box-shadow: 2px 2px 0 rgba(28, 22, 10, 0.86);
 }
 
 .yabubird-reaction-btn {
-  min-height: 42px;
+  min-width: 30px;
+  min-height: 30px;
   padding: 0;
   display: grid;
   place-items: center;
-  font-size: 1.1rem;
+  border: 1px solid rgba(214, 196, 124, 0.44);
+  background: transparent;
+  box-shadow: none;
+  font-size: 0.95rem;
+  line-height: 1;
+  transition:
+    transform 90ms steps(2, end),
+    background-color 90ms steps(2, end),
+    border-color 90ms steps(2, end);
+}
+
+.yabubird-reaction-btn:hover,
+.yabubird-reaction-btn:focus-visible {
+  background: rgba(255, 227, 120, 0.12);
+  border-color: rgba(255, 227, 120, 0.7);
+}
+
+.yabubird-reaction-btn:active {
+  transform: translate(1px, 1px);
 }
 
 @keyframes yabubird-loader {
@@ -4530,22 +4472,25 @@ textarea:focus {
   }
 
   .yabubird-arcade-hud {
-    width: calc(100% - 66px);
-    max-width: 220px;
+    left: 56px;
+    right: 8px;
+    gap: 6px 10px;
+    font-size: 0.58rem;
   }
 
-  .yabubird-live-counter,
-  .yabubird-reaction-burst {
-    width: 132px;
-  }
-
-  .yabubird-reaction-burst {
-    width: min(132px, calc(100% - 236px));
-  }
-
-  .yabubird-ready-callout,
-  .yabubird-pixel-toast {
+  .yabubird-ready-callout {
+    bottom: 96px;
     width: calc(100% - 24px);
+  }
+
+  .yabubird-reaction-dock {
+    right: 8px;
+    bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .yabubird-reaction-btn {
+    min-width: 28px;
+    min-height: 28px;
   }
 }
 

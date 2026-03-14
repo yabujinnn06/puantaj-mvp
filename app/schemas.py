@@ -1837,13 +1837,8 @@ class YabuBirdReactionRequest(BaseModel):
     presence_id: int = Field(ge=1)
     emoji: Literal[
         "\U0001F600",
-        "\U0001F602",
-        "\U0001F60E",
-        "\U0001F62D",
-        "\U0001F44F",
         "\U0001F525",
         "\U0001F44D",
-        "\U0001F621",
     ]
 
 
