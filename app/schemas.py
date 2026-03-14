@@ -1769,3 +1769,94 @@ class DepartmentMonthlySummaryItem(BaseModel):
     legal_overtime_minutes: int = 0
     employee_count: int
 
+
+class YabuBirdJoinRequest(BaseModel):
+    device_fingerprint: str
+
+
+class YabuBirdStateUpdateRequest(BaseModel):
+    device_fingerprint: str
+    room_id: int = Field(ge=1)
+    presence_id: int = Field(ge=1)
+    y: float
+    velocity: float
+    score: int = Field(ge=0)
+    flap_count: int = Field(default=0, ge=0)
+    is_alive: bool = True
+
+
+class YabuBirdFinishRequest(BaseModel):
+    device_fingerprint: str
+    room_id: int = Field(ge=1)
+    presence_id: int = Field(ge=1)
+    score: int = Field(ge=0)
+    survived_ms: int = Field(default=0, ge=0)
+
+
+class YabuBirdLeaveRequest(BaseModel):
+    device_fingerprint: str
+    room_id: int = Field(ge=1)
+    presence_id: int = Field(ge=1)
+
+
+class YabuBirdRoomRead(BaseModel):
+    id: int
+    room_key: str
+    seed: int
+    status: str
+    started_at: datetime
+    ended_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class YabuBirdPresenceRead(BaseModel):
+    id: int
+    room_id: int
+    employee_id: int
+    employee_name: str
+    color_hex: str
+    is_connected: bool
+    is_alive: bool
+    latest_score: int
+    latest_y: float
+    latest_velocity: float
+    flap_count: int
+    started_at: datetime
+    last_seen_at: datetime
+    finished_at: datetime | None = None
+
+
+class YabuBirdScoreRead(BaseModel):
+    id: int
+    employee_id: int
+    employee_name: str
+    score: int
+    survived_ms: int
+    room_id: int | None = None
+    created_at: datetime
+
+
+class YabuBirdLiveStateResponse(BaseModel):
+    room: YabuBirdRoomRead
+    you: YabuBirdPresenceRead
+    players: list[YabuBirdPresenceRead]
+    leaderboard: list[YabuBirdScoreRead]
+    personal_best: int
+
+
+class YabuBirdLeaderboardResponse(BaseModel):
+    leaderboard: list[YabuBirdScoreRead]
+    live_room: YabuBirdRoomRead | None = None
+    live_players: list[YabuBirdPresenceRead] = Field(default_factory=list)
+    personal_best: int = 0
+
+
+class AdminYabuBirdOverviewResponse(BaseModel):
+    live_room: YabuBirdRoomRead | None = None
+    live_players: list[YabuBirdPresenceRead] = Field(default_factory=list)
+    leaderboard: list[YabuBirdScoreRead] = Field(default_factory=list)
+    latest_scores: list[YabuBirdScoreRead] = Field(default_factory=list)
+

@@ -46,6 +46,12 @@ from app.schemas import (
     RecoveryCodeRecoverRequest,
     RecoveryCodeRecoverResponse,
     RecoveryCodeStatusResponse,
+    YabuBirdFinishRequest,
+    YabuBirdJoinRequest,
+    YabuBirdLeaderboardResponse,
+    YabuBirdLeaveRequest,
+    YabuBirdLiveStateResponse,
+    YabuBirdStateUpdateRequest,
 )
 from app.settings import get_settings
 from app.services.push_notifications import (
@@ -74,6 +80,13 @@ from app.services.recovery_codes import (
     issue_recovery_codes,
     reveal_recovery_codes,
     recover_device_with_code,
+)
+from app.services.yabubird import (
+    build_employee_yabubird_overview,
+    finish_yabubird_run,
+    join_yabubird_live_room,
+    leave_yabubird_live_room,
+    update_yabubird_presence_state,
 )
 
 router = APIRouter(tags=["attendance"])
@@ -860,6 +873,135 @@ def employee_status(
     request.state.location_status = last_location_status.value if last_location_status else None
     request.state.flags = status_data["last_flags"]
     return EmployeeStatusResponse(**status_data)
+
+
+@router.get("/api/employee/yabubird", response_model=YabuBirdLeaderboardResponse)
+def employee_yabubird_overview(
+    device_fingerprint: str,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> YabuBirdLeaderboardResponse:
+    request.state.actor = "employee"
+    overview = build_employee_yabubird_overview(db, device_fingerprint=device_fingerprint)
+    return YabuBirdLeaderboardResponse(**overview)
+
+
+@router.post("/api/employee/yabubird/live/join", response_model=YabuBirdLiveStateResponse)
+def employee_yabubird_join(
+    payload: YabuBirdJoinRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> YabuBirdLiveStateResponse:
+    request.state.actor = "employee"
+    state_data = join_yabubird_live_room(db, device_fingerprint=payload.device_fingerprint)
+    request.state.employee_id = state_data["you"]["employee_id"]
+    request.state.flags = {
+        "room_id": state_data["room"]["id"],
+        "presence_id": state_data["you"]["id"],
+    }
+    log_audit(
+        db,
+        actor_type=AuditActorType.SYSTEM,
+        actor_id=str(state_data["you"]["employee_id"]),
+        action="YABUBIRD_JOINED",
+        success=True,
+        entity_type="yabubird_room",
+        entity_id=str(state_data["room"]["id"]),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "presence_id": state_data["you"]["id"],
+            "room_key": state_data["room"]["room_key"],
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return YabuBirdLiveStateResponse(**state_data)
+
+
+@router.post("/api/employee/yabubird/live/state", response_model=YabuBirdLiveStateResponse)
+def employee_yabubird_live_state(
+    payload: YabuBirdStateUpdateRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> YabuBirdLiveStateResponse:
+    request.state.actor = "employee"
+    state_data = update_yabubird_presence_state(
+        db,
+        device_fingerprint=payload.device_fingerprint,
+        room_id=payload.room_id,
+        presence_id=payload.presence_id,
+        y=payload.y,
+        velocity=payload.velocity,
+        score=payload.score,
+        flap_count=payload.flap_count,
+        is_alive=payload.is_alive,
+    )
+    request.state.employee_id = state_data["you"]["employee_id"]
+    return YabuBirdLiveStateResponse(**state_data)
+
+
+@router.post("/api/employee/yabubird/live/finish", response_model=YabuBirdLeaderboardResponse)
+def employee_yabubird_finish(
+    payload: YabuBirdFinishRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> YabuBirdLeaderboardResponse:
+    request.state.actor = "employee"
+    overview = finish_yabubird_run(
+        db,
+        device_fingerprint=payload.device_fingerprint,
+        room_id=payload.room_id,
+        presence_id=payload.presence_id,
+        score=payload.score,
+        survived_ms=payload.survived_ms,
+    )
+    log_audit(
+        db,
+        actor_type=AuditActorType.SYSTEM,
+        actor_id="employee",
+        action="YABUBIRD_FINISHED",
+        success=True,
+        entity_type="yabubird_presence",
+        entity_id=str(payload.presence_id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "room_id": payload.room_id,
+            "score": payload.score,
+            "survived_ms": payload.survived_ms,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return YabuBirdLeaderboardResponse(**overview)
+
+
+@router.post("/api/employee/yabubird/live/leave", response_model=YabuBirdLeaderboardResponse)
+def employee_yabubird_leave(
+    payload: YabuBirdLeaveRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> YabuBirdLeaderboardResponse:
+    request.state.actor = "employee"
+    overview = leave_yabubird_live_room(
+        db,
+        device_fingerprint=payload.device_fingerprint,
+        room_id=payload.room_id,
+        presence_id=payload.presence_id,
+    )
+    log_audit(
+        db,
+        actor_type=AuditActorType.SYSTEM,
+        actor_id="employee",
+        action="YABUBIRD_LEFT",
+        success=True,
+        entity_type="yabubird_presence",
+        entity_id=str(payload.presence_id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={"room_id": payload.room_id},
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return YabuBirdLeaderboardResponse(**overview)
 
 
 @router.post(

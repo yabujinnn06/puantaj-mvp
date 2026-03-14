@@ -90,6 +90,88 @@ export interface EmployeeStatusResponse {
   passkey_registered?: boolean | null
 }
 
+export interface YabuBirdJoinRequest {
+  device_fingerprint: string
+}
+
+export interface YabuBirdStateUpdateRequest {
+  device_fingerprint: string
+  room_id: number
+  presence_id: number
+  y: number
+  velocity: number
+  score: number
+  flap_count?: number
+  is_alive: boolean
+}
+
+export interface YabuBirdFinishRequest {
+  device_fingerprint: string
+  room_id: number
+  presence_id: number
+  score: number
+  survived_ms: number
+}
+
+export interface YabuBirdLeaveRequest {
+  device_fingerprint: string
+  room_id: number
+  presence_id: number
+}
+
+export interface YabuBirdRoom {
+  id: number
+  room_key: string
+  seed: number
+  status: string
+  started_at: string
+  ended_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface YabuBirdPresence {
+  id: number
+  room_id: number
+  employee_id: number
+  employee_name: string
+  color_hex: string
+  is_connected: boolean
+  is_alive: boolean
+  latest_score: number
+  latest_y: number
+  latest_velocity: number
+  flap_count: number
+  started_at: string
+  last_seen_at: string
+  finished_at: string | null
+}
+
+export interface YabuBirdScore {
+  id: number
+  employee_id: number
+  employee_name: string
+  score: number
+  survived_ms: number
+  room_id: number | null
+  created_at: string
+}
+
+export interface YabuBirdLiveStateResponse {
+  room: YabuBirdRoom
+  you: YabuBirdPresence
+  players: YabuBirdPresence[]
+  leaderboard: YabuBirdScore[]
+  personal_best: number
+}
+
+export interface YabuBirdLeaderboardResponse {
+  leaderboard: YabuBirdScore[]
+  live_room: YabuBirdRoom | null
+  live_players: YabuBirdPresence[]
+  personal_best: number
+}
+
 export type EmployeeInstallFunnelEventType =
   | 'banner_shown'
   | 'install_cta_clicked'

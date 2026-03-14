@@ -26,6 +26,7 @@ import { RegionsPage } from './pages/RegionsPage'
 import { NotificationsPage } from './pages/NotificationsPage'
 import { SystemLogsPage } from './pages/SystemLogsPage'
 import { WorkRulesPage } from './pages/WorkRulesPage'
+import { YabuBirdPage } from './pages/YabuBirdPage'
 
 function App() {
   return (
@@ -58,6 +59,7 @@ function App() {
           <Route path="/reports/employee-monthly" element={<EmployeeMonthlyReportPage />} />
           <Route path="/reports/department-summary" element={<DepartmentSummaryReportPage />} />
           <Route path="/reports/excel-export" element={<PuantajExportPage />} />
+          <Route path="/yabubird" element={<YabuBirdPage />} />
           <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/audit-logs" element={<SystemLogsPage />} />
           <Route path="/admin-users" element={<AdminUsersPage />} />

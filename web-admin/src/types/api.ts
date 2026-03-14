@@ -830,6 +830,51 @@ export interface ControlRoomEmployeeDetail {
   recent_audit_entries: ControlRoomAuditEntry[]
 }
 
+export interface YabuBirdRoom {
+  id: number
+  room_key: string
+  seed: number
+  status: string
+  started_at: string
+  ended_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface YabuBirdPresence {
+  id: number
+  room_id: number
+  employee_id: number
+  employee_name: string
+  color_hex: string
+  is_connected: boolean
+  is_alive: boolean
+  latest_score: number
+  latest_y: number
+  latest_velocity: number
+  flap_count: number
+  started_at: string
+  last_seen_at: string
+  finished_at: string | null
+}
+
+export interface YabuBirdScore {
+  id: number
+  employee_id: number
+  employee_name: string
+  score: number
+  survived_ms: number
+  room_id: number | null
+  created_at: string
+}
+
+export interface AdminYabuBirdOverview {
+  live_room: YabuBirdRoom | null
+  live_players: YabuBirdPresence[]
+  leaderboard: YabuBirdScore[]
+  latest_scores: YabuBirdScore[]
+}
+
 export interface MonthlyEmployeeDay {
   date: string
   status: 'OK' | 'INCOMPLETE' | 'LEAVE' | 'OFF'

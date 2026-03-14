@@ -5,6 +5,7 @@ import { BrandSignature } from './components/BrandSignature'
 import { ClaimPage } from './pages/ClaimPage'
 import { HomePage } from './pages/HomePage'
 import { RecoverPage } from './pages/RecoverPage'
+import { YabuBirdPage } from './pages/YabuBirdPage'
 import { getStoredDeviceFingerprint } from './utils/device'
 
 function EmployeeRouteGuard({ children }: { children: ReactNode }) {
@@ -160,6 +161,14 @@ export default function App() {
           element={
             <EmployeeRouteGuard>
               <HomePage />
+            </EmployeeRouteGuard>
+          }
+        />
+        <Route
+          path="yabubird"
+          element={
+            <EmployeeRouteGuard>
+              <YabuBirdPage />
             </EmployeeRouteGuard>
           }
         />

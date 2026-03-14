@@ -84,6 +84,7 @@ from app.schemas import (
     AdminDeviceInviteDetailRead,
     AdminUserRead,
     AdminUserUpdateRequest,
+    AdminYabuBirdOverviewResponse,
     AdminDevicePushSubscriptionRead,
     AdminPushSubscriptionRead,
     AdminDailyReportArchiveRead,
@@ -248,6 +249,7 @@ from app.services.notifications import (
     replace_admin_notification_email_targets,
     send_admin_notification_test_email,
 )
+from app.services.yabubird import build_admin_yabubird_overview
 from app.services.notification_tasks import (
     get_task_next_run_at_utc,
     normalize_scheduled_notification_task_payload,
@@ -3252,6 +3254,18 @@ def get_control_room_overview(
         offset=offset,
         limit=limit,
     )
+
+
+@router.get(
+    "/api/admin/yabubird/overview",
+    response_model=AdminYabuBirdOverviewResponse,
+    dependencies=[Depends(require_admin_permission("employees"))],
+)
+def get_admin_yabubird_overview(
+    db: Session = Depends(get_db),
+) -> AdminYabuBirdOverviewResponse:
+    overview = build_admin_yabubird_overview(db)
+    return AdminYabuBirdOverviewResponse(**overview)
 
 
 @router.get(

@@ -1446,3 +1446,111 @@ class AttendanceEvent(Base):
     employee: Mapped[Employee] = relationship(back_populates="attendance_events")
     device: Mapped[Device] = relationship(back_populates="attendance_events")
 
+
+class YabuBirdRoom(Base):
+    __tablename__ = "yabubird_rooms"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    room_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    seed: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="OPEN", server_default=text("'OPEN'"))
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    participants: Mapped[list["YabuBirdPresence"]] = relationship(back_populates="room")
+    scores: Mapped[list["YabuBirdScore"]] = relationship(back_populates="room")
+
+
+class YabuBirdPresence(Base):
+    __tablename__ = "yabubird_presences"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    room_id: Mapped[int] = mapped_column(
+        ForeignKey("yabubird_rooms.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"), nullable=False, index=True)
+    device_id: Mapped[int] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), nullable=False, index=True)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    color_hex: Mapped[str] = mapped_column(String(16), nullable=False)
+    is_connected: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
+    is_alive: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
+    latest_score: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    latest_y: Mapped[float] = mapped_column(Float, nullable=False, default=0.0, server_default=text("0"))
+    latest_velocity: Mapped[float] = mapped_column(Float, nullable=False, default=0.0, server_default=text("0"))
+    flap_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    room: Mapped[YabuBirdRoom] = relationship(back_populates="participants")
+    employee: Mapped[Employee] = relationship()
+    device: Mapped[Device] = relationship()
+
+
+class YabuBirdScore(Base):
+    __tablename__ = "yabubird_scores"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    presence_id: Mapped[int | None] = mapped_column(
+        ForeignKey("yabubird_presences.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    room_id: Mapped[int | None] = mapped_column(
+        ForeignKey("yabubird_rooms.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"), nullable=False, index=True)
+    device_id: Mapped[int] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), nullable=False, index=True)
+    score: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"), index=True)
+    survived_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    display_name_snapshot: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        index=True,
+    )
+
+    room: Mapped[YabuBirdRoom | None] = relationship(back_populates="scores")
+    presence: Mapped[YabuBirdPresence | None] = relationship()
+    employee: Mapped[Employee] = relationship()
+    device: Mapped[Device] = relationship()
+
