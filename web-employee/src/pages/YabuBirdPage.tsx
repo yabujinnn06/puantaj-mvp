@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 import {
   finishYabuBirdRun,
@@ -21,7 +21,7 @@ import { getCurrentLocation, type CurrentLocation } from '../utils/location'
 
 type JoinMode = 'PUBLIC' | 'HOST' | 'ROOM' | 'SOLO'
 type Phase = 'menu' | 'joining' | 'ready' | 'playing' | 'crashed'
-type DrawerView = 'leaderboard' | 'players' | 'tracking' | null
+type DrawerView = 'leaderboard' | 'players' | 'rooms' | null
 
 interface PipeSprite {
   index: number
@@ -44,20 +44,38 @@ interface JoinIntent {
   roomCode?: string | null
 }
 
+interface WorldTheme {
+  name: string
+  skyTop: string
+  skyMid: string
+  skyBottom: string
+  star: string
+  celestial: string
+  far: string
+  near: string
+  pipeDark: string
+  pipeMain: string
+  pipeGlow: string
+  groundDark: string
+  groundMain: string
+  grass: string
+  accent: string
+}
+
 const VIEW_WIDTH = 160
 const VIEW_HEIGHT = 284
 const FLOOR_HEIGHT = 36
 const PLAY_HEIGHT = VIEW_HEIGHT - FLOOR_HEIGHT
 const BIRD_X = 42
 const BIRD_SIZE = 12
-const BIRD_START_Y = 108
-const GRAVITY = 640
-const FLAP_VELOCITY = -185
-const TERMINAL_VELOCITY = 210
-const PIPE_SPEED = 72
+const BIRD_START_Y = 104
+const GRAVITY = 710
+const FLAP_VELOCITY = -214
+const TERMINAL_VELOCITY = 228
+const PIPE_SPEED = 74
 const PIPE_WIDTH = 22
-const PIPE_SPACING = 86
-const PIPE_GAP = 66
+const PIPE_SPACING = 88
+const PIPE_GAP = 74
 const PIPE_START_X = VIEW_WIDTH + 32
 const NETWORK_SYNC_MS = 320
 const LOCATION_REFRESH_MS = 12000
@@ -70,6 +88,94 @@ const INITIAL_ENGINE: EngineState = {
   elapsedMs: 0,
   alive: false,
 }
+
+const WORLD_THEMES: WorldTheme[] = [
+  {
+    name: 'Neon Sehir',
+    skyTop: '#06111d',
+    skyMid: '#10233a',
+    skyBottom: '#173759',
+    star: '#eff6ff',
+    celestial: '#7dd3fc',
+    far: '#0f1d31',
+    near: '#13263c',
+    pipeDark: '#163b22',
+    pipeMain: '#3ddc84',
+    pipeGlow: '#6df6ad',
+    groundDark: '#6f5238',
+    groundMain: '#8f6b4a',
+    grass: '#78d671',
+    accent: '#38bdf8',
+  },
+  {
+    name: 'Ametist Cati',
+    skyTop: '#12091f',
+    skyMid: '#241341',
+    skyBottom: '#412368',
+    star: '#f5d0fe',
+    celestial: '#c084fc',
+    far: '#271342',
+    near: '#341d55',
+    pipeDark: '#45135d',
+    pipeMain: '#d946ef',
+    pipeGlow: '#f0abfc',
+    groundDark: '#4a355f',
+    groundMain: '#70508e',
+    grass: '#f472b6',
+    accent: '#e879f9',
+  },
+  {
+    name: 'Lav Cekirdegi',
+    skyTop: '#1a0906',
+    skyMid: '#3a140d',
+    skyBottom: '#6b220f',
+    star: '#fde68a',
+    celestial: '#fb923c',
+    far: '#42170d',
+    near: '#5c200e',
+    pipeDark: '#54210f',
+    pipeMain: '#f97316',
+    pipeGlow: '#fdba74',
+    groundDark: '#5d2b14',
+    groundMain: '#8f4a1f',
+    grass: '#f59e0b',
+    accent: '#fb7185',
+  },
+  {
+    name: 'Buz Kemer',
+    skyTop: '#06151d',
+    skyMid: '#123246',
+    skyBottom: '#1e5168',
+    star: '#ecfeff',
+    celestial: '#67e8f9',
+    far: '#102532',
+    near: '#17384c',
+    pipeDark: '#103645',
+    pipeMain: '#22d3ee',
+    pipeGlow: '#a5f3fc',
+    groundDark: '#275566',
+    groundMain: '#3f7a91',
+    grass: '#bef264',
+    accent: '#2dd4bf',
+  },
+  {
+    name: 'Void Orbit',
+    skyTop: '#05050d',
+    skyMid: '#101028',
+    skyBottom: '#1b1b3c',
+    star: '#dbeafe',
+    celestial: '#818cf8',
+    far: '#12142d',
+    near: '#1c2142',
+    pipeDark: '#27244f',
+    pipeMain: '#6366f1',
+    pipeGlow: '#a5b4fc',
+    groundDark: '#2f3058',
+    groundMain: '#4b4f83',
+    grass: '#a78bfa',
+    accent: '#60a5fa',
+  },
+]
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
@@ -109,6 +215,14 @@ function getLastPassedPipeIndex(elapsedMs: number): number {
   return Math.floor((distance + BIRD_X - PIPE_START_X - PIPE_WIDTH) / PIPE_SPACING)
 }
 
+function getWorldIndex(score: number): number {
+  return Math.floor(Math.max(0, score) / 6) % WORLD_THEMES.length
+}
+
+function getWorldTheme(score: number): WorldTheme {
+  return WORLD_THEMES[getWorldIndex(score)]
+}
+
 function formatClock(value: string | null | undefined): string {
   if (!value) {
     return '-'
@@ -129,13 +243,6 @@ function formatDuration(ms: number): string {
     return '0.0 sn'
   }
   return `${(ms / 1000).toFixed(1)} sn`
-}
-
-function formatCoords(location: CurrentLocation | null): string {
-  if (!location) {
-    return 'Konum yok'
-  }
-  return `${location.lat.toFixed(4)}, ${location.lon.toFixed(4)}`
 }
 
 function buildLocationPayload(location: CurrentLocation | null): {
@@ -164,13 +271,149 @@ function drawBird(ctx: CanvasRenderingContext2D, x: number, y: number, color: st
   ctx.fillRect(Math.round(x + 3), Math.round(y + 5 + wingFrame), 4, 2)
 }
 
-function drawPipe(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number): void {
-  ctx.fillStyle = '#163b22'
+function drawPipe(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  theme: WorldTheme,
+): void {
+  ctx.fillStyle = theme.pipeDark
   ctx.fillRect(Math.round(x), Math.round(y), width, Math.round(height))
-  ctx.fillStyle = '#3ddc84'
+  ctx.fillStyle = theme.pipeMain
   ctx.fillRect(Math.round(x + 2), Math.round(y), width - 4, Math.round(height))
-  ctx.fillStyle = '#6df6ad'
+  ctx.fillStyle = theme.pipeGlow
   ctx.fillRect(Math.round(x + 4), Math.round(y), 2, Math.round(height))
+}
+
+function drawWorldLayer(
+  ctx: CanvasRenderingContext2D,
+  theme: WorldTheme,
+  worldIndex: number,
+  time: number,
+): void {
+  const farScroll = Math.floor((time * 0.006) % 48)
+  const nearScroll = Math.floor((time * 0.014) % 64)
+
+  switch (worldIndex) {
+    case 0:
+      ctx.fillStyle = theme.far
+      for (let x = -48; x < VIEW_WIDTH + 48; x += 24) {
+        const baseX = x - farScroll
+        ctx.fillRect(baseX, 144, 8, 22)
+        ctx.fillRect(baseX + 8, 136, 8, 30)
+        ctx.fillRect(baseX + 16, 148, 8, 18)
+        ctx.fillStyle = theme.star
+        ctx.fillRect(baseX + 3, 150, 1, 1)
+        ctx.fillRect(baseX + 11, 142, 1, 1)
+        ctx.fillStyle = theme.far
+      }
+      ctx.fillStyle = theme.near
+      for (let x = -64; x < VIEW_WIDTH + 64; x += 32) {
+        const baseX = x - nearScroll
+        ctx.fillRect(baseX, 172, 12, 32)
+        ctx.fillRect(baseX + 12, 164, 12, 40)
+        ctx.fillRect(baseX + 24, 176, 8, 28)
+      }
+      break
+    case 1:
+      ctx.fillStyle = theme.far
+      for (let x = -48; x < VIEW_WIDTH + 48; x += 28) {
+        const baseX = x - farScroll
+        ctx.fillRect(baseX + 8, 148, 4, 22)
+        ctx.fillRect(baseX + 4, 156, 12, 20)
+        ctx.fillStyle = theme.star
+        ctx.fillRect(baseX + 7, 154, 2, 2)
+        ctx.fillStyle = theme.far
+      }
+      ctx.fillStyle = theme.near
+      for (let x = -52; x < VIEW_WIDTH + 52; x += 22) {
+        const baseX = x - nearScroll
+        ctx.fillRect(baseX + 6, 178, 4, 28)
+        ctx.fillRect(baseX, 192, 16, 16)
+        ctx.fillStyle = theme.accent
+        ctx.fillRect(baseX + 6, 186, 4, 6)
+        ctx.fillStyle = theme.near
+      }
+      break
+    case 2:
+      ctx.fillStyle = theme.far
+      for (let x = -50; x < VIEW_WIDTH + 50; x += 26) {
+        const baseX = x - farScroll
+        ctx.fillRect(baseX, 162, 18, 12)
+        ctx.fillRect(baseX + 4, 154, 10, 10)
+      }
+      ctx.fillStyle = theme.near
+      for (let x = -48; x < VIEW_WIDTH + 48; x += 20) {
+        const baseX = x - nearScroll
+        ctx.fillRect(baseX, 188, 18, 18)
+        ctx.fillStyle = theme.accent
+        ctx.fillRect(baseX + 4, 194 + ((x / 20) % 2 === 0 ? 0 : 2), 6, 4)
+        ctx.fillStyle = theme.near
+      }
+      ctx.fillStyle = theme.star
+      for (let index = 0; index < 6; index += 1) {
+        ctx.fillRect(
+          14 + ((index * 23 + Math.floor(time * 0.03)) % 148),
+          42 + ((index * 17 + Math.floor(time * 0.016)) % 78),
+          1,
+          2,
+        )
+      }
+      break
+    case 3:
+      ctx.fillStyle = theme.far
+      for (let x = -40; x < VIEW_WIDTH + 40; x += 20) {
+        const baseX = x - farScroll
+        ctx.fillRect(baseX + 6, 152, 4, 18)
+        ctx.fillRect(baseX + 2, 164, 12, 8)
+      }
+      ctx.fillStyle = theme.near
+      for (let x = -52; x < VIEW_WIDTH + 52; x += 24) {
+        const baseX = x - nearScroll
+        ctx.fillRect(baseX + 8, 174, 4, 26)
+        ctx.fillRect(baseX, 194, 18, 12)
+        ctx.fillStyle = theme.star
+        ctx.fillRect(baseX + 9, 179, 2, 4)
+        ctx.fillStyle = theme.near
+      }
+      break
+    default:
+      ctx.fillStyle = theme.far
+      for (let y = 142; y < 196; y += 10) {
+        ctx.fillRect(0, y, VIEW_WIDTH, 1)
+      }
+      for (let x = -16; x < VIEW_WIDTH + 16; x += 16) {
+        const offsetX = x - Math.floor((time * 0.018) % 16)
+        ctx.fillRect(offsetX, 140, 1, 66)
+      }
+      ctx.fillStyle = theme.near
+      ctx.fillRect(12, 156, 26, 26)
+      ctx.fillStyle = theme.accent
+      ctx.fillRect(18, 162, 14, 14)
+      ctx.fillStyle = theme.star
+      ctx.fillRect(106, 148, 20, 20)
+      ctx.fillStyle = theme.pipeGlow
+      ctx.fillRect(112, 154, 8, 8)
+      break
+  }
+}
+
+function drawWorldShift(ctx: CanvasRenderingContext2D, theme: WorldTheme, intensity: number): void {
+  if (intensity <= 0) {
+    return
+  }
+  ctx.save()
+  ctx.globalAlpha = Math.min(0.5, intensity * 0.5)
+  ctx.fillStyle = theme.accent
+  for (let index = 0; index < 5; index += 1) {
+    ctx.fillRect(index * 40, 0, 12, VIEW_HEIGHT)
+  }
+  ctx.globalAlpha = Math.min(0.24, intensity * 0.26)
+  ctx.fillStyle = '#f8fafc'
+  ctx.fillRect(0, 0, VIEW_WIDTH, VIEW_HEIGHT)
+  ctx.restore()
 }
 
 export function YabuBirdPage() {
@@ -179,6 +422,7 @@ export function YabuBirdPage() {
   const [phase, setPhase] = useState<Phase>('menu')
   const [drawerView, setDrawerView] = useState<DrawerView>(null)
   const [menuPublicRoom, setMenuPublicRoom] = useState<YabuBirdRoom | null>(null)
+  const [menuLiveRooms, setMenuLiveRooms] = useState<YabuBirdRoom[]>([])
   const [menuPublicPlayers, setMenuPublicPlayers] = useState<YabuBirdPresence[]>([])
   const [room, setRoom] = useState<YabuBirdRoom | null>(null)
   const [you, setYou] = useState<YabuBirdPresence | null>(null)
@@ -189,11 +433,11 @@ export function YabuBirdPage() {
   const [elapsedLabel, setElapsedLabel] = useState(0)
   const [joinCode, setJoinCode] = useState('')
   const [statusMessage, setStatusMessage] = useState('Oda sec, ekranin her yerine dokun ve ucmaya basla.')
-  const [locationMessage, setLocationMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const phaseRef = useRef<Phase>('menu')
+  const drawerViewRef = useRef<DrawerView>(null)
   const menuRoomRef = useRef<YabuBirdRoom | null>(null)
   const menuPlayersRef = useRef<YabuBirdPresence[]>([])
   const roomRef = useRef<YabuBirdRoom | null>(null)
@@ -209,10 +453,19 @@ export function YabuBirdPage() {
   const leaveInFlightRef = useRef(false)
   const joinIntentRef = useRef<JoinIntent | null>(null)
   const locationRef = useRef<CurrentLocation | null>(null)
+  const worldIndexRef = useRef(0)
+  const worldShiftAtRef = useRef(0)
 
   const playerList = useMemo(
     () => (phase === 'menu' ? menuPublicPlayers : players),
     [menuPublicPlayers, phase, players],
+  )
+  const roomList = useMemo(
+    () =>
+      menuLiveRooms
+        .filter((entry) => entry.room_type !== 'SOLO')
+        .sort((left, right) => right.player_count - left.player_count),
+    [menuLiveRooms],
   )
 
   function resetEngine(): void {
@@ -226,6 +479,7 @@ export function YabuBirdPage() {
 
   function applyOverview(overview: YabuBirdLeaderboardResponse): void {
     setMenuPublicRoom(overview.live_room)
+    setMenuLiveRooms(overview.live_rooms)
     setMenuPublicPlayers(overview.live_players)
     menuRoomRef.current = overview.live_room
     menuPlayersRef.current = overview.live_players
@@ -247,16 +501,7 @@ export function YabuBirdPage() {
   async function refreshLocation(silent = false): Promise<void> {
     const result = await getCurrentLocation(4500)
     locationRef.current = result.location
-    if (result.warning) {
-      setLocationMessage(result.warning)
-      if (!silent) {
-        setStatusMessage(result.warning)
-      }
-      return
-    }
-    if (result.location) {
-      setLocationMessage(`Son konum ${formatCoords(result.location)}`)
-    }
+    void silent
   }
 
   async function refreshOverview(silent = false): Promise<void> {
@@ -280,6 +525,9 @@ export function YabuBirdPage() {
     if (!deviceFingerprint || phaseRef.current === 'joining') {
       return
     }
+    if (presenceRef.current && roomRef.current) {
+      await leaveRoom(false, true)
+    }
     setDrawerView(null)
     setErrorMessage(null)
     setStatusMessage('Oda hazirlaniyor...')
@@ -299,6 +547,9 @@ export function YabuBirdPage() {
         intent.mode === 'HOST' && state.room.share_code
           ? { mode: 'ROOM', roomCode: state.room.share_code }
           : intent
+      if (state.room.share_code) {
+        setJoinCode(state.room.share_code)
+      }
       setPhase('ready')
       phaseRef.current = 'ready'
       setStatusMessage(
@@ -364,7 +615,15 @@ export function YabuBirdPage() {
         ...buildLocationPayload(locationRef.current),
       })
       presenceRef.current = null
+      roomRef.current = null
+      playersRef.current = []
       setYou(null)
+      setRoom(null)
+      setPlayers([])
+      setPhase('menu')
+      phaseRef.current = 'menu'
+      resetEngine()
+      setDrawerView('rooms')
       applyOverview(overview)
       if (!silent) {
         setStatusMessage('Odadan cikildi.')
@@ -415,9 +674,29 @@ export function YabuBirdPage() {
     }
   }
 
+  function handleStagePointerDown(event: ReactPointerEvent<HTMLDivElement>): void {
+    event.preventDefault()
+    if (phaseRef.current === 'joining' || phaseRef.current === 'menu' || phaseRef.current === 'crashed') {
+      return
+    }
+    if (drawerViewRef.current !== null) {
+      return
+    }
+    flap()
+  }
+
+  function handleUiPointerDown(event: ReactPointerEvent<HTMLElement>): void {
+    event.preventDefault()
+    event.stopPropagation()
+  }
+
   useEffect(() => {
     phaseRef.current = phase
   }, [phase])
+
+  useEffect(() => {
+    drawerViewRef.current = drawerView
+  }, [drawerView])
 
   useEffect(() => {
     roomRef.current = room
@@ -550,7 +829,7 @@ export function YabuBirdPage() {
     if (!context) {
       return
     }
-    const pixelRatio = Math.max(1, Math.floor(window.devicePixelRatio || 1))
+    const pixelRatio = Math.min(2, Math.max(1, Math.floor(window.devicePixelRatio || 1)))
     const resizeCanvas = () => {
       canvas.width = VIEW_WIDTH * pixelRatio
       canvas.height = VIEW_HEIGHT * pixelRatio
@@ -560,7 +839,7 @@ export function YabuBirdPage() {
 
     let animationFrame = 0
     const tick = (time: number) => {
-      if (phaseRef.current === 'playing' && roomRef.current) {
+      if (phaseRef.current === 'playing' && roomRef.current && drawerViewRef.current === null) {
         if (frameTimeRef.current === null) {
           frameTimeRef.current = time
         }
@@ -622,18 +901,26 @@ export function YabuBirdPage() {
         frameTimeRef.current = null
       }
 
+      const currentScore = engineRef.current.score
+      const worldIndex = getWorldIndex(currentScore)
+      const theme = WORLD_THEMES[worldIndex]
+      if (worldIndex !== worldIndexRef.current) {
+        worldIndexRef.current = worldIndex
+        worldShiftAtRef.current = time
+      }
+      const worldShiftIntensity = Math.max(0, 1 - (time - worldShiftAtRef.current) / 850)
       context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0)
       context.imageSmoothingEnabled = false
       context.clearRect(0, 0, VIEW_WIDTH, VIEW_HEIGHT)
-      context.fillStyle = '#06111d'
+      context.fillStyle = theme.skyTop
       context.fillRect(0, 0, VIEW_WIDTH, VIEW_HEIGHT)
-      context.fillStyle = '#10233a'
+      context.fillStyle = theme.skyMid
       context.fillRect(0, 0, VIEW_WIDTH, 96)
-      context.fillStyle = '#173759'
+      context.fillStyle = theme.skyBottom
       context.fillRect(0, 96, VIEW_WIDTH, 70)
-      context.fillStyle = '#23455f'
+      context.fillStyle = theme.near
       context.fillRect(0, 166, VIEW_WIDTH, PLAY_HEIGHT - 166)
-      context.fillStyle = '#f8fafc'
+      context.fillStyle = theme.star
       for (let index = 0; index < 18; index += 1) {
         context.fillRect(
           Math.floor(seededUnit(88, index) * VIEW_WIDTH),
@@ -642,45 +929,32 @@ export function YabuBirdPage() {
           1,
         )
       }
-      context.fillStyle = '#bfe6ff'
-      context.fillRect(118, 28, 18, 18)
-      context.fillStyle = '#7dd3fc'
-      context.fillRect(122, 32, 10, 10)
-
-      const farScroll = Math.floor((time * 0.006) % 48)
-      const nearScroll = Math.floor((time * 0.014) % 64)
-      context.fillStyle = '#0f1d31'
-      for (let x = -48; x < VIEW_WIDTH + 48; x += 24) {
-        const baseX = x - farScroll
-        context.fillRect(baseX, 144, 8, 22)
-        context.fillRect(baseX + 8, 136, 8, 30)
-        context.fillRect(baseX + 16, 148, 8, 18)
-      }
-      context.fillStyle = '#13263c'
-      for (let x = -64; x < VIEW_WIDTH + 64; x += 32) {
-        const baseX = x - nearScroll
-        context.fillRect(baseX, 172, 12, 32)
-        context.fillRect(baseX + 12, 164, 12, 40)
-        context.fillRect(baseX + 24, 176, 8, 28)
-      }
+      context.fillStyle = theme.celestial
+      context.fillRect(116, 24, 20, 20)
+      context.fillStyle = theme.accent
+      context.fillRect(120, 28, 12, 12)
+      context.fillStyle = theme.star
+      context.fillRect(40 + Math.floor(Math.sin(time * 0.0018) * 6), 34, 3, 3)
+      context.fillRect(90 + Math.floor(Math.cos(time * 0.0012) * 8), 18, 2, 2)
+      drawWorldLayer(context, theme, worldIndex, time)
 
       const renderRoom = roomRef.current ?? menuRoomRef.current
       if (renderRoom) {
         for (const pipe of getVisiblePipes(renderRoom.seed, engineRef.current.elapsedMs)) {
-          drawPipe(context, pipe.x, 0, PIPE_WIDTH, pipe.gapTop)
-          drawPipe(context, pipe.x, PLAY_HEIGHT - pipe.gapBottom, PIPE_WIDTH, pipe.gapBottom)
+          drawPipe(context, pipe.x, 0, PIPE_WIDTH, pipe.gapTop, theme)
+          drawPipe(context, pipe.x, PLAY_HEIGHT - pipe.gapBottom, PIPE_WIDTH, pipe.gapBottom, theme)
         }
       }
 
-      context.fillStyle = '#2b4f2d'
+      context.fillStyle = theme.groundDark
       context.fillRect(0, PLAY_HEIGHT, VIEW_WIDTH, FLOOR_HEIGHT)
-      context.fillStyle = '#78d671'
+      context.fillStyle = theme.grass
       context.fillRect(0, PLAY_HEIGHT, VIEW_WIDTH, 5)
       for (let x = -24; x < VIEW_WIDTH + 24; x += 12) {
         const tileX = x - Math.floor((time * 0.05) % 12)
-        context.fillStyle = '#6f5238'
+        context.fillStyle = theme.groundDark
         context.fillRect(tileX, PLAY_HEIGHT + 6, 8, 12)
-        context.fillStyle = '#8f6b4a'
+        context.fillStyle = theme.groundMain
         context.fillRect(tileX + 1, PLAY_HEIGHT + 7, 6, 10)
       }
 
@@ -695,11 +969,17 @@ export function YabuBirdPage() {
       const idleBob = phaseRef.current === 'playing' ? 0 : Math.sin(time / 260) * 2
       const wingFrame = phaseRef.current === 'playing' ? Math.floor(time / 90) % 3 : Math.floor(time / 180) % 3
       drawBird(context, BIRD_X, engineRef.current.y + idleBob, '#ffd84d', wingFrame)
+      context.fillStyle = theme.accent
+      context.fillRect(BIRD_X - 4, Math.round(engineRef.current.y + 7), 2, 1)
+      context.fillRect(BIRD_X - 7, Math.round(engineRef.current.y + 6 + Math.sin(time * 0.02)), 2, 1)
+      drawWorldShift(context, theme, worldShiftIntensity)
 
       context.font = '8px monospace'
       context.fillStyle = '#e2e8f0'
       context.fillText(`SCORE ${engineRef.current.score}`, 8, 12)
       context.fillText(`TIME ${Math.floor(engineRef.current.elapsedMs / 1000)}S`, 8, 22)
+      context.fillText(theme.name.toUpperCase().slice(0, 10), 8, 32)
+      context.fillText(`ZONE ${worldIndex + 1}`, VIEW_WIDTH - 58, 22)
       if (renderRoom?.share_code) {
         context.fillText(`CODE ${renderRoom.share_code}`, VIEW_WIDTH - 58, 12)
       }
@@ -719,266 +999,308 @@ export function YabuBirdPage() {
     : menuPublicRoom
       ? `${menuPublicRoom.room_label} / ${menuPublicRoom.player_count} aktif`
       : 'Oda secimi bekleniyor'
+  const roomSummary =
+    roomList.length > 0
+      ? `${roomList.length} canli oda acik`
+      : menuPublicRoom
+        ? 'Public oda canli'
+        : 'Su an acik oda yok'
+
+  const activeWorld = getWorldTheme(scoreLabel)
+  const panelScreen:
+    | 'unavailable'
+    | 'joining'
+    | 'crashed'
+    | 'rooms'
+    | 'leaderboard'
+    | 'players'
+    | null =
+    !deviceFingerprint
+      ? 'unavailable'
+      : phase === 'joining'
+        ? 'joining'
+        : phase === 'crashed'
+          ? 'crashed'
+          : phase === 'menu' || phase === 'ready'
+            ? drawerView ?? 'rooms'
+            : drawerView
+  const overlayVisible = panelScreen !== null
 
   return (
     <main className="yabubird-arcade-page">
-      <section className="yabubird-arcade-shell">
-        <header className="yabubird-arcade-topbar">
-          <div>
-            <p className="yabubird-arcade-kicker">YABUBIRD PIXEL TRACKER</p>
-            <h1>Canli oda, tam ekran ucus, konum odakli takip.</h1>
-          </div>
-          <div className="yabubird-arcade-topbar-actions">
-            <button type="button" className="yabubird-chip-btn" onClick={() => setDrawerView('leaderboard')}>
-              Leaderboard
-            </button>
-            <button type="button" className="yabubird-chip-btn" onClick={() => setDrawerView('players')}>
-              Oyuncular
-            </button>
-            <button type="button" className="yabubird-chip-btn" onClick={() => setDrawerView('tracking')}>
-              Konum
-            </button>
-            <button
-              type="button"
-              className="yabubird-exit-btn"
-              onClick={() => {
-                if (presenceRef.current && roomRef.current) {
-                  void leaveRoom(true)
-                  return
-                }
-                navigate('/')
-              }}
-            >
-              Cik
-            </button>
-          </div>
-        </header>
+      <section className="yabubird-game-shell">
+        <div
+          className={`yabubird-arcade-stage yabubird-arcade-stage--fullscreen ${phase === 'playing' ? 'is-active' : ''}`}
+          role="button"
+          tabIndex={0}
+          aria-label="YabuBird piksel oyun alani"
+          onPointerDown={handleStagePointerDown}
+          onContextMenu={(event) => event.preventDefault()}
+          onKeyDown={(event) => {
+            if (event.key === ' ' || event.key === 'Enter' || event.key === 'ArrowUp') {
+              event.preventDefault()
+              flap()
+            }
+          }}
+        >
+          <canvas ref={canvasRef} className="yabubird-arcade-canvas" />
 
-        {!deviceFingerprint ? (
-          <div className="yabubird-arcade-warning">
-            <p>Bu cihaz bir calisana bagli degil. Once employee uygulamasina baglanmasi gerekiyor.</p>
-            <Link to="/">Ana sayfaya don</Link>
-          </div>
-        ) : null}
-
-        {errorMessage ? <div className="yabubird-arcade-banner yabubird-arcade-banner-error">{errorMessage}</div> : null}
-        <div className="yabubird-arcade-banner">{statusMessage}</div>
-        {locationMessage ? <div className="yabubird-arcade-banner yabubird-arcade-banner-soft">{locationMessage}</div> : null}
-
-        <section className="yabubird-arcade-stage-wrap">
-          <div
-            className={`yabubird-arcade-stage ${phase === 'playing' ? 'is-active' : ''}`}
-            role="button"
-            tabIndex={0}
-            aria-label="YabuBird piksel oyun alani"
-            onClick={() => flap()}
-            onKeyDown={(event) => {
-              if (event.key === ' ' || event.key === 'Enter' || event.key === 'ArrowUp') {
-                event.preventDefault()
-                flap()
-              }
+          <button
+            type="button"
+            className="yabubird-pixel-menu-btn"
+            onPointerDown={(event) => {
+              handleUiPointerDown(event)
+              setDrawerView((value) => (value === null ? 'rooms' : null))
             }}
           >
-            <canvas ref={canvasRef} className="yabubird-arcade-canvas" />
+            MENU
+          </button>
 
-            <div className="yabubird-arcade-hud">
-              <div className="yabubird-arcade-hud-pill">
-                <span>Skor</span>
-                <strong>{scoreLabel}</strong>
-              </div>
-              <div className="yabubird-arcade-hud-pill">
-                <span>Sure</span>
-                <strong>{formatDuration(elapsedLabel)}</strong>
-              </div>
-              <div className="yabubird-arcade-hud-pill">
-                <span>Oda</span>
-                <strong>{room?.room_type ?? menuPublicRoom?.room_type ?? '-'}</strong>
-              </div>
+          <div className="yabubird-arcade-hud">
+            <div className="yabubird-arcade-hud-pill">
+              <span>Skor</span>
+              <strong>{scoreLabel}</strong>
             </div>
+            <div className="yabubird-arcade-hud-pill">
+              <span>Sure</span>
+              <strong>{formatDuration(elapsedLabel)}</strong>
+            </div>
+            <div className="yabubird-arcade-hud-pill">
+              <span>Evren</span>
+              <strong>{activeWorld.name}</strong>
+            </div>
+            <div className="yabubird-arcade-hud-pill">
+              <span>Oda</span>
+              <strong>{room?.share_code ?? room?.room_label ?? 'Hazir'}</strong>
+            </div>
+          </div>
 
-            {(phase === 'menu' || phase === 'joining' || phase === 'ready' || phase === 'crashed') && (
-              <div className="yabubird-arcade-overlay">
-                <div className="yabubird-arcade-panel">
-                  {phase === 'menu' ? (
-                    <>
-                      <p className="yabubird-arcade-panel-kicker">Oyun modu sec</p>
-                      <h2>Kart degil, tam ekran piksel arena.</h2>
-                      <p>Tek oyna, beraber oyna ya da server kodu ac. Her yer dokunmatik flap alani.</p>
-                      <div className="yabubird-arcade-mode-grid">
-                        <button type="button" className="yabubird-mode-card" onClick={() => void enterRoom({ mode: 'SOLO' })}>
-                          <strong>Tek Oyna</strong>
-                          <span>Kendi akisin ve kendi skorun.</span>
-                        </button>
-                        <button type="button" className="yabubird-mode-card" onClick={() => void enterRoom({ mode: 'PUBLIC' })}>
-                          <strong>Beraber Oyna</strong>
-                          <span>Public odada diger calisanlarla yarisa gir.</span>
-                        </button>
-                        <button type="button" className="yabubird-mode-card" onClick={() => void enterRoom({ mode: 'HOST' })}>
-                          <strong>Server Ac</strong>
-                          <span>Kod uret, odayi sen kur.</span>
-                        </button>
-                      </div>
-                      <div className="yabubird-join-box">
-                        <input
-                          value={joinCode}
-                          onChange={(event) => setJoinCode(event.target.value.toUpperCase())}
-                          placeholder="SERVER KODU"
-                          maxLength={12}
-                        />
-                        <button
-                          type="button"
-                          className="yabubird-mode-inline-btn"
-                          disabled={joinCode.trim().length < 4}
-                          onClick={() => void enterRoom({ mode: 'ROOM', roomCode: joinCode.trim() })}
-                        >
-                          Koda Gir
-                        </button>
-                      </div>
-                      <div className="yabubird-arcade-meta-line">
-                        <span>Public oda: {menuPublicRoom?.player_count ?? 0} oyuncu</span>
-                        <span>En iyi skor: {personalBest}</span>
-                      </div>
-                    </>
-                  ) : null}
+          {phase === 'playing' && drawerView === null ? (
+            <div className="yabubird-touch-tip">Tap anywhere. Her dokunus aninda flap.</div>
+          ) : null}
 
-                  {phase === 'joining' ? (
-                    <>
-                      <p className="yabubird-arcade-panel-kicker">Baglaniyor</p>
-                      <h2>Oda aciliyor...</h2>
-                      <p>Canli kanal ve konum akisi hazirlaniyor.</p>
-                    </>
-                  ) : null}
+          {phase === 'playing' && drawerView === null && errorMessage ? (
+            <div className="yabubird-pixel-toast yabubird-pixel-toast-error">{errorMessage}</div>
+          ) : null}
 
-                  {phase === 'ready' ? (
-                    <>
-                      <p className="yabubird-arcade-panel-kicker">{room?.room_label ?? 'Hazir'}</p>
-                      <h2>{room?.share_code ? `Server kodu ${room.share_code}` : 'Ucus hazir'}</h2>
-                      <p>Ekrana dokun ve basla. Cik butonu oyun icinde de calisir.</p>
-                      <div className="yabubird-arcade-ready-actions">
-                        <button type="button" className="yabubird-mode-inline-btn is-primary" onClick={() => startRun(true)}>
+          {overlayVisible ? (
+            <div className="yabubird-arcade-overlay" onPointerDown={handleUiPointerDown}>
+              <div className="yabubird-arcade-panel yabubird-arcade-panel--pixel" onPointerDown={handleUiPointerDown}>
+                {panelScreen === 'rooms' && (
+                  <>
+                    <div className="yabubird-menu-tabs">
+                      <button type="button" className="is-active">Odalar</button>
+                      <button type="button" onPointerDown={(event) => { handleUiPointerDown(event); setDrawerView('leaderboard') }}>
+                        Leaderboard
+                      </button>
+                      <button type="button" onPointerDown={(event) => { handleUiPointerDown(event); setDrawerView('players') }}>
+                        Oyuncular
+                      </button>
+                      {phase === 'playing' ? (
+                        <button type="button" onPointerDown={(event) => { handleUiPointerDown(event); setDrawerView(null) }}>
+                          Kapat
+                        </button>
+                      ) : null}
+                    </div>
+                    <p className="yabubird-arcade-panel-kicker">YabuBird</p>
+                    <h2>{phase === 'ready' ? 'Tur hazir' : 'Bir oda sec'}</h2>
+                    <p>{phase === 'ready' ? roomLine : 'Tek oyna, public havuza gir ya da kendi server kodunu ac.'}</p>
+                    <div className="yabubird-room-strip">
+                      <span>{roomSummary}</span>
+                      <strong>Kisisel rekor {personalBest}</strong>
+                    </div>
+                    <div className="yabubird-arcade-mode-grid">
+                      <button type="button" className="yabubird-mode-card" onPointerDown={(event) => { handleUiPointerDown(event); void enterRoom({ mode: 'SOLO' }) }}>
+                        <strong>Tek Oyna</strong>
+                        <span>Pipe ritmine odaklan, kendi PB'ni zorla.</span>
+                      </button>
+                      <button type="button" className="yabubird-mode-card" onPointerDown={(event) => { handleUiPointerDown(event); void enterRoom({ mode: 'PUBLIC' }) }}>
+                        <strong>Beraber Oyna</strong>
+                        <span>Public akista diger calisanlarla ayni tempoda ilerle.</span>
+                      </button>
+                      <button type="button" className="yabubird-mode-card" onPointerDown={(event) => { handleUiPointerDown(event); void enterRoom({ mode: 'HOST' }) }}>
+                        <strong>Server Ac</strong>
+                        <span>Kendi kodunu uret, odayi sen yonet.</span>
+                      </button>
+                    </div>
+                    <div className="yabubird-join-box">
+                      <input
+                        value={joinCode}
+                        onChange={(event) => setJoinCode(event.target.value.toUpperCase())}
+                        placeholder="SERVER KODU"
+                        maxLength={12}
+                      />
+                      <button
+                        type="button"
+                        className="yabubird-mode-inline-btn"
+                        disabled={joinCode.trim().length < 4}
+                        onPointerDown={(event) => {
+                          handleUiPointerDown(event)
+                          void enterRoom({ mode: 'ROOM', roomCode: joinCode.trim() })
+                        }}
+                      >
+                        Koda Gir
+                      </button>
+                    </div>
+                    {roomList.length > 0 ? (
+                      <div className="yabubird-room-list">
+                        {roomList.slice(0, 5).map((entry) => (
+                          <button
+                            key={entry.id}
+                            type="button"
+                            className="yabubird-room-row"
+                            onPointerDown={(event) => {
+                              handleUiPointerDown(event)
+                              void enterRoom(
+                                entry.share_code
+                                  ? { mode: 'ROOM', roomCode: entry.share_code }
+                                  : { mode: 'PUBLIC' },
+                              )
+                            }}
+                          >
+                            <div>
+                              <p>{entry.room_label}</p>
+                              <span>
+                                {entry.player_count} oyuncu{entry.share_code ? ` / ${entry.share_code}` : ''}
+                              </span>
+                            </div>
+                            <strong>GIR</strong>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                    <div className="yabubird-arcade-ready-actions">
+                      {phase === 'ready' ? (
+                        <button type="button" className="yabubird-mode-inline-btn is-primary" onPointerDown={(event) => { handleUiPointerDown(event); startRun(true); setDrawerView(null) }}>
                           Basla
                         </button>
-                        <button type="button" className="yabubird-mode-inline-btn" onClick={() => void leaveRoom(false)}>
-                          Odayi Kapat
+                      ) : null}
+                      {phase === 'playing' ? (
+                        <button type="button" className="yabubird-mode-inline-btn" onPointerDown={(event) => { handleUiPointerDown(event); setDrawerView(null) }}>
+                          Oyuna Don
                         </button>
-                      </div>
-                    </>
-                  ) : null}
-
-                  {phase === 'crashed' ? (
-                    <>
-                      <p className="yabubird-arcade-panel-kicker">Tur bitti</p>
-                      <h2>Skor {scoreLabel}</h2>
-                      <p>Oda bilgisi: {roomLine}. Tekrar oyna dersen ayni moda geri baglaniriz.</p>
-                      <div className="yabubird-arcade-ready-actions">
-                        <button
-                          type="button"
-                          className="yabubird-mode-inline-btn is-primary"
-                          onClick={() => void enterRoom(joinIntentRef.current ?? { mode: 'PUBLIC' })}
-                        >
-                          Tekrar Oyna
-                        </button>
-                        <button type="button" className="yabubird-mode-inline-btn" onClick={() => navigate('/')}>
-                          Uygulamaya Don
-                        </button>
-                      </div>
-                    </>
-                  ) : null}
-                </div>
-              </div>
-            )}
-
-            {phase === 'playing' ? <div className="yabubird-touch-tip">Dokun, birak, tekrar dokun. Her dokunus bir flap.</div> : null}
-          </div>
-
-          <div className="yabubird-arcade-status-row">
-            <div className="yabubird-arcade-status-card">
-              <span>Aktif oda</span>
-              <strong>{roomLine}</strong>
-            </div>
-            <div className="yabubird-arcade-status-card">
-              <span>Canli oyuncu</span>
-              <strong>{playerList.length}</strong>
-            </div>
-            <div className="yabubird-arcade-status-card">
-              <span>Son konum</span>
-              <strong>{formatCoords(locationRef.current)}</strong>
-            </div>
-          </div>
-        </section>
-
-        <section className={`yabubird-arcade-drawer ${drawerView ? 'is-open' : ''}`}>
-          <div className="yabubird-arcade-drawer-head">
-            <strong>
-              {drawerView === 'leaderboard'
-                ? 'Leaderboard'
-                : drawerView === 'players'
-                  ? 'Canli Oyuncular'
-                  : 'Konum ve Takip'}
-            </strong>
-            <button type="button" onClick={() => setDrawerView(null)}>
-              Kapat
-            </button>
-          </div>
-
-          {drawerView === 'leaderboard' ? (
-            <div className="yabubird-drawer-list">
-              {leaderboard.length === 0 ? (
-                <p className="yabubird-empty-copy">Henuz skor kaydi yok.</p>
-              ) : (
-                leaderboard.map((entry, index) => (
-                  <div key={entry.id} className="yabubird-drawer-row">
-                    <div>
-                      <p>#{index + 1} {entry.employee_name}</p>
-                      <span>{entry.room_label ?? 'Oda yok'} / {formatClock(entry.created_at)}</span>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="yabubird-mode-inline-btn"
+                        onPointerDown={(event) => {
+                          handleUiPointerDown(event)
+                          if (presenceRef.current && roomRef.current) {
+                            void leaveRoom(false)
+                            return
+                          }
+                          navigate('/')
+                        }}
+                      >
+                        Cik
+                      </button>
                     </div>
-                    <strong>{entry.score}</strong>
-                  </div>
-                ))
-              )}
-            </div>
-          ) : null}
+                    {statusMessage ? <p className="yabubird-panel-note">{statusMessage}</p> : null}
+                  </>
+                )}
 
-          {drawerView === 'players' ? (
-            <div className="yabubird-drawer-list">
-              {playerList.length === 0 ? (
-                <p className="yabubird-empty-copy">Su an canli oyuncu yok.</p>
-              ) : (
-                playerList.map((player) => (
-                  <div key={player.id} className="yabubird-drawer-row">
-                    <div>
-                      <p>{player.employee_name}{player.id === you?.id ? ' (Sen)' : ''}</p>
-                      <span>{player.room_label ?? 'Oda'} / son gorulme {formatClock(player.last_seen_at)}</span>
+                {panelScreen === 'leaderboard' && (
+                  <>
+                    <div className="yabubird-menu-tabs">
+                      <button type="button" onPointerDown={(event) => { handleUiPointerDown(event); setDrawerView('rooms') }}>Odalar</button>
+                      <button type="button" className="is-active">Leaderboard</button>
+                      <button type="button" onPointerDown={(event) => { handleUiPointerDown(event); setDrawerView('players') }}>Oyuncular</button>
+                      <button type="button" onPointerDown={(event) => { handleUiPointerDown(event); setDrawerView(null) }}>Kapat</button>
                     </div>
-                    <strong>{player.latest_score}</strong>
-                  </div>
-                ))
-              )}
-            </div>
-          ) : null}
+                    <p className="yabubird-arcade-panel-kicker">Top Score</p>
+                    <h2>En iyi YabuBird turlari</h2>
+                    <div className="yabubird-drawer-list yabubird-drawer-list--compact">
+                      {leaderboard.length === 0 ? (
+                        <p className="yabubird-empty-copy">Henuz skor kaydi yok.</p>
+                      ) : (
+                        leaderboard.map((entry, index) => (
+                          <div key={entry.id} className="yabubird-drawer-row">
+                            <div>
+                              <p>#{index + 1} {entry.employee_name}</p>
+                              <span>{entry.room_label ?? 'Oda yok'} / {formatClock(entry.created_at)}</span>
+                            </div>
+                            <strong>{entry.score}</strong>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </>
+                )}
 
-          {drawerView === 'tracking' ? (
-            <div className="yabubird-drawer-list">
-              <div className="yabubird-drawer-row">
-                <div>
-                  <p>Bu cihazin son konumu</p>
-                  <span>{locationRef.current ? `${locationRef.current.accuracy_m.toFixed(0)}m hassasiyet` : 'Konum izni bekleniyor'}</span>
-                </div>
-                <strong>{formatCoords(locationRef.current)}</strong>
+                {panelScreen === 'players' && (
+                  <>
+                    <div className="yabubird-menu-tabs">
+                      <button type="button" onPointerDown={(event) => { handleUiPointerDown(event); setDrawerView('rooms') }}>Odalar</button>
+                      <button type="button" onPointerDown={(event) => { handleUiPointerDown(event); setDrawerView('leaderboard') }}>Leaderboard</button>
+                      <button type="button" className="is-active">Oyuncular</button>
+                      <button type="button" onPointerDown={(event) => { handleUiPointerDown(event); setDrawerView(null) }}>Kapat</button>
+                    </div>
+                    <p className="yabubird-arcade-panel-kicker">Live</p>
+                    <h2>Aktif oyuncular</h2>
+                    <div className="yabubird-drawer-list yabubird-drawer-list--compact">
+                      {playerList.length === 0 ? (
+                        <p className="yabubird-empty-copy">Su an canli oyuncu yok.</p>
+                      ) : (
+                        playerList.map((player) => (
+                          <div key={player.id} className="yabubird-drawer-row">
+                            <div>
+                              <p>{player.employee_name}{player.id === you?.id ? ' (Sen)' : ''}</p>
+                              <span>{player.room_label ?? 'Oda'} / son gorulme {formatClock(player.last_seen_at)}</span>
+                            </div>
+                            <strong>{player.latest_score}</strong>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </>
+                )}
+
+                {panelScreen === 'joining' && (
+                  <>
+                    <p className="yabubird-arcade-panel-kicker">Baglaniyor</p>
+                    <h2>Oda aciliyor...</h2>
+                    <p>Sunucu ve canli akıs hazirlaniyor.</p>
+                  </>
+                )}
+
+                {panelScreen === 'crashed' && (
+                  <>
+                    <p className="yabubird-arcade-panel-kicker">Tur bitti</p>
+                    <h2>Skor {scoreLabel}</h2>
+                    <p>{roomLine} / evren {activeWorld.name}</p>
+                    <div className="yabubird-arcade-ready-actions">
+                      <button
+                        type="button"
+                        className="yabubird-mode-inline-btn is-primary"
+                        onPointerDown={(event) => {
+                          handleUiPointerDown(event)
+                          void enterRoom(joinIntentRef.current ?? { mode: 'PUBLIC' })
+                        }}
+                      >
+                        Tekrar Oyna
+                      </button>
+                      <button type="button" className="yabubird-mode-inline-btn" onPointerDown={(event) => { handleUiPointerDown(event); setPhase('menu'); phaseRef.current = 'menu'; setDrawerView('rooms') }}>
+                        Oda Sec
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {panelScreen === 'unavailable' && (
+                  <>
+                    <p className="yabubird-arcade-panel-kicker">Baglanti Gerekli</p>
+                    <h2>Bu cihaz calisana bagli degil.</h2>
+                    <div className="yabubird-arcade-ready-actions">
+                      <button type="button" className="yabubird-mode-inline-btn" onPointerDown={(event) => { handleUiPointerDown(event); navigate('/') }}>
+                        Ana Sayfa
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
-              <div className="yabubird-drawer-row">
-                <div>
-                  <p>Public oda durumu</p>
-                  <span>{menuPublicRoom?.room_label ?? 'Acik public oda yok'}</span>
-                </div>
-                <strong>{menuPublicRoom?.player_count ?? 0}</strong>
-              </div>
-              <p className="yabubird-empty-copy">
-                Admin panelinde canli oyun konumu, son oynayanlarin son konumu ve uygulama giris konumlari saat saat gorunecek.
-              </p>
             </div>
           ) : null}
-        </section>
+        </div>
       </section>
     </main>
   )
