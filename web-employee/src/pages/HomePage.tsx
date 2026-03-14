@@ -446,6 +446,58 @@ function playQrSuccessTone() {
   }
 }
 
+function playCheckoutPromptTone() {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  type WindowWithWebkitAudioContext = Window & {
+    webkitAudioContext?: typeof AudioContext
+  }
+  const AudioContextCtor =
+    window.AudioContext || (window as WindowWithWebkitAudioContext).webkitAudioContext
+  if (!AudioContextCtor) {
+    return
+  }
+
+  try {
+    const audioContext = new AudioContextCtor()
+    const firstOscillator = audioContext.createOscillator()
+    const secondOscillator = audioContext.createOscillator()
+    const gainNode = audioContext.createGain()
+    const startAt = audioContext.currentTime
+
+    firstOscillator.type = 'triangle'
+    firstOscillator.frequency.setValueAtTime(980, startAt)
+    firstOscillator.frequency.exponentialRampToValueAtTime(1420, startAt + 0.16)
+
+    secondOscillator.type = 'triangle'
+    secondOscillator.frequency.setValueAtTime(1180, startAt + 0.2)
+    secondOscillator.frequency.exponentialRampToValueAtTime(1640, startAt + 0.36)
+
+    gainNode.gain.setValueAtTime(0.0001, startAt)
+    gainNode.gain.exponentialRampToValueAtTime(0.34, startAt + 0.025)
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.18)
+    gainNode.gain.setValueAtTime(0.0001, startAt + 0.19)
+    gainNode.gain.exponentialRampToValueAtTime(0.38, startAt + 0.23)
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.42)
+
+    firstOscillator.connect(gainNode)
+    secondOscillator.connect(gainNode)
+    gainNode.connect(audioContext.destination)
+
+    firstOscillator.start(startAt)
+    firstOscillator.stop(startAt + 0.18)
+    secondOscillator.start(startAt + 0.2)
+    secondOscillator.stop(startAt + 0.42)
+    secondOscillator.onended = () => {
+      void audioContext.close()
+    }
+  } catch {
+    // Sessiz fallback: ses desteği yoksa işlem normal devam eder.
+  }
+}
+
 export function HomePage() {
   const [deviceFingerprint, setDeviceFingerprint] = useState<string | null>(() =>
     getStoredDeviceFingerprint(),
@@ -462,6 +514,7 @@ export function HomePage() {
   const [todayStatus, setTodayStatus] = useState<TodayStatus>('NOT_STARTED')
   const [statusSnapshot, setStatusSnapshot] = useState<EmployeeStatusResponse | null>(null)
   const [isHelpOpen, setIsHelpOpen] = useState(false)
+  const [isCheckoutConfirmOpen, setIsCheckoutConfirmOpen] = useState(false)
 
   const [isPasskeyBusy, setIsPasskeyBusy] = useState(false)
   const [passkeyNotice, setPasskeyNotice] = useState<string | null>(null)
@@ -623,6 +676,13 @@ export function HomePage() {
       scanSuccessFxTimerRef.current = null
     }, 1000)
   }, [clearScanSuccessFxTimer])
+
+  const triggerCheckoutPromptFx = useCallback(() => {
+    playCheckoutPromptTone()
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      navigator.vibrate?.([160, 70, 220])
+    }
+  }, [])
 
   useEffect(() => {
     return () => {
@@ -1698,6 +1758,17 @@ export function HomePage() {
     }
   }
 
+  const openCheckoutConfirmModal = useCallback(() => {
+    if (!canCheckout) {
+      setErrorMessage(todayStatusHint(todayStatus))
+      return
+    }
+
+    setScannerActive(false)
+    setIsCheckoutConfirmOpen(true)
+    triggerCheckoutPromptFx()
+  }, [canCheckout, todayStatus, triggerCheckoutPromptFx])
+
   const resultMessage = useMemo(() => {
     if (!lastAction) return null
 
@@ -2178,10 +2249,7 @@ export function HomePage() {
                   type="button"
                   className="btn btn-outline btn-lg"
                   disabled={!canCheckout}
-                  onClick={() => {
-                    setScannerActive(false)
-                    void runCheckout()
-                  }}
+                  onClick={openCheckoutConfirmModal}
                 >
                   {isSubmitting && pendingAction === 'checkout' ? (
                     <>
@@ -2465,6 +2533,42 @@ export function HomePage() {
                 </button>
                 <button type="button" className="btn btn-soft" onClick={dismissAndroidInstallOnboarding}>
                   Simdilik Kapat
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {isCheckoutConfirmOpen ? (
+          <div
+            className="modal-backdrop"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="checkout-confirm-title"
+            aria-describedby="checkout-confirm-description"
+          >
+            <div className="help-modal">
+              <h2 id="checkout-confirm-title">Mesaiyi bitirmek istediğinize emin misiniz?</h2>
+              <p id="checkout-confirm-description">
+                "Mesaiyi Güvenli Bitir" işlemi bugünkü çıkışı kaydeder. Devam etmek istiyor musunuz?
+              </p>
+              <div className="stack">
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => {
+                    setIsCheckoutConfirmOpen(false)
+                    void runCheckout()
+                  }}
+                >
+                  Evet, mesaiyi bitir
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-soft"
+                  onClick={() => setIsCheckoutConfirmOpen(false)}
+                >
+                  Hayır
                 </button>
               </div>
             </div>
