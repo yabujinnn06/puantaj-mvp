@@ -36,7 +36,16 @@ GAME_ACTIVITY_EVENTS = {
     EVENT_GAME_SCORE_UPDATE,
 }
 
-YABUBIRD_REACTION_EMOJIS = ("😀", "😂", "😎", "😭", "👏", "🔥", "👍", "😡")
+YABUBIRD_REACTION_EMOJIS = (
+    "\U0001F600",
+    "\U0001F602",
+    "\U0001F60E",
+    "\U0001F62D",
+    "\U0001F44F",
+    "\U0001F525",
+    "\U0001F44D",
+    "\U0001F621",
+)
 
 
 def app_presence_event_type(source: str | None) -> str:

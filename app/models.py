@@ -1473,6 +1473,16 @@ class YabuBirdRoom(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     room_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    owner_employee_id: Mapped[int | None] = mapped_column(
+        ForeignKey("employees.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    owner_device_id: Mapped[int | None] = mapped_column(
+        ForeignKey("devices.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     seed: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="OPEN", server_default=text("'OPEN'"))
     started_at: Mapped[datetime] = mapped_column(
@@ -1493,6 +1503,8 @@ class YabuBirdRoom(Base):
         onupdate=lambda: datetime.now(timezone.utc),
     )
 
+    owner_employee: Mapped[Employee | None] = relationship(foreign_keys=[owner_employee_id])
+    owner_device: Mapped[Device | None] = relationship(foreign_keys=[owner_device_id])
     participants: Mapped[list["YabuBirdPresence"]] = relationship(back_populates="room")
     scores: Mapped[list["YabuBirdScore"]] = relationship(back_populates="room")
     reactions: Mapped[list["YabuBirdReaction"]] = relationship(back_populates="room")

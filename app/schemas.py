@@ -1835,7 +1835,16 @@ class YabuBirdReactionRequest(BaseModel):
     device_fingerprint: str
     room_id: int = Field(ge=1)
     presence_id: int = Field(ge=1)
-    emoji: Literal["😀", "😂", "😎", "😭", "👏", "🔥", "👍", "😡"]
+    emoji: Literal[
+        "\U0001F600",
+        "\U0001F602",
+        "\U0001F60E",
+        "\U0001F62D",
+        "\U0001F44F",
+        "\U0001F525",
+        "\U0001F44D",
+        "\U0001F621",
+    ]
 
 
 class YabuBirdRoomRead(BaseModel):
@@ -1896,7 +1905,16 @@ class YabuBirdReactionRead(BaseModel):
     presence_id: int | None = None
     employee_id: int
     employee_name: str
-    emoji: Literal["😀", "😂", "😎", "😭", "👏", "🔥", "👍", "😡"]
+    emoji: Literal[
+        "\U0001F600",
+        "\U0001F602",
+        "\U0001F60E",
+        "\U0001F62D",
+        "\U0001F44F",
+        "\U0001F525",
+        "\U0001F44D",
+        "\U0001F621",
+    ]
     created_at: datetime
 
 

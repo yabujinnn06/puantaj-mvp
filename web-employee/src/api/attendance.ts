@@ -88,6 +88,8 @@ const errorCodeMap: Record<string, string> = {
   YABUBIRD_PRESENCE_NOT_FOUND: 'Canli oyun oturumu bulunamadi. Tekrar baglanin.',
   YABUBIRD_ROOM_CLOSED: 'Canli oda kapandi. Yeni bir tur baslatin.',
   YABUBIRD_ROOM_NOT_FOUND: 'Oda kodu bulunamadi. Kodun dogru oldugunu kontrol edin.',
+  YABUBIRD_ROOM_FULL: 'Bu oda dolu. Baska bir oda secin veya yeni oda kurun.',
+  YABUBIRD_REACTION_RATE_LIMIT: 'Emoji icin kisa bir bekleme suresi var.',
 }
 
 const backendDetailMap: Record<string, string> = {

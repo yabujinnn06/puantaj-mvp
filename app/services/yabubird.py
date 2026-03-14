@@ -57,6 +57,7 @@ REACTION_RECENT_WINDOW = timedelta(seconds=10)
 REACTION_RATE_LIMIT_WINDOW = timedelta(milliseconds=900)
 REACTION_RATE_LIMIT_BURST_WINDOW = timedelta(seconds=20)
 REACTION_RATE_LIMIT_BURST_COUNT = 12
+PARTY_ROOM_CAPACITY = 2
 
 PLAYER_COLORS = (
     "#67d3ff",
@@ -400,6 +401,8 @@ def _create_room(
     room_type: RoomType,
     now: datetime,
     employee_id: int,
+    owner_employee_id: int | None = None,
+    owner_device_id: int | None = None,
 ) -> YabuBirdRoom:
     if room_type == "PARTY":
         share_code = _generate_party_code(db)
@@ -411,6 +414,8 @@ def _create_room(
 
     room = YabuBirdRoom(
         room_key=room_key,
+        owner_employee_id=owner_employee_id,
+        owner_device_id=owner_device_id,
         seed=secrets.randbelow(2_000_000_000),
         status="OPEN",
         started_at=now,
@@ -451,6 +456,32 @@ def _room_has_active_players(players: list[YabuBirdPresence], *, now: datetime) 
     )
 
 
+def _room_owner_is_active(room: YabuBirdRoom, *, players: list[YabuBirdPresence], now: datetime) -> bool:
+    if room.owner_employee_id is None:
+        return _room_has_active_players(players, now=now)
+    active_threshold = now - LIVE_PLAYER_ACTIVITY_WINDOW
+    for player in players:
+        if player.employee_id != room.owner_employee_id:
+            continue
+        if room.owner_device_id is not None and player.device_id != room.owner_device_id:
+            continue
+        if not player.is_connected or player.finished_at is not None:
+            continue
+        if player.last_seen_at < active_threshold:
+            continue
+        return True
+    return False
+
+
+def _active_player_count(players: list[YabuBirdPresence], *, now: datetime) -> int:
+    active_threshold = now - LIVE_PLAYER_ACTIVITY_WINDOW
+    return sum(
+        1
+        for player in players
+        if player.is_connected and player.finished_at is None and player.last_seen_at >= active_threshold
+    )
+
+
 def _close_room(room: YabuBirdRoom, *, now: datetime) -> None:
     room.status = "CLOSED"
     room.ended_at = room.ended_at or now
@@ -459,9 +490,12 @@ def _close_room(room: YabuBirdRoom, *, now: datetime) -> None:
 def _close_room_if_idle(db: Session, *, room: YabuBirdRoom, now: datetime) -> None:
     room_type, _ = _room_type_from_key(room.room_key)
     room_type = room_type or "PUBLIC"
-    if room_type == "PARTY":
-        return
     players = _list_room_presences(db, room_id=room.id, now=now)
+    if room_type == "PARTY":
+        if _room_owner_is_active(room, players=players, now=now) and _room_has_active_players(players, now=now):
+            return
+        _close_room(room, now=now)
+        return
     if _room_has_active_players(players, now=now):
         return
     _close_room(room, now=now)
@@ -490,7 +524,12 @@ def get_live_rooms_snapshot(db: Session) -> tuple[list[YabuBirdRoom], dict[int, 
             continue
 
         players = _list_room_presences(db, room_id=room.id, now=now)
-        if room_type in {"PUBLIC", "SOLO"} and not _room_has_active_players(players, now=now):
+        if room_type == "PARTY":
+            if not _room_owner_is_active(room, players=players, now=now) or not _room_has_active_players(players, now=now):
+                _close_room(room, now=now)
+                mutated = True
+                continue
+        elif not _room_has_active_players(players, now=now):
             _close_room(room, now=now)
             mutated = True
             continue
@@ -504,13 +543,20 @@ def get_live_rooms_snapshot(db: Session) -> tuple[list[YabuBirdRoom], dict[int, 
     return live_rooms, players_by_room_id
 
 
-def _get_or_create_public_room(db: Session, *, now: datetime, employee_id: int) -> YabuBirdRoom:
+def _get_or_create_public_room(db: Session, *, now: datetime, employee_id: int, device_id: int) -> YabuBirdRoom:
     rooms, _ = get_live_rooms_snapshot(db)
     for room in rooms:
         room_type, _ = _room_type_from_key(room.room_key)
         if room_type == "PUBLIC":
             return room
-    room = _create_room(db, room_type="PUBLIC", now=now, employee_id=employee_id)
+    room = _create_room(
+        db,
+        room_type="PUBLIC",
+        now=now,
+        employee_id=employee_id,
+        owner_employee_id=employee_id,
+        owner_device_id=device_id,
+    )
     db.flush()
     return room
 
@@ -538,6 +584,12 @@ def _resolve_party_room_by_code(db: Session, *, room_code: str, now: datetime) -
         db.commit()
         raise ApiError(status_code=404, code="YABUBIRD_ROOM_NOT_FOUND", message="Requested room was not found.")
 
+    players = _list_room_presences(db, room_id=room.id, now=now)
+    if not _room_owner_is_active(room, players=players, now=now):
+        _close_room(room, now=now)
+        db.commit()
+        raise ApiError(status_code=404, code="YABUBIRD_ROOM_NOT_FOUND", message="Requested room was not found.")
+
     return room
 
 
@@ -548,14 +600,29 @@ def _resolve_room_for_join(
     room_code: str | None,
     now: datetime,
     employee_id: int,
+    device_id: int,
 ) -> YabuBirdRoom:
     if join_mode == "HOST":
-        return _create_room(db, room_type="PARTY", now=now, employee_id=employee_id)
+        return _create_room(
+            db,
+            room_type="PARTY",
+            now=now,
+            employee_id=employee_id,
+            owner_employee_id=employee_id,
+            owner_device_id=device_id,
+        )
     if join_mode == "ROOM":
         return _resolve_party_room_by_code(db, room_code=room_code or "", now=now)
     if join_mode == "SOLO":
-        return _create_room(db, room_type="SOLO", now=now, employee_id=employee_id)
-    return _get_or_create_public_room(db, now=now, employee_id=employee_id)
+        return _create_room(
+            db,
+            room_type="SOLO",
+            now=now,
+            employee_id=employee_id,
+            owner_employee_id=employee_id,
+            owner_device_id=device_id,
+        )
+    return _get_or_create_public_room(db, now=now, employee_id=employee_id, device_id=device_id)
 
 
 def get_yabubird_leaderboard(db: Session, *, limit: int = 15) -> list[dict[str, Any]]:
@@ -697,6 +764,7 @@ def join_yabubird_live_room(
         room_code=room_code,
         now=now,
         employee_id=employee.id,
+        device_id=device.id,
     )
     _close_other_active_presences(
         db,
@@ -716,6 +784,11 @@ def join_yabubird_live_room(
         )
         .order_by(YabuBirdPresence.started_at.desc(), YabuBirdPresence.id.desc())
     )
+    room_type, _ = _room_type_from_key(room.room_key)
+    if presence is None and room_type == "PARTY":
+        active_players = _list_room_presences(db, room_id=room.id, now=now)
+        if _active_player_count(active_players, now=now) >= PARTY_ROOM_CAPACITY:
+            raise ApiError(status_code=409, code="YABUBIRD_ROOM_FULL", message="Requested room is full.")
     if presence is None:
         presence = YabuBirdPresence(
             room_id=room.id,
