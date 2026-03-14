@@ -118,16 +118,32 @@ export default function App() {
           <div className="employee-boot-loader-center">
             <div className="employee-boot-loader-stage" aria-hidden="true">
               <div className="employee-boot-loader-shadow" />
+              <div className="employee-boot-loader-nebula employee-boot-loader-nebula--back" />
+              <div className="employee-boot-loader-nebula employee-boot-loader-nebula--front" />
               <div className="employee-boot-loader-aura" />
               <div className="employee-boot-loader-orbit employee-boot-loader-orbit--outer" />
+              <div className="employee-boot-loader-orbit employee-boot-loader-orbit--mid" />
               <div className="employee-boot-loader-orbit employee-boot-loader-orbit--inner" />
+              <div className="employee-boot-loader-orbit employee-boot-loader-orbit--polar" />
+              <div className="employee-boot-loader-satellite employee-boot-loader-satellite--outer">
+                <div className="employee-boot-loader-satellite-core" />
+              </div>
+              <div className="employee-boot-loader-satellite employee-boot-loader-satellite--mid">
+                <div className="employee-boot-loader-satellite-core" />
+              </div>
+              <div className="employee-boot-loader-satellite employee-boot-loader-satellite--inner">
+                <div className="employee-boot-loader-satellite-core" />
+              </div>
               <div className="employee-boot-loader-logo">
                 <div className="employee-boot-loader-logo-depth" />
+                <div className="employee-boot-loader-logo-halo" />
+                <div className="employee-boot-loader-ring employee-boot-loader-ring--back" />
                 <div className="employee-boot-loader-core">
                   <span className="employee-boot-loader-monogram">Y</span>
                   <span className="employee-boot-loader-brand">YABUJIN</span>
                   <span className="employee-boot-loader-sub">EMPLOYEE CORE</span>
                 </div>
+                <div className="employee-boot-loader-ring employee-boot-loader-ring--front" />
                 <div className="employee-boot-loader-spark employee-boot-loader-spark--a" />
                 <div className="employee-boot-loader-spark employee-boot-loader-spark--b" />
               </div>

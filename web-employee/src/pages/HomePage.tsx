@@ -664,12 +664,19 @@ export function HomePage() {
     }
   }, [])
 
-  const triggerScanSuccessFx = useCallback(() => {
+  const triggerScanSuccessFx = useCallback((tone: 'default' | 'confirm' = 'default') => {
     clearScanSuccessFxTimer()
     setScanSuccessFxOpen(true)
-    playQrSuccessTone()
-    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-      navigator.vibrate?.([30, 20, 45])
+    if (tone === 'confirm') {
+      playCheckoutPromptTone()
+      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+        navigator.vibrate?.([160, 70, 220])
+      }
+    } else {
+      playQrSuccessTone()
+      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+        navigator.vibrate?.([30, 20, 45])
+      }
     }
     scanSuccessFxTimerRef.current = window.setTimeout(() => {
       setScanSuccessFxOpen(false)
@@ -1691,7 +1698,7 @@ export function HomePage() {
         last_location_status: response.location_status,
         last_flags: response.flags,
       }))
-      triggerScanSuccessFx()
+      triggerScanSuccessFx(response.event_type === 'IN' ? 'confirm' : 'default')
     } catch (error) {
       const parsed = parseApiError(error, 'QR işlemi tamamlanamadı.')
       handleDeviceNotClaimed(parsed)
