@@ -55,7 +55,7 @@ def log_audit(
             extra={
                 "request_id": request_id,
                 "action": action,
-                "module": module,
+                "audit_module": module,
                 "event_type": event_type,
                 "actor_type": actor_type.value,
                 "actor_id": actor_id,
@@ -69,7 +69,7 @@ def log_audit(
         extra={
             "request_id": request_id,
             "action": action,
-            "module": module,
+            "audit_module": module,
             "event_type": event_type,
             "actor_type": actor_type.value,
             "actor_id": actor_id,

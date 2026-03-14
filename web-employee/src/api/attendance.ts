@@ -90,6 +90,8 @@ const errorCodeMap: Record<string, string> = {
   YABUBIRD_ROOM_NOT_FOUND: 'Oda kodu bulunamadi. Kodun dogru oldugunu kontrol edin.',
   YABUBIRD_ROOM_FULL: 'Bu oda dolu. Baska bir oda secin veya yeni oda kurun.',
   YABUBIRD_REACTION_RATE_LIMIT: 'Emoji icin kisa bir bekleme suresi var.',
+  INTERNAL_ERROR: 'Sunucuda kisa bir sorun oldu. Tekrar dene.',
+  HTTP_ERROR: 'Istek sirasinda sunucu hatasi olustu. Tekrar dene.',
 }
 
 const backendDetailMap: Record<string, string> = {

@@ -505,6 +505,7 @@ export function YabuBirdPage() {
     [players],
   )
   const reactionBurst = useMemo(() => reactions.slice(-4), [reactions])
+  const topScorer = useMemo(() => leaderboard[0] ?? null, [leaderboard])
 
   function clearMenuTimers(): void {
     menuTimerRefs.current.forEach((timerId) => window.clearTimeout(timerId))
@@ -1364,6 +1365,13 @@ export function YabuBirdPage() {
               <div className="yabubird-boot-head">
                 <p className="yabubird-boot-kicker">ARCADE BOOT</p>
                 <h1>YABU BIRD</h1>
+                <div className="yabubird-boot-marquee" aria-live="polite">
+                  <span className="yabubird-boot-marquee-track">
+                    {topScorer
+                      ? `HI SCORE ${topScorer.employee_name.toUpperCase()} ${topScorer.score}`
+                      : 'HI SCORE BEKLENIYOR'}
+                  </span>
+                </div>
                 <p className="yabubird-boot-status">{statusMessage}</p>
               </div>
 

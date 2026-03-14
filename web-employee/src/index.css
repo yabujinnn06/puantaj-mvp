@@ -4139,6 +4139,29 @@ textarea:focus {
   text-align: center;
 }
 
+.yabubird-boot-marquee {
+  overflow: hidden;
+  border: 2px solid #8e8459;
+  background: #090909;
+  box-shadow: 3px 3px 0 #2e2812;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+}
+
+.yabubird-boot-marquee-track {
+  display: inline-block;
+  min-width: 100%;
+  padding-left: 100%;
+  color: #ffe27a;
+  font-size: 0.78rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-shadow: 0 0 6px rgba(255, 226, 122, 0.35);
+  animation: yabubird-marquee 8s linear infinite, yabubird-marquee-glow 680ms steps(2, end) infinite;
+}
+
 .yabubird-boot-kicker {
   margin: 0;
   color: #d8a549;
@@ -4463,6 +4486,29 @@ textarea:focus {
   50% {
     opacity: 1;
     transform: translateY(-3px);
+  }
+}
+
+@keyframes yabubird-marquee {
+  0% {
+    transform: translateX(0);
+  }
+
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes yabubird-marquee-glow {
+  0%,
+  100% {
+    opacity: 0.68;
+    color: #ffe27a;
+  }
+
+  50% {
+    opacity: 1;
+    color: #fff5bf;
   }
 }
 
