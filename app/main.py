@@ -16,7 +16,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.errors import ApiError, error_response
 from app.logging_utils import setup_json_logging
-from app.routers import admin, attendance, chess
+from app.routers import admin, attendance
 from app.settings import get_cors_origins, get_settings
 from app.services.notifications import (
     get_daily_report_job_health,
@@ -308,7 +308,6 @@ async def handle_unexpected_error(request: Request, exc: Exception) -> JSONRespo
 
 app.include_router(attendance.router)
 app.include_router(admin.router)
-app.include_router(chess.router)
 
 
 def _default_schema_guard_result() -> SchemaGuardResult:

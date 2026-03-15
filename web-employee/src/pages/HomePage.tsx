@@ -2281,33 +2281,6 @@ export function HomePage() {
                   : 'QR ile işlem başlatabilir veya açık vardiyayı güvenli şekilde kapatabilirsiniz.'}
               </p>
 
-              <div className="employee-yabubird-promo">
-                <div className="employee-yabubird-promo-copy">
-                  <p className="employee-yabubird-promo-kicker">YABUBIRD</p>
-                  <h3>Uygulama icinde canli mini oyun</h3>
-                  <p>
-                    Diger calisanlarla ayni odada beraber oyna, skorunu leaderboard&apos;a yazdir
-                    ve tek dokunusla uygulamaya geri don.
-                  </p>
-                </div>
-                <Link className="btn btn-soft employee-yabubird-promo-link" to="/yabubird">
-                  YabuBird&apos;e Gir
-                </Link>
-              </div>
-
-              <div className="employee-yabubird-promo employee-yabuchess-promo">
-                <div className="employee-yabubird-promo-copy">
-                  <p className="employee-yabubird-promo-kicker">YABU CLUB / CHESS</p>
-                  <h3>War table prototipi acildi</h3>
-                  <p>
-                    Siyah beyaz savas tahtasinda taslarin yurumelerini, capture anlarini ve karanlik
-                    pixel evrenini test et.
-                  </p>
-                </div>
-                <Link className="btn btn-soft employee-yabubird-promo-link" to="/yabuchess">
-                  YabuChess&apos;e Gir
-                </Link>
-              </div>
             </section>
 
             {deviceFingerprint ? (

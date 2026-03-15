@@ -36,13 +36,6 @@ import type {
   RecoveryCodeRecoverRequest,
   RecoveryCodeRecoverResponse,
   RecoveryCodeStatusResponse,
-  YabuBirdFinishRequest,
-  YabuBirdJoinRequest,
-  YabuBirdLeaderboardResponse,
-  YabuBirdLeaveRequest,
-  YabuBirdLiveStateResponse,
-  YabuBirdReactionRequest,
-  YabuBirdStateUpdateRequest,
 } from '../types/api'
 
 export interface ParsedApiError {
@@ -85,13 +78,6 @@ const errorCodeMap: Record<string, string> = {
   INVITE_ATTEMPTS_EXCEEDED: 'Davet linkinin deneme limiti doldu. Yeni bir link isteyin.',
   INVITE_CONTEXT_MISMATCH: 'Davet linki ayni cihaz/tarayici baglaminda kullanilmalidir.',
   INVITE_RETRY_TOO_FAST: 'Cok hizli deneme yaptiniz. Birkac saniye sonra tekrar deneyin.',
-  YABUBIRD_PRESENCE_NOT_FOUND: 'Canli oyun oturumu bulunamadi. Tekrar baglanin.',
-  YABUBIRD_ROOM_CLOSED: 'Canli oda kapandi. Yeni bir tur baslatin.',
-  YABUBIRD_ROOM_NOT_FOUND: 'Oda kodu bulunamadi. Kodun dogru oldugunu kontrol edin.',
-  YABUBIRD_ROOM_FULL: 'Bu oda dolu. Baska bir oda secin veya yeni oda kurun.',
-  YABUBIRD_REACTION_INVALID: 'Bu emoji bu oyunda kullanilamaz.',
-  YABUBIRD_REACTION_RATE_LIMIT: 'Emoji icin kisa bir bekleme suresi var.',
-  VALIDATION_ERROR: 'Gonderilen oyun verisi gecersiz. Tekrar dene.',
   INTERNAL_ERROR: 'Sunucuda kisa bir sorun oldu. Tekrar dene.',
   HTTP_ERROR: 'Istek sirasinda sunucu hatasi olustu. Tekrar dene.',
 }
@@ -213,65 +199,6 @@ export async function postEmployeeAppPresencePing(
 ): Promise<EmployeeAppPresencePingResponse> {
   const response = await apiClient.post<EmployeeAppPresencePingResponse>(
     '/api/employee/app-presence/ping',
-    payload,
-  )
-  return response.data
-}
-
-export async function getEmployeeYabuBirdOverview(
-  deviceFingerprint: string,
-): Promise<YabuBirdLeaderboardResponse> {
-  const response = await apiClient.get<YabuBirdLeaderboardResponse>('/api/employee/yabubird', {
-    params: { device_fingerprint: deviceFingerprint },
-  })
-  return response.data
-}
-
-export async function joinYabuBirdLiveRoom(
-  payload: YabuBirdJoinRequest,
-): Promise<YabuBirdLiveStateResponse> {
-  const response = await apiClient.post<YabuBirdLiveStateResponse>(
-    '/api/employee/yabubird/live/join',
-    payload,
-  )
-  return response.data
-}
-
-export async function updateYabuBirdLiveState(
-  payload: YabuBirdStateUpdateRequest,
-): Promise<YabuBirdLiveStateResponse> {
-  const response = await apiClient.post<YabuBirdLiveStateResponse>(
-    '/api/employee/yabubird/live/state',
-    payload,
-  )
-  return response.data
-}
-
-export async function finishYabuBirdRun(
-  payload: YabuBirdFinishRequest,
-): Promise<YabuBirdLeaderboardResponse> {
-  const response = await apiClient.post<YabuBirdLeaderboardResponse>(
-    '/api/employee/yabubird/live/finish',
-    payload,
-  )
-  return response.data
-}
-
-export async function leaveYabuBirdLiveRoom(
-  payload: YabuBirdLeaveRequest,
-): Promise<YabuBirdLeaderboardResponse> {
-  const response = await apiClient.post<YabuBirdLeaderboardResponse>(
-    '/api/employee/yabubird/live/leave',
-    payload,
-  )
-  return response.data
-}
-
-export async function reactYabuBirdLiveRoom(
-  payload: YabuBirdReactionRequest,
-): Promise<YabuBirdLiveStateResponse> {
-  const response = await apiClient.post<YabuBirdLiveStateResponse>(
-    '/api/employee/yabubird/live/react',
     payload,
   )
   return response.data

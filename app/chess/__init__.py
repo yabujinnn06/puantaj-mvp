@@ -1,2 +1,0 @@
-"""YABU CHESS subsystem package."""
-

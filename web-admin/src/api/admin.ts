@@ -38,7 +38,6 @@ import type {
   ControlRoomEmployeeDetail,
   ControlRoomLocationState,
   ControlRoomRiskStatus,
-  AdminYabuBirdOverview,
   DashboardEmployeeSnapshot,
   Device,
   EmployeeDeviceOverview,
@@ -1537,13 +1536,6 @@ export async function getControlRoomEmployeeDetail(
     `/api/admin/control-room/employees/${employeeId}`,
   )
   return response.data
-}
-
-export async function getAdminYabuBirdOverview(): Promise<AdminYabuBirdOverview> {
-  const response = await apiClient.get<AdminYabuBirdOverview>(
-    "/api/admin/yabubird/overview",
-  );
-  return response.data;
 }
 
 export async function createControlRoomEmployeeAction(

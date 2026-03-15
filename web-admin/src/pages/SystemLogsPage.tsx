@@ -52,29 +52,18 @@ const ACTION_OPTIONS: { value: string; label: string }[] = [
   { value: 'DEVICE_CLAIMED', label: 'Cihaz eslestirildi' },
   { value: 'LEAVE_CREATED', label: 'Izin olusturuldu' },
   { value: 'LEAVE_DELETED', label: 'Izin silindi' },
-  { value: 'EMPLOYEE_APP_LOCATION_PING', label: 'Employee app/game giris pingi' },
-  { value: 'YABUBIRD_JOINED', label: 'YabuBird session start' },
-  { value: 'YABUBIRD_FINISHED', label: 'YabuBird session end' },
-  { value: 'YABUBIRD_LEFT', label: 'YabuBird logout' },
-  { value: 'YABUBIRD_REACTION', label: 'YabuBird emoji reaction' },
+  { value: 'EMPLOYEE_APP_LOCATION_PING', label: 'Employee app giris pingi' },
 ]
 
 const MODULE_OPTIONS: { value: string; label: string }[] = [
   { value: '', label: 'Tum moduller' },
   { value: 'CORE', label: 'CORE' },
   { value: 'APP', label: 'APP' },
-  { value: 'GAME', label: 'GAME' },
 ]
 
 const EVENT_OPTIONS: { value: string; label: string }[] = [
   { value: '', label: 'Tum event tipleri' },
   { value: 'app_login', label: 'app_login' },
-  { value: 'game_login', label: 'game_login' },
-  { value: 'game_session_start', label: 'game_session_start' },
-  { value: 'game_session_end', label: 'game_session_end' },
-  { value: 'game_logout', label: 'game_logout' },
-  { value: 'emoji_reaction', label: 'emoji_reaction' },
-  { value: 'game_score_update', label: 'game_score_update' },
 ]
 
 const ACTION_LABELS: Record<string, string> = {
@@ -87,11 +76,7 @@ const ACTION_LABELS: Record<string, string> = {
   DEVICE_CLAIMED: 'Cihaz eslestirildi',
   LEAVE_CREATED: 'Izin olusturuldu',
   LEAVE_DELETED: 'Izin silindi',
-  EMPLOYEE_APP_LOCATION_PING: 'Employee app/game giris pingi',
-  YABUBIRD_JOINED: 'YabuBird session start',
-  YABUBIRD_FINISHED: 'YabuBird session end',
-  YABUBIRD_LEFT: 'YabuBird logout',
-  YABUBIRD_REACTION: 'YabuBird emoji reaction',
+  EMPLOYEE_APP_LOCATION_PING: 'Employee app giris pingi',
 }
 
 function formatDateTime(value: string): string {
@@ -233,13 +218,11 @@ export function SystemLogsPage() {
     const failed = logs.filter((item) => !item.success).length
     const loginEvents = logs.filter((item) => item.action.startsWith('ADMIN_LOGIN')).length
     const attendanceEvents = logs.filter((item) => item.action === 'ATTENDANCE_EVENT_CREATED').length
-    const gameEvents = logs.filter((item) => item.module === 'GAME').length
     return {
       total: logsTotal,
       failed,
       loginEvents,
       attendanceEvents,
-      gameEvents,
     }
   }, [logs, logsTotal])
 
@@ -427,8 +410,8 @@ export function SystemLogsPage() {
             <p className="text-sm font-semibold text-slate-900">{summary.loginEvents}</p>
           </div>
           <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-            <p className="text-xs text-slate-500">Game eventleri</p>
-            <p className="text-sm font-semibold text-slate-900">{summary.gameEvents}</p>
+            <p className="text-xs text-slate-500">Yoklama olaylari</p>
+            <p className="text-sm font-semibold text-slate-900">{summary.attendanceEvents}</p>
           </div>
         </div>
 

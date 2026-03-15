@@ -8,18 +8,11 @@ from app.audit import log_audit
 from app.models import AuditActorType
 
 MODULE_APP = "APP"
-MODULE_GAME = "GAME"
 MODULE_CORE = "CORE"
 
 EVENT_APP_LOGIN = "app_login"
 EVENT_APP_LAST_SEEN = "app_last_seen"
-EVENT_GAME_LOGIN = "game_login"
-EVENT_GAME_LOGOUT = "game_logout"
-EVENT_GAME_SESSION_START = "game_session_start"
-EVENT_GAME_SESSION_END = "game_session_end"
 EVENT_LOCATION_PING = "location_ping"
-EVENT_EMOJI_REACTION = "emoji_reaction"
-EVENT_GAME_SCORE_UPDATE = "game_score_update"
 
 APP_ACTIVITY_EVENTS = {
     EVENT_APP_LOGIN,
@@ -27,26 +20,8 @@ APP_ACTIVITY_EVENTS = {
     EVENT_LOCATION_PING,
 }
 
-GAME_ACTIVITY_EVENTS = {
-    EVENT_GAME_LOGIN,
-    EVENT_GAME_LOGOUT,
-    EVENT_GAME_SESSION_START,
-    EVENT_GAME_SESSION_END,
-    EVENT_EMOJI_REACTION,
-    EVENT_GAME_SCORE_UPDATE,
-}
-
-YABUBIRD_REACTION_EMOJIS = (
-    "\U0001F600",
-    "\U0001F525",
-    "\U0001F44D",
-)
-
 
 def app_presence_event_type(source: str | None) -> str:
-    normalized = (source or "").strip().upper()
-    if normalized == "YABUBIRD_ENTER":
-        return EVENT_GAME_LOGIN
     return EVENT_APP_LOGIN
 
 
