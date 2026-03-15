@@ -7,6 +7,7 @@ import { ClaimPage } from './pages/ClaimPage'
 import { HomePage } from './pages/HomePage'
 import { RecoverPage } from './pages/RecoverPage'
 import { YabuBirdPage } from './pages/YabuBirdPage'
+import { YabuChessPage } from './pages/YabuChessPage'
 import { getStoredDeviceFingerprint } from './utils/device'
 import { getCurrentLocation } from './utils/location'
 
@@ -215,6 +216,14 @@ export default function App() {
           element={
             <EmployeeRouteGuard>
               <YabuBirdPage />
+            </EmployeeRouteGuard>
+          }
+        />
+        <Route
+          path="yabuchess"
+          element={
+            <EmployeeRouteGuard>
+              <YabuChessPage />
             </EmployeeRouteGuard>
           }
         />

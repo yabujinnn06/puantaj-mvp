@@ -2294,6 +2294,20 @@ export function HomePage() {
                   YabuBird&apos;e Gir
                 </Link>
               </div>
+
+              <div className="employee-yabubird-promo employee-yabuchess-promo">
+                <div className="employee-yabubird-promo-copy">
+                  <p className="employee-yabubird-promo-kicker">YABU CLUB / CHESS</p>
+                  <h3>War table prototipi acildi</h3>
+                  <p>
+                    Siyah beyaz savas tahtasinda taslarin yurumelerini, capture anlarini ve karanlik
+                    pixel evrenini test et.
+                  </p>
+                </div>
+                <Link className="btn btn-soft employee-yabubird-promo-link" to="/yabuchess">
+                  YabuChess&apos;e Gir
+                </Link>
+              </div>
             </section>
 
             {deviceFingerprint ? (

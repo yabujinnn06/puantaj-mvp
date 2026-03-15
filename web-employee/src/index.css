@@ -4418,6 +4418,828 @@ textarea:focus {
   transform: translate(1px, 1px);
 }
 
+.employee-yabuchess-promo {
+  border-color: rgba(196, 176, 119, 0.42);
+  background:
+    radial-gradient(circle at 0% 0%, rgba(255, 211, 116, 0.2), transparent 46%),
+    linear-gradient(155deg, rgba(38, 29, 22, 0.96), rgba(21, 18, 18, 0.98));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 245, 216, 0.08),
+    0 18px 30px -28px rgba(0, 0, 0, 0.92);
+}
+
+.employee-yabuchess-promo .employee-yabubird-promo-kicker,
+.employee-yabuchess-promo .employee-yabubird-promo-copy h3,
+.employee-yabuchess-promo .employee-yabubird-promo-copy p {
+  color: #f4e7bd;
+}
+
+.yabuchess-page {
+  min-height: 100dvh;
+  padding: clamp(12px, 3vw, 26px);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 222, 151, 0.09), transparent 30%),
+    linear-gradient(180deg, #09080c 0%, #121014 38%, #0a090b 100%);
+  color: #f3ead4;
+}
+
+.yabuchess-shell {
+  position: relative;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: clamp(18px, 3vw, 28px);
+  border: 1px solid rgba(192, 171, 121, 0.22);
+  border-radius: 24px;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(23, 19, 20, 0.94), rgba(12, 10, 11, 0.98)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 30%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 30px 70px -48px rgba(0, 0, 0, 0.95);
+}
+
+.yabuchess-sky,
+.yabuchess-sky span {
+  position: absolute;
+  pointer-events: none;
+}
+
+.yabuchess-sky {
+  inset: 0;
+  overflow: hidden;
+}
+
+.yabuchess-moon {
+  top: 46px;
+  right: 72px;
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 35% 35%, rgba(255, 242, 205, 0.94), rgba(221, 206, 158, 0.7) 60%, transparent 70%);
+  filter: blur(0.2px);
+  opacity: 0.88;
+  box-shadow: 0 0 40px rgba(255, 225, 159, 0.2);
+}
+
+.yabuchess-tower {
+  bottom: 158px;
+  width: 140px;
+  background: linear-gradient(180deg, rgba(31, 29, 33, 0.14), rgba(12, 11, 14, 0.92));
+  clip-path: polygon(40% 0, 60% 0, 68% 20%, 84% 28%, 100% 100%, 0 100%, 18% 32%, 32% 18%);
+  opacity: 0.65;
+}
+
+.yabuchess-tower--left {
+  left: -18px;
+  height: 280px;
+}
+
+.yabuchess-tower--right {
+  right: -10px;
+  height: 330px;
+}
+
+.yabuchess-mist {
+  left: -10%;
+  right: -10%;
+  height: 120px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(192, 211, 255, 0.08), transparent 66%);
+  filter: blur(18px);
+  animation: yabuchess-mist 9s ease-in-out infinite;
+}
+
+.yabuchess-mist--one {
+  bottom: 188px;
+}
+
+.yabuchess-mist--two {
+  bottom: 112px;
+  animation-delay: -3.5s;
+}
+
+.yabuchess-embers {
+  inset: auto 0 0;
+  height: 180px;
+  opacity: 0.3;
+  background:
+    radial-gradient(circle at 10% 20%, rgba(255, 178, 91, 0.24), transparent 6%),
+    radial-gradient(circle at 24% 68%, rgba(255, 213, 102, 0.18), transparent 5%),
+    radial-gradient(circle at 68% 48%, rgba(255, 178, 91, 0.22), transparent 5%),
+    radial-gradient(circle at 84% 24%, rgba(255, 228, 160, 0.16), transparent 4%);
+}
+
+.yabuchess-header,
+.yabuchess-war-room,
+.yabuchess-stage,
+.yabuchess-sidebar {
+  position: relative;
+  z-index: 1;
+}
+
+.yabuchess-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.yabuchess-header-copy h1,
+.yabuchess-header-copy p {
+  margin: 0;
+}
+
+.yabuchess-kicker {
+  margin: 0;
+  color: #dbc07a;
+  font-size: 0.66rem;
+  font-weight: 900;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+}
+
+.yabuchess-header-copy h1 {
+  margin-top: 6px;
+  font-size: clamp(2rem, 5vw, 3.4rem);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.yabuchess-subtitle {
+  margin-top: 8px;
+  max-width: 34rem;
+  color: rgba(243, 234, 212, 0.82);
+  line-height: 1.55;
+}
+
+.yabuchess-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.yabuchess-chip-btn,
+.yabuchess-toggle,
+.yabuchess-promotion-btn {
+  border: 1px solid rgba(196, 176, 119, 0.38);
+  background: rgba(18, 14, 12, 0.86);
+  color: #f3ead4;
+  font: inherit;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  box-shadow: 3px 3px 0 rgba(8, 6, 6, 0.88);
+}
+
+.yabuchess-chip-btn,
+.yabuchess-toggle {
+  min-height: 40px;
+  padding: 10px 12px;
+}
+
+.yabuchess-chip-btn:active,
+.yabuchess-toggle:active,
+.yabuchess-promotion-btn:active {
+  transform: translate(1px, 1px);
+}
+
+.yabuchess-war-room {
+  display: grid;
+  grid-template-columns: minmax(0, 1.28fr) minmax(280px, 0.72fr);
+  gap: 18px;
+}
+
+.yabuchess-stage,
+.yabuchess-card {
+  border: 1px solid rgba(196, 176, 119, 0.24);
+  background: rgba(9, 8, 10, 0.76);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 16px 28px -24px rgba(0, 0, 0, 0.92);
+}
+
+.yabuchess-stage {
+  position: relative;
+  padding: 16px;
+  border-radius: 24px;
+  overflow: hidden;
+}
+
+.yabuchess-stage::before {
+  content: '';
+  position: absolute;
+  inset: auto 6% 8px;
+  height: 34px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(0, 0, 0, 0.78), transparent 70%);
+}
+
+.yabuchess-stage-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  color: rgba(243, 234, 212, 0.76);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.yabuchess-board-wrap {
+  position: relative;
+  max-width: min(76vw, 620px);
+  margin: 0 auto;
+}
+
+.yabuchess-board-legend {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 0;
+  padding: 0 10px;
+  color: rgba(243, 234, 212, 0.5);
+  font-size: 0.64rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.yabuchess-board-legend--top {
+  margin-bottom: 8px;
+}
+
+.yabuchess-board-legend--bottom {
+  margin-top: 8px;
+}
+
+.yabuchess-board-frame {
+  padding: 10px;
+  border: 1px solid rgba(196, 176, 119, 0.3);
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(58, 47, 34, 0.96), rgba(26, 20, 16, 0.98)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 244, 214, 0.08),
+    0 18px 32px -26px rgba(0, 0, 0, 0.95);
+}
+
+.yabuchess-board {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  border: 1px solid rgba(13, 12, 13, 0.9);
+  overflow: hidden;
+  aspect-ratio: 1;
+}
+
+.yabuchess-square {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.yabuchess-square--light {
+  background:
+    linear-gradient(180deg, rgba(221, 217, 210, 0.98), rgba(189, 183, 174, 0.98));
+}
+
+.yabuchess-square--dark {
+  background:
+    linear-gradient(180deg, rgba(34, 33, 35, 0.98), rgba(18, 18, 20, 0.98));
+}
+
+.yabuchess-square.is-last-move::after,
+.yabuchess-square.is-selected::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border: 1px solid rgba(255, 222, 151, 0.4);
+  pointer-events: none;
+}
+
+.yabuchess-square.is-selected::after {
+  border-color: rgba(125, 189, 255, 0.78);
+}
+
+.yabuchess-square-coord {
+  position: absolute;
+  bottom: 3px;
+  right: 4px;
+  opacity: 0.22;
+  font-size: 0.54rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.yabuchess-square-marker {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: rgba(85, 142, 212, 0.42);
+}
+
+.yabuchess-square-marker.is-capture {
+  width: 42px;
+  height: 42px;
+  border: 2px solid rgba(225, 121, 93, 0.72);
+  background: transparent;
+}
+
+.yabuchess-piece {
+  position: relative;
+  width: 72%;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.yabuchess-piece-aura,
+.yabuchess-piece-shell {
+  position: absolute;
+  inset: 0;
+}
+
+.yabuchess-piece-aura {
+  border-radius: 18%;
+  opacity: 0.18;
+  filter: blur(6px);
+}
+
+.yabuchess-piece-shell {
+  display: grid;
+  place-items: center;
+  border-radius: 18%;
+  border: 2px solid rgba(8, 8, 8, 0.52);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 3px 0 rgba(8, 8, 8, 0.48);
+  clip-path: polygon(14% 16%, 32% 10%, 48% 0, 58% 12%, 78% 16%, 88% 34%, 88% 76%, 74% 92%, 24% 92%, 12% 74%, 12% 34%);
+}
+
+.yabuchess-piece-glyph {
+  position: relative;
+  z-index: 1;
+  font-size: clamp(0.82rem, 1.6vw, 1.25rem);
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.55),
+    0 0 12px rgba(255, 255, 255, 0.1);
+}
+
+.yabuchess-piece--side-w .yabuchess-piece-aura {
+  background: rgba(222, 230, 255, 0.9);
+}
+
+.yabuchess-piece--side-w .yabuchess-piece-shell {
+  background: linear-gradient(180deg, #f3efe4 0%, #cbc5ba 100%);
+}
+
+.yabuchess-piece--side-w .yabuchess-piece-glyph {
+  color: #141318;
+}
+
+.yabuchess-piece--side-b .yabuchess-piece-aura {
+  background: rgba(255, 164, 106, 0.62);
+}
+
+.yabuchess-piece--side-b .yabuchess-piece-shell {
+  background: linear-gradient(180deg, #352d2b 0%, #121014 100%);
+}
+
+.yabuchess-piece--side-b .yabuchess-piece-glyph {
+  color: #f6dba9;
+}
+
+.yabuchess-piece.is-selected .yabuchess-piece-shell {
+  border-color: rgba(125, 189, 255, 0.92);
+}
+
+.yabuchess-piece.is-targeted .yabuchess-piece-shell {
+  border-color: rgba(225, 121, 93, 0.84);
+}
+
+.yabuchess-piece.is-moved .yabuchess-piece-shell {
+  animation: yabuchess-piece-land 340ms steps(3, end);
+}
+
+.yabuchess-piece--type-p .yabuchess-piece-shell {
+  animation: yabuchess-pawn-step 1.25s steps(2, end) infinite;
+}
+
+.yabuchess-piece--type-n .yabuchess-piece-shell {
+  animation: yabuchess-knight-prance 1.5s steps(2, end) infinite;
+}
+
+.yabuchess-piece--type-b .yabuchess-piece-shell {
+  animation: yabuchess-bishop-sway 1.8s ease-in-out infinite;
+}
+
+.yabuchess-piece--type-r .yabuchess-piece-shell {
+  animation: yabuchess-rook-stomp 1.3s steps(2, end) infinite;
+}
+
+.yabuchess-piece--type-q .yabuchess-piece-shell {
+  animation: yabuchess-queen-glide 1.9s ease-in-out infinite;
+}
+
+.yabuchess-piece--type-k .yabuchess-piece-shell {
+  animation: yabuchess-king-breath 1.7s ease-in-out infinite;
+}
+
+.yabuchess-sidebar {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.yabuchess-card {
+  padding: 14px;
+  border-radius: 18px;
+}
+
+.yabuchess-card-head,
+.yabuchess-faction-row,
+.yabuchess-graveyard {
+  display: grid;
+  gap: 10px;
+}
+
+.yabuchess-faction {
+  display: grid;
+  gap: 3px;
+  padding: 12px;
+  border: 1px solid rgba(196, 176, 119, 0.16);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.yabuchess-faction-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.yabuchess-faction--light .yabuchess-faction-dot {
+  background: #dfe8ff;
+}
+
+.yabuchess-faction--dark .yabuchess-faction-dot {
+  background: #f2b375;
+}
+
+.yabuchess-faction strong,
+.yabuchess-faction small,
+.yabuchess-history-row span,
+.yabuchess-history-row strong,
+.yabuchess-graveyard-title,
+.yabuchess-lore {
+  display: block;
+}
+
+.yabuchess-history {
+  display: grid;
+  gap: 8px;
+}
+
+.yabuchess-history p {
+  margin: 0;
+  color: rgba(243, 234, 212, 0.66);
+}
+
+.yabuchess-history-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.yabuchess-toggle.is-on {
+  color: #ffe1a5;
+}
+
+.yabuchess-graveyard-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  min-height: 28px;
+  align-items: center;
+}
+
+.yabuchess-graveyard-row .yabuchess-piece {
+  width: 28px;
+}
+
+.yabuchess-lore {
+  margin: 8px 0 0;
+  color: rgba(243, 234, 212, 0.72);
+  line-height: 1.55;
+}
+
+.yabuchess-cinematic,
+.yabuchess-promotion {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(540px, calc(100% - 24px));
+  border: 1px solid rgba(196, 176, 119, 0.34);
+  background: rgba(8, 8, 10, 0.92);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 24px 42px -26px rgba(0, 0, 0, 0.96);
+}
+
+.yabuchess-cinematic {
+  top: 72px;
+  padding: 16px;
+  border-radius: 20px;
+  display: grid;
+  gap: 14px;
+  animation: yabuchess-cinematic-rise 140ms steps(3, end);
+}
+
+.yabuchess-cinematic-copy h2,
+.yabuchess-cinematic-copy p,
+.yabuchess-promotion h2,
+.yabuchess-promotion p {
+  margin: 0;
+}
+
+.yabuchess-cinematic-copy h2,
+.yabuchess-promotion h2 {
+  margin-top: 6px;
+  font-size: 1.2rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.yabuchess-cinematic-fighters {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+}
+
+.yabuchess-cinematic-fighters .yabuchess-piece {
+  width: 96px;
+}
+
+.yabuchess-piece.is-attacker .yabuchess-piece-shell {
+  animation: yabuchess-cinematic-attack 620ms steps(4, end) infinite;
+}
+
+.yabuchess-piece.is-defender .yabuchess-piece-shell {
+  animation: yabuchess-cinematic-defend 620ms steps(4, end) infinite;
+}
+
+.yabuchess-cinematic-slash {
+  width: 58px;
+  height: 8px;
+  background: linear-gradient(90deg, transparent, rgba(255, 212, 129, 0.96), transparent);
+  box-shadow: 0 0 18px rgba(255, 212, 129, 0.4);
+  animation: yabuchess-cinematic-slash 720ms ease-in-out infinite;
+}
+
+.yabuchess-promotion {
+  bottom: 22px;
+  padding: 14px;
+  border-radius: 18px;
+}
+
+.yabuchess-promotion-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.yabuchess-promotion-btn {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  min-height: 124px;
+  padding: 12px 8px;
+}
+
+.yabuchess-promotion-btn .yabuchess-piece {
+  width: 58px;
+}
+
+@keyframes yabuchess-mist {
+  0%,
+  100% {
+    transform: translateX(-2%);
+    opacity: 0.34;
+  }
+
+  50% {
+    transform: translateX(2%);
+    opacity: 0.5;
+  }
+}
+
+@keyframes yabuchess-pawn-step {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes yabuchess-knight-prance {
+  0%,
+  100% {
+    transform: translate(-1px, 0) rotate(-1deg);
+  }
+
+  50% {
+    transform: translate(1px, -3px) rotate(2deg);
+  }
+}
+
+@keyframes yabuchess-bishop-sway {
+  0%,
+  100% {
+    transform: rotate(-1deg);
+  }
+
+  50% {
+    transform: rotate(1.5deg) translateY(-2px);
+  }
+}
+
+@keyframes yabuchess-rook-stomp {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-1px) scaleX(1.03);
+  }
+}
+
+@keyframes yabuchess-queen-glide {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+
+  50% {
+    transform: translateY(-3px) rotate(1deg);
+  }
+}
+
+@keyframes yabuchess-king-breath {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.03);
+  }
+}
+
+@keyframes yabuchess-piece-land {
+  0% {
+    transform: translateY(-4px);
+  }
+
+  100% {
+    transform: translateY(0);
+  }
+}
+
+@keyframes yabuchess-cinematic-rise {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@keyframes yabuchess-cinematic-attack {
+  0%,
+  100% {
+    transform: translateX(0) scale(1);
+  }
+
+  45% {
+    transform: translateX(10px) scale(1.06);
+  }
+
+  70% {
+    transform: translateX(4px) scale(1.02);
+  }
+}
+
+@keyframes yabuchess-cinematic-defend {
+  0%,
+  100% {
+    transform: translateX(0) rotate(0deg);
+    opacity: 1;
+  }
+
+  45% {
+    transform: translateX(-9px) rotate(-7deg);
+    opacity: 0.95;
+  }
+
+  70% {
+    transform: translateX(-4px) rotate(6deg);
+    opacity: 0.72;
+  }
+}
+
+@keyframes yabuchess-cinematic-slash {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scaleX(0.8);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scaleX(1.16);
+  }
+}
+
+@media (max-width: 980px) {
+  .yabuchess-war-room {
+    grid-template-columns: 1fr;
+  }
+
+  .yabuchess-board-wrap {
+    max-width: min(88vw, 560px);
+  }
+}
+
+@media (max-width: 640px) {
+  .yabuchess-page {
+    padding: 8px;
+  }
+
+  .yabuchess-shell {
+    padding: 14px;
+    border-radius: 18px;
+  }
+
+  .yabuchess-header {
+    flex-direction: column;
+  }
+
+  .yabuchess-header-actions {
+    justify-content: flex-start;
+  }
+
+  .yabuchess-stage {
+    padding: 12px;
+  }
+
+  .yabuchess-stage-bar {
+    font-size: 0.64rem;
+  }
+
+  .yabuchess-board-wrap {
+    max-width: none;
+  }
+
+  .yabuchess-cinematic {
+    top: 56px;
+    padding: 12px;
+  }
+
+  .yabuchess-cinematic-fighters .yabuchess-piece {
+    width: 76px;
+  }
+
+  .yabuchess-promotion-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @keyframes yabubird-loader {
   0%,
   100% {
