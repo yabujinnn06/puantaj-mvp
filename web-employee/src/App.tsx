@@ -220,7 +220,7 @@ export default function App() {
           }
         />
         <Route
-          path="yabuchess"
+          path="yabuchess/*"
           element={
             <EmployeeRouteGuard>
               <YabuChessPage />

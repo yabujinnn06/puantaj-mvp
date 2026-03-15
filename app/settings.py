@@ -63,6 +63,14 @@ class Settings(BaseSettings):
     security_hsts_max_age_seconds: int = 31536000
     archive_file_encryption_key: str | None = None
     daily_report_archive_max_rows: int = 365
+    chess_default_rating: int = 1200
+    chess_rating_k_factor: int = 24
+    chess_rapid_clock_ms: int = 300000
+    chess_queue_ttl_seconds: int = 180
+    chess_websocket_ping_seconds: int = 20
+    chess_ai_move_delay_ms: int = 650
+    chess_leaderboard_limit: int = 20
+    chess_history_limit: int = 20
 
     model_config = SettingsConfigDict(
         env_file=".env",
