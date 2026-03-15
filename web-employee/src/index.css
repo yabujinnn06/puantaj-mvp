@@ -5240,6 +5240,1328 @@ textarea:focus {
   }
 }
 
+.employee-yabuchess-promo {
+  border-color: rgba(184, 145, 92, 0.42);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(255, 197, 121, 0.16), transparent 42%),
+    linear-gradient(160deg, rgba(24, 16, 14, 0.98), rgba(10, 9, 11, 0.98));
+}
+
+.employee-yabuchess-promo .employee-yabubird-promo-kicker,
+.employee-yabuchess-promo .employee-yabubird-promo-copy h3,
+.employee-yabuchess-promo .employee-yabubird-promo-copy p {
+  color: #f2dfba;
+}
+
+.yabuchess-stage-page {
+  min-height: 100dvh;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 208, 124, 0.08), transparent 24%),
+    linear-gradient(180deg, #050507 0%, #0d0b0f 45%, #040406 100%);
+  color: #f4e7cb;
+}
+
+.yabuchess-stage-shell {
+  position: relative;
+  min-height: 100dvh;
+  overflow: hidden;
+}
+
+.yabuchess-world,
+.yabuchess-world span {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.yabuchess-world {
+  overflow: hidden;
+}
+
+.yabuchess-world::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 14% 20%, rgba(255, 250, 240, 0.14), transparent 1.2%),
+    radial-gradient(circle at 26% 30%, rgba(255, 233, 186, 0.16), transparent 1%),
+    radial-gradient(circle at 56% 16%, rgba(255, 250, 240, 0.12), transparent 1.1%),
+    radial-gradient(circle at 78% 28%, rgba(255, 233, 186, 0.12), transparent 0.9%),
+    radial-gradient(circle at 88% 18%, rgba(255, 250, 240, 0.12), transparent 1%);
+  opacity: 0.72;
+}
+
+.yabuchess-world-moon {
+  top: 5%;
+  right: 8%;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 34% 34%, rgba(255, 244, 220, 0.96), rgba(224, 204, 160, 0.72) 58%, transparent 72%);
+  box-shadow: 0 0 54px rgba(255, 226, 168, 0.16);
+}
+
+.yabuchess-world-ridge {
+  inset: auto -12% 0;
+  height: 34%;
+  background: linear-gradient(180deg, rgba(12, 10, 12, 0), rgba(8, 7, 10, 0.95));
+}
+
+.yabuchess-world-ridge--back {
+  clip-path: polygon(0 58%, 8% 50%, 18% 61%, 31% 42%, 45% 58%, 56% 36%, 69% 51%, 78% 41%, 90% 56%, 100% 46%, 100% 100%, 0 100%);
+  opacity: 0.78;
+}
+
+.yabuchess-world-ridge--front {
+  clip-path: polygon(0 70%, 10% 57%, 24% 74%, 36% 52%, 49% 70%, 61% 47%, 75% 68%, 89% 58%, 100% 72%, 100% 100%, 0 100%);
+  opacity: 0.98;
+}
+
+.yabuchess-world-tower {
+  inset: auto auto 19% 0;
+  width: 12%;
+  height: 42%;
+  background: linear-gradient(180deg, rgba(30, 25, 28, 0.1), rgba(9, 8, 11, 0.96));
+  clip-path: polygon(34% 0, 66% 0, 74% 12%, 88% 18%, 100% 100%, 0 100%, 12% 18%, 26% 12%);
+}
+
+.yabuchess-world-tower--left {
+  left: 3%;
+}
+
+.yabuchess-world-tower--right {
+  left: auto;
+  right: 3%;
+  height: 50%;
+}
+
+.yabuchess-world-banner {
+  inset: auto auto 36% 0;
+  width: 44px;
+  height: 140px;
+  background: linear-gradient(180deg, rgba(255, 208, 124, 0.8), rgba(130, 42, 24, 0.84));
+  clip-path: polygon(0 0, 100% 0, 100% 76%, 70% 68%, 50% 100%, 30% 70%, 0 80%);
+  opacity: 0.4;
+  animation: yabuchess-banner 3.1s ease-in-out infinite;
+}
+
+.yabuchess-world-banner--left {
+  left: 14%;
+}
+
+.yabuchess-world-banner--right {
+  left: auto;
+  right: 14%;
+  animation-delay: -1.4s;
+}
+
+.yabuchess-world-mist {
+  inset: auto -8% 12%;
+  height: 20%;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(188, 199, 226, 0.1), transparent 68%);
+  filter: blur(18px);
+  animation: yabuchess-stage-mist 8s ease-in-out infinite;
+}
+
+.yabuchess-world-mist--two {
+  bottom: 20%;
+  animation-delay: -3.8s;
+}
+
+.yabuchess-world-flame {
+  inset: auto auto 21% 0;
+  width: 28px;
+  height: 48px;
+  background:
+    radial-gradient(circle at 50% 20%, rgba(255, 236, 188, 0.9), rgba(255, 167, 77, 0.75) 54%, transparent 72%);
+  filter: blur(2px);
+  animation: yabuchess-flame 1s ease-in-out infinite;
+}
+
+.yabuchess-world-flame--left {
+  left: 10.5%;
+}
+
+.yabuchess-world-flame--right {
+  left: auto;
+  right: 10.5%;
+  animation-delay: -0.45s;
+}
+
+.yabuchess-screen-hud,
+.yabuchess-direct-stage {
+  position: relative;
+  z-index: 1;
+}
+
+.yabuchess-screen-hud {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  gap: 16px;
+  padding: 18px 22px 10px;
+}
+
+.yabuchess-screen-brand p,
+.yabuchess-screen-brand h1 {
+  margin: 0;
+}
+
+.yabuchess-screen-brand p,
+.yabuchess-bottom-kicker {
+  color: #d8b270;
+  font-size: 0.66rem;
+  font-weight: 900;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+}
+
+.yabuchess-screen-brand h1 {
+  margin-top: 6px;
+  font-size: clamp(2rem, 5vw, 3.8rem);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-shadow: 0 4px 16px rgba(0, 0, 0, 0.55);
+}
+
+.yabuchess-screen-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  justify-content: center;
+  align-self: center;
+  padding-top: 18px;
+  color: rgba(244, 231, 203, 0.8);
+  font-size: 0.74rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.yabuchess-screen-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.yabuchess-screen-btn,
+.yabuchess-cinematic-toggle,
+.yabuchess-war-promotion-btn {
+  border: 1px solid rgba(184, 145, 92, 0.42);
+  background: rgba(15, 11, 12, 0.88);
+  color: #f4e7cb;
+  font: inherit;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  box-shadow: 3px 3px 0 rgba(5, 4, 5, 0.9);
+}
+
+.yabuchess-screen-btn,
+.yabuchess-cinematic-toggle {
+  min-height: 42px;
+  padding: 10px 12px;
+}
+
+.yabuchess-screen-btn:active,
+.yabuchess-cinematic-toggle:active,
+.yabuchess-war-promotion-btn:active {
+  transform: translate(1px, 1px);
+}
+
+.yabuchess-direct-stage {
+  display: grid;
+  gap: 14px;
+  padding: 0 18px 14px;
+}
+
+.yabuchess-direct-stage-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.yabuchess-war-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 10px 12px;
+  border: 1px solid rgba(184, 145, 92, 0.22);
+  background: rgba(10, 9, 11, 0.72);
+  text-transform: uppercase;
+}
+
+.yabuchess-war-banner strong,
+.yabuchess-war-banner small {
+  display: block;
+}
+
+.yabuchess-war-banner-pill {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.yabuchess-war-banner--light .yabuchess-war-banner-pill {
+  background: #e8edff;
+}
+
+.yabuchess-war-banner--dark .yabuchess-war-banner-pill {
+  background: #f0aa68;
+}
+
+.yabuchess-cinematic-toggle.is-on {
+  color: #ffe0a6;
+}
+
+.yabuchess-table-area {
+  position: relative;
+  min-height: calc(100dvh - 180px);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.yabuchess-war-ticker {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  width: min(78vw, 620px);
+  transform: translateX(-50%);
+}
+
+.yabuchess-war-ticker-empty,
+.yabuchess-war-ticker-item {
+  min-height: 28px;
+  padding: 5px 10px;
+  border: 1px solid rgba(184, 145, 92, 0.18);
+  background: rgba(10, 9, 11, 0.74);
+  color: rgba(244, 231, 203, 0.8);
+  font-size: 0.66rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.yabuchess-war-ticker-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.yabuchess-war-ticker-item strong {
+  color: #ffe0a6;
+  font-size: 0.74rem;
+}
+
+.yabuchess-war-ticker-item small {
+  color: rgba(244, 231, 203, 0.62);
+  font-size: 0.56rem;
+}
+
+.yabuchess-side-rail {
+  position: absolute;
+  top: 56px;
+  bottom: 26px;
+  z-index: 1;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  width: 54px;
+  padding: 12px 8px;
+  border: 1px solid rgba(184, 145, 92, 0.18);
+  background: linear-gradient(180deg, rgba(8, 7, 9, 0.86), rgba(10, 8, 11, 0.5));
+  box-shadow: inset 0 1px 0 rgba(255, 242, 208, 0.04);
+}
+
+.yabuchess-side-rail--light {
+  left: max(6px, calc(50% - 486px));
+}
+
+.yabuchess-side-rail--dark {
+  right: max(6px, calc(50% - 486px));
+}
+
+.yabuchess-side-rail-title {
+  color: #d8b270;
+  font-size: 0.56rem;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.yabuchess-side-rail-pieces {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+}
+
+.yabuchess-side-rail-pieces small {
+  color: rgba(244, 231, 203, 0.56);
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+}
+
+.yabuchess-table-shadow {
+  position: absolute;
+  inset: auto 11% 8px;
+  height: 70px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(0, 0, 0, 0.94), transparent 72%);
+}
+
+.yabuchess-war-table {
+  position: relative;
+  z-index: 1;
+  width: min(84vw, 840px);
+  transform: perspective(1420px) rotateX(14deg);
+  transform-style: preserve-3d;
+}
+
+.yabuchess-board-frame {
+  position: relative;
+  padding: 18px;
+  border: 1px solid rgba(174, 136, 86, 0.44);
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, rgba(73, 55, 34, 0.96), rgba(22, 17, 14, 0.98)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 248, 222, 0.08),
+    0 30px 44px -32px rgba(0, 0, 0, 0.96);
+}
+
+.yabuchess-board-frame::before {
+  content: '';
+  position: absolute;
+  inset: auto 4% -14px;
+  height: 18px;
+  background: linear-gradient(180deg, rgba(10, 8, 10, 0.72), rgba(0, 0, 0, 0.9));
+  transform: translateZ(-16px);
+  filter: blur(2px);
+}
+
+.yabuchess-board {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 2px solid rgba(12, 11, 13, 0.95);
+  background: #121115;
+}
+
+.yabuchess-square {
+  position: relative;
+  border: 0;
+  padding: 0;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.yabuchess-square--light {
+  background:
+    linear-gradient(180deg, rgba(218, 213, 206, 0.99), rgba(183, 177, 167, 0.99));
+}
+
+.yabuchess-square--dark {
+  background:
+    linear-gradient(180deg, rgba(37, 35, 40, 0.99), rgba(18, 17, 21, 0.99));
+}
+
+.yabuchess-square::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.05), transparent 38%),
+    linear-gradient(315deg, rgba(0, 0, 0, 0.12), transparent 40%);
+  opacity: 0.75;
+}
+
+.yabuchess-square.is-last-move::after,
+.yabuchess-square.is-selected::after {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  border: 1px solid rgba(255, 220, 142, 0.52);
+}
+
+.yabuchess-square.is-selected::after {
+  border-color: rgba(115, 168, 255, 0.88);
+}
+
+.yabuchess-square-marker {
+  position: absolute;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: rgba(79, 131, 209, 0.5);
+}
+
+.yabuchess-square-marker.is-capture {
+  width: 70%;
+  height: 70%;
+  border: 2px solid rgba(214, 88, 52, 0.78);
+  background: transparent;
+}
+
+.yabuchess-piece {
+  --piece-scale: 1;
+  position: relative;
+  width: 72%;
+  aspect-ratio: 0.88;
+  pointer-events: none;
+  transform-origin: center bottom;
+  transform: scale(var(--piece-scale));
+}
+
+.yabuchess-piece--cinematic {
+  width: 128px;
+}
+
+.yabuchess-piece--grave {
+  width: 28px;
+}
+
+.yabuchess-piece-shadow,
+.yabuchess-piece-plinth,
+.yabuchess-piece-figure,
+.yabuchess-piece-cape,
+.yabuchess-piece-torso,
+.yabuchess-piece-arm,
+.yabuchess-piece-head,
+.yabuchess-piece-eye,
+.yabuchess-piece-crown,
+.yabuchess-piece-hat,
+.yabuchess-piece-horns,
+.yabuchess-piece-weapon,
+.yabuchess-piece-shield,
+.yabuchess-piece-mount {
+  position: absolute;
+}
+
+.yabuchess-piece-shadow {
+  inset: auto 16% 4%;
+  height: 10%;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.36);
+  filter: blur(4px);
+}
+
+.yabuchess-piece-plinth {
+  inset: auto 16% 0;
+  height: 16%;
+  border-radius: 10px 10px 4px 4px;
+  background: linear-gradient(180deg, rgba(71, 52, 32, 0.96), rgba(18, 12, 10, 0.98));
+  box-shadow: inset 0 1px 0 rgba(255, 245, 220, 0.08);
+}
+
+.yabuchess-piece-figure {
+  inset: 8% 18% 10%;
+}
+
+.yabuchess-piece-torso {
+  left: 28%;
+  right: 28%;
+  top: 34%;
+  height: 34%;
+  border-radius: 9px 9px 6px 6px;
+}
+
+.yabuchess-piece-head {
+  left: 34%;
+  right: 34%;
+  top: 14%;
+  height: 16%;
+  border-radius: 8px 8px 7px 7px;
+}
+
+.yabuchess-piece-eye {
+  top: 18%;
+  width: 7%;
+  height: 3%;
+  border-radius: 2px;
+  background: rgba(255, 246, 221, 0.92);
+  box-shadow: 0 0 6px rgba(255, 230, 187, 0.24);
+}
+
+.yabuchess-piece-eye--left {
+  left: 40%;
+}
+
+.yabuchess-piece-eye--right {
+  right: 40%;
+}
+
+.yabuchess-piece-arm {
+  top: 38%;
+  width: 10%;
+  height: 22%;
+  border-radius: 4px;
+}
+
+.yabuchess-piece-arm--left {
+  left: 18%;
+  transform: rotate(10deg);
+}
+
+.yabuchess-piece-arm--right {
+  right: 18%;
+  transform: rotate(-10deg);
+}
+
+.yabuchess-piece-cape {
+  left: 20%;
+  right: 20%;
+  top: 28%;
+  height: 44%;
+  clip-path: polygon(20% 0, 80% 0, 100% 24%, 84% 100%, 16% 100%, 0 24%);
+  opacity: 0.88;
+}
+
+.yabuchess-piece-crown,
+.yabuchess-piece-hat,
+.yabuchess-piece-horns,
+.yabuchess-piece-weapon,
+.yabuchess-piece-shield,
+.yabuchess-piece-mount {
+  opacity: 0;
+}
+
+.yabuchess-piece--side-w .yabuchess-piece-head,
+.yabuchess-piece--side-w .yabuchess-piece-torso,
+.yabuchess-piece--side-w .yabuchess-piece-arm,
+.yabuchess-piece--side-w .yabuchess-piece-cape,
+.yabuchess-piece--side-w .yabuchess-piece-shield,
+.yabuchess-piece--side-w .yabuchess-piece-mount {
+  background: linear-gradient(180deg, #f4efe2, #c6beb2);
+}
+
+.yabuchess-piece--side-b .yabuchess-piece-head,
+.yabuchess-piece--side-b .yabuchess-piece-torso,
+.yabuchess-piece--side-b .yabuchess-piece-arm,
+.yabuchess-piece--side-b .yabuchess-piece-cape,
+.yabuchess-piece--side-b .yabuchess-piece-shield,
+.yabuchess-piece--side-b .yabuchess-piece-mount {
+  background: linear-gradient(180deg, #3c302d, #141116);
+}
+
+.yabuchess-piece--side-b .yabuchess-piece-eye {
+  background: rgba(255, 190, 121, 0.94);
+}
+
+.yabuchess-piece--type-p .yabuchess-piece-head {
+  top: 18%;
+  left: 36%;
+  right: 36%;
+}
+
+.yabuchess-piece--type-p .yabuchess-piece-weapon {
+  opacity: 1;
+  left: 50%;
+  top: 8%;
+  width: 4%;
+  height: 52%;
+  background: linear-gradient(180deg, #dac9a2, #544231);
+  transform: translateX(-50%) rotate(4deg);
+}
+
+.yabuchess-piece--type-p .yabuchess-piece-weapon::after {
+  content: '';
+  position: absolute;
+  top: -8%;
+  left: -110%;
+  width: 320%;
+  height: 14%;
+  background: linear-gradient(90deg, transparent, #e6d6b6 24%, #87633e 60%, transparent);
+}
+
+.yabuchess-piece--type-n .yabuchess-piece-head,
+.yabuchess-piece--type-n .yabuchess-piece-mount {
+  opacity: 1;
+}
+
+.yabuchess-piece--type-n .yabuchess-piece-head {
+  left: 48%;
+  right: 22%;
+  top: 10%;
+  height: 18%;
+  clip-path: polygon(0 40%, 38% 0, 100% 12%, 86% 100%, 10% 88%);
+}
+
+.yabuchess-piece--type-n .yabuchess-piece-mount {
+  left: 14%;
+  right: 18%;
+  top: 26%;
+  height: 38%;
+  clip-path: polygon(18% 10%, 50% 0, 84% 24%, 92% 60%, 74% 88%, 26% 100%, 8% 60%);
+}
+
+.yabuchess-piece--type-b .yabuchess-piece-hat {
+  opacity: 1;
+  left: 34%;
+  right: 34%;
+  top: 3%;
+  height: 20%;
+  background: linear-gradient(180deg, #d9cfba, #907c64);
+  clip-path: polygon(50% 0, 100% 44%, 72% 100%, 28% 100%, 0 44%);
+}
+
+.yabuchess-piece--side-b.yabuchess-piece--type-b .yabuchess-piece-hat {
+  background: linear-gradient(180deg, #563f35, #181217);
+}
+
+.yabuchess-piece--type-b .yabuchess-piece-weapon {
+  opacity: 1;
+  left: 52%;
+  top: 18%;
+  width: 5%;
+  height: 48%;
+  background: linear-gradient(180deg, #eadcb9, #6c563d);
+}
+
+.yabuchess-piece--type-b .yabuchess-piece-weapon::after {
+  content: '';
+  position: absolute;
+  inset: -6% -120% auto;
+  height: 12%;
+  background: linear-gradient(90deg, transparent, #e8d8b3, transparent);
+}
+
+.yabuchess-piece--type-r .yabuchess-piece-head {
+  left: 30%;
+  right: 30%;
+  top: 12%;
+  height: 18%;
+  border-radius: 3px;
+}
+
+.yabuchess-piece--type-r .yabuchess-piece-head::before,
+.yabuchess-piece--type-r .yabuchess-piece-head::after {
+  content: '';
+  position: absolute;
+  top: -18%;
+  width: 20%;
+  height: 24%;
+  background: inherit;
+}
+
+.yabuchess-piece--type-r .yabuchess-piece-head::before {
+  left: 4%;
+}
+
+.yabuchess-piece--type-r .yabuchess-piece-head::after {
+  right: 4%;
+}
+
+.yabuchess-piece--type-r .yabuchess-piece-shield {
+  opacity: 1;
+  left: 16%;
+  top: 38%;
+  width: 18%;
+  height: 20%;
+  border-radius: 8px 8px 10px 10px;
+}
+
+.yabuchess-piece--type-q .yabuchess-piece-crown {
+  opacity: 1;
+  left: 24%;
+  right: 24%;
+  top: 3%;
+  height: 18%;
+  background: linear-gradient(180deg, #f5dc95, #89642c);
+  clip-path: polygon(0 100%, 16% 44%, 34% 84%, 50% 18%, 66% 82%, 84% 44%, 100% 100%);
+}
+
+.yabuchess-piece--side-b.yabuchess-piece--type-q .yabuchess-piece-crown {
+  background: linear-gradient(180deg, #d78f54, #5d2f19);
+}
+
+.yabuchess-piece--type-q .yabuchess-piece-weapon {
+  opacity: 1;
+  right: 10%;
+  top: 24%;
+  width: 8%;
+  height: 42%;
+  background: linear-gradient(180deg, #f4e2b5, #725232);
+}
+
+.yabuchess-piece--type-q .yabuchess-piece-weapon::after {
+  content: '';
+  position: absolute;
+  top: -14%;
+  left: -86%;
+  width: 260%;
+  height: 18%;
+  border-radius: 999px;
+  background: radial-gradient(circle, #f5ddb0, #8f6832 60%, transparent 64%);
+}
+
+.yabuchess-piece--type-k .yabuchess-piece-crown {
+  opacity: 1;
+  left: 28%;
+  right: 28%;
+  top: 0;
+  height: 22%;
+  background: linear-gradient(180deg, #e8d39c, #6f532b);
+  clip-path: polygon(16% 100%, 16% 40%, 0 40%, 0 18%, 18% 18%, 18% 0, 34% 0, 34% 18%, 66% 18%, 66% 0, 82% 0, 82% 18%, 100% 18%, 100% 40%, 84% 40%, 84% 100%);
+}
+
+.yabuchess-piece--side-b.yabuchess-piece--type-k .yabuchess-piece-crown {
+  background: linear-gradient(180deg, #c58d58, #4d2b19);
+}
+
+.yabuchess-piece--type-k .yabuchess-piece-weapon {
+  opacity: 1;
+  left: 18%;
+  top: 24%;
+  width: 6%;
+  height: 38%;
+  background: linear-gradient(180deg, #efe1b7, #78583a);
+}
+
+.yabuchess-piece--type-k .yabuchess-piece-weapon::after {
+  content: '';
+  position: absolute;
+  top: 12%;
+  left: -140%;
+  width: 380%;
+  height: 10%;
+  background: inherit;
+}
+
+.yabuchess-piece.is-selected {
+  --piece-scale: 1.06;
+}
+
+.yabuchess-piece.is-targeted {
+  --piece-scale: 1.03;
+}
+
+.yabuchess-piece.is-selected .yabuchess-piece-plinth,
+.yabuchess-piece.is-targeted .yabuchess-piece-plinth {
+  box-shadow: 0 0 0 1px rgba(255, 225, 162, 0.34);
+}
+
+.yabuchess-piece.is-moved .yabuchess-piece-figure {
+  animation: yabuchess-piece-step 280ms steps(3, end);
+}
+
+.yabuchess-piece.is-attacker .yabuchess-piece-figure {
+  animation: yabuchess-piece-strike 620ms steps(4, end) infinite;
+}
+
+.yabuchess-piece.is-defender .yabuchess-piece-figure {
+  animation: yabuchess-piece-fall 620ms steps(4, end) infinite;
+}
+
+.yabuchess-piece--type-p .yabuchess-piece-figure {
+  animation: yabuchess-idle-pawn 1.2s steps(2, end) infinite;
+}
+
+.yabuchess-piece--type-n .yabuchess-piece-figure {
+  animation: yabuchess-idle-knight 1.45s steps(2, end) infinite;
+}
+
+.yabuchess-piece--type-b .yabuchess-piece-figure {
+  animation: yabuchess-idle-bishop 1.8s ease-in-out infinite;
+}
+
+.yabuchess-piece--type-r .yabuchess-piece-figure {
+  animation: yabuchess-idle-rook 1.32s steps(2, end) infinite;
+}
+
+.yabuchess-piece--type-q .yabuchess-piece-figure {
+  animation: yabuchess-idle-queen 1.84s ease-in-out infinite;
+}
+
+.yabuchess-piece--type-k .yabuchess-piece-figure {
+  animation: yabuchess-idle-king 1.6s ease-in-out infinite;
+}
+
+.yabuchess-rubble {
+  position: absolute;
+  bottom: 7%;
+  width: 18%;
+  height: 16%;
+  background:
+    linear-gradient(180deg, rgba(22, 20, 22, 0), rgba(10, 8, 10, 0.95)),
+    radial-gradient(circle at 24% 70%, rgba(255, 176, 90, 0.24), transparent 9%),
+    radial-gradient(circle at 60% 56%, rgba(255, 176, 90, 0.16), transparent 8%);
+  clip-path: polygon(0 100%, 8% 72%, 18% 84%, 26% 58%, 40% 76%, 52% 48%, 70% 82%, 84% 64%, 100% 100%);
+  opacity: 0.74;
+}
+
+.yabuchess-rubble--left {
+  left: 0;
+}
+
+.yabuchess-rubble--right {
+  right: 0;
+  transform: scaleX(-1);
+}
+
+.yabuchess-war-scene,
+.yabuchess-war-promotion {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(720px, calc(100% - 20px));
+  border: 1px solid rgba(184, 145, 92, 0.42);
+  background: rgba(6, 6, 8, 0.92);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 28px 50px -32px rgba(0, 0, 0, 0.98);
+  z-index: 3;
+}
+
+.yabuchess-war-scene {
+  top: 8%;
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border-radius: 22px;
+  animation: yabuchess-war-scene-rise 160ms steps(3, end);
+}
+
+.yabuchess-war-scene-copy p,
+.yabuchess-war-scene-copy h2,
+.yabuchess-war-scene-copy span,
+.yabuchess-war-promotion p,
+.yabuchess-war-promotion h2 {
+  margin: 0;
+}
+
+.yabuchess-war-scene-copy p,
+.yabuchess-war-promotion p {
+  color: #d8b270;
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.yabuchess-war-scene-copy h2,
+.yabuchess-war-promotion h2 {
+  margin-top: 8px;
+  font-size: clamp(1.2rem, 2vw, 1.8rem);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.yabuchess-war-scene-copy span {
+  display: block;
+  margin-top: 8px;
+  color: rgba(244, 231, 203, 0.74);
+}
+
+.yabuchess-war-scene-fighters {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(14px, 4vw, 34px);
+}
+
+.yabuchess-war-scene-impact {
+  width: 120px;
+  height: 14px;
+  background: linear-gradient(90deg, transparent, rgba(255, 222, 151, 0.96), transparent);
+  box-shadow: 0 0 26px rgba(255, 222, 151, 0.36);
+  animation: yabuchess-war-impact 780ms ease-in-out infinite;
+}
+
+.yabuchess-war-promotion {
+  bottom: 18px;
+  padding: 14px;
+  border-radius: 18px;
+}
+
+.yabuchess-war-promotion-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.yabuchess-war-promotion-btn {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  min-height: 108px;
+  padding: 10px 8px;
+}
+
+.yabuchess-bottom-feed {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 12px;
+}
+
+.yabuchess-bottom-panel {
+  min-height: 94px;
+  padding: 12px 14px;
+  border: 1px solid rgba(184, 145, 92, 0.2);
+  background: rgba(8, 8, 10, 0.72);
+}
+
+.yabuchess-bottom-moves {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.yabuchess-bottom-moves > span {
+  color: rgba(244, 231, 203, 0.64);
+}
+
+.yabuchess-bottom-move {
+  display: grid;
+  gap: 4px;
+  min-width: 84px;
+  padding: 6px 8px;
+  border: 1px solid rgba(184, 145, 92, 0.14);
+  background: rgba(255, 255, 255, 0.02);
+  text-transform: uppercase;
+}
+
+.yabuchess-bottom-move strong {
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+}
+
+.yabuchess-bottom-move span,
+.yabuchess-casualties-row span,
+.yabuchess-casualties-row small {
+  color: rgba(244, 231, 203, 0.72);
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.yabuchess-casualties {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.yabuchess-casualties-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.yabuchess-casualties-row > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+@keyframes yabuchess-banner {
+  0%,
+  100% {
+    transform: skewY(0deg);
+  }
+
+  50% {
+    transform: skewY(4deg);
+  }
+}
+
+@keyframes yabuchess-stage-mist {
+  0%,
+  100% {
+    transform: translateX(-2%);
+    opacity: 0.34;
+  }
+
+  50% {
+    transform: translateX(2%);
+    opacity: 0.5;
+  }
+}
+
+@keyframes yabuchess-flame {
+  0%,
+  100% {
+    transform: scaleY(1) translateY(0);
+    opacity: 0.9;
+  }
+
+  50% {
+    transform: scaleY(1.12) translateY(-4px);
+    opacity: 1;
+  }
+}
+
+@keyframes yabuchess-idle-pawn {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes yabuchess-idle-knight {
+  0%,
+  100% {
+    transform: translate(-2px, 0) rotate(-2deg);
+  }
+
+  50% {
+    transform: translate(2px, -4px) rotate(2deg);
+  }
+}
+
+@keyframes yabuchess-idle-bishop {
+  0%,
+  100% {
+    transform: rotate(-1deg);
+  }
+
+  50% {
+    transform: rotate(1.5deg) translateY(-3px);
+  }
+}
+
+@keyframes yabuchess-idle-rook {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-1px) scaleX(1.04);
+  }
+}
+
+@keyframes yabuchess-idle-queen {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-5px) rotate(1deg);
+  }
+}
+
+@keyframes yabuchess-idle-king {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.03) translateY(-2px);
+  }
+}
+
+@keyframes yabuchess-piece-step {
+  0% {
+    transform: translateY(-6px);
+  }
+
+  100% {
+    transform: translateY(0);
+  }
+}
+
+@keyframes yabuchess-piece-strike {
+  0%,
+  100% {
+    transform: translateX(0) scale(1);
+  }
+
+  45% {
+    transform: translateX(14px) scale(1.08);
+  }
+
+  70% {
+    transform: translateX(5px) scale(1.03);
+  }
+}
+
+@keyframes yabuchess-piece-fall {
+  0%,
+  100% {
+    transform: translateX(0) rotate(0deg);
+    opacity: 1;
+  }
+
+  50% {
+    transform: translateX(-12px) rotate(-10deg);
+    opacity: 0.72;
+  }
+}
+
+@keyframes yabuchess-war-scene-rise {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@keyframes yabuchess-war-impact {
+  0%,
+  100% {
+    opacity: 0.22;
+    transform: scaleX(0.72);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scaleX(1.18);
+  }
+}
+
+@media (max-width: 980px) {
+  .yabuchess-screen-hud {
+    grid-template-columns: 1fr;
+    padding: 16px 14px 10px;
+  }
+
+  .yabuchess-screen-status {
+    justify-content: flex-start;
+    padding-top: 0;
+  }
+
+  .yabuchess-screen-actions {
+    justify-content: flex-start;
+  }
+
+  .yabuchess-direct-stage-top {
+    grid-template-columns: 1fr;
+  }
+
+  .yabuchess-war-table {
+    width: min(92vw, 720px);
+  }
+
+  .yabuchess-side-rail {
+    width: 44px;
+    padding-inline: 4px;
+  }
+
+  .yabuchess-side-rail--light {
+    left: 0;
+  }
+
+  .yabuchess-side-rail--dark {
+    right: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .yabuchess-screen-brand h1 {
+    font-size: clamp(1.7rem, 9vw, 2.7rem);
+  }
+
+  .yabuchess-direct-stage {
+    padding: 0 8px 10px;
+  }
+
+  .yabuchess-war-banner {
+    min-height: 46px;
+    padding: 8px 10px;
+  }
+
+  .yabuchess-table-area {
+    min-height: calc(100dvh - 250px);
+  }
+
+  .yabuchess-war-table {
+    width: min(98vw, 520px);
+    transform: perspective(1100px) rotateX(9deg);
+  }
+
+  .yabuchess-war-ticker {
+    top: 2px;
+    width: calc(100% - 80px);
+    gap: 6px;
+  }
+
+  .yabuchess-war-ticker-empty,
+  .yabuchess-war-ticker-item {
+    min-height: 24px;
+    padding: 4px 8px;
+    font-size: 0.56rem;
+  }
+
+  .yabuchess-war-ticker-item strong {
+    font-size: 0.62rem;
+  }
+
+  .yabuchess-war-ticker-item small {
+    display: none;
+  }
+
+  .yabuchess-side-rail {
+    top: 34px;
+    bottom: 8px;
+    width: 34px;
+    gap: 6px;
+    padding: 8px 2px;
+  }
+
+  .yabuchess-side-rail-title {
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    justify-self: center;
+    font-size: 0.5rem;
+  }
+
+  .yabuchess-side-rail-pieces {
+    gap: 4px;
+  }
+
+  .yabuchess-board-frame {
+    padding: 10px;
+  }
+
+  .yabuchess-war-scene {
+    top: 10px;
+    width: calc(100% - 12px);
+    padding: 12px;
+  }
+
+  .yabuchess-piece--cinematic {
+    width: 88px;
+  }
+
+  .yabuchess-war-scene-impact {
+    width: 68px;
+  }
+
+  .yabuchess-war-promotion {
+    width: calc(100% - 12px);
+  }
+
+  .yabuchess-war-promotion-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @keyframes yabubird-loader {
   0%,
   100% {

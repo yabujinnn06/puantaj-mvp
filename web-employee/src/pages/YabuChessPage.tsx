@@ -5,13 +5,12 @@ import { Chess, type Color, type Move, type PieceSymbol, type Square } from 'che
 type PieceColor = Color
 type PieceKind = PieceSymbol
 type BoardSquare = Square
+type GameMove = Move
 
 interface PieceState {
   type: PieceKind
   color: PieceColor
 }
-
-type GameMove = Move
 
 interface CaptureCinematic {
   id: string
@@ -32,15 +31,6 @@ const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] as const
 const RANKS = ['8', '7', '6', '5', '4', '3', '2', '1'] as const
 const PROMOTION_CHOICES: PieceKind[] = ['q', 'r', 'b', 'n']
 
-const PIECE_SIGILS: Record<PieceKind, string> = {
-  p: 'P',
-  n: 'N',
-  b: 'B',
-  r: 'R',
-  q: 'Q',
-  k: 'K',
-}
-
 const PIECE_NAMES: Record<PieceKind, string> = {
   p: 'Piyon',
   n: 'At',
@@ -56,12 +46,21 @@ const FACTION_NAMES: Record<PieceColor, string> = {
 }
 
 const CAPTURE_TITLES: Record<PieceKind, string> = {
-  p: 'Piyon Baskini',
+  p: 'Piyon Darbesi',
   n: 'At Hucumu',
-  b: 'Fil Laneti',
-  r: 'Kale Darbesi',
+  b: 'Fil Kehaneti',
+  r: 'Kale Ezisi',
   q: 'Vezir Firtinasi',
   k: 'Sah Hukumru',
+}
+
+const PIECE_BATTLE_COPY: Record<PieceKind, string> = {
+  p: 'Mizrak savruldu, kiliclar carpisti.',
+  n: 'Binici ileri atildi, toz bulutu koptu.',
+  b: 'Runeler yandi, buyu savasi koptu.',
+  r: 'Zirhli muhafiz kaplandi ve ezdi.',
+  q: 'Pelerin savruldu, son vurus geldi.',
+  k: 'Tahtin iradesi savasi tek hamlede kirdi.',
 }
 
 function getSquareColor(square: BoardSquare): 'light' | 'dark' {
@@ -98,23 +97,25 @@ function getStatusText(game: Chess): string {
     return `MAT. ${winner} savasi kazandi.`
   }
   if (game.isDraw()) {
-    return 'Savasta denge kuruldu.'
+    return 'Tahta sustu. Savas dengede kaldi.'
   }
   const currentFaction = FACTION_NAMES[game.turn() as PieceColor]
   if (game.isCheck()) {
-    return `${currentFaction} sah cekildi.`
+    return `${currentFaction} sah cekti.`
   }
   return `Sira ${currentFaction}.`
 }
 
 function YabuChessPiece({
   piece,
+  size = 'board',
   isSelected,
   isTargeted,
   isMoved,
   cinematicRole,
 }: {
   piece: PieceState
+  size?: 'board' | 'cinematic' | 'grave'
   isSelected?: boolean
   isTargeted?: boolean
   isMoved?: boolean
@@ -126,6 +127,7 @@ function YabuChessPiece({
         'yabuchess-piece',
         `yabuchess-piece--side-${piece.color}`,
         `yabuchess-piece--type-${piece.type}`,
+        `yabuchess-piece--${size}`,
         isSelected ? 'is-selected' : '',
         isTargeted ? 'is-targeted' : '',
         isMoved ? 'is-moved' : '',
@@ -135,9 +137,22 @@ function YabuChessPiece({
         .join(' ')}
       aria-hidden="true"
     >
-      <span className="yabuchess-piece-aura" />
-      <span className="yabuchess-piece-shell">
-        <span className="yabuchess-piece-glyph">{PIECE_SIGILS[piece.type]}</span>
+      <span className="yabuchess-piece-shadow" />
+      <span className="yabuchess-piece-plinth" />
+      <span className="yabuchess-piece-figure">
+        <span className="yabuchess-piece-cape" />
+        <span className="yabuchess-piece-torso" />
+        <span className="yabuchess-piece-arm yabuchess-piece-arm--left" />
+        <span className="yabuchess-piece-arm yabuchess-piece-arm--right" />
+        <span className="yabuchess-piece-head" />
+        <span className="yabuchess-piece-eye yabuchess-piece-eye--left" />
+        <span className="yabuchess-piece-eye yabuchess-piece-eye--right" />
+        <span className="yabuchess-piece-crown" />
+        <span className="yabuchess-piece-hat" />
+        <span className="yabuchess-piece-horns" />
+        <span className="yabuchess-piece-weapon" />
+        <span className="yabuchess-piece-shield" />
+        <span className="yabuchess-piece-mount" />
       </span>
     </span>
   )
@@ -159,6 +174,7 @@ export function YabuChessPage() {
   const statusText = useMemo(() => getStatusText(game), [positionFen, game])
   const moveCount = history.length
   const latestMove = history.at(-1) ?? null
+  const recentMoves = history.slice(-4).reverse()
   const fallenLight = useMemo(
     () =>
       history
@@ -180,7 +196,7 @@ export function YabuChessPage() {
     }
     const timerId = window.setTimeout(() => {
       setCaptureCinematic(null)
-    }, 1250)
+    }, 1680)
     return () => {
       window.clearTimeout(timerId)
     }
@@ -275,53 +291,108 @@ export function YabuChessPage() {
   }
 
   return (
-    <main className="yabuchess-page">
-      <section className="yabuchess-shell">
-        <div className="yabuchess-sky" aria-hidden="true">
-          <span className="yabuchess-moon" />
-          <span className="yabuchess-tower yabuchess-tower--left" />
-          <span className="yabuchess-tower yabuchess-tower--right" />
-          <span className="yabuchess-mist yabuchess-mist--one" />
-          <span className="yabuchess-mist yabuchess-mist--two" />
-          <span className="yabuchess-embers" />
+    <main className="yabuchess-stage-page">
+      <section className="yabuchess-stage-shell">
+        <div className="yabuchess-world" aria-hidden="true">
+          <span className="yabuchess-world-moon" />
+          <span className="yabuchess-world-ridge yabuchess-world-ridge--back" />
+          <span className="yabuchess-world-ridge yabuchess-world-ridge--front" />
+          <span className="yabuchess-world-tower yabuchess-world-tower--left" />
+          <span className="yabuchess-world-tower yabuchess-world-tower--right" />
+          <span className="yabuchess-world-banner yabuchess-world-banner--left" />
+          <span className="yabuchess-world-banner yabuchess-world-banner--right" />
+          <span className="yabuchess-world-mist yabuchess-world-mist--one" />
+          <span className="yabuchess-world-mist yabuchess-world-mist--two" />
+          <span className="yabuchess-world-flame yabuchess-world-flame--left" />
+          <span className="yabuchess-world-flame yabuchess-world-flame--right" />
         </div>
 
-        <header className="yabuchess-header">
-          <div className="yabuchess-header-copy">
-            <p className="yabuchess-kicker">YABU CLUB / WAR TABLE</p>
+        <div className="yabuchess-screen-hud">
+          <div className="yabuchess-screen-brand">
+            <p>WAR TABLE</p>
             <h1>YABU CHESS</h1>
-            <p className="yabuchess-subtitle">
-              Siyah beyaz tahtada, kul tepelerinin arasinda kurulan savas masasi.
-            </p>
           </div>
-          <div className="yabuchess-header-actions">
-            <button type="button" className="yabuchess-chip-btn" onClick={undoMove}>
-              GERI AL
-            </button>
-            <button type="button" className="yabuchess-chip-btn" onClick={resetBattle}>
-              YENI SAVAS
-            </button>
-            <button type="button" className="yabuchess-chip-btn" onClick={() => navigate('/')}>
+          <div className="yabuchess-screen-status">
+            <span>{statusText}</span>
+            <span>{latestMove ? `SON ${latestMove.san}` : 'ILK HAMLE BEKLIYOR'}</span>
+            <span>{`HAMLE ${Math.max(1, Math.ceil(moveCount / 2))}`}</span>
+          </div>
+          <div className="yabuchess-screen-actions">
+            <button type="button" className="yabuchess-screen-btn" onClick={() => navigate('/')}>
               CIK
             </button>
+            <button type="button" className="yabuchess-screen-btn" onClick={undoMove}>
+              GERI
+            </button>
+            <button type="button" className="yabuchess-screen-btn" onClick={resetBattle}>
+              YENI
+            </button>
           </div>
-        </header>
+        </div>
 
-        <section className="yabuchess-war-room">
-          <div className="yabuchess-stage">
-            <div className="yabuchess-stage-bar">
-              <span>{statusText}</span>
-              <span>{latestMove ? `Son hamle ${latestMove.san}` : 'Savasa hazir'}</span>
-              <span>{`Hamle ${Math.max(1, Math.ceil(moveCount / 2))}`}</span>
+        <section className="yabuchess-direct-stage">
+          <div className="yabuchess-direct-stage-top">
+            <div className="yabuchess-war-banner yabuchess-war-banner--light">
+              <span className="yabuchess-war-banner-pill" />
+              <strong>TAC ORDUSU</strong>
+              <small>{fallenLight.length} kayip</small>
+            </div>
+            <button
+              type="button"
+              className={`yabuchess-cinematic-toggle ${cinematicEnabled ? 'is-on' : ''}`}
+              onClick={() => setCinematicEnabled((value) => !value)}
+            >
+              {cinematicEnabled ? 'WAR SCENE ON' : 'WAR SCENE OFF'}
+            </button>
+            <div className="yabuchess-war-banner yabuchess-war-banner--dark">
+              <span className="yabuchess-war-banner-pill" />
+              <strong>GOLGE LEJYONU</strong>
+              <small>{fallenDark.length} kayip</small>
+            </div>
+          </div>
+
+          <div className="yabuchess-table-area">
+            <div className="yabuchess-war-ticker" aria-live="polite">
+              {recentMoves.length === 0 ? (
+                <span className="yabuchess-war-ticker-empty">ILK HAMLE BEKLIYOR</span>
+              ) : (
+                recentMoves.map((move, index) => (
+                  <span key={`${move.san}-${index}`} className="yabuchess-war-ticker-item">
+                    <strong>{move.san}</strong>
+                    <small>{PIECE_NAMES[move.piece]}</small>
+                  </span>
+                ))
+              )}
             </div>
 
-            <div className="yabuchess-board-wrap">
-              <div className="yabuchess-board-legend yabuchess-board-legend--top">
-                {FILES.map((file) => (
-                  <span key={`top-${file}`}>{file.toUpperCase()}</span>
-                ))}
+            <div className="yabuchess-side-rail yabuchess-side-rail--light" aria-label="Tac Ordusu kayiplari">
+              <span className="yabuchess-side-rail-title">TAC</span>
+              <div className="yabuchess-side-rail-pieces">
+                {fallenLight.length === 0 ? (
+                  <small>0</small>
+                ) : (
+                  fallenLight.map((piece) => (
+                    <YabuChessPiece key={piece.id} piece={{ type: piece.type, color: 'w' }} size="grave" />
+                  ))
+                )}
               </div>
+            </div>
 
+            <div className="yabuchess-side-rail yabuchess-side-rail--dark" aria-label="Golge Lejyonu kayiplari">
+              <span className="yabuchess-side-rail-title">GOLGE</span>
+              <div className="yabuchess-side-rail-pieces">
+                {fallenDark.length === 0 ? (
+                  <small>0</small>
+                ) : (
+                  fallenDark.map((piece) => (
+                    <YabuChessPiece key={piece.id} piece={{ type: piece.type, color: 'b' }} size="grave" />
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="yabuchess-table-shadow" aria-hidden="true" />
+            <div className="yabuchess-war-table">
               <div className="yabuchess-board-frame">
                 <div className="yabuchess-board">
                   {RANKS.flatMap((rank) =>
@@ -349,8 +420,8 @@ export function YabuChessPage() {
                             .filter(Boolean)
                             .join(' ')}
                           onClick={() => handleSquarePress(square)}
+                          aria-label={`${square} karesi`}
                         >
-                          <span className="yabuchess-square-coord">{square}</span>
                           {isLegalTarget ? (
                             <span
                               className={[
@@ -375,34 +446,28 @@ export function YabuChessPage() {
                   )}
                 </div>
               </div>
-
-              <div className="yabuchess-board-legend yabuchess-board-legend--bottom">
-                {FILES.map((file) => (
-                  <span key={`bottom-${file}`}>{file.toUpperCase()}</span>
-                ))}
-              </div>
             </div>
 
+            <div className="yabuchess-rubble yabuchess-rubble--left" aria-hidden="true" />
+            <div className="yabuchess-rubble yabuchess-rubble--right" aria-hidden="true" />
+
             {captureCinematic ? (
-              <div className="yabuchess-cinematic" aria-live="polite">
-                <div className="yabuchess-cinematic-copy">
-                  <p className="yabuchess-kicker">{CAPTURE_TITLES[captureCinematic.attackerType]}</p>
+              <div className="yabuchess-war-scene" aria-live="polite">
+                <div className="yabuchess-war-scene-copy">
+                  <p>{CAPTURE_TITLES[captureCinematic.attackerType]}</p>
                   <h2>{captureCinematic.san}</h2>
+                  <span>{PIECE_BATTLE_COPY[captureCinematic.attackerType]}</span>
                 </div>
-                <div className="yabuchess-cinematic-fighters">
+                <div className="yabuchess-war-scene-fighters">
                   <YabuChessPiece
-                    piece={{
-                      type: captureCinematic.attackerType,
-                      color: captureCinematic.attackerColor,
-                    }}
+                    piece={{ type: captureCinematic.attackerType, color: captureCinematic.attackerColor }}
+                    size="cinematic"
                     cinematicRole="attacker"
                   />
-                  <span className="yabuchess-cinematic-slash" aria-hidden="true" />
+                  <span className="yabuchess-war-scene-impact" aria-hidden="true" />
                   <YabuChessPiece
-                    piece={{
-                      type: captureCinematic.defenderType,
-                      color: captureCinematic.defenderColor,
-                    }}
+                    piece={{ type: captureCinematic.defenderType, color: captureCinematic.defenderColor }}
+                    size="cinematic"
                     cinematicRole="defender"
                   />
                 </div>
@@ -410,18 +475,18 @@ export function YabuChessPage() {
             ) : null}
 
             {promotionDraft ? (
-              <div className="yabuchess-promotion">
-                <p className="yabuchess-kicker">YUKSELME</p>
-                <h2>Piyon neye donussun?</h2>
-                <div className="yabuchess-promotion-row">
+              <div className="yabuchess-war-promotion">
+                <p>YUKSELME</p>
+                <h2>Piyon yeni kaderini secsin</h2>
+                <div className="yabuchess-war-promotion-grid">
                   {PROMOTION_CHOICES.map((pieceType) => (
                     <button
                       key={pieceType}
                       type="button"
-                      className="yabuchess-promotion-btn"
+                      className="yabuchess-war-promotion-btn"
                       onClick={() => handlePromotionChoice(pieceType)}
                     >
-                      <YabuChessPiece piece={{ type: pieceType, color: promotionDraft.color }} />
+                      <YabuChessPiece piece={{ type: pieceType, color: promotionDraft.color }} size="grave" />
                       <span>{PIECE_NAMES[pieceType]}</span>
                     </button>
                   ))}
@@ -429,90 +494,6 @@ export function YabuChessPage() {
               </div>
             ) : null}
           </div>
-
-          <aside className="yabuchess-sidebar">
-            <section className="yabuchess-card">
-              <p className="yabuchess-kicker">CEPHELER</p>
-              <div className="yabuchess-faction-row">
-                <div className="yabuchess-faction yabuchess-faction--light">
-                  <span className="yabuchess-faction-dot" />
-                  <strong>Tac Ordusu</strong>
-                  <small>Isik, duzen, sabir</small>
-                </div>
-                <div className="yabuchess-faction yabuchess-faction--dark">
-                  <span className="yabuchess-faction-dot" />
-                  <strong>Golge Lejyonu</strong>
-                  <small>Sis, kor, hucum</small>
-                </div>
-              </div>
-            </section>
-
-            <section className="yabuchess-card">
-              <div className="yabuchess-card-head">
-                <p className="yabuchess-kicker">SAVAS KAYDI</p>
-                <button
-                  type="button"
-                  className={`yabuchess-toggle ${cinematicEnabled ? 'is-on' : ''}`}
-                  onClick={() => setCinematicEnabled((value) => !value)}
-                >
-                  {cinematicEnabled ? 'SINEMATIK ACIK' : 'SINEMATIK KAPALI'}
-                </button>
-              </div>
-              <div className="yabuchess-history">
-                {history.length === 0 ? (
-                  <p>Ilk hamleyi yap ve savasi baslat.</p>
-                ) : (
-                  history
-                    .slice(-8)
-                    .reverse()
-                    .map((move, index) => (
-                      <div key={`${move.san}-${index}`} className="yabuchess-history-row">
-                        <span>{move.san}</span>
-                        <strong>{PIECE_NAMES[move.piece]}</strong>
-                      </div>
-                    ))
-                )}
-              </div>
-            </section>
-
-            <section className="yabuchess-card">
-              <p className="yabuchess-kicker">DUSEN TASLAR</p>
-              <div className="yabuchess-graveyard">
-                <div>
-                  <span className="yabuchess-graveyard-title">Tac Ordusu</span>
-                  <div className="yabuchess-graveyard-row">
-                    {fallenLight.length === 0 ? (
-                      <small>Hic kayip yok</small>
-                    ) : (
-                      fallenLight.map((piece) => (
-                        <YabuChessPiece key={piece.id} piece={{ type: piece.type, color: 'w' }} />
-                      ))
-                    )}
-                  </div>
-                </div>
-                <div>
-                  <span className="yabuchess-graveyard-title">Golge Lejyonu</span>
-                  <div className="yabuchess-graveyard-row">
-                    {fallenDark.length === 0 ? (
-                      <small>Hic kayip yok</small>
-                    ) : (
-                      fallenDark.map((piece) => (
-                        <YabuChessPiece key={piece.id} piece={{ type: piece.type, color: 'b' }} />
-                      ))
-                    )}
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <section className="yabuchess-card">
-              <p className="yabuchess-kicker">NOT</p>
-              <p className="yabuchess-lore">
-                Bu ilk YABU CHESS prototipi. Taslar canli, tahta savas masasi gibi; sonraki adim online oda,
-                seyirci ve daha agir capture animasyonlari olacak.
-              </p>
-            </section>
-          </aside>
         </section>
       </section>
     </main>
