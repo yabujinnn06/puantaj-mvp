@@ -11,10 +11,22 @@ const ROUTE_SOURCE_ID = 'location-monitor-route-source'
 const POINT_SOURCE_ID = 'location-monitor-point-source'
 const ROUTE_SHADOW_LAYER_ID = 'location-monitor-route-shadow-layer'
 const ROUTE_LAYER_ID = 'location-monitor-route-layer'
+const ROUTE_DIRECTION_LAYER_ID = 'location-monitor-route-direction-layer'
 const POINT_LAYER_ID = 'location-monitor-point-layer'
 const POINT_RING_LAYER_ID = 'location-monitor-point-ring-layer'
+const POINT_TIME_LAYER_ID = 'location-monitor-point-time-layer'
 const DENSE_POINT_RADIUS_M = 18
 const NEAR_POINT_RADIUS_M = 42
+const LOCAL_DATE_TIME_FORMAT = new Intl.DateTimeFormat('tr-TR', {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+  timeZone: 'Europe/Istanbul',
+})
+const LOCAL_CLOCK_FORMAT = new Intl.DateTimeFormat('tr-TR', {
+  hour: '2-digit',
+  minute: '2-digit',
+  timeZone: 'Europe/Istanbul',
+})
 
 function isMapRenderingSupported(): boolean {
   return typeof window !== 'undefined' && typeof window.WebGLRenderingContext !== 'undefined'
@@ -38,6 +50,21 @@ function pointSourceLabel(source: LocationMonitorMapPoint['source']): string {
   if (source === 'DEMO_START' || source === 'DEMO_MARK') return 'Demo baslangici'
   if (source === 'DEMO_END') return 'Demo bitisi'
   return 'Konum noktasi'
+}
+
+function parsePointDate(value: string): Date | null {
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+function formatLocalDateTime(value: string): string {
+  const parsed = parsePointDate(value)
+  return parsed ? LOCAL_DATE_TIME_FORMAT.format(parsed) : value
+}
+
+function formatLocalClock(value: string): string {
+  const parsed = parsePointDate(value)
+  return parsed ? LOCAL_CLOCK_FORMAT.format(parsed) : value
 }
 
 function markerBadgeLabel(source: LocationMonitorMapPoint['source']): string {
@@ -233,9 +260,26 @@ function buildPointData(points: LocationMonitorMapPoint[], highlightedPointId: s
         locationStatus: point.location_status ?? '-',
         deviceId: point.device_id == null ? '-' : `#${point.device_id}`,
         ip: point.ip ?? '-',
+        timeLabel: formatLocalClock(point.ts_utc),
         compactScale: point.id === highlightedPointId ? 1.18 : compactScales[index],
         emphasis: point.id === highlightedPointId ? 1 : 0,
         pointOpacity: point.id === highlightedPointId ? 1 : compactScales[index] < 0.7 ? 0.76 : 0.9,
+        showTimeLabel:
+          point.id === highlightedPointId ||
+          index === 0 ||
+          index === sorted.length - 1 ||
+          point.source === 'CHECKIN' ||
+          point.source === 'CHECKOUT' ||
+          point.source === 'DEMO_START' ||
+          point.source === 'DEMO_END' ||
+          (index > 0 &&
+            (distanceMeters(sorted[index - 1], point) >= 85 ||
+              Math.abs(
+                (parsePointDate(point.ts_utc)?.getTime() ?? 0) - (parsePointDate(sorted[index - 1].ts_utc)?.getTime() ?? 0),
+              ) >=
+                25 * 60 * 1000))
+            ? 1
+            : 0,
       },
       geometry: {
         type: 'Point' as const,
@@ -321,6 +365,7 @@ function ensure3DLayers(map: MapLibreMap) {
     map.addSource(ROUTE_SOURCE_ID, {
       type: 'geojson',
       data: buildRouteData([]),
+      lineMetrics: true,
     })
   }
 
@@ -367,16 +412,60 @@ function ensure3DLayers(map: MapLibreMap) {
       },
       paint: {
         'line-color': '#38bdf8',
-        'line-opacity': 0.9,
+        'line-opacity': 0.94,
+        'line-gradient': [
+          'interpolate',
+          ['linear'],
+          ['line-progress'],
+          0,
+          '#f59e0b',
+          0.28,
+          '#38bdf8',
+          0.68,
+          '#22d3ee',
+          1,
+          '#22c55e',
+        ],
         'line-width': [
           'interpolate',
           ['linear'],
           ['zoom'],
           10,
-          3,
+          3.5,
           16,
-          8,
+          8.5,
         ],
+      },
+    })
+  }
+
+  if (!map.getLayer(ROUTE_DIRECTION_LAYER_ID)) {
+    map.addLayer({
+      id: ROUTE_DIRECTION_LAYER_ID,
+      type: 'symbol',
+      source: ROUTE_SOURCE_ID,
+      layout: {
+        'symbol-placement': 'line',
+        'symbol-spacing': 84,
+        'text-field': '›',
+        'text-size': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          10,
+          11,
+          16,
+          15,
+        ] as any,
+        'text-keep-upright': false,
+        'text-ignore-placement': false,
+        'text-allow-overlap': false,
+      },
+      paint: {
+        'text-color': 'rgba(15, 23, 42, 0.62)',
+        'text-halo-color': 'rgba(255,255,255,0.86)',
+        'text-halo-width': 1.2,
+        'text-opacity': 0.92,
       },
     })
   }
@@ -467,6 +556,40 @@ function ensure3DLayers(map: MapLibreMap) {
     })
   }
 
+  if (!map.getLayer(POINT_TIME_LAYER_ID)) {
+    map.addLayer({
+      id: POINT_TIME_LAYER_ID,
+      type: 'symbol',
+      source: POINT_SOURCE_ID,
+      filter: ['==', ['get', 'showTimeLabel'], 1],
+      layout: {
+        'text-field': ['get', 'timeLabel'] as any,
+        'text-size': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          10,
+          10,
+          14,
+          11,
+          17,
+          13,
+        ] as any,
+        'text-offset': [0, 1.35],
+        'text-anchor': 'top',
+        'text-ignore-placement': false,
+        'text-allow-overlap': false,
+        'text-optional': true,
+      },
+      paint: {
+        'text-color': '#0f172a',
+        'text-halo-color': 'rgba(255,255,255,0.94)',
+        'text-halo-width': 1.4,
+        'text-opacity': ['case', ['==', ['get', 'emphasis'], 1], 1, 0.84] as any,
+      },
+    })
+  }
+
   if (map.getLayer('building-3d')) {
     map.setLayoutProperty('building-3d', 'visibility', 'visible')
   }
@@ -479,7 +602,7 @@ function popupHtml(feature: MapGeoJSONFeature): string {
     typeof properties.source === 'string'
       ? pointSourceLabel(properties.source as LocationMonitorMapPoint['source'])
       : '-'
-  const timestamp = typeof properties.timestamp === 'string' ? properties.timestamp : '-'
+  const timestamp = typeof properties.timestamp === 'string' ? formatLocalDateTime(properties.timestamp) : '-'
   const accuracy = typeof properties.accuracy === 'string' ? properties.accuracy : '-'
   const locationStatus = typeof properties.locationStatus === 'string' ? properties.locationStatus : '-'
   const deviceId = typeof properties.deviceId === 'string' ? properties.deviceId : '-'
@@ -503,7 +626,7 @@ function popupHtmlForPoint(point: LocationMonitorMapPoint): string {
     `<strong style="display:block;font-size:13px;margin-bottom:4px;">${point.label}</strong>`,
     `<div style="font-size:12px;line-height:1.45;">`,
     `<div><strong>Tip:</strong> ${pointSourceLabel(point.source)}</div>`,
-    `<div><strong>Zaman:</strong> ${point.ts_utc}</div>`,
+    `<div><strong>Zaman:</strong> ${formatLocalDateTime(point.ts_utc)}</div>`,
     `<div><strong>Dogruluk:</strong> ${point.accuracy_m == null ? '-' : `${Math.round(point.accuracy_m)} m`}</div>`,
     `<div><strong>Durum:</strong> ${point.location_status ?? '-'}</div>`,
     `<div><strong>Cihaz:</strong> ${point.device_id == null ? '-' : `#${point.device_id}`}</div>`,
