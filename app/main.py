@@ -124,9 +124,9 @@ def _build_csp_header_value() -> str:
             "form-action 'self'",
             "script-src 'self'",
             "style-src 'self' 'unsafe-inline'",
-            "img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org",
-            "connect-src 'self' https://nominatim.openstreetmap.org https://*.tile.openstreetmap.org",
-            "font-src 'self' data:",
+            "img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://tiles.openfreemap.org",
+            "connect-src 'self' https://nominatim.openstreetmap.org https://*.tile.openstreetmap.org https://tiles.openfreemap.org",
+            "font-src 'self' data: https://tiles.openfreemap.org",
             "worker-src 'self' blob:",
             "manifest-src 'self'",
         )
