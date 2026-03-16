@@ -50,6 +50,7 @@ type PointMetricsResult = {
 
 const STABLE_3D_STYLE: StyleSpecification = {
   version: 8,
+  glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
   sources: {
     openmaptiles: {
       type: 'vector',
@@ -228,6 +229,86 @@ const STABLE_3D_STYLE: StyleSpecification = {
       paint: {
         'line-color': ['interpolate', ['linear'], ['zoom'], 5, 'hsl(26,87%,62%)', 6, '#fc8'],
         'line-width': ['interpolate', ['exponential', 1.2], ['zoom'], 5, 0, 7, 1, 20, 18],
+      },
+    },
+    {
+      id: 'road-label-major',
+      type: 'symbol',
+      source: 'openmaptiles',
+      'source-layer': 'transportation_name',
+      minzoom: 12,
+      filter: ['match', ['get', 'class'], ['motorway', 'trunk', 'primary', 'secondary', 'tertiary'], true, false],
+      layout: {
+        'symbol-placement': 'line',
+        'text-field': ['coalesce', ['get', 'name:tr'], ['get', 'name'], ['get', 'name_en']] as any,
+        'text-font': ['Noto Sans Regular'],
+        'text-size': ['interpolate', ['linear'], ['zoom'], 12, 10.5, 16, 13] as any,
+        'text-rotation-alignment': 'map',
+        'text-letter-spacing': 0.02,
+      },
+      paint: {
+        'text-color': '#475569',
+        'text-halo-color': 'rgba(248,244,240,0.94)',
+        'text-halo-width': 1.2,
+      },
+    },
+    {
+      id: 'road-label-minor',
+      type: 'symbol',
+      source: 'openmaptiles',
+      'source-layer': 'transportation_name',
+      minzoom: 13,
+      filter: ['match', ['get', 'class'], ['minor', 'path', 'pedestrian'], true, false],
+      layout: {
+        'symbol-placement': 'line',
+        'text-field': ['coalesce', ['get', 'name:tr'], ['get', 'name'], ['get', 'name_en']] as any,
+        'text-font': ['Noto Sans Regular'],
+        'text-size': ['interpolate', ['linear'], ['zoom'], 13, 10, 17, 12] as any,
+        'text-rotation-alignment': 'map',
+      },
+      paint: {
+        'text-color': '#64748b',
+        'text-halo-color': 'rgba(248,244,240,0.95)',
+        'text-halo-width': 1.15,
+      },
+    },
+    {
+      id: 'place-label-local',
+      type: 'symbol',
+      source: 'openmaptiles',
+      'source-layer': 'place',
+      minzoom: 10,
+      filter: ['match', ['get', 'class'], ['suburb', 'quarter', 'neighbourhood', 'hamlet', 'village'], true, false],
+      layout: {
+        'text-field': ['coalesce', ['get', 'name:tr'], ['get', 'name'], ['get', 'name_en']] as any,
+        'text-font': ['Noto Sans Italic'],
+        'text-size': ['interpolate', ['linear'], ['zoom'], 10, 10, 15, 12] as any,
+        'text-max-width': 10,
+        'text-letter-spacing': 0.03,
+      },
+      paint: {
+        'text-color': '#1e293b',
+        'text-halo-color': 'rgba(255,255,255,0.96)',
+        'text-halo-width': 1.25,
+      },
+    },
+    {
+      id: 'place-label-city',
+      type: 'symbol',
+      source: 'openmaptiles',
+      'source-layer': 'place',
+      minzoom: 6,
+      filter: ['match', ['get', 'class'], ['city', 'town'], true, false],
+      layout: {
+        'text-field': ['coalesce', ['get', 'name:tr'], ['get', 'name'], ['get', 'name_en']] as any,
+        'text-font': ['Noto Sans Bold'],
+        'text-size': ['interpolate', ['linear'], ['zoom'], 6, 11, 12, 16] as any,
+        'text-max-width': 8,
+      },
+      paint: {
+        'text-color': '#0f172a',
+        'text-halo-color': 'rgba(255,255,255,0.98)',
+        'text-halo-width': 1.4,
       },
     },
     {
