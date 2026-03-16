@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 
@@ -135,6 +135,7 @@ export function LocationMonitorPage() {
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
   const [focusedPointId, setFocusedPointId] = useState<string | null>(null)
   const deferredEmployeeQuery = useDeferredValue(employeeQuery)
+  const hasInitialEmployeeSelectionRef = useRef(false)
 
   const employeesQuery = useQuery({
     queryKey: ['employees', 'location-monitor'],
@@ -183,6 +184,14 @@ export function LocationMonitorPage() {
       }
       return
     }
+    if (!selectedEmployeeId) {
+      if (!hasInitialEmployeeSelectionRef.current) {
+        hasInitialEmployeeSelectionRef.current = true
+        setSelectedEmployeeId(String(filteredEmployees[0].id))
+      }
+      return
+    }
+    hasInitialEmployeeSelectionRef.current = true
     const stillVisible = filteredEmployees.some((employee) => String(employee.id) === selectedEmployeeId)
     if (!stillVisible) {
       setSelectedEmployeeId(String(filteredEmployees[0].id))
