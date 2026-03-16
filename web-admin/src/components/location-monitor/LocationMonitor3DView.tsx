@@ -1,127 +1,361 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
+import maplibregl from 'maplibre-gl'
+import type { GeoJSONSource, Map as MapLibreMap, MapGeoJSONFeature } from 'maplibre-gl'
+import 'maplibre-gl/dist/maplibre-gl.css'
 
-import type { LocationMonitorMapPoint, LocationMonitorPointSource } from '../../types/api'
+import type { LocationMonitorMapPoint } from '../../types/api'
 
-function sourceColor(source: LocationMonitorPointSource): string {
-  if (source === 'CHECKIN') return '#22c55e'
-  if (source === 'CHECKOUT') return '#f43f5e'
-  if (source === 'APP_OPEN') return '#f59e0b'
-  if (source === 'APP_CLOSE') return '#818cf8'
-  return '#38bdf8'
+const DEFAULT_CENTER: [number, number] = [28.97953, 41.015137]
+const STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty'
+const ROUTE_SOURCE_ID = 'location-monitor-route-source'
+const POINT_SOURCE_ID = 'location-monitor-point-source'
+const ROUTE_SHADOW_LAYER_ID = 'location-monitor-route-shadow-layer'
+const ROUTE_LAYER_ID = 'location-monitor-route-layer'
+const POINT_LAYER_ID = 'location-monitor-point-layer'
+const POINT_RING_LAYER_ID = 'location-monitor-point-ring-layer'
+
+function isMapRenderingSupported(): boolean {
+  return typeof window !== 'undefined' && typeof window.WebGLRenderingContext !== 'undefined'
 }
 
-function projectPoint(value: number, min: number, max: number): number {
-  if (max <= min) {
-    return 0.5
+function buildRouteData(points: LocationMonitorMapPoint[]) {
+  const sorted = [...points].sort((left, right) => new Date(left.ts_utc).getTime() - new Date(right.ts_utc).getTime())
+  if (sorted.length < 2) {
+    return {
+      type: 'FeatureCollection' as const,
+      features: [],
+    }
   }
-  return (value - min) / (max - min)
+
+  return {
+    type: 'FeatureCollection' as const,
+    features: [
+      {
+        type: 'Feature' as const,
+        properties: {},
+        geometry: {
+          type: 'LineString' as const,
+          coordinates: sorted.map((point) => [point.lon, point.lat]),
+        },
+      },
+    ],
+  }
+}
+
+function buildPointData(points: LocationMonitorMapPoint[]) {
+  const sorted = [...points].sort((left, right) => new Date(left.ts_utc).getTime() - new Date(right.ts_utc).getTime())
+  return {
+    type: 'FeatureCollection' as const,
+    features: sorted.map((point) => ({
+      type: 'Feature' as const,
+      properties: {
+        id: point.id,
+        label: point.label,
+        source: point.source,
+        timestamp: point.ts_utc,
+        accuracy: point.accuracy_m == null ? '-' : `${Math.round(point.accuracy_m)} m`,
+        locationStatus: point.location_status ?? '-',
+        deviceId: point.device_id == null ? '-' : `#${point.device_id}`,
+        ip: point.ip ?? '-',
+      },
+      geometry: {
+        type: 'Point' as const,
+        coordinates: [point.lon, point.lat],
+      },
+    })),
+  }
+}
+
+function fitToPoints(map: MapLibreMap, points: LocationMonitorMapPoint[]) {
+  if (!points.length) {
+    map.easeTo({
+      center: DEFAULT_CENTER,
+      zoom: 10.8,
+      pitch: 62,
+      bearing: -18,
+      duration: 0,
+    })
+    return
+  }
+
+  if (points.length === 1) {
+    map.easeTo({
+      center: [points[0].lon, points[0].lat],
+      zoom: 16.2,
+      pitch: 62,
+      bearing: -18,
+      duration: 0,
+    })
+    return
+  }
+
+  const bounds = new maplibregl.LngLatBounds()
+  for (const point of points) {
+    bounds.extend([point.lon, point.lat])
+  }
+
+  map.fitBounds(bounds, {
+    padding: { top: 60, right: 48, bottom: 60, left: 48 },
+    maxZoom: 16.2,
+    duration: 0,
+  })
+
+  map.easeTo({
+    pitch: 62,
+    bearing: -18,
+    duration: 0,
+  })
+}
+
+function ensure3DLayers(map: MapLibreMap) {
+  if (!map.getSource(ROUTE_SOURCE_ID)) {
+    map.addSource(ROUTE_SOURCE_ID, {
+      type: 'geojson',
+      data: buildRouteData([]),
+    })
+  }
+
+  if (!map.getSource(POINT_SOURCE_ID)) {
+    map.addSource(POINT_SOURCE_ID, {
+      type: 'geojson',
+      data: buildPointData([]),
+    })
+  }
+
+  if (!map.getLayer(ROUTE_SHADOW_LAYER_ID)) {
+    map.addLayer({
+      id: ROUTE_SHADOW_LAYER_ID,
+      type: 'line',
+      source: ROUTE_SOURCE_ID,
+      layout: {
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': '#020617',
+        'line-opacity': 0.26,
+        'line-width': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          10,
+          5,
+          16,
+          12,
+        ],
+      },
+    })
+  }
+
+  if (!map.getLayer(ROUTE_LAYER_ID)) {
+    map.addLayer({
+      id: ROUTE_LAYER_ID,
+      type: 'line',
+      source: ROUTE_SOURCE_ID,
+      layout: {
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': '#38bdf8',
+        'line-opacity': 0.9,
+        'line-width': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          10,
+          3,
+          16,
+          8,
+        ],
+      },
+    })
+  }
+
+  if (!map.getLayer(POINT_RING_LAYER_ID)) {
+    map.addLayer({
+      id: POINT_RING_LAYER_ID,
+      type: 'circle',
+      source: POINT_SOURCE_ID,
+      paint: {
+        'circle-radius': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          10,
+          7,
+          16,
+          12,
+        ],
+        'circle-color': '#ffffff',
+        'circle-opacity': 0.38,
+      },
+    })
+  }
+
+  if (!map.getLayer(POINT_LAYER_ID)) {
+    map.addLayer({
+      id: POINT_LAYER_ID,
+      type: 'circle',
+      source: POINT_SOURCE_ID,
+      paint: {
+        'circle-radius': [
+          'match',
+          ['get', 'source'],
+          'CHECKIN',
+          6.5,
+          'CHECKOUT',
+          7.5,
+          'APP_OPEN',
+          6,
+          'APP_CLOSE',
+          6,
+          6.5,
+        ],
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#ffffff',
+        'circle-color': [
+          'match',
+          ['get', 'source'],
+          'CHECKIN',
+          '#22c55e',
+          'CHECKOUT',
+          '#f43f5e',
+          'APP_OPEN',
+          '#f59e0b',
+          'APP_CLOSE',
+          '#818cf8',
+          '#38bdf8',
+        ],
+      },
+    })
+  }
+
+  if (map.getLayer('building-3d')) {
+    map.setLayoutProperty('building-3d', 'visibility', 'visible')
+  }
+}
+
+function popupHtml(feature: MapGeoJSONFeature): string {
+  const properties = feature.properties ?? {}
+  const label = typeof properties.label === 'string' ? properties.label : 'Konum noktasi'
+  const source = typeof properties.source === 'string' ? properties.source : '-'
+  const timestamp = typeof properties.timestamp === 'string' ? properties.timestamp : '-'
+  const accuracy = typeof properties.accuracy === 'string' ? properties.accuracy : '-'
+  const locationStatus = typeof properties.locationStatus === 'string' ? properties.locationStatus : '-'
+  const deviceId = typeof properties.deviceId === 'string' ? properties.deviceId : '-'
+  const ip = typeof properties.ip === 'string' ? properties.ip : '-'
+
+  return [
+    `<strong style="display:block;font-size:13px;margin-bottom:4px;">${label}</strong>`,
+    `<div style="font-size:12px;line-height:1.45;">`,
+    `<div><strong>Tip:</strong> ${source}</div>`,
+    `<div><strong>Zaman:</strong> ${timestamp}</div>`,
+    `<div><strong>Dogruluk:</strong> ${accuracy}</div>`,
+    `<div><strong>Durum:</strong> ${locationStatus}</div>`,
+    `<div><strong>Cihaz:</strong> ${deviceId}</div>`,
+    `<div><strong>IP:</strong> ${ip}</div>`,
+    `</div>`,
+  ].join('')
 }
 
 export function LocationMonitor3DView({ points }: { points: LocationMonitorMapPoint[] }) {
-  const scene = useMemo(() => {
-    if (!points.length) {
-      return null
-    }
-    const sorted = [...points].sort((left, right) => new Date(left.ts_utc).getTime() - new Date(right.ts_utc).getTime())
-    const lats = sorted.map((item) => item.lat)
-    const lons = sorted.map((item) => item.lon)
-    const minLat = Math.min(...lats)
-    const maxLat = Math.max(...lats)
-    const minLon = Math.min(...lons)
-    const maxLon = Math.max(...lons)
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const mapRef = useRef<MapLibreMap | null>(null)
+  const mapLoadedRef = useRef(false)
+  const isSupported = isMapRenderingSupported()
+  const orderedPoints = useMemo(
+    () => [...points].sort((left, right) => new Date(left.ts_utc).getTime() - new Date(right.ts_utc).getTime()),
+    [points],
+  )
 
-    const projected = sorted.map((point, index) => {
-      const xNorm = projectPoint(point.lon, minLon, maxLon)
-      const yNorm = projectPoint(point.lat, minLat, maxLat)
-      const planeX = 88 + xNorm * 430
-      const planeY = 250 - yNorm * 150
-      const height = 36 + index * 14
-      const isoX = planeX - planeY * 0.38
-      const isoY = planeY * 0.48
-      return {
-        point,
-        index,
-        isoX,
-        isoY,
-        height,
-      }
+  useEffect(() => {
+    if (!containerRef.current || mapRef.current || !isSupported) {
+      return
+    }
+
+    const map = new maplibregl.Map({
+      container: containerRef.current,
+      style: STYLE_URL,
+      center: DEFAULT_CENTER,
+      zoom: 10.8,
+      pitch: 62,
+      bearing: -18,
     })
 
-    return projected
-  }, [points])
+    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right')
+    mapRef.current = map
 
-  if (!scene?.length) {
+    const clickHandler = (event: maplibregl.MapMouseEvent & { features?: MapGeoJSONFeature[] }) => {
+      const feature = event.features?.[0]
+      if (!feature || feature.geometry.type !== 'Point') {
+        return
+      }
+      const coordinates = feature.geometry.coordinates as [number, number]
+      new maplibregl.Popup({
+        closeButton: false,
+        offset: 18,
+        maxWidth: '320px',
+      })
+        .setLngLat(coordinates)
+        .setHTML(popupHtml(feature))
+        .addTo(map)
+    }
+
+    const enterHandler = () => {
+      map.getCanvas().style.cursor = 'pointer'
+    }
+
+    const leaveHandler = () => {
+      map.getCanvas().style.cursor = ''
+    }
+
+    map.on('load', () => {
+      mapLoadedRef.current = true
+      ensure3DLayers(map)
+      map.on('click', POINT_LAYER_ID, clickHandler)
+      map.on('mouseenter', POINT_LAYER_ID, enterHandler)
+      map.on('mouseleave', POINT_LAYER_ID, leaveHandler)
+      fitToPoints(map, orderedPoints)
+    })
+
+    return () => {
+      mapLoadedRef.current = false
+      map.remove()
+      mapRef.current = null
+    }
+  }, [isSupported, orderedPoints])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapLoadedRef.current) {
+      return
+    }
+
+    ensure3DLayers(map)
+
+    const routeSource = map.getSource(ROUTE_SOURCE_ID) as GeoJSONSource | undefined
+    routeSource?.setData(buildRouteData(orderedPoints))
+
+    const pointSource = map.getSource(POINT_SOURCE_ID) as GeoJSONSource | undefined
+    pointSource?.setData(buildPointData(orderedPoints))
+
+    fitToPoints(map, orderedPoints)
+  }, [orderedPoints])
+
+  if (!isSupported) {
     return (
-      <div className="flex h-[26rem] items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-950/95 px-6 text-sm text-slate-300">
-        Secili aralikta 3D iz olusturacak konum kaydi yok.
+      <div className="flex h-[26rem] items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 text-sm text-slate-500">
+        Bu tarayicida WebGL tabanli 3D harita desteklenmiyor.
       </div>
     )
   }
 
-  const polyline = scene.map((item) => `${item.isoX},${item.isoY - item.height}`).join(' ')
-
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 px-3 py-3 text-slate-100 shadow-2xl">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_36%),linear-gradient(180deg,rgba(15,23,42,0.15),rgba(2,6,23,0.88))]" />
-      <div className="absolute inset-x-0 bottom-0 h-28 bg-[linear-gradient(180deg,rgba(15,23,42,0),rgba(14,116,144,0.08)),repeating-linear-gradient(90deg,rgba(148,163,184,0.10)_0,rgba(148,163,184,0.10)_1px,transparent_1px,transparent_46px),repeating-linear-gradient(180deg,rgba(148,163,184,0.08)_0,rgba(148,163,184,0.08)_1px,transparent_1px,transparent_26px)]" />
-      <svg viewBox="0 0 560 300" className="relative h-[26rem] w-full">
-        <polyline
-          points={polyline}
-          fill="none"
-          stroke="rgba(226,232,240,0.32)"
-          strokeWidth="3"
-          strokeDasharray="7 7"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        {scene.map((item) => {
-          const color = sourceColor(item.point.source)
-          return (
-            <g key={item.point.id}>
-              <line
-                x1={item.isoX}
-                y1={item.isoY}
-                x2={item.isoX}
-                y2={item.isoY - item.height}
-                stroke={color}
-                strokeOpacity="0.95"
-                strokeWidth="5"
-                strokeLinecap="round"
-              />
-              <ellipse
-                cx={item.isoX}
-                cy={item.isoY}
-                rx="12"
-                ry="5"
-                fill={color}
-                fillOpacity="0.22"
-              />
-              <circle
-                cx={item.isoX}
-                cy={item.isoY - item.height}
-                r="9"
-                fill={color}
-                stroke="rgba(255,255,255,0.75)"
-                strokeWidth="2"
-              />
-              <text
-                x={item.isoX + 12}
-                y={item.isoY - item.height - 10}
-                fill="rgba(226,232,240,0.94)"
-                fontSize="11"
-                fontWeight="700"
-              >
-                {item.point.source}
-              </text>
-            </g>
-          )
-        })}
-      </svg>
-      <div className="relative mt-2 flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">
-        <span className="rounded-full border border-emerald-400/30 bg-emerald-500/10 px-3 py-1">Check-in</span>
-        <span className="rounded-full border border-rose-400/30 bg-rose-500/10 px-3 py-1">Check-out</span>
-        <span className="rounded-full border border-amber-400/30 bg-amber-500/10 px-3 py-1">App Open</span>
-        <span className="rounded-full border border-indigo-400/30 bg-indigo-500/10 px-3 py-1">App Close</span>
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 shadow-sm">
+      <div ref={containerRef} className="h-[26rem] w-full" />
+      <div className="border-t border-slate-800 bg-slate-950/95 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">
+        OpenFreeMap Liberty stili uzerinde gercek 3D bina katmani, rota izi ve olay noktalarini gosterir.
       </div>
     </div>
   )

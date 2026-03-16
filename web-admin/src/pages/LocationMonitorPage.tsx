@@ -33,8 +33,33 @@ const DAY_FORMAT = new Intl.DateTimeFormat('tr-TR', {
   month: 'short',
 })
 
+const INPUT_DAY_FORMAT = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Europe/Istanbul',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+})
+
 const DATE_ONLY_RE = /^(\d{4})-(\d{2})-(\d{2})$/
 const DATETIME_NO_TZ_RE = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?$/
+const DAY_MS = 24 * 60 * 60 * 1000
+const MAX_RANGE_DAYS = 120
+
+type DatePresetKey = 'TODAY' | 'YESTERDAY' | 'LAST_3_DAYS' | 'LAST_7_DAYS' | 'THIS_WEEK' | 'THIS_MONTH' | 'CUSTOM'
+
+type DatePresetOption = {
+  key: Exclude<DatePresetKey, 'CUSTOM'>
+  label: string
+}
+
+const DATE_PRESET_OPTIONS: DatePresetOption[] = [
+  { key: 'TODAY', label: 'Bugun' },
+  { key: 'YESTERDAY', label: 'Dun' },
+  { key: 'LAST_3_DAYS', label: 'Son 3 gun' },
+  { key: 'LAST_7_DAYS', label: 'Son 7 gun' },
+  { key: 'THIS_WEEK', label: 'Bu hafta' },
+  { key: 'THIS_MONTH', label: 'Bu ay' },
+]
 
 function parseDateValue(value: string): Date | null {
   const trimmed = value.trim()
@@ -68,6 +93,84 @@ function parseDateValue(value: string): Date | null {
   }
 
   return null
+}
+
+function toInputDate(value: Date): string {
+  return INPUT_DAY_FORMAT.format(value)
+}
+
+function addDays(value: Date, amount: number): Date {
+  const next = new Date(value)
+  next.setDate(next.getDate() + amount)
+  return next
+}
+
+function startOfWeek(value: Date): Date {
+  const next = new Date(value)
+  const day = next.getDay()
+  const offset = day === 0 ? -6 : 1 - day
+  next.setDate(next.getDate() + offset)
+  next.setHours(0, 0, 0, 0)
+  return next
+}
+
+function startOfMonth(value: Date): Date {
+  return new Date(value.getFullYear(), value.getMonth(), 1)
+}
+
+function differenceInDays(start: Date, end: Date): number {
+  const normalizedStart = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+  const normalizedEnd = new Date(end.getFullYear(), end.getMonth(), end.getDate())
+  return Math.round((normalizedEnd.getTime() - normalizedStart.getTime()) / DAY_MS)
+}
+
+function normalizeDateRange(startDate: string, endDate: string): { startDate: string; endDate: string } {
+  const parsedStart = parseDateValue(startDate)
+  const parsedEnd = parseDateValue(endDate)
+  if (!parsedStart || !parsedEnd) {
+    return { startDate, endDate }
+  }
+
+  let normalizedStart = new Date(parsedStart.getFullYear(), parsedStart.getMonth(), parsedStart.getDate())
+  let normalizedEnd = new Date(parsedEnd.getFullYear(), parsedEnd.getMonth(), parsedEnd.getDate())
+
+  if (normalizedStart.getTime() > normalizedEnd.getTime()) {
+    normalizedStart = new Date(normalizedEnd)
+  }
+
+  const rangeDays = differenceInDays(normalizedStart, normalizedEnd) + 1
+  if (rangeDays > MAX_RANGE_DAYS) {
+    normalizedStart = addDays(normalizedEnd, -(MAX_RANGE_DAYS - 1))
+  }
+
+  return {
+    startDate: toInputDate(normalizedStart),
+    endDate: toInputDate(normalizedEnd),
+  }
+}
+
+function resolveDatePresetRange(preset: Exclude<DatePresetKey, 'CUSTOM'>): { startDate: string; endDate: string } {
+  const today = parseDateValue(dateValue(0)) ?? new Date()
+
+  if (preset === 'TODAY') {
+    const value = toInputDate(today)
+    return { startDate: value, endDate: value }
+  }
+  if (preset === 'YESTERDAY') {
+    const yesterday = addDays(today, -1)
+    const value = toInputDate(yesterday)
+    return { startDate: value, endDate: value }
+  }
+  if (preset === 'LAST_3_DAYS') {
+    return normalizeDateRange(toInputDate(addDays(today, -2)), toInputDate(today))
+  }
+  if (preset === 'THIS_WEEK') {
+    return normalizeDateRange(toInputDate(startOfWeek(today)), toInputDate(today))
+  }
+  if (preset === 'THIS_MONTH') {
+    return normalizeDateRange(toInputDate(startOfMonth(today)), toInputDate(today))
+  }
+  return normalizeDateRange(toInputDate(addDays(today, -6)), toInputDate(today))
 }
 
 function formatDateTime(value: string | null): string {
@@ -132,19 +235,29 @@ export function LocationMonitorPage() {
   const [includeInactive, setIncludeInactive] = useState(false)
   const [startDate, setStartDate] = useState(dateValue(-6))
   const [endDate, setEndDate] = useState(dateValue(0))
+  const [activeDatePreset, setActiveDatePreset] = useState<DatePresetKey>('LAST_7_DAYS')
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
   const [focusedPointId, setFocusedPointId] = useState<string | null>(null)
   const deferredEmployeeQuery = useDeferredValue(employeeQuery)
   const hasInitialEmployeeSelectionRef = useRef(false)
 
+  const applyDatePreset = (preset: Exclude<DatePresetKey, 'CUSTOM'>) => {
+    const nextRange = resolveDatePresetRange(preset)
+    setStartDate(nextRange.startDate)
+    setEndDate(nextRange.endDate)
+    setActiveDatePreset(preset)
+  }
+
   const employeesQuery = useQuery({
     queryKey: ['employees', 'location-monitor'],
     queryFn: () => getEmployees({ status: 'all' }),
   })
+
   const regionsQuery = useQuery({
     queryKey: ['regions', 'location-monitor'],
     queryFn: () => getRegions(),
   })
+
   const departmentsQuery = useQuery({
     queryKey: ['departments', 'location-monitor'],
     queryFn: () => getDepartments(),
@@ -198,6 +311,16 @@ export function LocationMonitorPage() {
     }
   }, [filteredEmployees, selectedEmployeeId])
 
+  useEffect(() => {
+    const normalized = normalizeDateRange(startDate, endDate)
+    if (normalized.startDate !== startDate) {
+      setStartDate(normalized.startDate)
+    }
+    if (normalized.endDate !== endDate) {
+      setEndDate(normalized.endDate)
+    }
+  }, [endDate, startDate])
+
   const timelineQuery = useQuery({
     queryKey: ['location-monitor-timeline', selectedEmployeeId, startDate, endDate],
     queryFn: () =>
@@ -245,6 +368,15 @@ export function LocationMonitorPage() {
     return latestAvailablePoint(selectedDayRecord)
   }, [selectedDayRecord, timelineQuery.data?.summary.latest_location])
 
+  const rangeDayCount = useMemo(() => {
+    const parsedStart = parseDateValue(startDate)
+    const parsedEnd = parseDateValue(endDate)
+    if (!parsedStart || !parsedEnd) {
+      return 0
+    }
+    return Math.max(1, differenceInDays(parsedStart, parsedEnd) + 1)
+  }, [endDate, startDate])
+
   return (
     <div className="space-y-6">
       <section className="rounded-3xl border border-slate-200 bg-white px-5 py-5 shadow-sm sm:px-6">
@@ -281,7 +413,7 @@ export function LocationMonitorPage() {
           <article className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="mb-4">
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Filtre Merkezi</p>
-              <h3 className="mt-1 text-lg font-semibold text-slate-900">Ekip ve tarih kapsamı</h3>
+              <h3 className="mt-1 text-lg font-semibold text-slate-900">Ekip ve tarih kapsami</h3>
             </div>
             <div className="space-y-4">
               <EmployeeAutocompleteField
@@ -291,6 +423,7 @@ export function LocationMonitorPage() {
                 onChange={setSelectedEmployeeId}
                 helperText="Secilen kisi icin gun gun konum izi ve mesai akisi gelir."
               />
+
               <label className="block text-sm text-slate-700">
                 Calisan ara
                 <input
@@ -300,6 +433,7 @@ export function LocationMonitorPage() {
                   className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2"
                 />
               </label>
+
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
                 <label className="block text-sm text-slate-700">
                   Bolge
@@ -316,6 +450,7 @@ export function LocationMonitorPage() {
                     ))}
                   </select>
                 </label>
+
                 <label className="block text-sm text-slate-700">
                   Departman
                   <select
@@ -332,27 +467,68 @@ export function LocationMonitorPage() {
                   </select>
                 </label>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-                <label className="block text-sm text-slate-700">
-                  Baslangic
-                  <input
-                    type="date"
-                    value={startDate}
-                    onChange={(event) => setStartDate(event.target.value)}
-                    className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2"
-                  />
-                </label>
-                <label className="block text-sm text-slate-700">
-                  Bitis
-                  <input
-                    type="date"
-                    value={endDate}
-                    min={startDate || undefined}
-                    onChange={(event) => setEndDate(event.target.value)}
-                    className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2"
-                  />
-                </label>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Tarih Araligi</p>
+                    <p className="mt-1 text-sm text-slate-700">
+                      {rangeDayCount} gun secildi, en fazla {MAX_RANGE_DAYS} gun gosterilir.
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600 shadow-sm">
+                    {activeDatePreset === 'CUSTOM' ? 'Ozel aralik' : 'Hazir aralik'}
+                  </span>
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {DATE_PRESET_OPTIONS.map((preset) => (
+                    <button
+                      key={preset.key}
+                      type="button"
+                      onClick={() => applyDatePreset(preset.key)}
+                      className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                        activeDatePreset === preset.key
+                          ? 'border-slate-900 bg-slate-900 text-white'
+                          : 'border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-100'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+                  <label className="block text-sm text-slate-700">
+                    Baslangic
+                    <input
+                      type="date"
+                      value={startDate}
+                      max={endDate || undefined}
+                      onChange={(event) => {
+                        setStartDate(event.target.value)
+                        setActiveDatePreset('CUSTOM')
+                      }}
+                      className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2"
+                    />
+                  </label>
+
+                  <label className="block text-sm text-slate-700">
+                    Bitis
+                    <input
+                      type="date"
+                      value={endDate}
+                      min={startDate || undefined}
+                      onChange={(event) => {
+                        setEndDate(event.target.value)
+                        setActiveDatePreset('CUSTOM')
+                      }}
+                      className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2"
+                    />
+                  </label>
+                </div>
               </div>
+
               <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-700">
                 <input
                   type="checkbox"
@@ -375,6 +551,7 @@ export function LocationMonitorPage() {
                 Canli secim
               </span>
             </div>
+
             <div className="max-h-[34rem] space-y-2 overflow-y-auto pr-1">
               {employeesQuery.isLoading ? (
                 <LoadingBlock label="Calisan listesi yukleniyor..." />
@@ -417,17 +594,15 @@ export function LocationMonitorPage() {
         </aside>
 
         <div className="space-y-6">
-          {timelineQuery.isLoading ? <LoadingBlock label="Konum zamani akisi hazirlaniyor..." /> : null}
-          {timelineQuery.isError ? <ErrorBlock message="Konum izleme verisi alinamadi." /> : null}
+          {timelineQuery.isLoading ? <LoadingBlock label="Log verisi hazirlaniyor..." /> : null}
+          {timelineQuery.isError ? <ErrorBlock message="Log verisi alinamadi." /> : null}
 
           {timelineQuery.data ? (
             <>
               <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
-                      Secili Personel
-                    </p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Secili Personel</p>
                     <h3 className="mt-1 text-2xl font-semibold text-slate-900">
                       {timelineQuery.data.summary.employee.full_name}
                     </h3>
@@ -436,6 +611,7 @@ export function LocationMonitorPage() {
                       {timelineQuery.data.summary.region_name ?? 'Bolge yok'}
                     </p>
                   </div>
+
                   <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     <div className="rounded-2xl bg-slate-950 px-4 py-3 text-white">
                       <span className="text-xs uppercase tracking-[0.18em] text-slate-300">Bugun</span>
@@ -533,11 +709,11 @@ export function LocationMonitorPage() {
                 <article className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
                   <div className="mb-4 flex items-center justify-between gap-3">
                     <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">3D Izleme</p>
-                      <h3 className="mt-1 text-lg font-semibold text-slate-900">Zaman ve hareket derinligi</h3>
+                      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">3D Harita</p>
+                      <h3 className="mt-1 text-lg font-semibold text-slate-900">Gercek sehir dokusu uzerinde hareket izi</h3>
                     </div>
                     <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                      Cok katmanli gorunum
+                      MapLibre 3D
                     </span>
                   </div>
                   <LocationMonitor3DView points={visiblePoints} />

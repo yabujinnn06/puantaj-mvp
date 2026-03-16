@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { z } from 'zod'
 
 import {
@@ -16,11 +16,6 @@ import {
 } from '../api/admin'
 import { parseApiError } from '../api/error'
 import { CopyField } from '../components/CopyField'
-import {
-  EmployeeLiveLocationMap,
-  type EmployeeLiveLocationMapMarker,
-  type EmployeeLiveLocationMapMarkerKind,
-} from '../components/EmployeeLiveLocationMap'
 import { ErrorBlock } from '../components/ErrorBlock'
 import { LoadingBlock } from '../components/LoadingBlock'
 import { MinuteDisplay } from '../components/MinuteDisplay'
@@ -29,7 +24,7 @@ import { PageHeader } from '../components/PageHeader'
 import { Panel } from '../components/Panel'
 import { StatusBadge } from '../components/StatusBadge'
 import { useToast } from '../hooks/useToast'
-import type { EmployeeLiveLocation, LocationStatus, MonthlyEmployeeDay } from '../types/api'
+import type { LocationStatus, MonthlyEmployeeDay } from '../types/api'
 import { buildMonthlyAttendanceInsight, getAttendanceDayType } from '../utils/attendanceInsights'
 import { getFlagMeta } from '../utils/flagDictionary'
 
@@ -117,14 +112,6 @@ function toIstanbulDay(value?: string | null): string | null {
   return istanbulDayFormatter.format(parsed)
 }
 
-function hasDayCoordinates(day: MonthlyEmployeeDay): boolean {
-  return (day.in_lat !== null && day.in_lon !== null) || (day.out_lat !== null && day.out_lon !== null)
-}
-
-function recentLocationMarkerId(item: EmployeeLiveLocation): string {
-  return `recent-${item.ts_utc}-${item.device_id}-${item.event_type}-${item.lat.toFixed(6)}-${item.lon.toFixed(6)}`
-}
-
 const LOCATION_HISTORY_PAGE_SIZE_OPTIONS = [10, 20, 35, 50] as const
 
 export function EmployeeDetailPage() {
@@ -150,8 +137,6 @@ export function EmployeeDetailPage() {
 
   const [selectedYear, setSelectedYear] = useState(String(now.getFullYear()))
   const [selectedMonth, setSelectedMonth] = useState(String(now.getMonth() + 1))
-  const [selectedMapDay, setSelectedMapDay] = useState<string | null>(null)
-  const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null)
   const [locationHistorySearch, setLocationHistorySearch] = useState('')
   const [locationHistoryEventType, setLocationHistoryEventType] = useState<'all' | 'IN' | 'OUT'>('all')
   const [locationHistoryStatus, setLocationHistoryStatus] = useState<'all' | LocationStatus>('all')
@@ -161,13 +146,6 @@ export function EmployeeDetailPage() {
   const [locationHistoryPage, setLocationHistoryPage] = useState(1)
   const [locationHistoryPageSize, setLocationHistoryPageSize] =
     useState<(typeof LOCATION_HISTORY_PAGE_SIZE_OPTIONS)[number]>(20)
-  const [visibleMarkerKinds, setVisibleMarkerKinds] = useState<Record<EmployeeLiveLocationMapMarkerKind, boolean>>({
-    checkin: true,
-    checkout: true,
-    first: true,
-    recent: true,
-    latest: true,
-  })
 
   const [isInviteModalOpen, setInviteModalOpen] = useState(false)
   const [expiresInMinutes, setExpiresInMinutes] = useState('30')
@@ -575,259 +553,6 @@ export function EmployeeDetailPage() {
     return { start, end }
   }, [filteredRecentLocationRows.length, locationHistoryPage, locationHistoryPageSize])
 
-  const defaultMapDay = useMemo(() => {
-    for (const item of recentLocationRows) {
-      const day = toIstanbulDay(item.ts_utc)
-      if (day) {
-        return day
-      }
-    }
-    for (let index = monthlyRows.length - 1; index >= 0; index -= 1) {
-      if (hasDayCoordinates(monthlyRows[index])) {
-        return monthlyRows[index].date
-      }
-    }
-    return null
-  }, [monthlyRows, recentLocationRows])
-
-  useEffect(() => {
-    if (selectedMapDay || !defaultMapDay) {
-      return
-    }
-    setSelectedMapDay(defaultMapDay)
-  }, [defaultMapDay, selectedMapDay])
-
-  useEffect(() => {
-    if (!selectedMapDay) {
-      return
-    }
-    const existsInMonthlyRows = monthlyRows.some((item) => item.date === selectedMapDay)
-    const existsInRecentRows = recentLocationRows.some((item) => toIstanbulDay(item.ts_utc) === selectedMapDay)
-    if (!existsInMonthlyRows && !existsInRecentRows) {
-      setSelectedMapDay(null)
-      setSelectedMarkerId(null)
-    }
-  }, [monthlyRows, recentLocationRows, selectedMapDay])
-
-  const selectedMapDayRow = useMemo(
-    () => monthlyRows.find((item) => item.date === selectedMapDay) ?? null,
-    [monthlyRows, selectedMapDay],
-  )
-
-  const mapDayRecentLocations = useMemo(() => {
-    if (!selectedMapDay) {
-      return []
-    }
-    return recentLocationRows.filter((item) => toIstanbulDay(item.ts_utc) === selectedMapDay)
-  }, [recentLocationRows, selectedMapDay])
-
-  const mapMarkers = useMemo<EmployeeLiveLocationMapMarker[]>(() => {
-    const markers: EmployeeLiveLocationMapMarker[] = []
-    const latestLocation = detailQuery.data?.latest_location ?? null
-    const firstLocation = detailQuery.data?.first_location ?? null
-    const latestOnSelectedDay =
-      latestLocation && selectedMapDay ? toIstanbulDay(latestLocation.ts_utc) === selectedMapDay : false
-    const firstOnSelectedDay =
-      firstLocation && selectedMapDay ? toIstanbulDay(firstLocation.ts_utc) === selectedMapDay : false
-
-    if (selectedMapDayRow) {
-      if (selectedMapDayRow.in_lat !== null && selectedMapDayRow.in_lon !== null) {
-        markers.push({
-          id: `${selectedMapDayRow.date}-in`,
-          lat: selectedMapDayRow.in_lat,
-          lon: selectedMapDayRow.in_lon,
-          label: `${selectedMapDayRow.date} - Mesai Baslangici`,
-          kind: 'checkin',
-        })
-      }
-      if (selectedMapDayRow.out_lat !== null && selectedMapDayRow.out_lon !== null) {
-        markers.push({
-          id: `${selectedMapDayRow.date}-out`,
-          lat: selectedMapDayRow.out_lat,
-          lon: selectedMapDayRow.out_lon,
-          label: `${selectedMapDayRow.date} - Mesai Bitisi`,
-          kind: 'checkout',
-        })
-      }
-    }
-
-    if (latestLocation && latestOnSelectedDay) {
-      markers.push({
-        id: 'latest',
-        lat: latestLocation.lat,
-        lon: latestLocation.lon,
-        label: `Son bildirilen konum - ${formatDateTime(latestLocation.ts_utc)}`,
-        kind: 'latest',
-      })
-    }
-
-    if (firstLocation && firstOnSelectedDay) {
-      markers.push({
-        id: 'first',
-        lat: firstLocation.lat,
-        lon: firstLocation.lon,
-        label: `Ilk konum kaydi - ${formatDateTime(firstLocation.ts_utc)}`,
-        kind: 'first',
-      })
-    }
-
-    for (const locationItem of mapDayRecentLocations) {
-      const isLatest =
-        latestOnSelectedDay &&
-        latestLocation !== null &&
-        latestLocation.ts_utc === locationItem.ts_utc &&
-        latestLocation.device_id === locationItem.device_id
-      const isFirst =
-        firstOnSelectedDay &&
-        firstLocation !== null &&
-        firstLocation.ts_utc === locationItem.ts_utc &&
-        firstLocation.device_id === locationItem.device_id
-      if (isLatest || isFirst) {
-        continue
-      }
-      markers.push({
-        id: recentLocationMarkerId(locationItem),
-        lat: locationItem.lat,
-        lon: locationItem.lon,
-        label: `${locationItem.event_type} - ${formatDateTime(locationItem.ts_utc)}`,
-        kind: 'recent',
-      })
-    }
-    return markers
-  }, [detailQuery.data?.first_location, detailQuery.data?.latest_location, mapDayRecentLocations, selectedMapDay, selectedMapDayRow])
-
-  const filteredMapMarkers = useMemo(
-    () => mapMarkers.filter((item) => visibleMarkerKinds[item.kind]),
-    [mapMarkers, visibleMarkerKinds],
-  )
-
-  const markerKindAvailability = useMemo(
-    () => ({
-      checkin: mapMarkers.some((item) => item.kind === 'checkin'),
-      checkout: mapMarkers.some((item) => item.kind === 'checkout'),
-      first: mapMarkers.some((item) => item.kind === 'first'),
-      recent: mapMarkers.some((item) => item.kind === 'recent'),
-      latest: mapMarkers.some((item) => item.kind === 'latest'),
-    }),
-    [mapMarkers],
-  )
-
-  useEffect(() => {
-    if (!mapMarkers.length) {
-      return
-    }
-    if (filteredMapMarkers.length) {
-      return
-    }
-    setVisibleMarkerKinds({
-      checkin: true,
-      checkout: true,
-      first: true,
-      recent: true,
-      latest: true,
-    })
-  }, [filteredMapMarkers.length, mapMarkers.length])
-
-  useEffect(() => {
-    if (!selectedMarkerId) {
-      return
-    }
-    const markerStillExists = mapMarkers.some((item) => item.id === selectedMarkerId)
-    if (!markerStillExists) {
-      setSelectedMarkerId(null)
-    }
-  }, [mapMarkers, selectedMarkerId])
-
-  const focusLegendKind = (kind: EmployeeLiveLocationMapMarkerKind) => {
-    const hasRequestedKind = mapMarkers.some((item) => item.kind === kind)
-    if (!hasRequestedKind) {
-      pushToast({
-        variant: 'info',
-        title: 'Bu tipte konum yok',
-        description: 'Secili kayitta bu lejant turune ait konum bulunamadi.',
-      })
-      return
-    }
-
-    const activeCount = Object.values(visibleMarkerKinds).filter(Boolean).length
-    if (visibleMarkerKinds[kind] && activeCount === 1) {
-      setVisibleMarkerKinds({
-        checkin: true,
-        checkout: true,
-        first: true,
-        recent: true,
-        latest: true,
-      })
-      return
-    }
-    setVisibleMarkerKinds({
-      checkin: kind === 'checkin',
-      checkout: kind === 'checkout',
-      first: kind === 'first',
-      recent: kind === 'recent',
-      latest: kind === 'latest',
-    })
-    const firstMarkerOfKind = mapMarkers.find((item) => item.kind === kind)
-    if (firstMarkerOfKind) {
-      setSelectedMarkerId(firstMarkerOfKind.id)
-    }
-  }
-
-  const showAllLegendKinds = () => {
-    setVisibleMarkerKinds({
-      checkin: true,
-      checkout: true,
-      first: true,
-      recent: true,
-      latest: true,
-    })
-    setSelectedMarkerId(null)
-  }
-
-  const focusDayOnMap = (day: MonthlyEmployeeDay, source: 'in' | 'out') => {
-    const hasIn = day.in_lat !== null && day.in_lon !== null
-    const hasOut = day.out_lat !== null && day.out_lon !== null
-    const requestedExists = source === 'in' ? hasIn : hasOut
-    if (!requestedExists) {
-      pushToast({
-        variant: 'info',
-        title: 'Konum bulunamadi',
-        description: `${day.date} icin secilen konum kaydi yok.`,
-      })
-      return
-    }
-    setSelectedMapDay(day.date)
-    setVisibleMarkerKinds({
-      checkin: true,
-      checkout: true,
-      first: true,
-      recent: true,
-      latest: true,
-    })
-    setSelectedMarkerId(source === 'in' ? `${day.date}-in` : `${day.date}-out`)
-  }
-
-  const focusRecentLocationOnMap = (item: EmployeeLiveLocation) => {
-    const day = toIstanbulDay(item.ts_utc)
-    if (!day) {
-      pushToast({
-        variant: 'info',
-        title: 'Konum zamani okunamadi',
-        description: 'Secilen konum kaydi icin gun bilgisi hesaplanamadi.',
-      })
-      return
-    }
-    setSelectedMapDay(day)
-    setVisibleMarkerKinds({
-      checkin: true,
-      checkout: true,
-      first: true,
-      recent: true,
-      latest: true,
-    })
-    setSelectedMarkerId(recentLocationMarkerId(item))
-  }
-
   const deviceCountText = useMemo(() => {
     const count = detailQuery.data?.devices.length ?? 0
     return `${count} cihaz`
@@ -1105,7 +830,7 @@ export function EmployeeDetailPage() {
 
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
               Ayni tabloda giris-cikis saatleri, konum koordinatlari ve bayraklar birlikte gosterilir.
-              Satir renklendirmesi: kirmizi = eksik gun, amber = bayrakli gun, gri = izin/tatil.
+              Detayli 2D ve 3D hareket izi icin ayrik <span className="font-semibold">Log</span> ekranini kullanin.
             </div>
 
             <div className="list-scroll-area w-full max-w-full overflow-x-auto">
@@ -1139,36 +864,8 @@ export function EmployeeDetailPage() {
                         <td className="py-2">{getAttendanceDayType(day).label}</td>
                         <td className="py-2">{formatDateTime(day.in)}</td>
                         <td className="py-2">{formatDateTime(day.out)}</td>
-                        <td className="py-2">
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-xs">{formatCoordinate(day.in_lat, day.in_lon)}</span>
-                            {day.in_lat !== null && day.in_lon !== null ? (
-                              <button
-                                type="button"
-                                className="rounded-md border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
-                                onClick={() => focusDayOnMap(day, 'in')}
-                                title="Mesai baslangic konumunu haritada goster"
-                              >
-                                Harita
-                              </button>
-                            ) : null}
-                          </div>
-                        </td>
-                        <td className="py-2">
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-xs">{formatCoordinate(day.out_lat, day.out_lon)}</span>
-                            {day.out_lat !== null && day.out_lon !== null ? (
-                              <button
-                                type="button"
-                                className="rounded-md border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
-                                onClick={() => focusDayOnMap(day, 'out')}
-                                title="Mesai bitis konumunu haritada goster"
-                              >
-                                Harita
-                              </button>
-                            ) : null}
-                          </div>
-                        </td>
+                        <td className="py-2 font-mono text-xs">{formatCoordinate(day.in_lat, day.in_lon)}</td>
+                        <td className="py-2 font-mono text-xs">{formatCoordinate(day.out_lat, day.out_lon)}</td>
                         <td className="py-2">
                           <MinuteDisplay minutes={day.worked_minutes} />
                         </td>
@@ -1300,130 +997,26 @@ export function EmployeeDetailPage() {
       </div>
 
       <Panel>
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <h4 className="text-base font-semibold text-slate-900">Konum Haritasi</h4>
-          {selectedMapDay && defaultMapDay && selectedMapDay !== defaultMapDay ? (
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedMapDay(defaultMapDay)
-                setVisibleMarkerKinds({
-                  checkin: true,
-                  checkout: true,
-                  first: true,
-                  recent: true,
-                  latest: true,
-                })
-                setSelectedMarkerId(null)
-              }}
-              className="rounded-md border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-            >
-              Son gune don
-            </button>
-          ) : null}
-        </div>
-        {selectedMapDayRow ? (
-          <p className="mt-2 text-sm text-slate-700">
-            Harita secimi: <span className="font-semibold">{selectedMapDayRow.date}</span> gununun giris/cikis konumlari
-          </p>
-        ) : selectedMapDay ? (
-          <p className="mt-2 text-sm text-slate-700">
-            Harita secimi: <span className="font-semibold">{selectedMapDay}</span> gununun konum kayitlari
-          </p>
-        ) : (
-          <p className="mt-2 text-sm text-slate-500">Calisan icin konum verisi henuz yok.</p>
-        )}
-        {filteredMapMarkers.length ? (
-          <div className="mt-3 space-y-3">
-            <EmployeeLiveLocationMap markers={filteredMapMarkers} focusedMarkerId={selectedMarkerId} />
-            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-700">
-              <button
-                type="button"
-                onClick={() => focusLegendKind('first')}
-                disabled={!markerKindAvailability.first}
-                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 ${
-                  visibleMarkerKinds.first
-                    ? 'border-violet-300 bg-violet-50 text-violet-800'
-                    : 'border-slate-300 bg-white text-slate-500'
-                } ${!markerKindAvailability.first ? 'cursor-not-allowed opacity-45' : ''}`}
-                title="Yalnizca ilk konum noktasini goster"
-              >
-                <span className="h-2 w-2 rounded-full bg-violet-600" />
-                Ilk konum
-              </button>
-              <button
-                type="button"
-                onClick={() => focusLegendKind('recent')}
-                disabled={!markerKindAvailability.recent}
-                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 ${
-                  visibleMarkerKinds.recent
-                    ? 'border-blue-300 bg-blue-50 text-blue-800'
-                    : 'border-slate-300 bg-white text-slate-500'
-                } ${!markerKindAvailability.recent ? 'cursor-not-allowed opacity-45' : ''}`}
-                title="Diger konum noktalarini goster"
-              >
-                <span className="h-2 w-2 rounded-full bg-blue-600" />
-                Diger konumlar
-              </button>
-              <button
-                type="button"
-                onClick={() => focusLegendKind('checkin')}
-                disabled={!markerKindAvailability.checkin}
-                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 ${
-                  visibleMarkerKinds.checkin
-                    ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
-                    : 'border-slate-300 bg-white text-slate-500'
-                } ${!markerKindAvailability.checkin ? 'cursor-not-allowed opacity-45' : ''}`}
-                title="Yalnizca mesai baslangici noktalarini goster"
-              >
-                <span className="h-2 w-2 rounded-full bg-emerald-600" />
-                Mesai baslangici
-              </button>
-              <button
-                type="button"
-                onClick={() => focusLegendKind('checkout')}
-                disabled={!markerKindAvailability.checkout}
-                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 ${
-                  visibleMarkerKinds.checkout
-                    ? 'border-rose-300 bg-rose-50 text-rose-800'
-                    : 'border-slate-300 bg-white text-slate-500'
-                } ${!markerKindAvailability.checkout ? 'cursor-not-allowed opacity-45' : ''}`}
-                title="Yalnizca mesai bitisi noktalarini goster"
-              >
-                <span className="h-2 w-2 rounded-full bg-rose-600" />
-                Mesai bitisi
-              </button>
-              <button
-                type="button"
-                onClick={() => focusLegendKind('latest')}
-                disabled={!markerKindAvailability.latest}
-                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 ${
-                  visibleMarkerKinds.latest
-                    ? 'border-sky-300 bg-sky-50 text-sky-800'
-                    : 'border-slate-300 bg-white text-slate-500'
-                } ${!markerKindAvailability.latest ? 'cursor-not-allowed opacity-45' : ''}`}
-                title="Yalnizca son bildirilen konumu goster"
-              >
-                <span className="h-2 w-2 rounded-full bg-sky-700" />
-                Son bildirilen konum
-              </button>
-              <button
-                type="button"
-                onClick={showAllLegendKinds}
-                className="ml-1 rounded-md border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
-              >
-                Tumunu goster
-              </button>
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h4 className="text-base font-semibold text-slate-900">Konum izleme ayrildi</h4>
+              <p className="mt-1 text-sm text-slate-600">
+                Bu sayfadaki haritalar kaldirildi. Ayrintili 2D ve 3D hareket izi, tarih filtreleri ve fazla mesai
+                analizi icin ayri <span className="font-semibold">Log</span> ekranini kullanin.
+              </p>
             </div>
+            <Link
+              to="/log"
+              className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
+            >
+              Log ekranini ac
+            </Link>
           </div>
-        ) : (
-          <p className="mt-2 text-sm text-slate-500">Secili filtrede gosterilecek konum noktasi yok.</p>
-        )}
+        </div>
         <div className="mt-4 rounded-lg border border-slate-200">
           <div className="border-b border-slate-200 px-3 py-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Konum Gecmisi (satira tiklayinca haritada odaklar)
-            </p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Konum Gecmisi</p>
             <div className="mt-2 grid gap-2 md:grid-cols-7">
               <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:col-span-2">
                 Ara
@@ -1535,26 +1128,9 @@ export function EmployeeDetailPage() {
                   </thead>
                   <tbody>
                     {pagedRecentLocationRows.map((item, index) => {
-                      const markerId = recentLocationMarkerId(item)
                       const rowDay = toIstanbulDay(item.ts_utc) ?? '-'
-                      const isSelectedRow = selectedMarkerId === markerId
                       return (
-                        <tr
-                          key={`${markerId}-${index}`}
-                          className={`border-t border-slate-100 transition-colors ${
-                            isSelectedRow ? 'bg-sky-100/60' : 'cursor-pointer hover:bg-sky-50/70'
-                          }`}
-                          role="button"
-                          tabIndex={0}
-                          onClick={() => focusRecentLocationOnMap(item)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter' || event.key === ' ') {
-                              event.preventDefault()
-                              focusRecentLocationOnMap(item)
-                            }
-                          }}
-                          title="Haritada bu konumu odakla"
-                        >
+                        <tr key={`${item.device_id}-${item.ts_utc}-${index}`} className="border-t border-slate-100">
                           <td className="py-2 pl-3">{formatDateTime(item.ts_utc)}</td>
                           <td className="py-2 font-mono text-xs text-slate-600">{rowDay}</td>
                           <td className="py-2">{item.event_type}</td>
