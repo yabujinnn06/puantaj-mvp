@@ -427,7 +427,7 @@ export function LocationMonitorPage() {
   }, [now])
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-full space-y-6 overflow-x-hidden">
       <section className="rounded-3xl border border-slate-200 bg-white px-5 py-5 shadow-sm sm:px-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
@@ -459,8 +459,8 @@ export function LocationMonitorPage() {
         </div>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[19.5rem_minmax(0,1fr)] 2xl:grid-cols-[20.5rem_minmax(0,1fr)]">
-        <aside className="space-y-4">
+      <section className="grid min-w-0 gap-6 xl:grid-cols-[19.5rem_minmax(0,1fr)] 2xl:grid-cols-[20.5rem_minmax(0,1fr)]">
+        <aside className="min-w-0 space-y-4">
           <article className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="mb-4">
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Filtre Merkezi</p>
@@ -644,13 +644,13 @@ export function LocationMonitorPage() {
           </article>
         </aside>
 
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           {timelineQuery.isLoading ? <LoadingBlock label="Log verisi hazirlaniyor..." /> : null}
           {timelineQuery.isError ? <ErrorBlock message="Log verisi alinamadi." /> : null}
 
           {timelineQuery.data ? (
             <>
-              <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+              <section className="min-w-0 overflow-hidden rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Secili Personel</p>
@@ -753,8 +753,8 @@ export function LocationMonitorPage() {
                 </div>
               </section>
 
-              <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                <article className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+              <section className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                <article className="min-w-0 overflow-hidden rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
                   <div className="mb-4 flex items-center justify-between gap-3">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Standart Harita</p>
@@ -769,7 +769,7 @@ export function LocationMonitorPage() {
                   <LocationMonitorMap points={visiblePoints} focusedPointId={focusedPointId} />
                 </article>
 
-                <article className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+                <article className="min-w-0 overflow-hidden rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
                   <div className="mb-4 flex items-center justify-between gap-3">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">3D Harita</p>
@@ -783,7 +783,7 @@ export function LocationMonitorPage() {
                 </article>
               </section>
 
-              <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+              <section className="min-w-0 overflow-hidden rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Gunluk Olay Akisi</p>
@@ -832,7 +832,7 @@ export function LocationMonitorPage() {
                 </div>
               </section>
 
-              <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+              <section className="min-w-0 overflow-hidden rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Gun Gun Kayitlar</p>
@@ -853,8 +853,8 @@ export function LocationMonitorPage() {
                   </div>
                 </div>
 
-                <div className="mt-5 overflow-x-auto">
-                  <table className="min-w-full divide-y divide-slate-200 text-sm">
+                <div className="mt-5 w-full overflow-x-auto">
+                  <table className="min-w-[52rem] divide-y divide-slate-200 text-sm lg:min-w-full">
                     <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
                       <tr>
                         <th className="px-3 py-3">Gun</th>
@@ -931,8 +931,8 @@ export function LocationMonitorPage() {
                 </div>
               </section>
 
-              <section className="space-y-6">
-                <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+              <section className="min-w-0 space-y-6">
+                <article className="min-w-0 overflow-hidden rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Guvenli Ozet</p>
@@ -969,9 +969,9 @@ export function LocationMonitorPage() {
                         </div>
                       </div>
 
-                      <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                      <div className="w-full overflow-x-auto rounded-2xl border border-slate-200">
                         {detailQuery.data.ip_summary.length ? (
-                          <table className="min-w-full text-left text-sm">
+                          <table className="min-w-[48rem] text-left text-sm lg:min-w-full">
                             <thead className="bg-slate-50 text-xs uppercase tracking-[0.16em] text-slate-500">
                               <tr>
                                 <th className="px-3 py-3">IP</th>
@@ -998,9 +998,9 @@ export function LocationMonitorPage() {
                         )}
                       </div>
 
-                      <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                      <div className="w-full overflow-x-auto rounded-2xl border border-slate-200">
                         {(detailQuery.data.devices ?? []).length ? (
-                          <table className="min-w-full text-left text-sm">
+                          <table className="min-w-[40rem] text-left text-sm lg:min-w-full">
                             <thead className="bg-slate-50 text-xs uppercase tracking-[0.16em] text-slate-500">
                               <tr>
                                 <th className="px-3 py-3">Cihaz</th>
@@ -1028,7 +1028,7 @@ export function LocationMonitorPage() {
                   ) : null}
                 </article>
 
-                <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <article className="min-w-0 overflow-hidden rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Aylik Puantaj Izi</p>
@@ -1086,8 +1086,8 @@ export function LocationMonitorPage() {
                         </div>
                       </div>
 
-                      <div className="overflow-x-auto rounded-2xl border border-slate-200">
-                        <table className="min-w-[62rem] text-left text-sm xl:min-w-full">
+                      <div className="w-full overflow-x-auto rounded-2xl border border-slate-200">
+                        <table className="min-w-[58rem] text-left text-sm xl:min-w-full">
                           <thead className="bg-slate-50 text-xs uppercase tracking-[0.16em] text-slate-500">
                             <tr>
                               <th className="px-3 py-3">Gun</th>

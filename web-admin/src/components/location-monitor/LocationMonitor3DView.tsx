@@ -1,20 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
-import type { GeoJSONSource, Map as MapLibreMap, MapGeoJSONFeature } from 'maplibre-gl'
+import type { GeoJSONSource, Map as MapLibreMap, MapGeoJSONFeature, StyleSpecification } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
 import type { LocationMonitorMapPoint } from '../../types/api'
 
 const DEFAULT_CENTER: [number, number] = [28.97953, 41.015137]
-const STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty'
 const ROUTE_SOURCE_ID = 'location-monitor-route-source'
 const POINT_SOURCE_ID = 'location-monitor-point-source'
 const ROUTE_SHADOW_LAYER_ID = 'location-monitor-route-shadow-layer'
 const ROUTE_LAYER_ID = 'location-monitor-route-layer'
-const ROUTE_DIRECTION_LAYER_ID = 'location-monitor-route-direction-layer'
 const POINT_LAYER_ID = 'location-monitor-point-layer'
 const POINT_RING_LAYER_ID = 'location-monitor-point-ring-layer'
-const POINT_TIME_LAYER_ID = 'location-monitor-point-time-layer'
 const DENSE_POINT_RADIUS_M = 18
 const NEAR_POINT_RADIUS_M = 42
 const LOCAL_DATE_TIME_FORMAT = new Intl.DateTimeFormat('tr-TR', {
@@ -30,8 +27,6 @@ const LOCAL_CLOCK_FORMAT = new Intl.DateTimeFormat('tr-TR', {
 const DISTANCE_FORMAT = new Intl.NumberFormat('tr-TR', {
   maximumFractionDigits: 1,
 })
-
-type PointVisibilityGroup = 'SHIFT' | 'APP' | 'DEMO' | 'TRACK'
 
 type PointMetric = {
   pointId: string
@@ -53,23 +48,214 @@ type PointMetricsResult = {
   totalDurationMs: number
 }
 
-type VisibilityOption = {
-  key: PointVisibilityGroup
-  label: string
-}
-
-const VISIBILITY_OPTIONS: VisibilityOption[] = [
-  { key: 'SHIFT', label: 'Mesai' },
-  { key: 'APP', label: 'Uygulama' },
-  { key: 'DEMO', label: 'Demo' },
-  { key: 'TRACK', label: 'Son konum' },
-]
-
-const DEFAULT_VISIBILITY: Record<PointVisibilityGroup, boolean> = {
-  SHIFT: true,
-  APP: true,
-  DEMO: true,
-  TRACK: true,
+const STABLE_3D_STYLE: StyleSpecification = {
+  version: 8,
+  sources: {
+    openmaptiles: {
+      type: 'vector',
+      url: 'https://tiles.openfreemap.org/planet',
+    },
+  },
+  layers: [
+    {
+      id: 'background',
+      type: 'background',
+      paint: {
+        'background-color': '#f8f4f0',
+      },
+    },
+    {
+      id: 'landuse_residential',
+      type: 'fill',
+      source: 'openmaptiles',
+      'source-layer': 'landuse',
+      maxzoom: 12,
+      filter: ['==', ['get', 'class'], 'residential'],
+      paint: {
+        'fill-color': ['interpolate', ['linear'], ['zoom'], 9, 'hsla(0,3%,85%,0.84)', 12, 'hsla(35,57%,88%,0.49)'],
+      },
+    },
+    {
+      id: 'landcover_wood',
+      type: 'fill',
+      source: 'openmaptiles',
+      'source-layer': 'landcover',
+      filter: ['==', ['get', 'class'], 'wood'],
+      paint: {
+        'fill-antialias': false,
+        'fill-color': 'hsla(98,61%,72%,0.7)',
+        'fill-opacity': 0.4,
+      },
+    },
+    {
+      id: 'landcover_grass',
+      type: 'fill',
+      source: 'openmaptiles',
+      'source-layer': 'landcover',
+      filter: ['==', ['get', 'class'], 'grass'],
+      paint: {
+        'fill-antialias': false,
+        'fill-color': 'rgba(176, 213, 154, 1)',
+        'fill-opacity': 0.3,
+      },
+    },
+    {
+      id: 'park',
+      type: 'fill',
+      source: 'openmaptiles',
+      'source-layer': 'park',
+      paint: {
+        'fill-color': '#d8e8c8',
+        'fill-opacity': 0.7,
+        'fill-outline-color': 'rgba(95, 208, 100, 1)',
+      },
+    },
+    {
+      id: 'waterway_river',
+      type: 'line',
+      source: 'openmaptiles',
+      'source-layer': 'waterway',
+      filter: ['all', ['==', ['get', 'class'], 'river'], ['!=', ['get', 'brunnel'], 'tunnel']],
+      layout: { 'line-cap': 'round' },
+      paint: {
+        'line-color': '#a0c8f0',
+        'line-width': ['interpolate', ['exponential', 1.2], ['zoom'], 11, 0.5, 20, 6],
+      },
+    },
+    {
+      id: 'waterway_other',
+      type: 'line',
+      source: 'openmaptiles',
+      'source-layer': 'waterway',
+      filter: ['all', ['!=', ['get', 'class'], 'river'], ['!=', ['get', 'brunnel'], 'tunnel']],
+      layout: { 'line-cap': 'round' },
+      paint: {
+        'line-color': '#a0c8f0',
+        'line-width': ['interpolate', ['exponential', 1.3], ['zoom'], 13, 0.5, 20, 6],
+      },
+    },
+    {
+      id: 'water',
+      type: 'fill',
+      source: 'openmaptiles',
+      'source-layer': 'water',
+      filter: ['!=', ['get', 'brunnel'], 'tunnel'],
+      paint: {
+        'fill-color': 'rgb(158,189,255)',
+      },
+    },
+    {
+      id: 'road_path_pedestrian',
+      type: 'line',
+      source: 'openmaptiles',
+      'source-layer': 'transportation',
+      minzoom: 14,
+      filter: [
+        'all',
+        ['match', ['geometry-type'], ['LineString', 'MultiLineString'], true, false],
+        ['match', ['get', 'brunnel'], ['bridge', 'tunnel'], false, true],
+        ['match', ['get', 'class'], ['path', 'pedestrian'], true, false],
+      ],
+      layout: { 'line-join': 'round' },
+      paint: {
+        'line-color': 'hsl(0,0%,100%)',
+        'line-dasharray': [1, 0.7],
+        'line-width': ['interpolate', ['exponential', 1.2], ['zoom'], 14, 1, 20, 10],
+      },
+    },
+    {
+      id: 'road_minor',
+      type: 'line',
+      source: 'openmaptiles',
+      'source-layer': 'transportation',
+      filter: [
+        'all',
+        ['match', ['geometry-type'], ['LineString', 'MultiLineString'], true, false],
+        ['match', ['get', 'brunnel'], ['bridge', 'tunnel'], false, true],
+        ['match', ['get', 'class'], ['minor'], true, false],
+      ],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': '#fff',
+        'line-width': ['interpolate', ['exponential', 1.2], ['zoom'], 13.5, 0, 14, 2.5, 20, 18],
+      },
+    },
+    {
+      id: 'road_secondary_tertiary',
+      type: 'line',
+      source: 'openmaptiles',
+      'source-layer': 'transportation',
+      filter: [
+        'all',
+        ['match', ['get', 'brunnel'], ['bridge', 'tunnel'], false, true],
+        ['match', ['get', 'class'], ['secondary', 'tertiary'], true, false],
+      ],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': '#fea',
+        'line-width': ['interpolate', ['exponential', 1.2], ['zoom'], 6.5, 0, 8, 0.5, 20, 13],
+      },
+    },
+    {
+      id: 'road_trunk_primary',
+      type: 'line',
+      source: 'openmaptiles',
+      'source-layer': 'transportation',
+      filter: [
+        'all',
+        ['match', ['get', 'brunnel'], ['bridge', 'tunnel'], false, true],
+        ['match', ['get', 'class'], ['primary', 'trunk'], true, false],
+      ],
+      layout: { 'line-join': 'round' },
+      paint: {
+        'line-color': '#fea',
+        'line-width': ['interpolate', ['exponential', 1.2], ['zoom'], 5, 0, 7, 1, 20, 18],
+      },
+    },
+    {
+      id: 'road_motorway',
+      type: 'line',
+      source: 'openmaptiles',
+      'source-layer': 'transportation',
+      minzoom: 5,
+      filter: [
+        'all',
+        ['match', ['get', 'brunnel'], ['bridge', 'tunnel'], false, true],
+        ['==', ['get', 'class'], 'motorway'],
+        ['!=', ['get', 'ramp'], 1],
+      ],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': ['interpolate', ['linear'], ['zoom'], 5, 'hsl(26,87%,62%)', 6, '#fc8'],
+        'line-width': ['interpolate', ['exponential', 1.2], ['zoom'], 5, 0, 7, 1, 20, 18],
+      },
+    },
+    {
+      id: 'building',
+      type: 'fill',
+      source: 'openmaptiles',
+      'source-layer': 'building',
+      minzoom: 13,
+      maxzoom: 14,
+      paint: {
+        'fill-color': 'hsl(35,8%,85%)',
+        'fill-outline-color': ['interpolate', ['linear'], ['zoom'], 13, 'hsla(35,6%,79%,0.32)', 14, 'hsl(35,6%,79%)'],
+      },
+    },
+    {
+      id: 'building-3d',
+      type: 'fill-extrusion',
+      source: 'openmaptiles',
+      'source-layer': 'building',
+      minzoom: 14,
+      paint: {
+        'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
+        'fill-extrusion-color': 'hsl(35,8%,85%)',
+        'fill-extrusion-height': ['coalesce', ['get', 'render_height'], 0],
+        'fill-extrusion-opacity': 0.8,
+      },
+    },
+  ],
 }
 
 function isMapRenderingSupported(): boolean {
@@ -94,19 +280,6 @@ function pointSourceLabel(source: LocationMonitorMapPoint['source']): string {
   if (source === 'DEMO_START' || source === 'DEMO_MARK') return 'Demo baslangici'
   if (source === 'DEMO_END') return 'Demo bitisi'
   return 'Konum noktasi'
-}
-
-function pointVisibilityGroup(source: LocationMonitorMapPoint['source']): PointVisibilityGroup {
-  if (source === 'CHECKIN' || source === 'CHECKOUT') {
-    return 'SHIFT'
-  }
-  if (source === 'APP_OPEN' || source === 'APP_CLOSE') {
-    return 'APP'
-  }
-  if (source === 'DEMO_START' || source === 'DEMO_END' || source === 'DEMO_MARK') {
-    return 'DEMO'
-  }
-  return 'TRACK'
 }
 
 function parsePointDate(value: string): Date | null {
@@ -395,7 +568,6 @@ function buildPointData(
         locationStatus: point.location_status ?? '-',
         deviceId: point.device_id == null ? '-' : `#${point.device_id}`,
         ip: point.ip ?? '-',
-        timeLabel: metricsById.get(point.id)?.clockLabel ?? formatLocalClock(point.ts_utc),
         stepLabel: metricsById.has(point.id)
           ? `${metricsById.get(point.id)?.stepIndex}/${metricsById.get(point.id)?.totalSteps}`
           : `${index + 1}/${sorted.length}`,
@@ -405,22 +577,6 @@ function buildPointData(
         compactScale: point.id === highlightedPointId ? 1.18 : compactScales[index],
         emphasis: point.id === highlightedPointId ? 1 : 0,
         pointOpacity: point.id === highlightedPointId ? 1 : compactScales[index] < 0.7 ? 0.76 : 0.9,
-        showTimeLabel:
-          point.id === highlightedPointId ||
-          index === 0 ||
-          index === sorted.length - 1 ||
-          point.source === 'CHECKIN' ||
-          point.source === 'CHECKOUT' ||
-          point.source === 'DEMO_START' ||
-          point.source === 'DEMO_END' ||
-          (index > 0 &&
-            (distanceMeters(sorted[index - 1], point) >= 85 ||
-              Math.abs(
-                (parsePointDate(point.ts_utc)?.getTime() ?? 0) - (parsePointDate(sorted[index - 1].ts_utc)?.getTime() ?? 0),
-              ) >=
-                25 * 60 * 1000))
-            ? 1
-            : 0,
       },
       geometry: {
         type: 'Point' as const,
@@ -581,37 +737,6 @@ function ensure3DLayers(map: MapLibreMap) {
     })
   }
 
-  if (!map.getLayer(ROUTE_DIRECTION_LAYER_ID)) {
-    map.addLayer({
-      id: ROUTE_DIRECTION_LAYER_ID,
-      type: 'symbol',
-      source: ROUTE_SOURCE_ID,
-      layout: {
-        'symbol-placement': 'line',
-        'symbol-spacing': 84,
-        'text-field': '›',
-        'text-size': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          10,
-          11,
-          16,
-          15,
-        ] as any,
-        'text-keep-upright': false,
-        'text-ignore-placement': false,
-        'text-allow-overlap': false,
-      },
-      paint: {
-        'text-color': 'rgba(15, 23, 42, 0.62)',
-        'text-halo-color': 'rgba(255,255,255,0.86)',
-        'text-halo-width': 1.2,
-        'text-opacity': 0.92,
-      },
-    })
-  }
-
   if (!map.getLayer(POINT_RING_LAYER_ID)) {
     map.addLayer({
       id: POINT_RING_LAYER_ID,
@@ -698,40 +823,6 @@ function ensure3DLayers(map: MapLibreMap) {
     })
   }
 
-  if (!map.getLayer(POINT_TIME_LAYER_ID)) {
-    map.addLayer({
-      id: POINT_TIME_LAYER_ID,
-      type: 'symbol',
-      source: POINT_SOURCE_ID,
-      filter: ['==', ['get', 'showTimeLabel'], 1],
-      layout: {
-        'text-field': ['get', 'timeLabel'] as any,
-        'text-size': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          10,
-          10,
-          14,
-          11,
-          17,
-          13,
-        ] as any,
-        'text-offset': [0, 1.35],
-        'text-anchor': 'top',
-        'text-ignore-placement': false,
-        'text-allow-overlap': false,
-        'text-optional': true,
-      },
-      paint: {
-        'text-color': '#0f172a',
-        'text-halo-color': 'rgba(255,255,255,0.94)',
-        'text-halo-width': 1.4,
-        'text-opacity': ['case', ['==', ['get', 'emphasis'], 1], 1, 0.84] as any,
-      },
-    })
-  }
-
   if (map.getLayer('building-3d')) {
     map.setLayoutProperty('building-3d', 'visibility', 'visible')
   }
@@ -805,35 +896,19 @@ export function LocationMonitor3DView({
   const mapLoadedRef = useRef(false)
   const markersRef = useRef<maplibregl.Marker[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [visibleGroups, setVisibleGroups] = useState<Record<PointVisibilityGroup, boolean>>(DEFAULT_VISIBILITY)
   const isSupported = isMapRenderingSupported()
   const orderedPoints = useMemo(
     () => [...points].sort((left, right) => new Date(left.ts_utc).getTime() - new Date(right.ts_utc).getTime()),
     [points],
   )
-  const filteredPoints = useMemo(
-    () => orderedPoints.filter((point) => visibleGroups[pointVisibilityGroup(point.source)]),
-    [orderedPoints, visibleGroups],
-  )
-  const metrics = useMemo(() => buildPointMetrics(filteredPoints), [filteredPoints])
+  const metrics = useMemo(() => buildPointMetrics(orderedPoints), [orderedPoints])
 
   const focusedPoint = useMemo(
-    () => (focusedPointId ? filteredPoints.find((point) => point.id === focusedPointId) ?? null : null),
-    [filteredPoints, focusedPointId],
+    () => (focusedPointId ? orderedPoints.find((point) => point.id === focusedPointId) ?? null : null),
+    [focusedPointId, orderedPoints],
   )
 
-  const highlightedPointId = focusedPointId ?? filteredPoints[filteredPoints.length - 1]?.id ?? null
-  const traceSummary = useMemo(() => {
-    const firstPoint = filteredPoints[0]
-    const lastPoint = filteredPoints[filteredPoints.length - 1]
-    return {
-      firstPoint,
-      lastPoint,
-      pointCount: filteredPoints.length,
-      totalDistanceLabel: formatDistance(metrics.totalDistanceMeters),
-      totalDurationLabel: formatDuration(metrics.totalDurationMs),
-    }
-  }, [filteredPoints, metrics.totalDistanceMeters, metrics.totalDurationMs])
+  const highlightedPointId = focusedPointId ?? orderedPoints[orderedPoints.length - 1]?.id ?? null
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current || !isSupported) {
@@ -842,7 +917,7 @@ export function LocationMonitor3DView({
 
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: STYLE_URL,
+      style: STABLE_3D_STYLE,
       center: DEFAULT_CENTER,
       zoom: 10.8,
       pitch: 62,
@@ -851,7 +926,7 @@ export function LocationMonitor3DView({
 
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right')
     mapRef.current = map
-    markersRef.current = syncDomMarkers(map, filteredPoints, highlightedPointId)
+    markersRef.current = syncDomMarkers(map, orderedPoints, highlightedPointId)
     setLoadError(null)
 
     const clickHandler = (event: maplibregl.MapMouseEvent & { features?: MapGeoJSONFeature[] }) => {
@@ -883,13 +958,13 @@ export function LocationMonitor3DView({
       mapLoadedRef.current = true
       ensure3DLayers(map)
       const routeSource = map.getSource(ROUTE_SOURCE_ID) as GeoJSONSource | undefined
-      routeSource?.setData(buildRouteData(filteredPoints))
+      routeSource?.setData(buildRouteData(orderedPoints))
       const pointSource = map.getSource(POINT_SOURCE_ID) as GeoJSONSource | undefined
-      pointSource?.setData(buildPointData(filteredPoints, highlightedPointId, metrics.byId))
+      pointSource?.setData(buildPointData(orderedPoints, highlightedPointId, metrics.byId))
       map.on('click', POINT_LAYER_ID, clickHandler)
       map.on('mouseenter', POINT_LAYER_ID, enterHandler)
       map.on('mouseleave', POINT_LAYER_ID, leaveHandler)
-      fitToPoints(map, filteredPoints)
+      fitToPoints(map, orderedPoints)
     })
 
     map.on('error', (event) => {
@@ -911,7 +986,7 @@ export function LocationMonitor3DView({
       map.remove()
       mapRef.current = null
     }
-  }, [filteredPoints, highlightedPointId, isSupported, metrics.byId])
+  }, [highlightedPointId, isSupported, metrics.byId, orderedPoints])
 
   useEffect(() => {
     const map = mapRef.current
@@ -922,7 +997,7 @@ export function LocationMonitor3DView({
     for (const marker of markersRef.current) {
       marker.remove()
     }
-    markersRef.current = syncDomMarkers(map, filteredPoints, highlightedPointId)
+    markersRef.current = syncDomMarkers(map, orderedPoints, highlightedPointId)
 
     if (!mapLoadedRef.current) {
       return
@@ -931,13 +1006,13 @@ export function LocationMonitor3DView({
     ensure3DLayers(map)
 
     const routeSource = map.getSource(ROUTE_SOURCE_ID) as GeoJSONSource | undefined
-    routeSource?.setData(buildRouteData(filteredPoints))
+    routeSource?.setData(buildRouteData(orderedPoints))
 
     const pointSource = map.getSource(POINT_SOURCE_ID) as GeoJSONSource | undefined
-    pointSource?.setData(buildPointData(filteredPoints, highlightedPointId, metrics.byId))
+    pointSource?.setData(buildPointData(orderedPoints, highlightedPointId, metrics.byId))
 
-    fitToPoints(map, filteredPoints)
-  }, [filteredPoints, highlightedPointId, metrics.byId])
+    fitToPoints(map, orderedPoints)
+  }, [highlightedPointId, metrics.byId, orderedPoints])
 
   useEffect(() => {
     const map = mapRef.current
@@ -947,13 +1022,13 @@ export function LocationMonitor3DView({
 
     map.easeTo({
       center: [focusedPoint.lon, focusedPoint.lat],
-      zoom: Math.max(map.getZoom(), filteredPoints.length > 1 ? 16 : 16.8),
+      zoom: Math.max(map.getZoom(), orderedPoints.length > 1 ? 16 : 16.8),
       pitch: 68,
       bearing: -18,
       duration: 550,
       essential: true,
     })
-  }, [filteredPoints.length, focusedPoint])
+  }, [focusedPoint, orderedPoints.length])
 
   if (!isSupported) {
     return (
@@ -965,54 +1040,6 @@ export function LocationMonitor3DView({
 
   return (
     <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 shadow-sm">
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 p-3">
-        <div className="pointer-events-auto flex flex-wrap gap-2">
-          {VISIBILITY_OPTIONS.map((option) => {
-            const active = visibleGroups[option.key]
-            return (
-              <button
-                key={option.key}
-                type="button"
-                onClick={() =>
-                  setVisibleGroups((current) => ({
-                    ...current,
-                    [option.key]: !current[option.key],
-                  }))
-                }
-                className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold tracking-[0.14em] ${
-                  active
-                    ? 'border-white/70 bg-slate-950/82 text-white'
-                    : 'border-white/16 bg-slate-900/42 text-slate-300'
-                }`}
-              >
-                {option.label}
-              </button>
-            )
-          })}
-        </div>
-
-        <div className="mt-2 flex flex-wrap gap-2">
-          <span className="rounded-full border border-white/14 bg-slate-950/72 px-2.5 py-1 text-[11px] font-medium text-slate-100">
-            {traceSummary.pointCount} nokta
-          </span>
-          <span className="rounded-full border border-white/14 bg-slate-950/72 px-2.5 py-1 text-[11px] font-medium text-slate-100">
-            Iz: {traceSummary.totalDistanceLabel}
-          </span>
-          <span className="rounded-full border border-white/14 bg-slate-950/72 px-2.5 py-1 text-[11px] font-medium text-slate-100">
-            Sure: {traceSummary.totalDurationLabel}
-          </span>
-          {traceSummary.firstPoint ? (
-            <span className="rounded-full border border-white/14 bg-slate-950/72 px-2.5 py-1 text-[11px] font-medium text-slate-100">
-              Baslangic {formatLocalClock(traceSummary.firstPoint.ts_utc)}
-            </span>
-          ) : null}
-          {traceSummary.lastPoint ? (
-            <span className="rounded-full border border-white/14 bg-slate-950/72 px-2.5 py-1 text-[11px] font-medium text-slate-100">
-              Son {formatLocalClock(traceSummary.lastPoint.ts_utc)}
-            </span>
-          ) : null}
-        </div>
-      </div>
       <div ref={containerRef} className="h-[26rem] w-full" />
       {loadError ? (
         <div className="absolute inset-0 flex items-center justify-center bg-slate-950/84 px-6 text-center text-sm font-medium text-slate-200">
