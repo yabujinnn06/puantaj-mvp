@@ -46,7 +46,15 @@ if (!fs.existsSync(srcDir)) {
     copyTree(srcDir, tempDir);
 
     removeIfExists(targetDir);
-    fs.renameSync(tempDir, targetDir);
+    try {
+      fs.renameSync(tempDir, targetDir);
+    } catch (error) {
+      if (error && typeof error === "object" && "code" in error && error.code !== "EPERM") {
+        throw error;
+      }
+      fs.mkdirSync(targetDir, { recursive: true });
+      copyTree(tempDir, targetDir);
+    }
     console.log(`Copied ${srcDir} -> ${targetDir}`);
   } catch (error) {
     fail("Failed to copy admin dist directory.", error);

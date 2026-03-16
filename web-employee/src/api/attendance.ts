@@ -44,6 +44,9 @@ export interface ParsedApiError {
   requestId?: string
 }
 
+const defaultBase = typeof window !== 'undefined' ? window.location.origin : 'http://127.0.0.1:8000'
+const keepaliveBaseUrl = String(apiClient.defaults.baseURL ?? defaultBase).replace(/\/$/, '')
+
 const errorCodeMap: Record<string, string> = {
   INVALID_TOKEN: 'Geçersiz oturum belirteci.',
   FORBIDDEN: 'Bu işlem için yetkiniz yok.',
@@ -202,6 +205,26 @@ export async function postEmployeeAppPresencePing(
     payload,
   )
   return response.data
+}
+
+export async function postEmployeeAppPresencePingKeepalive(
+  payload: EmployeeAppPresencePingRequest,
+): Promise<void> {
+  if (typeof window === 'undefined' || typeof fetch === 'undefined') {
+    return
+  }
+  try {
+    await fetch(`${keepaliveBaseUrl}/api/employee/app-presence/ping`, {
+      method: 'POST',
+      keepalive: true,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+  } catch {
+    // best effort
+  }
 }
 
 export async function postEmployeeInstallFunnelEvent(

@@ -116,6 +116,80 @@ class EmployeeLiveLocationRead(BaseModel):
     device_id: int
 
 
+LocationMonitorPointSource = Literal["CHECKIN", "CHECKOUT", "APP_OPEN", "APP_CLOSE", "LAST_LOCATION"]
+
+
+class LocationMonitorMapPointRead(BaseModel):
+    id: str
+    day: date
+    source: LocationMonitorPointSource
+    lat: float
+    lon: float
+    accuracy_m: float | None = None
+    ts_utc: datetime
+    label: str
+    location_status: LocationStatus | None = None
+    device_id: int | None = None
+    ip: str | None = None
+
+
+class LocationMonitorRangeTotalsRead(BaseModel):
+    worked_minutes: int = 0
+    overtime_minutes: int = 0
+    plan_overtime_minutes: int = 0
+    legal_overtime_minutes: int = 0
+    overtime_day_count: int = 0
+
+
+class LocationMonitorEmployeeSummaryRead(BaseModel):
+    employee: EmployeeRead
+    department_name: str | None = None
+    region_name: str | None = None
+    shift_name: str | None = None
+    today_status: Literal["NOT_STARTED", "IN_PROGRESS", "FINISHED"] = "NOT_STARTED"
+    worked_today_minutes: int = 0
+    weekly_total_minutes: int = 0
+    active_devices: int = 0
+    total_devices: int = 0
+    recent_ip: str | None = None
+    last_activity_utc: datetime | None = None
+    last_portal_seen_utc: datetime | None = None
+    last_checkin_utc: datetime | None = None
+    last_checkout_utc: datetime | None = None
+    last_app_open_utc: datetime | None = None
+    last_app_close_utc: datetime | None = None
+    location_label: str | None = None
+    latest_location: LocationMonitorMapPointRead | None = None
+
+
+class LocationMonitorDayRecordRead(BaseModel):
+    date: date
+    status: Literal["OK", "INCOMPLETE", "LEAVE", "OFF"]
+    check_in: datetime | None = None
+    check_out: datetime | None = None
+    worked_minutes: int = 0
+    overtime_minutes: int = 0
+    plan_overtime_minutes: int = 0
+    legal_overtime_minutes: int = 0
+    first_app_open_utc: datetime | None = None
+    last_app_close_utc: datetime | None = None
+    check_in_point: LocationMonitorMapPointRead | None = None
+    check_out_point: LocationMonitorMapPointRead | None = None
+    first_app_open_point: LocationMonitorMapPointRead | None = None
+    last_app_close_point: LocationMonitorMapPointRead | None = None
+    last_location_point: LocationMonitorMapPointRead | None = None
+
+
+class LocationMonitorEmployeeTimelineResponse(BaseModel):
+    generated_at_utc: datetime
+    start_date: date
+    end_date: date
+    summary: LocationMonitorEmployeeSummaryRead
+    totals: LocationMonitorRangeTotalsRead
+    days: list[LocationMonitorDayRecordRead] = Field(default_factory=list)
+    map_points: list[LocationMonitorMapPointRead] = Field(default_factory=list)
+
+
 class EmployeeDetailResponse(BaseModel):
     employee: EmployeeRead
     last_portal_seen_utc: datetime | None = None
@@ -1641,7 +1715,7 @@ class EmployeeStatusResponse(BaseModel):
 
 class EmployeeAppPresencePingRequest(BaseModel):
     device_fingerprint: str
-    source: Literal["APP_OPEN"] = "APP_OPEN"
+    source: Literal["APP_OPEN", "APP_CLOSE"] = "APP_OPEN"
     lat: float | None = None
     lon: float | None = None
     accuracy_m: float | None = Field(default=None, ge=0)

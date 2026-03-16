@@ -18,8 +18,8 @@ export function ManagementConsoleHeader({
           <p className="mc-kicker">YÖNETİM KONSOLU</p>
           <h2>Ana Panel</h2>
           <p>
-            Çalışan operasyon matrisi ana odak olarak korunur; harita, bildirim ve yardımcı analitik
-            katmanları ikincil rolde çalışır.
+            Calisan operasyon matrisi ana odak olarak korunur; konum takibi ayri ekranda, bildirim ve
+            yardimci analitik katmanlari ise destekleyici rolde calisir.
           </p>
         </div>
 
@@ -33,6 +33,9 @@ export function ManagementConsoleHeader({
           <Link to="/attendance-events" className="mc-button mc-button--ghost">
             Yoklama kayıtları
           </Link>
+          <Link to="/log" className="mc-button mc-button--ghost">
+            Log
+          </Link>
           <button type="button" className="mc-button mc-button--primary" onClick={onRefresh}>
             Veriyi yenile
           </button>
@@ -42,7 +45,7 @@ export function ManagementConsoleHeader({
       <div className="mc-header__meta-strip">
         <span>Son senkron: {formatDateTime(generatedAtUtc)}</span>
         <span>Görünüm: operasyon matrisi öncelikli</span>
-        <span>Rail: harita ve bildirim izlemesi</span>
+        <span>Rail: bildirim ve operasyon sinyalleri</span>
       </div>
     </header>
   )

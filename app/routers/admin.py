@@ -1,4 +1,5 @@
 import secrets
+from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
 import hashlib
 import logging
@@ -143,7 +144,12 @@ from app.schemas import (
     EmployeeShiftUpdateRequest,
     EmployeeLocationRead,
     EmployeeLiveLocationRead,
+    LocationMonitorDayRecordRead,
+    LocationMonitorEmployeeSummaryRead,
+    LocationMonitorEmployeeTimelineResponse,
     EmployeeIpSummaryRead,
+    LocationMonitorMapPointRead,
+    LocationMonitorRangeTotalsRead,
     EmployeePortalActivityRead,
     EmployeeLocationUpsert,
     EmployeeRead,
@@ -217,6 +223,7 @@ from app.services.control_room import (
 )
 from app.services.weekday_shift_assignments import normalize_shift_ids
 from app.services.monthly import calculate_department_monthly_summary, calculate_employee_monthly
+from app.services.activity_events import EVENT_APP_LAST_SEEN, EVENT_APP_LOGIN, MODULE_APP
 from app.services.push_notifications import (
     get_push_public_config,
     list_active_admin_push_subscriptions,
@@ -2987,6 +2994,111 @@ def _attendance_event_to_live_location(
     )
 
 
+def _location_monitor_day(value: datetime | None) -> date | None:
+    normalized = _as_utc_datetime(value)
+    if normalized is None:
+        return None
+    return normalized.astimezone(_attendance_timezone()).date()
+
+
+def _coerce_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed != parsed:
+        return None
+    return parsed
+
+
+def _audit_log_source(log_item: AuditLog) -> Literal["APP_OPEN", "APP_CLOSE"]:
+    source = str((log_item.details or {}).get("source") or "").strip().upper()
+    if source == "APP_CLOSE" or log_item.event_type == EVENT_APP_LAST_SEEN:
+        return "APP_CLOSE"
+    return "APP_OPEN"
+
+
+def _attendance_event_to_location_monitor_point(
+    event: AttendanceEvent | None,
+    *,
+    point_id: str | None = None,
+    label: str | None = None,
+) -> LocationMonitorMapPointRead | None:
+    if event is None or event.lat is None or event.lon is None:
+        return None
+    point_source: Literal["CHECKIN", "CHECKOUT"] = "CHECKIN" if event.type == AttendanceType.IN else "CHECKOUT"
+    point_day = _location_monitor_day(event.ts_utc)
+    if point_day is None:
+        return None
+    return LocationMonitorMapPointRead(
+        id=point_id or f"attendance-{event.id}",
+        day=point_day,
+        source=point_source,
+        lat=event.lat,
+        lon=event.lon,
+        accuracy_m=event.accuracy_m,
+        ts_utc=event.ts_utc,
+        label=label or ("Mesai baslangici" if point_source == "CHECKIN" else "Mesai bitisi"),
+        location_status=event.location_status,
+        device_id=event.device_id,
+    )
+
+
+def _audit_log_to_location_monitor_point(
+    log_item: AuditLog,
+    *,
+    point_id: str | None = None,
+    label: str | None = None,
+) -> LocationMonitorMapPointRead | None:
+    details = log_item.details or {}
+    lat = _coerce_float(details.get("lat"))
+    lon = _coerce_float(details.get("lon"))
+    if lat is None or lon is None:
+        return None
+    point_ts = _as_utc_datetime(log_item.ts_utc)
+    point_day = _location_monitor_day(log_item.ts_utc)
+    if point_ts is None or point_day is None:
+        return None
+    point_source = _audit_log_source(log_item)
+    return LocationMonitorMapPointRead(
+        id=point_id or f"audit-{log_item.id}",
+        day=point_day,
+        source=point_source,
+        lat=lat,
+        lon=lon,
+        accuracy_m=_coerce_float(details.get("accuracy_m")),
+        ts_utc=point_ts,
+        label=label or ("Uygulama acilisi" if point_source == "APP_OPEN" else "Uygulama cikisi"),
+        device_id=log_item.device_id,
+        ip=log_item.ip,
+    )
+
+
+def _latest_location_monitor_point(
+    *points: LocationMonitorMapPointRead | None,
+) -> LocationMonitorMapPointRead | None:
+    available = [point for point in points if point is not None]
+    if not available:
+        return None
+    return max(available, key=lambda point: (point.ts_utc, point.id))
+
+
+def _iter_months_between(start_day: date, end_day: date) -> list[tuple[int, int]]:
+    cursor_year = start_day.year
+    cursor_month = start_day.month
+    months: list[tuple[int, int]] = []
+    while (cursor_year, cursor_month) <= (end_day.year, end_day.month):
+        months.append((cursor_year, cursor_month))
+        if cursor_month == 12:
+            cursor_year += 1
+            cursor_month = 1
+        else:
+            cursor_month += 1
+    return months
+
+
 def _control_room_location_state(
     latest_location_event: AttendanceEvent | None,
     *,
@@ -3267,6 +3379,222 @@ def get_control_room_employee_detail(
     if employee is None:
         raise HTTPException(status_code=404, detail="Employee not found")
     return build_control_room_employee_detail(db, employee_id=employee_id)
+
+
+@router.get(
+    "/api/admin/location-monitor/employees/{employee_id}/timeline",
+    response_model=LocationMonitorEmployeeTimelineResponse,
+    dependencies=[Depends(require_admin)],
+)
+def get_location_monitor_employee_timeline(
+    employee_id: int,
+    start_date: date = Query(...),
+    end_date: date = Query(...),
+    db: Session = Depends(get_db),
+) -> LocationMonitorEmployeeTimelineResponse:
+    employee = db.get(Employee, employee_id)
+    if employee is None:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    if end_date < start_date:
+        raise HTTPException(status_code=422, detail="end_date must be on or after start_date")
+    if (end_date - start_date).days > 120:
+        raise HTTPException(status_code=422, detail="Date range cannot exceed 120 days")
+
+    tz = _attendance_timezone()
+    now_utc = datetime.now(timezone.utc)
+    now_local = now_utc.astimezone(tz)
+    start_utc = datetime.combine(start_date, time.min, tzinfo=tz).astimezone(timezone.utc)
+    end_utc_exclusive = datetime.combine(end_date + timedelta(days=1), time.min, tzinfo=tz).astimezone(timezone.utc)
+
+    current_report = calculate_employee_monthly(
+        db,
+        employee_id=employee_id,
+        year=now_local.year,
+        month=now_local.month,
+    )
+    worked_today_minutes = 0
+    weekly_total_minutes = 0
+    today_local = now_local.date()
+    for day_item in current_report.days:
+        if day_item.date == today_local:
+            worked_today_minutes = day_item.worked_minutes
+            break
+    week_start = today_local - timedelta(days=today_local.weekday())
+    week_end = week_start + timedelta(days=6)
+    weekly_total_minutes = sum(
+        day_item.worked_minutes
+        for day_item in current_report.days
+        if week_start <= day_item.date <= week_end
+    )
+
+    monthly_days_map: dict[date, Any] = {}
+    range_worked_minutes = 0
+    range_overtime_minutes = 0
+    range_plan_overtime_minutes = 0
+    range_legal_overtime_minutes = 0
+    overtime_day_count = 0
+    for year_value, month_value in _iter_months_between(start_date, end_date):
+        report = calculate_employee_monthly(
+            db,
+            employee_id=employee_id,
+            year=year_value,
+            month=month_value,
+        )
+        for day_item in report.days:
+            if not (start_date <= day_item.date <= end_date):
+                continue
+            monthly_days_map[day_item.date] = day_item
+            range_worked_minutes += day_item.worked_minutes
+            range_overtime_minutes += day_item.overtime_minutes
+            range_plan_overtime_minutes += day_item.plan_overtime_minutes
+            range_legal_overtime_minutes += day_item.legal_overtime_minutes
+            if day_item.legal_overtime_minutes > 0 or day_item.overtime_minutes > 0:
+                overtime_day_count += 1
+
+    attendance_events = list(
+        db.scalars(
+            select(AttendanceEvent)
+            .where(
+                AttendanceEvent.employee_id == employee_id,
+                AttendanceEvent.deleted_at.is_(None),
+                AttendanceEvent.ts_utc >= start_utc,
+                AttendanceEvent.ts_utc < end_utc_exclusive,
+            )
+            .order_by(AttendanceEvent.ts_utc.asc(), AttendanceEvent.id.asc())
+        ).all()
+    )
+
+    app_logs = list(
+        db.scalars(
+            select(AuditLog)
+            .where(
+                AuditLog.employee_id == employee_id,
+                AuditLog.module == MODULE_APP,
+                AuditLog.action == "EMPLOYEE_APP_LOCATION_PING",
+                AuditLog.ts_utc >= start_utc,
+                AuditLog.ts_utc < end_utc_exclusive,
+            )
+            .order_by(AuditLog.ts_utc.asc(), AuditLog.id.asc())
+        ).all()
+    )
+
+    attendance_points_by_day: dict[date, list[LocationMonitorMapPointRead]] = defaultdict(list)
+    app_points_by_day: dict[date, list[LocationMonitorMapPointRead]] = defaultdict(list)
+    checkin_points_by_day: dict[date, LocationMonitorMapPointRead] = {}
+    checkout_points_by_day: dict[date, LocationMonitorMapPointRead] = {}
+    map_points: list[LocationMonitorMapPointRead] = []
+
+    last_checkin_utc: datetime | None = None
+    last_checkout_utc: datetime | None = None
+    for event in attendance_events:
+        point = _attendance_event_to_location_monitor_point(event)
+        if point is None:
+            continue
+        map_points.append(point)
+        attendance_points_by_day[point.day].append(point)
+        if point.source == "CHECKIN":
+            checkin_points_by_day[point.day] = point
+            last_checkin_utc = point.ts_utc
+        elif point.source == "CHECKOUT":
+            checkout_points_by_day[point.day] = point
+            last_checkout_utc = point.ts_utc
+
+    last_app_open_utc: datetime | None = None
+    last_app_close_utc: datetime | None = None
+    recent_ip: str | None = None
+    for log_item in app_logs:
+        point = _audit_log_to_location_monitor_point(log_item)
+        if point is None:
+            continue
+        map_points.append(point)
+        app_points_by_day[point.day].append(point)
+        if point.source == "APP_OPEN":
+            last_app_open_utc = point.ts_utc
+        elif point.source == "APP_CLOSE":
+            last_app_close_utc = point.ts_utc
+        if recent_ip is None and log_item.ip:
+            recent_ip = log_item.ip
+
+    latest_location = _latest_location_monitor_point(*map_points)
+    map_points.sort(key=lambda item: (item.ts_utc, item.id))
+
+    timeline_days: list[LocationMonitorDayRecordRead] = []
+    all_days = sorted(monthly_days_map.keys(), reverse=True)
+    for day_key in all_days:
+        day_item = monthly_days_map[day_key]
+        day_app_points = sorted(app_points_by_day.get(day_key, []), key=lambda item: (item.ts_utc, item.id))
+        first_app_open_point = next((item for item in day_app_points if item.source == "APP_OPEN"), None)
+        last_app_close_point = next((item for item in reversed(day_app_points) if item.source == "APP_CLOSE"), None)
+        last_location_point = _latest_location_monitor_point(
+            *attendance_points_by_day.get(day_key, []),
+            *day_app_points,
+        )
+        timeline_days.append(
+            LocationMonitorDayRecordRead(
+                date=day_item.date,
+                status=day_item.status,
+                check_in=day_item.check_in,
+                check_out=day_item.check_out,
+                worked_minutes=day_item.worked_minutes,
+                overtime_minutes=day_item.overtime_minutes,
+                plan_overtime_minutes=day_item.plan_overtime_minutes,
+                legal_overtime_minutes=day_item.legal_overtime_minutes,
+                first_app_open_utc=first_app_open_point.ts_utc if first_app_open_point is not None else None,
+                last_app_close_utc=last_app_close_point.ts_utc if last_app_close_point is not None else None,
+                check_in_point=checkin_points_by_day.get(day_key),
+                check_out_point=checkout_points_by_day.get(day_key),
+                first_app_open_point=first_app_open_point,
+                last_app_close_point=last_app_close_point,
+                last_location_point=last_location_point,
+            )
+        )
+
+    today_events = [
+        event_item
+        for event_item in attendance_events
+        if _location_monitor_day(event_item.ts_utc) == today_local
+    ]
+    latest_label = latest_location.label if latest_location is not None else None
+    return LocationMonitorEmployeeTimelineResponse(
+        generated_at_utc=now_utc,
+        start_date=start_date,
+        end_date=end_date,
+        summary=LocationMonitorEmployeeSummaryRead(
+            employee=_to_employee_read(employee),
+            department_name=employee.department.name if employee.department is not None else None,
+            region_name=employee.region.name if employee.region is not None else None,
+            shift_name=employee.shift.name if employee.shift is not None else None,
+            today_status=_today_status_from_events(today_events),
+            worked_today_minutes=worked_today_minutes,
+            weekly_total_minutes=weekly_total_minutes,
+            active_devices=sum(1 for device in list(employee.devices or []) if device.is_active),
+            total_devices=len(list(employee.devices or [])),
+            recent_ip=recent_ip,
+            last_activity_utc=max(
+                [value for value in [last_checkin_utc, last_checkout_utc, last_app_open_utc, last_app_close_utc] if value],
+                default=None,
+            ),
+            last_portal_seen_utc=max(
+                [value for value in [last_app_open_utc, last_app_close_utc] if value],
+                default=None,
+            ),
+            last_checkin_utc=last_checkin_utc,
+            last_checkout_utc=last_checkout_utc,
+            last_app_open_utc=last_app_open_utc,
+            last_app_close_utc=last_app_close_utc,
+            location_label=latest_label,
+            latest_location=latest_location,
+        ),
+        totals=LocationMonitorRangeTotalsRead(
+            worked_minutes=range_worked_minutes,
+            overtime_minutes=range_overtime_minutes,
+            plan_overtime_minutes=range_plan_overtime_minutes,
+            legal_overtime_minutes=range_legal_overtime_minutes,
+            overtime_day_count=overtime_day_count,
+        ),
+        days=timeline_days,
+        map_points=map_points,
+    )
 
 
 @router.post(

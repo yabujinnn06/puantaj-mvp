@@ -49,6 +49,7 @@ import type {
   LaborProfile,
   LeaveRecord,
   LocationStatus,
+  LocationMonitorEmployeeTimelineResponse,
   ManualDayOverride,
   MonthlyEmployeeResponse,
   NotificationJob,
@@ -489,6 +490,11 @@ export interface MonthlyEmployeeParams {
   employee_id: number;
   year: number;
   month: number;
+}
+
+export interface LocationMonitorEmployeeTimelineParams {
+  start_date: string;
+  end_date: string;
 }
 
 export interface DepartmentSummaryParams {
@@ -1534,6 +1540,19 @@ export async function getControlRoomEmployeeDetail(
 ): Promise<ControlRoomEmployeeDetail> {
   const response = await apiClient.get<ControlRoomEmployeeDetail>(
     `/api/admin/control-room/employees/${employeeId}`,
+  )
+  return response.data
+}
+
+export async function getLocationMonitorEmployeeTimeline(
+  employeeId: number,
+  params: LocationMonitorEmployeeTimelineParams,
+): Promise<LocationMonitorEmployeeTimelineResponse> {
+  const response = await apiClient.get<LocationMonitorEmployeeTimelineResponse>(
+    `/api/admin/location-monitor/employees/${employeeId}/timeline`,
+    {
+      params,
+    },
   )
   return response.data
 }

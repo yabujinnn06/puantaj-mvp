@@ -23,14 +23,12 @@ import { ManagementConsoleEmployeeDetailModal } from '../components/management-c
 import { ManagementConsoleFilters } from '../components/management-console/ManagementConsoleFilters'
 import { ManagementConsoleHeader } from '../components/management-console/ManagementConsoleHeader'
 import { ManagementConsoleKpiCards } from '../components/management-console/ManagementConsoleKpiCards'
-import { ManagementConsoleMapPanel } from '../components/management-console/ManagementConsoleMapPanel'
 import { ManagementConsoleMatrixTable } from '../components/management-console/ManagementConsoleMatrixTable'
 import { ManagementConsoleNotificationPanel } from '../components/management-console/ManagementConsoleNotificationPanel'
-import { defaultFilters, parseNumber, toOverviewParams, type FilterFormState, type SortField } from '../components/management-console/types'
+import { defaultFilters, toOverviewParams, type FilterFormState, type SortField } from '../components/management-console/types'
 import {
   formatClockMinutes,
   formatDateTime,
-  locationStatusLabel,
   riskClass,
   riskStatusLabel,
   systemStatusClass,
@@ -231,9 +229,6 @@ export function ControlRoomPage() {
     overviewQuery.data.active_filters.start_date && overviewQuery.data.active_filters.end_date
       ? `Analiz: ${overviewQuery.data.active_filters.start_date} - ${overviewQuery.data.active_filters.end_date}`
       : null,
-    overviewQuery.data.active_filters.map_date
-      ? `Harita günü: ${overviewQuery.data.active_filters.map_date}`
-      : null,
     overviewQuery.data.active_filters.region_id
       ? `Bölge #${overviewQuery.data.active_filters.region_id}`
       : null,
@@ -352,13 +347,6 @@ export function ControlRoomPage() {
                       <strong>{formatDateTime(focusEmployee.last_activity_utc)}</strong>
                       <small>{focusEmployee.recent_ip ?? 'IP yok'}</small>
                     </article>
-                    <article className="mc-focus-metric">
-                      <span>Konum</span>
-                      <strong>{focusEmployee.location_label ?? '-'}</strong>
-                      <small>
-                        {locationStatusLabel(focusEmployee.latest_location?.location_status ?? 'NO_LOCATION')}
-                      </small>
-                    </article>
                   </div>
 
                   {focusSignals.length ? (
@@ -423,7 +411,7 @@ export function ControlRoomPage() {
                       <div className="mc-panel__head mc-panel__head--tight">
                         <div>
                           <p className="mc-kicker">SON SİNYAL</p>
-                          <h3 className="mc-panel__title">Puantaj ve konum görünümü</h3>
+                          <h3 className="mc-panel__title">Puantaj ve cihaz görünümü</h3>
                         </div>
                       </div>
                       <div className="mc-focus-data-list">
@@ -436,26 +424,18 @@ export function ControlRoomPage() {
                           </strong>
                         </div>
                         <div className="mc-focus-data-row">
-                          <span>Konum durumu</span>
-                          <strong>
-                            {snapshotQuery.data.last_event
-                              ? locationStatusLabel(snapshotQuery.data.last_event.location_status)
-                              : '-'}
-                          </strong>
-                        </div>
-                        <div className="mc-focus-data-row">
-                          <span>Doğruluk</span>
-                          <strong>
-                            {snapshotQuery.data.latest_location?.accuracy_m != null
-                              ? `${Math.round(snapshotQuery.data.latest_location.accuracy_m)} m`
-                              : '-'}
-                          </strong>
-                        </div>
-                        <div className="mc-focus-data-row">
                           <span>Cihaz</span>
                           <strong>
                             {snapshotQuery.data.last_event ? `#${snapshotQuery.data.last_event.device_id}` : '-'}
                           </strong>
+                        </div>
+                        <div className="mc-focus-data-row">
+                          <span>Portal izi</span>
+                          <strong>{formatDateTime(focusEmployee.last_portal_seen_utc)}</strong>
+                        </div>
+                        <div className="mc-focus-data-row">
+                          <span>Takip ekranı</span>
+                          <strong>Konum takibi ayri merkezde</strong>
                         </div>
                       </div>
                     </article>
@@ -477,14 +457,6 @@ export function ControlRoomPage() {
                         <div className="mc-focus-data-row">
                           <span>Portal izi</span>
                           <strong>{formatDateTime(focusEmployee.last_portal_seen_utc)}</strong>
-                        </div>
-                        <div className="mc-focus-data-row">
-                          <span>Son konum</span>
-                          <strong>
-                            {snapshotQuery.data.latest_location
-                              ? `${snapshotQuery.data.latest_location.lat.toFixed(5)}, ${snapshotQuery.data.latest_location.lon.toFixed(5)}`
-                              : '-'}
-                          </strong>
                         </div>
                         <div className="mc-focus-data-row">
                           <span>İlk cihaz izi</span>
@@ -714,14 +686,6 @@ export function ControlRoomPage() {
 
           {!sideRailCollapsed ? (
             <aside className="mc-layout__rail mc-layout__rail--control-room">
-              <ManagementConsoleMapPanel
-                selectedEmployeeId={selectedEmployeeId}
-                departmentId={parseNumber(appliedFilters.department_id)}
-                regionId={parseNumber(appliedFilters.region_id)}
-                startDate={appliedFilters.start_date}
-                endDate={appliedFilters.end_date}
-                onSelectEmployee={openEmployee}
-              />
               <ManagementConsoleNotificationPanel
                 selectedEmployeeId={selectedEmployeeId}
                 startDate={appliedFilters.start_date}

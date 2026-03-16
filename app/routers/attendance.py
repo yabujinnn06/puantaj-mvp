@@ -51,8 +51,8 @@ from app.schemas import (
 )
 from app.settings import get_settings
 from app.services.activity_events import (
-    EVENT_APP_LOGIN,
     MODULE_APP,
+    app_presence_event_type,
     log_employee_activity,
 )
 from app.services.push_notifications import (
@@ -916,7 +916,7 @@ def employee_app_presence_ping(
         device_id=device.id,
         action="EMPLOYEE_APP_LOCATION_PING",
         module=MODULE_APP,
-        event_type=EVENT_APP_LOGIN,
+        event_type=app_presence_event_type(payload.source),
         success=True,
         entity_type="device",
         entity_id=str(device.id),

@@ -22,7 +22,12 @@ APP_ACTIVITY_EVENTS = {
 
 
 def app_presence_event_type(source: str | None) -> str:
-    return EVENT_APP_LOGIN
+    normalized = str(source or "").strip().upper()
+    if normalized == "APP_CLOSE":
+        return EVENT_APP_LAST_SEEN
+    if normalized == "APP_OPEN":
+        return EVENT_APP_LOGIN
+    return EVENT_LOCATION_PING
 
 
 def log_employee_activity(

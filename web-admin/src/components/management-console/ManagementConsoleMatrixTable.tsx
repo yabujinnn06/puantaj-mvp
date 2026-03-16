@@ -6,7 +6,6 @@ import type { FilterFormState, SortField } from './types'
 import {
   formatDateTime,
   formatRelative,
-  locationStateLabel,
   riskClass,
   riskStatusLabel,
   sortIcon,
@@ -22,7 +21,7 @@ const TABLE_INLINE_PADDING = 12
 type TableLayoutMode = 'wide' | 'condensed' | 'stacked'
 
 type MatrixColumn = {
-  field: SortField | 'risk_status' | 'recent_ip' | 'location_label'
+  field: SortField | 'risk_status' | 'recent_ip'
   label: string
   minWidth: number
   flex: string
@@ -40,7 +39,6 @@ const MATRIX_COLUMNS: readonly MatrixColumn[] = [
   { field: 'violation_count_7d', label: 'İhlal', minWidth: 110, flex: '0.82fr', sortable: true },
   { field: 'last_activity', label: 'Son aktivite', minWidth: 160, flex: '1.08fr', sortable: true },
   { field: 'recent_ip', label: 'IP', minWidth: 120, flex: '0.86fr', sortable: false },
-  { field: 'location_label', label: 'Konum', minWidth: 160, flex: '1.12fr', sortable: false },
 ]
 
 const TABLE_MIN_WIDTH =
@@ -137,11 +135,6 @@ function CompactRow({
           <small>{formatRelative(item.last_activity_utc)}</small>
         </article>
         <article className="mc-table-metric mc-table-metric--wide">
-          <span className="mc-table-metric__label">Konum</span>
-          <strong className="mc-table-metric__value">{item.location_label ?? '-'}</strong>
-          <small>{locationStateLabel(item.location_state)}</small>
-        </article>
-        <article className="mc-table-metric mc-table-metric--wide">
           <span className="mc-table-metric__label">IP / cihaz</span>
           <strong className="mc-table-metric__value">{item.recent_ip ?? '-'}</strong>
           <small>
@@ -196,10 +189,6 @@ function WideRow({
       </div>
       <div className="mc-table-cell mc-table-cell--mono" title={item.recent_ip ?? '-'}>
         {item.recent_ip ?? '-'}
-      </div>
-      <div className="mc-table-cell mc-table-cell--stack">
-        <strong>{item.location_label ?? '-'}</strong>
-        <span>{locationStateLabel(item.location_state)}</span>
       </div>
     </button>
   )

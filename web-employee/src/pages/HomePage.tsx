@@ -508,7 +508,7 @@ export function HomePage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [pendingAction, setPendingAction] = useState<'checkin' | 'checkout' | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [locationWarning, setLocationWarning] = useState<string | null>(null)
+  const [, setLocationWarning] = useState<string | null>(null)
   const [requestId, setRequestId] = useState<string | null>(null)
   const [lastAction, setLastAction] = useState<LastAction | null>(null)
   const [todayStatus, setTodayStatus] = useState<TodayStatus>('NOT_STARTED')
@@ -2401,17 +2401,6 @@ export function HomePage() {
                 !
               </span>
               {scannerError}
-            </p>
-          </div>
-        ) : null}
-
-        {locationWarning ? (
-          <div className="warn-box banner-warning">
-            <p>
-              <span className="banner-icon" aria-hidden="true">
-                !
-              </span>
-              {locationWarning}
             </p>
           </div>
         ) : null}

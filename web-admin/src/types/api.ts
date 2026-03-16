@@ -910,6 +910,79 @@ export interface MonthlyEmployeeResponse {
   labor_profile: LaborProfile | null
 }
 
+export type LocationMonitorPointSource = 'CHECKIN' | 'CHECKOUT' | 'APP_OPEN' | 'APP_CLOSE' | 'LAST_LOCATION'
+
+export interface LocationMonitorMapPoint {
+  id: string
+  day: string
+  source: LocationMonitorPointSource
+  lat: number
+  lon: number
+  accuracy_m: number | null
+  ts_utc: string
+  label: string
+  location_status: LocationStatus | null
+  device_id: number | null
+  ip: string | null
+}
+
+export interface LocationMonitorEmployeeSummary {
+  employee: Employee
+  department_name: string | null
+  region_name: string | null
+  shift_name: string | null
+  today_status: 'NOT_STARTED' | 'IN_PROGRESS' | 'FINISHED'
+  worked_today_minutes: number
+  weekly_total_minutes: number
+  active_devices: number
+  total_devices: number
+  recent_ip: string | null
+  last_activity_utc: string | null
+  last_portal_seen_utc: string | null
+  last_checkin_utc: string | null
+  last_checkout_utc: string | null
+  last_app_open_utc: string | null
+  last_app_close_utc: string | null
+  location_label: string | null
+  latest_location: LocationMonitorMapPoint | null
+}
+
+export interface LocationMonitorRangeTotals {
+  worked_minutes: number
+  overtime_minutes: number
+  plan_overtime_minutes: number
+  legal_overtime_minutes: number
+  overtime_day_count: number
+}
+
+export interface LocationMonitorDayRecord {
+  date: string
+  status: 'OK' | 'INCOMPLETE' | 'LEAVE' | 'OFF'
+  check_in: string | null
+  check_out: string | null
+  worked_minutes: number
+  overtime_minutes: number
+  plan_overtime_minutes: number
+  legal_overtime_minutes: number
+  first_app_open_utc: string | null
+  last_app_close_utc: string | null
+  check_in_point: LocationMonitorMapPoint | null
+  check_out_point: LocationMonitorMapPoint | null
+  first_app_open_point: LocationMonitorMapPoint | null
+  last_app_close_point: LocationMonitorMapPoint | null
+  last_location_point: LocationMonitorMapPoint | null
+}
+
+export interface LocationMonitorEmployeeTimelineResponse {
+  generated_at_utc: string
+  start_date: string
+  end_date: string
+  summary: LocationMonitorEmployeeSummary
+  totals: LocationMonitorRangeTotals
+  days: LocationMonitorDayRecord[]
+  map_points: LocationMonitorMapPoint[]
+}
+
 export interface DepartmentSummaryItem {
   department_id: number
   department_name: string

@@ -248,13 +248,6 @@ function todayStatusLabel(value: 'NOT_STARTED' | 'IN_PROGRESS' | 'FINISHED'): st
   return 'Giriş bekleniyor'
 }
 
-function locationStateLabel(value: 'LIVE' | 'STALE' | 'DORMANT' | 'NONE'): string {
-  if (value === 'LIVE') return 'Canlı'
-  if (value === 'STALE') return 'Yakın'
-  if (value === 'DORMANT') return 'Eski'
-  return 'Veri yok'
-}
-
 function eventTypeLabel(value: AttendanceEvent['type']): string {
   return value === 'IN' ? 'Giriş' : 'Çıkış'
 }
@@ -515,7 +508,6 @@ export function ManagementConsoleEmployeeDetailModal({
                 <span className={`mc-status-pill ${riskClass(employee.risk_status)}`}>{riskStatusLabel(employee.risk_status)}</span>
                 <span className="mc-chip">{employee.shift_name ?? 'Vardiya tanımsız'}</span>
                 <span className="mc-chip">{employee.shift_window_label ?? 'Plan penceresi yok'}</span>
-                <span className="mc-chip">{locationStateLabel(employee.location_state)}</span>
               </div>
             </div>
             <div className={`mc-ops__score ${riskClass(employee.risk_status)}`}>
@@ -550,9 +542,9 @@ export function ManagementConsoleEmployeeDetailModal({
                     <small>{formatRelative(employee.last_activity_utc)}</small>
                   </article>
                   <article className="mc-ops__summary-card">
-                    <span>Konum / IP</span>
-                    <strong>{employee.location_label ?? 'Veri yok'}</strong>
-                    <small>{employee.recent_ip ?? 'IP kaydı yok'}</small>
+                    <span>Portal / IP</span>
+                    <strong>{formatDateTime(employee.last_portal_seen_utc)}</strong>
+                    <small>{employee.recent_ip ?? 'IP kaydi yok'}</small>
                   </article>
                   <article className="mc-ops__summary-card">
                     <span>Cihaz kapsamı</span>

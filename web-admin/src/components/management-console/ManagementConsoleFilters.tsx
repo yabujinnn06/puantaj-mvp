@@ -87,14 +87,6 @@ export function ManagementConsoleFilters({
               onChange={(event) => onChange({ ...filterForm, end_date: event.target.value })}
             />
           </label>
-          <label className="mc-field">
-            <span>Harita günü</span>
-            <input
-              type="date"
-              value={filterForm.map_date}
-              onChange={(event) => onChange({ ...filterForm, map_date: event.target.value })}
-            />
-          </label>
         </div>
 
         <div className="mc-filter-grid mc-filter-grid--secondary">

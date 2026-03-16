@@ -17,6 +17,7 @@ import { EmployeeMonthlyReportPage } from './pages/EmployeeMonthlyReportPage'
 import { EmployeesPage } from './pages/EmployeesPage'
 import { LeavesPage } from './pages/LeavesPage'
 import { LoginPage } from './pages/LoginPage'
+import { LocationMonitorPage } from './pages/LocationMonitorPage'
 import { ManagementConsolePage } from './pages/ManagementConsolePage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { PuantajExportPage } from './pages/PuantajExportPage'
@@ -42,6 +43,8 @@ function App() {
         <Route element={<AppLayout />}>
           <Route path="/" element={<Navigate to="/management-console" replace />} />
           <Route path="/management-console" element={<ManagementConsolePage />} />
+          <Route path="/log" element={<LocationMonitorPage />} />
+          <Route path="/location-monitor" element={<Navigate to="/log" replace />} />
           <Route path="/control-room" element={<Navigate to="/management-console?focus=matrix" replace />} />
           <Route path="/dashboard" element={<Navigate to="/management-console" replace />} />
           <Route path="/regions" element={<RegionsPage />} />

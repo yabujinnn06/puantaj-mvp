@@ -1,13 +1,13 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 
-import { postEmployeeAppPresencePing } from './api/attendance'
+import { postEmployeeAppPresencePing, postEmployeeAppPresencePingKeepalive } from './api/attendance'
 import { BrandSignature } from './components/BrandSignature'
 import { ClaimPage } from './pages/ClaimPage'
 import { HomePage } from './pages/HomePage'
 import { RecoverPage } from './pages/RecoverPage'
 import { getStoredDeviceFingerprint } from './utils/device'
-import { getCurrentLocation } from './utils/location'
+import { getCachedLocation, getCurrentLocation } from './utils/location'
 
 function EmployeeRouteGuard({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
@@ -132,6 +132,29 @@ function EmployeePresenceTracker() {
 
     return () => {
       cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    const deviceFingerprint = getStoredDeviceFingerprint()
+    if (!deviceFingerprint || typeof window === 'undefined') {
+      return
+    }
+
+    const handlePageHide = () => {
+      const cachedLocation = getCachedLocation()
+      void postEmployeeAppPresencePingKeepalive({
+        device_fingerprint: deviceFingerprint,
+        source: 'APP_CLOSE',
+        lat: cachedLocation?.lat,
+        lon: cachedLocation?.lon,
+        accuracy_m: cachedLocation?.accuracy_m ?? null,
+      })
+    }
+
+    window.addEventListener('pagehide', handlePageHide)
+    return () => {
+      window.removeEventListener('pagehide', handlePageHide)
     }
   }, [])
 
