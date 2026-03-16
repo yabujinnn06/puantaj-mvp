@@ -910,7 +910,15 @@ export interface MonthlyEmployeeResponse {
   labor_profile: LaborProfile | null
 }
 
-export type LocationMonitorPointSource = 'CHECKIN' | 'CHECKOUT' | 'APP_OPEN' | 'APP_CLOSE' | 'DEMO_MARK' | 'LAST_LOCATION'
+export type LocationMonitorPointSource =
+  | 'CHECKIN'
+  | 'CHECKOUT'
+  | 'APP_OPEN'
+  | 'APP_CLOSE'
+  | 'DEMO_START'
+  | 'DEMO_END'
+  | 'DEMO_MARK'
+  | 'LAST_LOCATION'
 
 export interface LocationMonitorMapPoint {
   id: string
@@ -943,6 +951,8 @@ export interface LocationMonitorEmployeeSummary {
   last_checkout_utc: string | null
   last_app_open_utc: string | null
   last_app_close_utc: string | null
+  last_demo_start_utc: string | null
+  last_demo_end_utc: string | null
   location_label: string | null
   latest_location: LocationMonitorMapPoint | null
 }
@@ -966,10 +976,14 @@ export interface LocationMonitorDayRecord {
   legal_overtime_minutes: number
   first_app_open_utc: string | null
   last_app_close_utc: string | null
+  first_demo_start_utc: string | null
+  last_demo_end_utc: string | null
   check_in_point: LocationMonitorMapPoint | null
   check_out_point: LocationMonitorMapPoint | null
   first_app_open_point: LocationMonitorMapPoint | null
   last_app_close_point: LocationMonitorMapPoint | null
+  first_demo_start_point: LocationMonitorMapPoint | null
+  last_demo_end_point: LocationMonitorMapPoint | null
   last_location_point: LocationMonitorMapPoint | null
 }
 

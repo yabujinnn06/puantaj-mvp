@@ -116,7 +116,16 @@ class EmployeeLiveLocationRead(BaseModel):
     device_id: int
 
 
-LocationMonitorPointSource = Literal["CHECKIN", "CHECKOUT", "APP_OPEN", "APP_CLOSE", "DEMO_MARK", "LAST_LOCATION"]
+LocationMonitorPointSource = Literal[
+    "CHECKIN",
+    "CHECKOUT",
+    "APP_OPEN",
+    "APP_CLOSE",
+    "DEMO_START",
+    "DEMO_END",
+    "DEMO_MARK",
+    "LAST_LOCATION",
+]
 
 
 class LocationMonitorMapPointRead(BaseModel):
@@ -158,6 +167,8 @@ class LocationMonitorEmployeeSummaryRead(BaseModel):
     last_checkout_utc: datetime | None = None
     last_app_open_utc: datetime | None = None
     last_app_close_utc: datetime | None = None
+    last_demo_start_utc: datetime | None = None
+    last_demo_end_utc: datetime | None = None
     location_label: str | None = None
     latest_location: LocationMonitorMapPointRead | None = None
 
@@ -173,10 +184,14 @@ class LocationMonitorDayRecordRead(BaseModel):
     legal_overtime_minutes: int = 0
     first_app_open_utc: datetime | None = None
     last_app_close_utc: datetime | None = None
+    first_demo_start_utc: datetime | None = None
+    last_demo_end_utc: datetime | None = None
     check_in_point: LocationMonitorMapPointRead | None = None
     check_out_point: LocationMonitorMapPointRead | None = None
     first_app_open_point: LocationMonitorMapPointRead | None = None
     last_app_close_point: LocationMonitorMapPointRead | None = None
+    first_demo_start_point: LocationMonitorMapPointRead | None = None
+    last_demo_end_point: LocationMonitorMapPointRead | None = None
     last_location_point: LocationMonitorMapPointRead | None = None
 
 
@@ -1711,11 +1726,14 @@ class EmployeeStatusResponse(BaseModel):
     completed_cycles_today: int | None = None
     home_location_required: bool | None = None
     passkey_registered: bool | None = None
+    demo_active: bool | None = None
+    last_demo_started_at_utc: datetime | None = None
+    last_demo_ended_at_utc: datetime | None = None
 
 
 class EmployeeAppPresencePingRequest(BaseModel):
     device_fingerprint: str
-    source: Literal["APP_OPEN", "APP_CLOSE", "DEMO_MARK"] = "APP_OPEN"
+    source: Literal["APP_OPEN", "APP_CLOSE", "DEMO_START", "DEMO_END", "DEMO_MARK"] = "APP_OPEN"
     lat: float | None = None
     lon: float | None = None
     accuracy_m: float | None = Field(default=None, ge=0)

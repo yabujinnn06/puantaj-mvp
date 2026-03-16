@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.errors import ApiError
 from app.models import (
+    AuditLog,
     AttendanceExtraCheckinApproval,
     AttendanceEvent,
     AttendanceEventSource,
@@ -28,6 +29,12 @@ from app.models import (
 )
 from app.schemas import AttendanceEventCreate
 from app.settings import get_settings
+from app.services.activity_events import (
+    EVENT_APP_DEMO_END,
+    EVENT_APP_DEMO_MARK,
+    EVENT_APP_DEMO_START,
+    MODULE_APP,
+)
 from app.services.location import distance_m, evaluate_location
 from app.services.push_notifications import send_push_to_admins
 from app.services.schedule_plans import resolve_effective_plan_for_employee_day
@@ -122,6 +129,53 @@ def _resolve_active_device(db: Session, device_fingerprint: str) -> Device:
         )
 
     return device
+
+
+def _resolve_demo_status_for_employee(
+    db: Session,
+    *,
+    employee_id: int,
+    reference_ts_utc: datetime,
+) -> tuple[bool, datetime | None, datetime | None]:
+    day_start_utc, day_end_utc = _local_day_bounds_utc(reference_ts_utc)
+    demo_logs = list(
+        db.scalars(
+            select(AuditLog)
+            .where(
+                AuditLog.employee_id == employee_id,
+                AuditLog.module == MODULE_APP,
+                AuditLog.action == "EMPLOYEE_APP_LOCATION_PING",
+                AuditLog.ts_utc >= day_start_utc,
+                AuditLog.ts_utc < day_end_utc,
+                AuditLog.event_type.in_(
+                    (
+                        EVENT_APP_DEMO_START,
+                        EVENT_APP_DEMO_END,
+                        EVENT_APP_DEMO_MARK,
+                    )
+                ),
+            )
+            .order_by(AuditLog.ts_utc.asc(), AuditLog.id.asc())
+        ).all()
+    )
+
+    last_demo_started_at_utc: datetime | None = None
+    last_demo_ended_at_utc: datetime | None = None
+    for log_item in demo_logs:
+        event_type = str(log_item.event_type or "").strip().lower()
+        if event_type in {EVENT_APP_DEMO_START, EVENT_APP_DEMO_MARK}:
+            last_demo_started_at_utc = _normalize_ts(log_item.ts_utc)
+        elif event_type == EVENT_APP_DEMO_END:
+            last_demo_ended_at_utc = _normalize_ts(log_item.ts_utc)
+
+    demo_active = bool(
+        last_demo_started_at_utc is not None
+        and (
+            last_demo_ended_at_utc is None
+            or last_demo_started_at_utc > last_demo_ended_at_utc
+        )
+    )
+    return demo_active, last_demo_started_at_utc, last_demo_ended_at_utc
 
 
 class QRScanDeniedError(Exception):
@@ -1401,6 +1455,11 @@ def get_employee_status_by_device(
     home_location_required = db.scalar(
         select(EmployeeLocation.id).where(EmployeeLocation.employee_id == employee.id)
     ) is None
+    demo_active, last_demo_started_at_utc, last_demo_ended_at_utc = _resolve_demo_status_for_employee(
+        db,
+        employee_id=employee.id,
+        reference_ts_utc=reference_now_utc,
+    )
     suggested_action = (
         "CHECKOUT"
         if has_open_shift
@@ -1431,6 +1490,9 @@ def get_employee_status_by_device(
         "completed_cycles_today": completed_cycles_today,
         "home_location_required": home_location_required,
         "passkey_registered": passkey_registered,
+        "demo_active": demo_active,
+        "last_demo_started_at_utc": last_demo_started_at_utc,
+        "last_demo_ended_at_utc": last_demo_ended_at_utc,
     }
 
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
 import type { GeoJSONSource, Map as MapLibreMap, MapGeoJSONFeature } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
@@ -6,7 +6,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import type { LocationMonitorMapPoint } from '../../types/api'
 
 const DEFAULT_CENTER: [number, number] = [28.97953, 41.015137]
-const STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty/style.json'
+const STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty'
 const ROUTE_SOURCE_ID = 'location-monitor-route-source'
 const POINT_SOURCE_ID = 'location-monitor-point-source'
 const ROUTE_SHADOW_LAYER_ID = 'location-monitor-route-shadow-layer'
@@ -23,16 +23,27 @@ function pointColor(point: Pick<LocationMonitorMapPoint, 'source'>): string {
   if (point.source === 'CHECKOUT') return '#f43f5e'
   if (point.source === 'APP_OPEN') return '#f59e0b'
   if (point.source === 'APP_CLOSE') return '#818cf8'
-  if (point.source === 'DEMO_MARK') return '#22d3ee'
+  if (point.source === 'DEMO_START' || point.source === 'DEMO_MARK') return '#22d3ee'
+  if (point.source === 'DEMO_END') return '#a78bfa'
   return '#38bdf8'
+}
+
+function pointSourceLabel(source: LocationMonitorMapPoint['source']): string {
+  if (source === 'CHECKIN') return 'Mesai girisi'
+  if (source === 'CHECKOUT') return 'Mesai cikisi'
+  if (source === 'APP_OPEN') return 'Uygulama girisi'
+  if (source === 'APP_CLOSE') return 'Uygulama cikisi'
+  if (source === 'DEMO_START' || source === 'DEMO_MARK') return 'Demo baslangici'
+  if (source === 'DEMO_END') return 'Demo bitisi'
+  return 'Konum noktasi'
 }
 
 function createMarkerElement(point: LocationMonitorMapPoint, focused: boolean): HTMLDivElement {
   const color = pointColor(point)
   const wrapper = document.createElement('div')
   wrapper.style.position = 'relative'
-  wrapper.style.width = focused ? '28px' : '24px'
-  wrapper.style.height = focused ? '38px' : '34px'
+  wrapper.style.width = focused ? '24px' : '20px'
+  wrapper.style.height = focused ? '34px' : '30px'
   wrapper.style.transform = 'translate(-50%, -100%)'
   wrapper.style.cursor = 'pointer'
   wrapper.style.zIndex = focused ? '6' : '4'
@@ -41,9 +52,9 @@ function createMarkerElement(point: LocationMonitorMapPoint, focused: boolean): 
   const pulse = document.createElement('div')
   pulse.style.position = 'absolute'
   pulse.style.left = '50%'
-  pulse.style.top = focused ? '10px' : '9px'
-  pulse.style.width = focused ? '20px' : '16px'
-  pulse.style.height = focused ? '20px' : '16px'
+  pulse.style.top = focused ? '9px' : '8px'
+  pulse.style.width = focused ? '17px' : '14px'
+  pulse.style.height = focused ? '17px' : '14px'
   pulse.style.borderRadius = '999px'
   pulse.style.transform = 'translate(-50%, -50%)'
   pulse.style.background = `${color}33`
@@ -53,8 +64,8 @@ function createMarkerElement(point: LocationMonitorMapPoint, focused: boolean): 
   pin.style.position = 'absolute'
   pin.style.left = '50%'
   pin.style.top = '0'
-  pin.style.width = focused ? '18px' : '15px'
-  pin.style.height = focused ? '18px' : '15px'
+  pin.style.width = focused ? '15px' : '13px'
+  pin.style.height = focused ? '15px' : '13px'
   pin.style.borderRadius = '999px'
   pin.style.transform = 'translateX(-50%)'
   pin.style.background = color
@@ -69,8 +80,8 @@ function createMarkerElement(point: LocationMonitorMapPoint, focused: boolean): 
   core.style.position = 'absolute'
   core.style.left = '50%'
   core.style.top = '50%'
-  core.style.width = focused ? '5px' : '4px'
-  core.style.height = focused ? '5px' : '4px'
+  core.style.width = focused ? '4px' : '3px'
+  core.style.height = focused ? '4px' : '3px'
   core.style.borderRadius = '999px'
   core.style.transform = 'translate(-50%, -50%)'
   core.style.background = 'rgba(255,255,255,0.98)'
@@ -78,13 +89,13 @@ function createMarkerElement(point: LocationMonitorMapPoint, focused: boolean): 
   const tail = document.createElement('div')
   tail.style.position = 'absolute'
   tail.style.left = '50%'
-  tail.style.top = focused ? '14px' : '12px'
+  tail.style.top = focused ? '11px' : '10px'
   tail.style.width = '0'
   tail.style.height = '0'
   tail.style.transform = 'translateX(-50%)'
-  tail.style.borderLeft = focused ? '7px solid transparent' : '6px solid transparent'
-  tail.style.borderRight = focused ? '7px solid transparent' : '6px solid transparent'
-  tail.style.borderTop = focused ? `12px solid ${color}` : `10px solid ${color}`
+  tail.style.borderLeft = focused ? '6px solid transparent' : '5px solid transparent'
+  tail.style.borderRight = focused ? '6px solid transparent' : '5px solid transparent'
+  tail.style.borderTop = focused ? `11px solid ${color}` : `9px solid ${color}`
   tail.style.filter = 'drop-shadow(0 6px 10px rgba(15,23,42,0.34))'
 
   pin.appendChild(core)
@@ -308,6 +319,10 @@ function ensure3DLayers(map: MapLibreMap) {
           5,
           'APP_CLOSE',
           5,
+          'DEMO_START',
+          5.25,
+          'DEMO_END',
+          5.25,
           'DEMO_MARK',
           5.5,
           5.5,
@@ -325,6 +340,10 @@ function ensure3DLayers(map: MapLibreMap) {
           '#f59e0b',
           'APP_CLOSE',
           '#818cf8',
+          'DEMO_START',
+          '#22d3ee',
+          'DEMO_END',
+          '#a78bfa',
           'DEMO_MARK',
           '#22d3ee',
           '#38bdf8',
@@ -341,7 +360,10 @@ function ensure3DLayers(map: MapLibreMap) {
 function popupHtml(feature: MapGeoJSONFeature): string {
   const properties = feature.properties ?? {}
   const label = typeof properties.label === 'string' ? properties.label : 'Konum noktasi'
-  const source = typeof properties.source === 'string' ? properties.source : '-'
+  const source =
+    typeof properties.source === 'string'
+      ? pointSourceLabel(properties.source as LocationMonitorMapPoint['source'])
+      : '-'
   const timestamp = typeof properties.timestamp === 'string' ? properties.timestamp : '-'
   const accuracy = typeof properties.accuracy === 'string' ? properties.accuracy : '-'
   const locationStatus = typeof properties.locationStatus === 'string' ? properties.locationStatus : '-'
@@ -365,7 +387,7 @@ function popupHtmlForPoint(point: LocationMonitorMapPoint): string {
   return [
     `<strong style="display:block;font-size:13px;margin-bottom:4px;">${point.label}</strong>`,
     `<div style="font-size:12px;line-height:1.45;">`,
-    `<div><strong>Tip:</strong> ${point.source}</div>`,
+    `<div><strong>Tip:</strong> ${pointSourceLabel(point.source)}</div>`,
     `<div><strong>Zaman:</strong> ${point.ts_utc}</div>`,
     `<div><strong>Dogruluk:</strong> ${point.accuracy_m == null ? '-' : `${Math.round(point.accuracy_m)} m`}</div>`,
     `<div><strong>Durum:</strong> ${point.location_status ?? '-'}</div>`,
@@ -386,6 +408,7 @@ export function LocationMonitor3DView({
   const mapRef = useRef<MapLibreMap | null>(null)
   const mapLoadedRef = useRef(false)
   const markersRef = useRef<maplibregl.Marker[]>([])
+  const [loadError, setLoadError] = useState<string | null>(null)
   const isSupported = isMapRenderingSupported()
   const orderedPoints = useMemo(
     () => [...points].sort((left, right) => new Date(left.ts_utc).getTime() - new Date(right.ts_utc).getTime()),
@@ -416,6 +439,7 @@ export function LocationMonitor3DView({
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right')
     mapRef.current = map
     markersRef.current = syncDomMarkers(map, orderedPoints, highlightedPointId)
+    setLoadError(null)
 
     const clickHandler = (event: maplibregl.MapMouseEvent & { features?: MapGeoJSONFeature[] }) => {
       const feature = event.features?.[0]
@@ -442,6 +466,7 @@ export function LocationMonitor3DView({
     }
 
     map.on('load', () => {
+      setLoadError(null)
       mapLoadedRef.current = true
       ensure3DLayers(map)
       const routeSource = map.getSource(ROUTE_SOURCE_ID) as GeoJSONSource | undefined
@@ -452,6 +477,16 @@ export function LocationMonitor3DView({
       map.on('mouseenter', POINT_LAYER_ID, enterHandler)
       map.on('mouseleave', POINT_LAYER_ID, leaveHandler)
       fitToPoints(map, orderedPoints)
+    })
+
+    map.on('error', (event) => {
+      const message =
+        typeof event?.error?.message === 'string' && event.error.message.trim()
+          ? event.error.message.trim()
+          : null
+      if (message?.includes('404') || message?.includes('style')) {
+        setLoadError('3D harita katmani yuklenemedi. Sayfayi yenileyip tekrar deneyin.')
+      }
     })
 
     return () => {
@@ -516,8 +551,13 @@ export function LocationMonitor3DView({
   }
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 shadow-sm">
+    <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 shadow-sm">
       <div ref={containerRef} className="h-[26rem] w-full" />
+      {loadError ? (
+        <div className="absolute inset-0 flex items-center justify-center bg-slate-950/84 px-6 text-center text-sm font-medium text-slate-200">
+          {loadError}
+        </div>
+      ) : null}
       <div className="border-t border-slate-800 bg-slate-950/95 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">
         OpenFreeMap Liberty stili uzerinde gercek 3D bina katmani, rota izi ve olay noktalarini gosterir.
       </div>

@@ -499,6 +499,58 @@ function playCheckoutPromptTone() {
   }
 }
 
+function playDemoPromptTone() {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  type WindowWithWebkitAudioContext = Window & {
+    webkitAudioContext?: typeof AudioContext
+  }
+  const AudioContextCtor =
+    window.AudioContext || (window as WindowWithWebkitAudioContext).webkitAudioContext
+  if (!AudioContextCtor) {
+    return
+  }
+
+  try {
+    const audioContext = new AudioContextCtor()
+    const firstOscillator = audioContext.createOscillator()
+    const secondOscillator = audioContext.createOscillator()
+    const gainNode = audioContext.createGain()
+    const startAt = audioContext.currentTime
+
+    firstOscillator.type = 'square'
+    firstOscillator.frequency.setValueAtTime(1560, startAt)
+    firstOscillator.frequency.exponentialRampToValueAtTime(1820, startAt + 0.08)
+
+    secondOscillator.type = 'square'
+    secondOscillator.frequency.setValueAtTime(1620, startAt + 0.13)
+    secondOscillator.frequency.exponentialRampToValueAtTime(1910, startAt + 0.22)
+
+    gainNode.gain.setValueAtTime(0.0001, startAt)
+    gainNode.gain.exponentialRampToValueAtTime(0.18, startAt + 0.01)
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.1)
+    gainNode.gain.setValueAtTime(0.0001, startAt + 0.12)
+    gainNode.gain.exponentialRampToValueAtTime(0.2, startAt + 0.14)
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.24)
+
+    firstOscillator.connect(gainNode)
+    secondOscillator.connect(gainNode)
+    gainNode.connect(audioContext.destination)
+
+    firstOscillator.start(startAt)
+    firstOscillator.stop(startAt + 0.1)
+    secondOscillator.start(startAt + 0.13)
+    secondOscillator.stop(startAt + 0.24)
+    secondOscillator.onended = () => {
+      void audioContext.close()
+    }
+  } catch {
+    // no-op
+  }
+}
+
 export function HomePage() {
   const [deviceFingerprint, setDeviceFingerprint] = useState<string | null>(() =>
     getStoredDeviceFingerprint(),
@@ -693,6 +745,13 @@ export function HomePage() {
     playCheckoutPromptTone()
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
       navigator.vibrate?.([160, 70, 220])
+    }
+  }, [])
+
+  const triggerDemoPromptFx = useCallback(() => {
+    playDemoPromptTone()
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      navigator.vibrate?.([90, 45, 90])
     }
   }, [])
 
@@ -1023,6 +1082,11 @@ export function HomePage() {
   const canQrScan = Boolean(deviceFingerprint) && !isSubmitting
   const canCheckout = Boolean(deviceFingerprint) && !isSubmitting && hasOpenShift
   const canDemoMark = Boolean(deviceFingerprint) && !isSubmitting
+  const isDemoActive = Boolean(statusSnapshot?.demo_active)
+  const demoButtonLabel = isDemoActive ? 'Demo Bitti' : 'Demo Basladi'
+  const demoButtonHint = isDemoActive
+    ? 'Demodan ayrildiysaniz bitis kaydini tamamlayin.'
+    : 'Musteri veya demo noktasina vardiginizda baslangici kaydedin.'
 
   const currentHour = new Date().getHours()
   const shouldShowEveningReminder = useMemo(() => {
@@ -1806,9 +1870,11 @@ export function HomePage() {
         return
       }
 
+      const nextSource = isDemoActive ? 'DEMO_END' : 'DEMO_START'
+      const loggedAt = new Date().toISOString()
       await postEmployeeAppPresencePing({
         device_fingerprint: deviceFingerprint,
-        source: 'DEMO_MARK',
+        source: nextSource,
         lat: locationResult.location.lat,
         lon: locationResult.location.lon,
         accuracy_m: locationResult.location.accuracy_m,
@@ -1816,8 +1882,22 @@ export function HomePage() {
 
       setActionNotice({
         tone: 'success',
-        text: 'Demo varisi kaydedildi.',
+        text: isDemoActive ? 'Demo bitisi kaydedildi.' : 'Demo baslangici kaydedildi.',
       })
+      setStatusSnapshot((prev) =>
+        prev
+          ? {
+              ...prev,
+              demo_active: !isDemoActive,
+              last_demo_started_at_utc: isDemoActive
+                ? (prev.last_demo_started_at_utc ?? null)
+                : loggedAt,
+              last_demo_ended_at_utc: isDemoActive
+                ? loggedAt
+                : (prev.last_demo_ended_at_utc ?? null),
+            }
+          : prev,
+      )
       triggerScanSuccessFx()
     } catch (error) {
       const parsed = parseApiError(error, 'Demo kaydi alinamadi.')
@@ -1840,8 +1920,8 @@ export function HomePage() {
     setErrorMessage(null)
     setRequestId(null)
     setIsDemoConfirmOpen(true)
-    triggerCheckoutPromptFx()
-  }, [canDemoMark, triggerCheckoutPromptFx])
+    triggerDemoPromptFx()
+  }, [canDemoMark, triggerDemoPromptFx])
 
   const resultMessage = useMemo(() => {
     if (!lastAction) return null
@@ -2336,25 +2416,6 @@ export function HomePage() {
                 </button>
               </div>
 
-              <div className="action-secondary-row">
-                <button
-                  type="button"
-                  className="btn btn-soft action-secondary-btn"
-                  disabled={!canDemoMark}
-                  onClick={openDemoConfirmModal}
-                >
-                  {isSubmitting && pendingAction === 'demo' ? (
-                    <>
-                      <span className="inline-spinner inline-spinner-dark" aria-hidden="true" />
-                      Kayit aliniyor...
-                    </>
-                  ) : (
-                    'Demo varisini isaretle'
-                  )}
-                </button>
-                <p className="action-secondary-note">Gun icindeki ziyaretlerde bu kaydi kullanin.</p>
-              </div>
-
               <ol className="action-flow">
                 <li>QR okutun ve işlemi başlatın.</li>
                 <li>Mesai sonunda güvenli bitiş yapın.</li>
@@ -2385,6 +2446,34 @@ export function HomePage() {
                 </Link>
               </div>
             )}
+
+            <section className={`demo-visit-card ${isDemoActive ? 'is-live' : 'is-idle'}`}>
+              <div className="demo-visit-head">
+                <div>
+                  <p className="demo-visit-kicker">SAHA DEMO</p>
+                  <h3 className="demo-visit-title">{demoButtonLabel}</h3>
+                </div>
+                <span className={`demo-visit-state ${isDemoActive ? 'state-live' : 'state-ready'}`}>
+                  {isDemoActive ? 'AKTIF' : 'HAZIR'}
+                </span>
+              </div>
+              <p className="demo-visit-copy">{demoButtonHint}</p>
+              <button
+                type="button"
+                className="btn btn-primary btn-lg demo-visit-btn"
+                disabled={!canDemoMark}
+                onClick={openDemoConfirmModal}
+              >
+                {isSubmitting && pendingAction === 'demo' ? (
+                  <>
+                    <span className="inline-spinner" aria-hidden="true" />
+                    Kayit aliniyor...
+                  </>
+                ) : (
+                  demoButtonLabel
+                )}
+              </button>
+            </section>
           </section>
         </div>
 
@@ -2696,9 +2785,13 @@ export function HomePage() {
                 </div>
                 <div className="help-modal checkout-confirm-modal" onClick={(event) => event.stopPropagation()}>
                   <p className="checkout-confirm-kicker">DEMO KAYDI ONAYI</p>
-                  <h2 id="demo-confirm-title">Demo varisini isaretlemek istiyor musunuz?</h2>
+                  <h2 id="demo-confirm-title">
+                    {isDemoActive ? 'Demo bitisini kaydetmek istiyor musunuz?' : 'Demo baslangicini kaydetmek istiyor musunuz?'}
+                  </h2>
                   <p id="demo-confirm-description">
-                    Bu islem gun icindeki ziyaretiniz icin bir demo kaydi olusturur. Devam etmek istiyor musunuz?
+                    {isDemoActive
+                      ? 'Bu islem aktif demo kaydini kapatir. Devam etmek istiyor musunuz?'
+                      : 'Bu islem gun icindeki ziyaretiniz icin yeni bir demo baslangici kaydi olusturur. Devam etmek istiyor musunuz?'}
                   </p>
                   <div className="stack">
                     <button
@@ -2709,7 +2802,7 @@ export function HomePage() {
                         void runDemoMark()
                       }}
                     >
-                      Evet, kaydet
+                      {isDemoActive ? 'Evet, demo bitti' : 'Evet, demo basladi'}
                     </button>
                     <button
                       type="button"

@@ -216,7 +216,8 @@ function pointSourceLabel(value: LocationMonitorMapPoint['source']): string {
   if (value === 'CHECKOUT') return 'Mesai cikisi'
   if (value === 'APP_OPEN') return 'Uygulama girisi'
   if (value === 'APP_CLOSE') return 'Uygulama cikisi'
-  if (value === 'DEMO_MARK') return 'Demo varisi'
+  if (value === 'DEMO_START' || value === 'DEMO_MARK') return 'Demo baslangici'
+  if (value === 'DEMO_END') return 'Demo bitisi'
   return 'Son konum'
 }
 
@@ -225,7 +226,8 @@ function pointTone(value: LocationMonitorMapPoint['source']): string {
   if (value === 'CHECKOUT') return 'border-rose-200 bg-rose-50 text-rose-700'
   if (value === 'APP_OPEN') return 'border-amber-200 bg-amber-50 text-amber-700'
   if (value === 'APP_CLOSE') return 'border-indigo-200 bg-indigo-50 text-indigo-700'
-  if (value === 'DEMO_MARK') return 'border-cyan-200 bg-cyan-50 text-cyan-700'
+  if (value === 'DEMO_START' || value === 'DEMO_MARK') return 'border-cyan-200 bg-cyan-50 text-cyan-700'
+  if (value === 'DEMO_END') return 'border-violet-200 bg-violet-50 text-violet-700'
   return 'border-sky-200 bg-sky-50 text-sky-700'
 }
 
@@ -687,7 +689,7 @@ export function LocationMonitorPage() {
                   </div>
                 </div>
 
-                <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                   <article className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                     <span className="text-xs uppercase tracking-[0.18em] text-slate-500">Son mesai girisi</span>
                     <strong className="mt-2 block text-sm text-slate-900">
@@ -710,6 +712,18 @@ export function LocationMonitorPage() {
                     <span className="text-xs uppercase tracking-[0.18em] text-slate-500">Son uygulama cikisi</span>
                     <strong className="mt-2 block text-sm text-slate-900">
                       {formatDateTime(timelineQuery.data.summary.last_app_close_utc)}
+                    </strong>
+                  </article>
+                  <article className="rounded-2xl border border-cyan-200 bg-cyan-50/70 px-4 py-3">
+                    <span className="text-xs uppercase tracking-[0.18em] text-cyan-800">Son demo baslangici</span>
+                    <strong className="mt-2 block text-sm text-slate-900">
+                      {formatDateTime(timelineQuery.data.summary.last_demo_start_utc)}
+                    </strong>
+                  </article>
+                  <article className="rounded-2xl border border-violet-200 bg-violet-50/70 px-4 py-3">
+                    <span className="text-xs uppercase tracking-[0.18em] text-violet-800">Son demo bitisi</span>
+                    <strong className="mt-2 block text-sm text-slate-900">
+                      {formatDateTime(timelineQuery.data.summary.last_demo_end_utc)}
                     </strong>
                   </article>
                 </div>
@@ -820,12 +834,12 @@ export function LocationMonitorPage() {
 
               <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Gun Gun Kayitlar</p>
-                    <h3 className="mt-1 text-lg font-semibold text-slate-900">
-                      Mesai giris-cikis, uygulama izi ve fazla mesai
-                    </h3>
-                  </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Gun Gun Kayitlar</p>
+                      <h3 className="mt-1 text-lg font-semibold text-slate-900">
+                        Mesai, uygulama, demo ve fazla mesai akisi
+                      </h3>
+                    </div>
                   <div className="flex flex-wrap gap-2 text-xs font-semibold text-slate-500">
                     <span className="rounded-full bg-slate-100 px-3 py-1">
                       Toplam sure: <MinuteDisplay minutes={timelineQuery.data.totals.worked_minutes} />
@@ -849,6 +863,8 @@ export function LocationMonitorPage() {
                         <th className="px-3 py-3">Mesai cikisi</th>
                         <th className="px-3 py-3">App giris</th>
                         <th className="px-3 py-3">App cikis</th>
+                        <th className="px-3 py-3">Demo bas.</th>
+                        <th className="px-3 py-3">Demo bit.</th>
                         <th className="px-3 py-3">Son konum</th>
                         <th className="px-3 py-3">Calisilan</th>
                         <th className="px-3 py-3">Fazla mesai</th>
@@ -880,6 +896,8 @@ export function LocationMonitorPage() {
                             <td className="px-3 py-3 align-top">{formatClock(day.check_out)}</td>
                             <td className="px-3 py-3 align-top">{formatDateTime(day.first_app_open_utc)}</td>
                             <td className="px-3 py-3 align-top">{formatDateTime(day.last_app_close_utc)}</td>
+                            <td className="px-3 py-3 align-top">{formatDateTime(day.first_demo_start_utc)}</td>
+                            <td className="px-3 py-3 align-top">{formatDateTime(day.last_demo_end_utc)}</td>
                             <td className="px-3 py-3 align-top">
                               {lastPoint ? (
                                 <div>

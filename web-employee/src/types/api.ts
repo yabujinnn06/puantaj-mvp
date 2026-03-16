@@ -88,11 +88,14 @@ export interface EmployeeStatusResponse {
   last_checkin_time_utc?: string | null
   home_location_required?: boolean
   passkey_registered?: boolean | null
+  demo_active?: boolean | null
+  last_demo_started_at_utc?: string | null
+  last_demo_ended_at_utc?: string | null
 }
 
 export interface EmployeeAppPresencePingRequest {
   device_fingerprint: string
-  source?: 'APP_OPEN' | 'APP_CLOSE' | 'DEMO_MARK'
+  source?: 'APP_OPEN' | 'APP_CLOSE' | 'DEMO_START' | 'DEMO_END' | 'DEMO_MARK'
   lat?: number
   lon?: number
   accuracy_m?: number | null
