@@ -38,34 +38,68 @@ function pointSourceLabel(source: LocationMonitorMapPoint['source']): string {
   return 'Konum noktasi'
 }
 
+function markerBadgeLabel(source: LocationMonitorMapPoint['source']): string {
+  if (source === 'CHECKIN') return 'MESAI GIRIS'
+  if (source === 'CHECKOUT') return 'MESAI BITIS'
+  if (source === 'APP_OPEN') return 'APP GIRIS'
+  if (source === 'APP_CLOSE') return 'APP CIKIS'
+  if (source === 'DEMO_START' || source === 'DEMO_MARK') return 'DEMO BASLA'
+  if (source === 'DEMO_END') return 'DEMO BITIR'
+  return 'KONUM'
+}
+
 function createMarkerElement(point: LocationMonitorMapPoint, focused: boolean): HTMLDivElement {
   const color = pointColor(point)
   const wrapper = document.createElement('div')
   wrapper.style.position = 'relative'
-  wrapper.style.width = focused ? '24px' : '20px'
-  wrapper.style.height = focused ? '34px' : '30px'
+  wrapper.style.width = focused ? '96px' : '86px'
+  wrapper.style.height = focused ? '54px' : '50px'
   wrapper.style.transform = 'translate(-50%, -100%)'
   wrapper.style.cursor = 'pointer'
   wrapper.style.zIndex = focused ? '6' : '4'
+  wrapper.style.pointerEvents = 'auto'
   wrapper.title = point.label
+
+  const badge = document.createElement('div')
+  badge.textContent = markerBadgeLabel(point.source)
+  badge.style.position = 'absolute'
+  badge.style.left = '50%'
+  badge.style.top = '0'
+  badge.style.transform = 'translateX(-50%)'
+  badge.style.maxWidth = focused ? '92px' : '82px'
+  badge.style.padding = focused ? '3px 7px' : '2px 6px'
+  badge.style.borderRadius = '999px'
+  badge.style.border = `1px solid ${focused ? `${color}cc` : `${color}aa`}`
+  badge.style.background = focused ? 'rgba(15, 23, 42, 0.96)' : 'rgba(15, 23, 42, 0.9)'
+  badge.style.color = 'rgba(248, 250, 252, 0.98)'
+  badge.style.fontSize = focused ? '10px' : '9px'
+  badge.style.fontWeight = '800'
+  badge.style.letterSpacing = '0.08em'
+  badge.style.lineHeight = '1'
+  badge.style.whiteSpace = 'nowrap'
+  badge.style.textOverflow = 'ellipsis'
+  badge.style.overflow = 'hidden'
+  badge.style.boxShadow = focused
+    ? `0 0 0 1px ${color}40, 0 10px 20px rgba(15,23,42,0.28)`
+    : `0 0 0 1px ${color}2a, 0 8px 16px rgba(15,23,42,0.22)`
 
   const pulse = document.createElement('div')
   pulse.style.position = 'absolute'
   pulse.style.left = '50%'
-  pulse.style.top = focused ? '9px' : '8px'
-  pulse.style.width = focused ? '17px' : '14px'
-  pulse.style.height = focused ? '17px' : '14px'
+  pulse.style.top = focused ? '31px' : '29px'
+  pulse.style.width = focused ? '20px' : '17px'
+  pulse.style.height = focused ? '20px' : '17px'
   pulse.style.borderRadius = '999px'
   pulse.style.transform = 'translate(-50%, -50%)'
   pulse.style.background = `${color}33`
-  pulse.style.boxShadow = `0 0 0 6px ${color}24`
+  pulse.style.boxShadow = focused ? `0 0 0 7px ${color}24` : `0 0 0 6px ${color}24`
 
   const pin = document.createElement('div')
   pin.style.position = 'absolute'
   pin.style.left = '50%'
-  pin.style.top = '0'
-  pin.style.width = focused ? '15px' : '13px'
-  pin.style.height = focused ? '15px' : '13px'
+  pin.style.top = focused ? '22px' : '21px'
+  pin.style.width = focused ? '18px' : '16px'
+  pin.style.height = focused ? '18px' : '16px'
   pin.style.borderRadius = '999px'
   pin.style.transform = 'translateX(-50%)'
   pin.style.background = color
@@ -80,8 +114,8 @@ function createMarkerElement(point: LocationMonitorMapPoint, focused: boolean): 
   core.style.position = 'absolute'
   core.style.left = '50%'
   core.style.top = '50%'
-  core.style.width = focused ? '4px' : '3px'
-  core.style.height = focused ? '4px' : '3px'
+  core.style.width = focused ? '5px' : '4px'
+  core.style.height = focused ? '5px' : '4px'
   core.style.borderRadius = '999px'
   core.style.transform = 'translate(-50%, -50%)'
   core.style.background = 'rgba(255,255,255,0.98)'
@@ -89,16 +123,17 @@ function createMarkerElement(point: LocationMonitorMapPoint, focused: boolean): 
   const tail = document.createElement('div')
   tail.style.position = 'absolute'
   tail.style.left = '50%'
-  tail.style.top = focused ? '11px' : '10px'
+  tail.style.top = focused ? '36px' : '33px'
   tail.style.width = '0'
   tail.style.height = '0'
   tail.style.transform = 'translateX(-50%)'
-  tail.style.borderLeft = focused ? '6px solid transparent' : '5px solid transparent'
-  tail.style.borderRight = focused ? '6px solid transparent' : '5px solid transparent'
-  tail.style.borderTop = focused ? `11px solid ${color}` : `9px solid ${color}`
+  tail.style.borderLeft = focused ? '7px solid transparent' : '6px solid transparent'
+  tail.style.borderRight = focused ? '7px solid transparent' : '6px solid transparent'
+  tail.style.borderTop = focused ? `13px solid ${color}` : `11px solid ${color}`
   tail.style.filter = 'drop-shadow(0 6px 10px rgba(15,23,42,0.34))'
 
   pin.appendChild(core)
+  wrapper.appendChild(badge)
   wrapper.appendChild(pulse)
   wrapper.appendChild(tail)
   wrapper.appendChild(pin)
@@ -199,6 +234,8 @@ function syncDomMarkers(map: MapLibreMap, points: LocationMonitorMapPoint[], hig
     const marker = new maplibregl.Marker({
       element: createMarkerElement(point, point.id === highlightedPointId),
       anchor: 'bottom',
+      pitchAlignment: 'viewport',
+      rotationAlignment: 'viewport',
     })
       .setLngLat([point.lon, point.lat])
       .setPopup(
@@ -287,17 +324,21 @@ function ensure3DLayers(map: MapLibreMap) {
       type: 'circle',
       source: POINT_SOURCE_ID,
       paint: {
+        'circle-pitch-scale': 'viewport',
+        'circle-pitch-alignment': 'viewport',
         'circle-radius': [
           'interpolate',
           ['linear'],
           ['zoom'],
-          10,
           7,
-          16,
+          8.5,
           12,
+          10.5,
+          16,
+          13.5,
         ],
         'circle-color': '#ffffff',
-        'circle-opacity': 0.38,
+        'circle-opacity': 0.46,
       },
     })
   }
@@ -308,24 +349,26 @@ function ensure3DLayers(map: MapLibreMap) {
       type: 'circle',
       source: POINT_SOURCE_ID,
       paint: {
+        'circle-pitch-scale': 'viewport',
+        'circle-pitch-alignment': 'viewport',
         'circle-radius': [
           'match',
           ['get', 'source'],
           'CHECKIN',
-          5.5,
+          7,
           'CHECKOUT',
-          6.5,
+          7.5,
           'APP_OPEN',
-          5,
+          6.5,
           'APP_CLOSE',
-          5,
+          6.5,
           'DEMO_START',
-          5.25,
+          7,
           'DEMO_END',
-          5.25,
+          7,
           'DEMO_MARK',
-          5.5,
-          5.5,
+          7,
+          7,
         ],
         'circle-stroke-width': 2,
         'circle-stroke-color': '#ffffff',
@@ -558,9 +601,6 @@ export function LocationMonitor3DView({
           {loadError}
         </div>
       ) : null}
-      <div className="border-t border-slate-800 bg-slate-950/95 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">
-        OpenFreeMap Liberty stili uzerinde gercek 3D bina katmani, rota izi ve olay noktalarini gosterir.
-      </div>
     </div>
   )
 }

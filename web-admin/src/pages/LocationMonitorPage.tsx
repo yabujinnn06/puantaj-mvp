@@ -459,7 +459,7 @@ export function LocationMonitorPage() {
         </div>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[22rem_minmax(0,1fr)]">
+      <section className="grid gap-6 xl:grid-cols-[19.5rem_minmax(0,1fr)] 2xl:grid-cols-[20.5rem_minmax(0,1fr)]">
         <aside className="space-y-4">
           <article className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="mb-4">
@@ -753,7 +753,7 @@ export function LocationMonitorPage() {
                 </div>
               </section>
 
-              <section className="grid gap-6 2xl:grid-cols-2">
+              <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                 <article className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
                   <div className="mb-4 flex items-center justify-between gap-3">
                     <div>
@@ -798,7 +798,7 @@ export function LocationMonitorPage() {
                         setSelectedDay(null)
                         setFocusedPointId(null)
                       }}
-                      className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                      className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                     >
                       Tum araligi goster
                     </button>
@@ -812,16 +812,16 @@ export function LocationMonitorPage() {
                         key={point.id}
                         type="button"
                         onClick={() => setFocusedPointId(point.id)}
-                        className={`rounded-xl border px-2.5 py-1.5 text-left transition ${
+                        className={`rounded-lg border px-2 py-1 text-left transition ${
                           focusedPointId === point.id
                             ? 'border-slate-900 bg-slate-900 text-white'
                             : `${pointTone(point.source)} hover:shadow-sm`
                         }`}
                       >
-                        <strong className="block text-xs uppercase tracking-[0.18em]">
+                        <strong className="block text-[11px] uppercase tracking-[0.14em]">
                           {pointSourceLabel(point.source)}
                         </strong>
-                        <span className="mt-1 block text-sm font-semibold">{formatClock(point.ts_utc)}</span>
+                        <span className="mt-0.5 block text-xs font-semibold">{formatClock(point.ts_utc)}</span>
                       </button>
                     ))
                   ) : (
@@ -931,7 +931,7 @@ export function LocationMonitorPage() {
                 </div>
               </section>
 
-              <section className="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+              <section className="space-y-6">
                 <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
@@ -1029,12 +1029,12 @@ export function LocationMonitorPage() {
                 </article>
 
                 <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Aylik Puantaj Izi</p>
                       <h3 className="mt-1 text-lg font-semibold text-slate-900">Giris ve cikis koordinatlari</h3>
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-2 gap-2 lg:min-w-[17rem]">
                       <select
                         value={selectedMonth}
                         onChange={(event) => setSelectedMonth(event.target.value)}
@@ -1087,7 +1087,7 @@ export function LocationMonitorPage() {
                       </div>
 
                       <div className="overflow-x-auto rounded-2xl border border-slate-200">
-                        <table className="min-w-full text-left text-sm">
+                        <table className="min-w-[62rem] text-left text-sm xl:min-w-full">
                           <thead className="bg-slate-50 text-xs uppercase tracking-[0.16em] text-slate-500">
                             <tr>
                               <th className="px-3 py-3">Gun</th>
