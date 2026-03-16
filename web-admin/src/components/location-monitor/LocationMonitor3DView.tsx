@@ -13,6 +13,8 @@ const ROUTE_SHADOW_LAYER_ID = 'location-monitor-route-shadow-layer'
 const ROUTE_LAYER_ID = 'location-monitor-route-layer'
 const POINT_LAYER_ID = 'location-monitor-point-layer'
 const POINT_RING_LAYER_ID = 'location-monitor-point-ring-layer'
+const DENSE_POINT_RADIUS_M = 18
+const NEAR_POINT_RADIUS_M = 42
 
 function isMapRenderingSupported(): boolean {
   return typeof window !== 'undefined' && typeof window.WebGLRenderingContext !== 'undefined'
@@ -48,12 +50,62 @@ function markerBadgeLabel(source: LocationMonitorMapPoint['source']): string {
   return 'KONUM'
 }
 
+function distanceMeters(left: LocationMonitorMapPoint, right: LocationMonitorMapPoint): number {
+  const toRadians = (value: number) => (value * Math.PI) / 180
+  const earthRadius = 6_371_000
+  const latDelta = toRadians(right.lat - left.lat)
+  const lonDelta = toRadians(right.lon - left.lon)
+  const leftLat = toRadians(left.lat)
+  const rightLat = toRadians(right.lat)
+
+  const haversine =
+    Math.sin(latDelta / 2) * Math.sin(latDelta / 2) +
+    Math.cos(leftLat) * Math.cos(rightLat) * Math.sin(lonDelta / 2) * Math.sin(lonDelta / 2)
+
+  return 2 * earthRadius * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine))
+}
+
+function compactScaleForPoint(points: LocationMonitorMapPoint[], pointIndex: number): number {
+  const point = points[pointIndex]
+  let denseNeighborCount = 0
+  let nearNeighborCount = 0
+  let nearestDistance = Number.POSITIVE_INFINITY
+
+  for (let index = 0; index < points.length; index += 1) {
+    if (index === pointIndex) {
+      continue
+    }
+
+    const distance = distanceMeters(point, points[index])
+    nearestDistance = Math.min(nearestDistance, distance)
+
+    if (distance <= DENSE_POINT_RADIUS_M) {
+      denseNeighborCount += 1
+      continue
+    }
+    if (distance <= NEAR_POINT_RADIUS_M) {
+      nearNeighborCount += 1
+    }
+  }
+
+  if (denseNeighborCount >= 3 || nearestDistance <= 10) {
+    return 0.54
+  }
+  if (denseNeighborCount >= 2 || nearNeighborCount >= 3 || nearestDistance <= 18) {
+    return 0.68
+  }
+  if (denseNeighborCount >= 1 || nearNeighborCount >= 1 || nearestDistance <= 32) {
+    return 0.82
+  }
+  return 1
+}
+
 function createMarkerElement(point: LocationMonitorMapPoint, focused: boolean): HTMLDivElement {
   const color = pointColor(point)
   const wrapper = document.createElement('div')
   wrapper.style.position = 'relative'
-  wrapper.style.width = focused ? '96px' : '86px'
-  wrapper.style.height = focused ? '54px' : '50px'
+  wrapper.style.width = focused ? '98px' : '90px'
+  wrapper.style.height = focused ? '50px' : '46px'
   wrapper.style.transform = 'translate(-50%, -100%)'
   wrapper.style.cursor = 'pointer'
   wrapper.style.zIndex = focused ? '6' : '4'
@@ -66,15 +118,15 @@ function createMarkerElement(point: LocationMonitorMapPoint, focused: boolean): 
   badge.style.left = '50%'
   badge.style.top = '0'
   badge.style.transform = 'translateX(-50%)'
-  badge.style.maxWidth = focused ? '92px' : '82px'
-  badge.style.padding = focused ? '3px 7px' : '2px 6px'
+  badge.style.maxWidth = focused ? '96px' : '86px'
+  badge.style.padding = focused ? '4px 8px' : '3px 7px'
   badge.style.borderRadius = '999px'
   badge.style.border = `1px solid ${focused ? `${color}cc` : `${color}aa`}`
   badge.style.background = focused ? 'rgba(15, 23, 42, 0.96)' : 'rgba(15, 23, 42, 0.9)'
   badge.style.color = 'rgba(248, 250, 252, 0.98)'
   badge.style.fontSize = focused ? '10px' : '9px'
   badge.style.fontWeight = '800'
-  badge.style.letterSpacing = '0.08em'
+  badge.style.letterSpacing = '0.07em'
   badge.style.lineHeight = '1'
   badge.style.whiteSpace = 'nowrap'
   badge.style.textOverflow = 'ellipsis'
@@ -86,20 +138,20 @@ function createMarkerElement(point: LocationMonitorMapPoint, focused: boolean): 
   const pulse = document.createElement('div')
   pulse.style.position = 'absolute'
   pulse.style.left = '50%'
-  pulse.style.top = focused ? '31px' : '29px'
-  pulse.style.width = focused ? '20px' : '17px'
-  pulse.style.height = focused ? '20px' : '17px'
+  pulse.style.top = focused ? '28px' : '27px'
+  pulse.style.width = focused ? '18px' : '15px'
+  pulse.style.height = focused ? '18px' : '15px'
   pulse.style.borderRadius = '999px'
   pulse.style.transform = 'translate(-50%, -50%)'
   pulse.style.background = `${color}33`
-  pulse.style.boxShadow = focused ? `0 0 0 7px ${color}24` : `0 0 0 6px ${color}24`
+  pulse.style.boxShadow = focused ? `0 0 0 8px ${color}24` : `0 0 0 6px ${color}20`
 
   const pin = document.createElement('div')
   pin.style.position = 'absolute'
   pin.style.left = '50%'
-  pin.style.top = focused ? '22px' : '21px'
-  pin.style.width = focused ? '18px' : '16px'
-  pin.style.height = focused ? '18px' : '16px'
+  pin.style.top = focused ? '20px' : '20px'
+  pin.style.width = focused ? '17px' : '14px'
+  pin.style.height = focused ? '17px' : '14px'
   pin.style.borderRadius = '999px'
   pin.style.transform = 'translateX(-50%)'
   pin.style.background = color
@@ -114,8 +166,8 @@ function createMarkerElement(point: LocationMonitorMapPoint, focused: boolean): 
   core.style.position = 'absolute'
   core.style.left = '50%'
   core.style.top = '50%'
-  core.style.width = focused ? '5px' : '4px'
-  core.style.height = focused ? '5px' : '4px'
+  core.style.width = focused ? '4px' : '3px'
+  core.style.height = focused ? '4px' : '3px'
   core.style.borderRadius = '999px'
   core.style.transform = 'translate(-50%, -50%)'
   core.style.background = 'rgba(255,255,255,0.98)'
@@ -123,13 +175,13 @@ function createMarkerElement(point: LocationMonitorMapPoint, focused: boolean): 
   const tail = document.createElement('div')
   tail.style.position = 'absolute'
   tail.style.left = '50%'
-  tail.style.top = focused ? '36px' : '33px'
+  tail.style.top = focused ? '31px' : '29px'
   tail.style.width = '0'
   tail.style.height = '0'
   tail.style.transform = 'translateX(-50%)'
-  tail.style.borderLeft = focused ? '7px solid transparent' : '6px solid transparent'
-  tail.style.borderRight = focused ? '7px solid transparent' : '6px solid transparent'
-  tail.style.borderTop = focused ? `13px solid ${color}` : `11px solid ${color}`
+  tail.style.borderLeft = focused ? '6px solid transparent' : '5px solid transparent'
+  tail.style.borderRight = focused ? '6px solid transparent' : '5px solid transparent'
+  tail.style.borderTop = focused ? `12px solid ${color}` : `10px solid ${color}`
   tail.style.filter = 'drop-shadow(0 6px 10px rgba(15,23,42,0.34))'
 
   pin.appendChild(core)
@@ -164,11 +216,13 @@ function buildRouteData(points: LocationMonitorMapPoint[]) {
   }
 }
 
-function buildPointData(points: LocationMonitorMapPoint[]) {
+function buildPointData(points: LocationMonitorMapPoint[], highlightedPointId: string | null) {
   const sorted = [...points].sort((left, right) => new Date(left.ts_utc).getTime() - new Date(right.ts_utc).getTime())
+  const compactScales = sorted.map((_, index) => compactScaleForPoint(sorted, index))
+
   return {
     type: 'FeatureCollection' as const,
-    features: sorted.map((point) => ({
+    features: sorted.map((point, index) => ({
       type: 'Feature' as const,
       properties: {
         id: point.id,
@@ -179,6 +233,9 @@ function buildPointData(points: LocationMonitorMapPoint[]) {
         locationStatus: point.location_status ?? '-',
         deviceId: point.device_id == null ? '-' : `#${point.device_id}`,
         ip: point.ip ?? '-',
+        compactScale: point.id === highlightedPointId ? 1.18 : compactScales[index],
+        emphasis: point.id === highlightedPointId ? 1 : 0,
+        pointOpacity: point.id === highlightedPointId ? 1 : compactScales[index] < 0.7 ? 0.76 : 0.9,
       },
       geometry: {
         type: 'Point' as const,
@@ -230,7 +287,13 @@ function fitToPoints(map: MapLibreMap, points: LocationMonitorMapPoint[]) {
 }
 
 function syncDomMarkers(map: MapLibreMap, points: LocationMonitorMapPoint[], highlightedPointId: string | null) {
-  const markers = points.map((point) => {
+  const highlightedPoints = highlightedPointId
+    ? points.filter((point) => point.id === highlightedPointId)
+    : points.length
+      ? [points[points.length - 1]]
+      : []
+
+  const markers = highlightedPoints.map((point) => {
     const marker = new maplibregl.Marker({
       element: createMarkerElement(point, point.id === highlightedPointId),
       anchor: 'bottom',
@@ -264,7 +327,7 @@ function ensure3DLayers(map: MapLibreMap) {
   if (!map.getSource(POINT_SOURCE_ID)) {
     map.addSource(POINT_SOURCE_ID, {
       type: 'geojson',
-      data: buildPointData([]),
+      data: buildPointData([], null),
     })
   }
 
@@ -323,6 +386,7 @@ function ensure3DLayers(map: MapLibreMap) {
       id: POINT_RING_LAYER_ID,
       type: 'circle',
       source: POINT_SOURCE_ID,
+      filter: ['==', ['get', 'emphasis'], 1],
       paint: {
         'circle-pitch-scale': 'viewport',
         'circle-pitch-alignment': 'viewport',
@@ -330,20 +394,40 @@ function ensure3DLayers(map: MapLibreMap) {
           'interpolate',
           ['linear'],
           ['zoom'],
-          7,
-          8.5,
+          9,
+          10,
           12,
-          10.5,
+          12.5,
           16,
-          13.5,
+          16,
         ],
         'circle-color': '#ffffff',
-        'circle-opacity': 0.46,
+        'circle-opacity': 0.34,
       },
     })
   }
 
   if (!map.getLayer(POINT_LAYER_ID)) {
+    const baseRadiusExpression = [
+      'match',
+      ['get', 'source'],
+      'CHECKIN',
+      6.5,
+      'CHECKOUT',
+      7,
+      'APP_OPEN',
+      5.75,
+      'APP_CLOSE',
+      5.75,
+      'DEMO_START',
+      6,
+      'DEMO_END',
+      6,
+      'DEMO_MARK',
+      6,
+      6,
+    ] as const
+
     map.addLayer({
       id: POINT_LAYER_ID,
       type: 'circle',
@@ -352,26 +436,14 @@ function ensure3DLayers(map: MapLibreMap) {
         'circle-pitch-scale': 'viewport',
         'circle-pitch-alignment': 'viewport',
         'circle-radius': [
-          'match',
-          ['get', 'source'],
-          'CHECKIN',
-          7,
-          'CHECKOUT',
-          7.5,
-          'APP_OPEN',
-          6.5,
-          'APP_CLOSE',
-          6.5,
-          'DEMO_START',
-          7,
-          'DEMO_END',
-          7,
-          'DEMO_MARK',
-          7,
-          7,
-        ],
+          '*',
+          baseRadiusExpression,
+          ['coalesce', ['get', 'compactScale'], 1],
+          ['case', ['==', ['get', 'emphasis'], 1], 1.15, 1],
+        ] as any,
         'circle-stroke-width': 2,
         'circle-stroke-color': '#ffffff',
+        'circle-opacity': ['coalesce', ['get', 'pointOpacity'], 0.9],
         'circle-color': [
           'match',
           ['get', 'source'],
@@ -515,7 +587,7 @@ export function LocationMonitor3DView({
       const routeSource = map.getSource(ROUTE_SOURCE_ID) as GeoJSONSource | undefined
       routeSource?.setData(buildRouteData(orderedPoints))
       const pointSource = map.getSource(POINT_SOURCE_ID) as GeoJSONSource | undefined
-      pointSource?.setData(buildPointData(orderedPoints))
+      pointSource?.setData(buildPointData(orderedPoints, highlightedPointId))
       map.on('click', POINT_LAYER_ID, clickHandler)
       map.on('mouseenter', POINT_LAYER_ID, enterHandler)
       map.on('mouseleave', POINT_LAYER_ID, leaveHandler)
@@ -564,7 +636,7 @@ export function LocationMonitor3DView({
     routeSource?.setData(buildRouteData(orderedPoints))
 
     const pointSource = map.getSource(POINT_SOURCE_ID) as GeoJSONSource | undefined
-    pointSource?.setData(buildPointData(orderedPoints))
+    pointSource?.setData(buildPointData(orderedPoints, highlightedPointId))
 
     fitToPoints(map, orderedPoints)
   }, [highlightedPointId, orderedPoints])
