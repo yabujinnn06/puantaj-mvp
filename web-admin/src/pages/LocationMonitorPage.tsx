@@ -33,22 +33,62 @@ const DAY_FORMAT = new Intl.DateTimeFormat('tr-TR', {
   month: 'short',
 })
 
+const DATE_ONLY_RE = /^(\d{4})-(\d{2})-(\d{2})$/
+const DATETIME_NO_TZ_RE = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?$/
+
+function parseDateValue(value: string): Date | null {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return null
+  }
+
+  const dateOnlyMatch = DATE_ONLY_RE.exec(trimmed)
+  if (dateOnlyMatch) {
+    const [, year, month, day] = dateOnlyMatch
+    return new Date(Number(year), Number(month) - 1, Number(day))
+  }
+
+  const normalized = trimmed.includes(' ') ? trimmed.replace(' ', 'T') : trimmed
+  const parsed = new Date(normalized)
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed
+  }
+
+  const dateTimeMatch = DATETIME_NO_TZ_RE.exec(trimmed)
+  if (dateTimeMatch) {
+    const [, year, month, day, hour, minute, second = '0'] = dateTimeMatch
+    return new Date(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hour),
+      Number(minute),
+      Number(second),
+    )
+  }
+
+  return null
+}
+
 function formatDateTime(value: string | null): string {
   if (!value) {
     return '-'
   }
-  return DATE_TIME_FORMAT.format(new Date(value))
+  const parsed = parseDateValue(value)
+  return parsed ? DATE_TIME_FORMAT.format(parsed) : '-'
 }
 
 function formatClock(value: string | null): string {
   if (!value) {
     return '-'
   }
-  return TIME_FORMAT.format(new Date(value))
+  const parsed = parseDateValue(value)
+  return parsed ? TIME_FORMAT.format(parsed) : '-'
 }
 
 function formatDay(value: string): string {
-  return DAY_FORMAT.format(new Date(`${value}T00:00:00`))
+  const parsed = parseDateValue(value)
+  return parsed ? DAY_FORMAT.format(parsed) : value
 }
 
 function dayStatusLabel(value: LocationMonitorDayRecord['status']): string {
@@ -602,8 +642,8 @@ export function LocationMonitorPage() {
                                 {dayStatusLabel(day.status)}
                               </span>
                             </td>
-                            <td className="px-3 py-3 align-top">{day.check_in ? formatClock(`${day.date}T${day.check_in}`) : '-'}</td>
-                            <td className="px-3 py-3 align-top">{day.check_out ? formatClock(`${day.date}T${day.check_out}`) : '-'}</td>
+                            <td className="px-3 py-3 align-top">{formatClock(day.check_in)}</td>
+                            <td className="px-3 py-3 align-top">{formatClock(day.check_out)}</td>
                             <td className="px-3 py-3 align-top">{formatDateTime(day.first_app_open_utc)}</td>
                             <td className="px-3 py-3 align-top">{formatDateTime(day.last_app_close_utc)}</td>
                             <td className="px-3 py-3 align-top">
