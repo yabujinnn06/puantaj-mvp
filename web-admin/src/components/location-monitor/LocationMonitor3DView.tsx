@@ -27,6 +27,50 @@ const LOCAL_CLOCK_FORMAT = new Intl.DateTimeFormat('tr-TR', {
   minute: '2-digit',
   timeZone: 'Europe/Istanbul',
 })
+const DISTANCE_FORMAT = new Intl.NumberFormat('tr-TR', {
+  maximumFractionDigits: 1,
+})
+
+type PointVisibilityGroup = 'SHIFT' | 'APP' | 'DEMO' | 'TRACK'
+
+type PointMetric = {
+  pointId: string
+  stepIndex: number
+  totalSteps: number
+  timestampLabel: string
+  clockLabel: string
+  sincePreviousMeters: number | null
+  sincePreviousMs: number | null
+  sincePreviousDistanceLabel: string
+  sincePreviousGapLabel: string
+  cumulativeDistanceMeters: number
+  cumulativeDistanceLabel: string
+}
+
+type PointMetricsResult = {
+  byId: Map<string, PointMetric>
+  totalDistanceMeters: number
+  totalDurationMs: number
+}
+
+type VisibilityOption = {
+  key: PointVisibilityGroup
+  label: string
+}
+
+const VISIBILITY_OPTIONS: VisibilityOption[] = [
+  { key: 'SHIFT', label: 'Mesai' },
+  { key: 'APP', label: 'Uygulama' },
+  { key: 'DEMO', label: 'Demo' },
+  { key: 'TRACK', label: 'Son konum' },
+]
+
+const DEFAULT_VISIBILITY: Record<PointVisibilityGroup, boolean> = {
+  SHIFT: true,
+  APP: true,
+  DEMO: true,
+  TRACK: true,
+}
 
 function isMapRenderingSupported(): boolean {
   return typeof window !== 'undefined' && typeof window.WebGLRenderingContext !== 'undefined'
@@ -52,6 +96,19 @@ function pointSourceLabel(source: LocationMonitorMapPoint['source']): string {
   return 'Konum noktasi'
 }
 
+function pointVisibilityGroup(source: LocationMonitorMapPoint['source']): PointVisibilityGroup {
+  if (source === 'CHECKIN' || source === 'CHECKOUT') {
+    return 'SHIFT'
+  }
+  if (source === 'APP_OPEN' || source === 'APP_CLOSE') {
+    return 'APP'
+  }
+  if (source === 'DEMO_START' || source === 'DEMO_END' || source === 'DEMO_MARK') {
+    return 'DEMO'
+  }
+  return 'TRACK'
+}
+
 function parsePointDate(value: string): Date | null {
   const parsed = new Date(value)
   return Number.isNaN(parsed.getTime()) ? null : parsed
@@ -67,6 +124,29 @@ function formatLocalClock(value: string): string {
   return parsed ? LOCAL_CLOCK_FORMAT.format(parsed) : value
 }
 
+function formatDistance(meters: number | null): string {
+  if (meters == null || !Number.isFinite(meters) || meters <= 0) {
+    return '-'
+  }
+  if (meters >= 1_000) {
+    return `${DISTANCE_FORMAT.format(meters / 1_000)} km`
+  }
+  return `${Math.round(meters)} m`
+}
+
+function formatDuration(ms: number | null): string {
+  if (ms == null || !Number.isFinite(ms) || ms <= 0) {
+    return '-'
+  }
+  const totalMinutes = Math.round(ms / 60_000)
+  if (totalMinutes < 60) {
+    return `${totalMinutes} dk`
+  }
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  return minutes ? `${hours} sa ${minutes} dk` : `${hours} sa`
+}
+
 function markerBadgeLabel(source: LocationMonitorMapPoint['source']): string {
   if (source === 'CHECKIN') return 'MESAI GIRIS'
   if (source === 'CHECKOUT') return 'MESAI BITIS'
@@ -75,6 +155,56 @@ function markerBadgeLabel(source: LocationMonitorMapPoint['source']): string {
   if (source === 'DEMO_START' || source === 'DEMO_MARK') return 'DEMO BASLA'
   if (source === 'DEMO_END') return 'DEMO BITIR'
   return 'KONUM'
+}
+
+function buildPointMetrics(points: LocationMonitorMapPoint[]): PointMetricsResult {
+  const sorted = [...points].sort((left, right) => new Date(left.ts_utc).getTime() - new Date(right.ts_utc).getTime())
+  const byId = new Map<string, PointMetric>()
+  let cumulativeDistanceMeters = 0
+
+  for (let index = 0; index < sorted.length; index += 1) {
+    const point = sorted[index]
+    const previousPoint = index > 0 ? sorted[index - 1] : null
+    const currentDate = parsePointDate(point.ts_utc)
+    const previousDate = previousPoint ? parsePointDate(previousPoint.ts_utc) : null
+    const sincePreviousMeters = previousPoint ? distanceMeters(previousPoint, point) : null
+    const sincePreviousMs =
+      currentDate && previousDate ? Math.max(0, currentDate.getTime() - previousDate.getTime()) : null
+
+    if (sincePreviousMeters != null) {
+      cumulativeDistanceMeters += sincePreviousMeters
+    }
+
+    byId.set(point.id, {
+      pointId: point.id,
+      stepIndex: index + 1,
+      totalSteps: sorted.length,
+      timestampLabel: formatLocalDateTime(point.ts_utc),
+      clockLabel: formatLocalClock(point.ts_utc),
+      sincePreviousMeters,
+      sincePreviousMs,
+      sincePreviousDistanceLabel: formatDistance(sincePreviousMeters),
+      sincePreviousGapLabel: formatDuration(sincePreviousMs),
+      cumulativeDistanceMeters,
+      cumulativeDistanceLabel: formatDistance(cumulativeDistanceMeters),
+    })
+  }
+
+  const firstPoint = sorted[0]
+  const lastPoint = sorted[sorted.length - 1]
+  const totalDurationMs =
+    firstPoint && lastPoint
+      ? Math.max(
+          0,
+          (parsePointDate(lastPoint.ts_utc)?.getTime() ?? 0) - (parsePointDate(firstPoint.ts_utc)?.getTime() ?? 0),
+        )
+      : 0
+
+  return {
+    byId,
+    totalDistanceMeters: cumulativeDistanceMeters,
+    totalDurationMs,
+  }
 }
 
 function distanceMeters(left: LocationMonitorMapPoint, right: LocationMonitorMapPoint): number {
@@ -243,7 +373,11 @@ function buildRouteData(points: LocationMonitorMapPoint[]) {
   }
 }
 
-function buildPointData(points: LocationMonitorMapPoint[], highlightedPointId: string | null) {
+function buildPointData(
+  points: LocationMonitorMapPoint[],
+  highlightedPointId: string | null,
+  metricsById: Map<string, PointMetric>,
+) {
   const sorted = [...points].sort((left, right) => new Date(left.ts_utc).getTime() - new Date(right.ts_utc).getTime())
   const compactScales = sorted.map((_, index) => compactScaleForPoint(sorted, index))
 
@@ -256,11 +390,18 @@ function buildPointData(points: LocationMonitorMapPoint[], highlightedPointId: s
         label: point.label,
         source: point.source,
         timestamp: point.ts_utc,
+        timestampLabel: metricsById.get(point.id)?.timestampLabel ?? formatLocalDateTime(point.ts_utc),
         accuracy: point.accuracy_m == null ? '-' : `${Math.round(point.accuracy_m)} m`,
         locationStatus: point.location_status ?? '-',
         deviceId: point.device_id == null ? '-' : `#${point.device_id}`,
         ip: point.ip ?? '-',
-        timeLabel: formatLocalClock(point.ts_utc),
+        timeLabel: metricsById.get(point.id)?.clockLabel ?? formatLocalClock(point.ts_utc),
+        stepLabel: metricsById.has(point.id)
+          ? `${metricsById.get(point.id)?.stepIndex}/${metricsById.get(point.id)?.totalSteps}`
+          : `${index + 1}/${sorted.length}`,
+        prevDistanceLabel: metricsById.get(point.id)?.sincePreviousDistanceLabel ?? '-',
+        prevGapLabel: metricsById.get(point.id)?.sincePreviousGapLabel ?? '-',
+        cumulativeDistanceLabel: metricsById.get(point.id)?.cumulativeDistanceLabel ?? '-',
         compactScale: point.id === highlightedPointId ? 1.18 : compactScales[index],
         emphasis: point.id === highlightedPointId ? 1 : 0,
         pointOpacity: point.id === highlightedPointId ? 1 : compactScales[index] < 0.7 ? 0.76 : 0.9,
@@ -336,6 +477,7 @@ function syncDomMarkers(map: MapLibreMap, points: LocationMonitorMapPoint[], hig
     : points.length
       ? [points[points.length - 1]]
       : []
+  const metricsById = buildPointMetrics(points).byId
 
   const markers = highlightedPoints.map((point) => {
     const marker = new maplibregl.Marker({
@@ -350,7 +492,7 @@ function syncDomMarkers(map: MapLibreMap, points: LocationMonitorMapPoint[], hig
           closeButton: false,
           offset: 18,
           maxWidth: '320px',
-        }).setHTML(popupHtmlForPoint(point)),
+        }).setHTML(popupHtmlForPoint(point, metricsById.get(point.id))),
       )
 
     marker.addTo(map)
@@ -372,7 +514,7 @@ function ensure3DLayers(map: MapLibreMap) {
   if (!map.getSource(POINT_SOURCE_ID)) {
     map.addSource(POINT_SOURCE_ID, {
       type: 'geojson',
-      data: buildPointData([], null),
+      data: buildPointData([], null, new Map()),
     })
   }
 
@@ -602,17 +744,30 @@ function popupHtml(feature: MapGeoJSONFeature): string {
     typeof properties.source === 'string'
       ? pointSourceLabel(properties.source as LocationMonitorMapPoint['source'])
       : '-'
-  const timestamp = typeof properties.timestamp === 'string' ? formatLocalDateTime(properties.timestamp) : '-'
+  const timestamp =
+    typeof properties.timestampLabel === 'string'
+      ? properties.timestampLabel
+      : typeof properties.timestamp === 'string'
+        ? formatLocalDateTime(properties.timestamp)
+        : '-'
   const accuracy = typeof properties.accuracy === 'string' ? properties.accuracy : '-'
   const locationStatus = typeof properties.locationStatus === 'string' ? properties.locationStatus : '-'
   const deviceId = typeof properties.deviceId === 'string' ? properties.deviceId : '-'
   const ip = typeof properties.ip === 'string' ? properties.ip : '-'
+  const stepLabel = typeof properties.stepLabel === 'string' ? properties.stepLabel : '-'
+  const prevDistanceLabel = typeof properties.prevDistanceLabel === 'string' ? properties.prevDistanceLabel : '-'
+  const prevGapLabel = typeof properties.prevGapLabel === 'string' ? properties.prevGapLabel : '-'
+  const cumulativeDistanceLabel =
+    typeof properties.cumulativeDistanceLabel === 'string' ? properties.cumulativeDistanceLabel : '-'
 
   return [
     `<strong style="display:block;font-size:13px;margin-bottom:4px;">${label}</strong>`,
     `<div style="font-size:12px;line-height:1.45;">`,
+    `<div><strong>Iz sirasi:</strong> ${stepLabel}</div>`,
     `<div><strong>Tip:</strong> ${source}</div>`,
     `<div><strong>Zaman:</strong> ${timestamp}</div>`,
+    `<div><strong>Onceki gecis:</strong> ${prevGapLabel} / ${prevDistanceLabel}</div>`,
+    `<div><strong>Toplam iz:</strong> ${cumulativeDistanceLabel}</div>`,
     `<div><strong>Dogruluk:</strong> ${accuracy}</div>`,
     `<div><strong>Durum:</strong> ${locationStatus}</div>`,
     `<div><strong>Cihaz:</strong> ${deviceId}</div>`,
@@ -621,12 +776,15 @@ function popupHtml(feature: MapGeoJSONFeature): string {
   ].join('')
 }
 
-function popupHtmlForPoint(point: LocationMonitorMapPoint): string {
+function popupHtmlForPoint(point: LocationMonitorMapPoint, metrics?: PointMetric): string {
   return [
     `<strong style="display:block;font-size:13px;margin-bottom:4px;">${point.label}</strong>`,
     `<div style="font-size:12px;line-height:1.45;">`,
+    `<div><strong>Iz sirasi:</strong> ${metrics ? `${metrics.stepIndex}/${metrics.totalSteps}` : '-'}</div>`,
     `<div><strong>Tip:</strong> ${pointSourceLabel(point.source)}</div>`,
-    `<div><strong>Zaman:</strong> ${formatLocalDateTime(point.ts_utc)}</div>`,
+    `<div><strong>Zaman:</strong> ${metrics?.timestampLabel ?? formatLocalDateTime(point.ts_utc)}</div>`,
+    `<div><strong>Onceki gecis:</strong> ${metrics?.sincePreviousGapLabel ?? '-'} / ${metrics?.sincePreviousDistanceLabel ?? '-'}</div>`,
+    `<div><strong>Toplam iz:</strong> ${metrics?.cumulativeDistanceLabel ?? '-'}</div>`,
     `<div><strong>Dogruluk:</strong> ${point.accuracy_m == null ? '-' : `${Math.round(point.accuracy_m)} m`}</div>`,
     `<div><strong>Durum:</strong> ${point.location_status ?? '-'}</div>`,
     `<div><strong>Cihaz:</strong> ${point.device_id == null ? '-' : `#${point.device_id}`}</div>`,
@@ -647,18 +805,35 @@ export function LocationMonitor3DView({
   const mapLoadedRef = useRef(false)
   const markersRef = useRef<maplibregl.Marker[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [visibleGroups, setVisibleGroups] = useState<Record<PointVisibilityGroup, boolean>>(DEFAULT_VISIBILITY)
   const isSupported = isMapRenderingSupported()
   const orderedPoints = useMemo(
     () => [...points].sort((left, right) => new Date(left.ts_utc).getTime() - new Date(right.ts_utc).getTime()),
     [points],
   )
+  const filteredPoints = useMemo(
+    () => orderedPoints.filter((point) => visibleGroups[pointVisibilityGroup(point.source)]),
+    [orderedPoints, visibleGroups],
+  )
+  const metrics = useMemo(() => buildPointMetrics(filteredPoints), [filteredPoints])
 
   const focusedPoint = useMemo(
-    () => (focusedPointId ? orderedPoints.find((point) => point.id === focusedPointId) ?? null : null),
-    [focusedPointId, orderedPoints],
+    () => (focusedPointId ? filteredPoints.find((point) => point.id === focusedPointId) ?? null : null),
+    [filteredPoints, focusedPointId],
   )
 
-  const highlightedPointId = focusedPointId ?? orderedPoints[orderedPoints.length - 1]?.id ?? null
+  const highlightedPointId = focusedPointId ?? filteredPoints[filteredPoints.length - 1]?.id ?? null
+  const traceSummary = useMemo(() => {
+    const firstPoint = filteredPoints[0]
+    const lastPoint = filteredPoints[filteredPoints.length - 1]
+    return {
+      firstPoint,
+      lastPoint,
+      pointCount: filteredPoints.length,
+      totalDistanceLabel: formatDistance(metrics.totalDistanceMeters),
+      totalDurationLabel: formatDuration(metrics.totalDurationMs),
+    }
+  }, [filteredPoints, metrics.totalDistanceMeters, metrics.totalDurationMs])
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current || !isSupported) {
@@ -676,7 +851,7 @@ export function LocationMonitor3DView({
 
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right')
     mapRef.current = map
-    markersRef.current = syncDomMarkers(map, orderedPoints, highlightedPointId)
+    markersRef.current = syncDomMarkers(map, filteredPoints, highlightedPointId)
     setLoadError(null)
 
     const clickHandler = (event: maplibregl.MapMouseEvent & { features?: MapGeoJSONFeature[] }) => {
@@ -708,13 +883,13 @@ export function LocationMonitor3DView({
       mapLoadedRef.current = true
       ensure3DLayers(map)
       const routeSource = map.getSource(ROUTE_SOURCE_ID) as GeoJSONSource | undefined
-      routeSource?.setData(buildRouteData(orderedPoints))
+      routeSource?.setData(buildRouteData(filteredPoints))
       const pointSource = map.getSource(POINT_SOURCE_ID) as GeoJSONSource | undefined
-      pointSource?.setData(buildPointData(orderedPoints, highlightedPointId))
+      pointSource?.setData(buildPointData(filteredPoints, highlightedPointId, metrics.byId))
       map.on('click', POINT_LAYER_ID, clickHandler)
       map.on('mouseenter', POINT_LAYER_ID, enterHandler)
       map.on('mouseleave', POINT_LAYER_ID, leaveHandler)
-      fitToPoints(map, orderedPoints)
+      fitToPoints(map, filteredPoints)
     })
 
     map.on('error', (event) => {
@@ -736,7 +911,7 @@ export function LocationMonitor3DView({
       map.remove()
       mapRef.current = null
     }
-  }, [highlightedPointId, isSupported, orderedPoints])
+  }, [filteredPoints, highlightedPointId, isSupported, metrics.byId])
 
   useEffect(() => {
     const map = mapRef.current
@@ -747,7 +922,7 @@ export function LocationMonitor3DView({
     for (const marker of markersRef.current) {
       marker.remove()
     }
-    markersRef.current = syncDomMarkers(map, orderedPoints, highlightedPointId)
+    markersRef.current = syncDomMarkers(map, filteredPoints, highlightedPointId)
 
     if (!mapLoadedRef.current) {
       return
@@ -756,13 +931,13 @@ export function LocationMonitor3DView({
     ensure3DLayers(map)
 
     const routeSource = map.getSource(ROUTE_SOURCE_ID) as GeoJSONSource | undefined
-    routeSource?.setData(buildRouteData(orderedPoints))
+    routeSource?.setData(buildRouteData(filteredPoints))
 
     const pointSource = map.getSource(POINT_SOURCE_ID) as GeoJSONSource | undefined
-    pointSource?.setData(buildPointData(orderedPoints, highlightedPointId))
+    pointSource?.setData(buildPointData(filteredPoints, highlightedPointId, metrics.byId))
 
-    fitToPoints(map, orderedPoints)
-  }, [highlightedPointId, orderedPoints])
+    fitToPoints(map, filteredPoints)
+  }, [filteredPoints, highlightedPointId, metrics.byId])
 
   useEffect(() => {
     const map = mapRef.current
@@ -772,13 +947,13 @@ export function LocationMonitor3DView({
 
     map.easeTo({
       center: [focusedPoint.lon, focusedPoint.lat],
-      zoom: Math.max(map.getZoom(), orderedPoints.length > 1 ? 16 : 16.8),
+      zoom: Math.max(map.getZoom(), filteredPoints.length > 1 ? 16 : 16.8),
       pitch: 68,
       bearing: -18,
       duration: 550,
       essential: true,
     })
-  }, [focusedPoint, orderedPoints.length])
+  }, [filteredPoints.length, focusedPoint])
 
   if (!isSupported) {
     return (
@@ -790,6 +965,54 @@ export function LocationMonitor3DView({
 
   return (
     <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 shadow-sm">
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 p-3">
+        <div className="pointer-events-auto flex flex-wrap gap-2">
+          {VISIBILITY_OPTIONS.map((option) => {
+            const active = visibleGroups[option.key]
+            return (
+              <button
+                key={option.key}
+                type="button"
+                onClick={() =>
+                  setVisibleGroups((current) => ({
+                    ...current,
+                    [option.key]: !current[option.key],
+                  }))
+                }
+                className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold tracking-[0.14em] ${
+                  active
+                    ? 'border-white/70 bg-slate-950/82 text-white'
+                    : 'border-white/16 bg-slate-900/42 text-slate-300'
+                }`}
+              >
+                {option.label}
+              </button>
+            )
+          })}
+        </div>
+
+        <div className="mt-2 flex flex-wrap gap-2">
+          <span className="rounded-full border border-white/14 bg-slate-950/72 px-2.5 py-1 text-[11px] font-medium text-slate-100">
+            {traceSummary.pointCount} nokta
+          </span>
+          <span className="rounded-full border border-white/14 bg-slate-950/72 px-2.5 py-1 text-[11px] font-medium text-slate-100">
+            Iz: {traceSummary.totalDistanceLabel}
+          </span>
+          <span className="rounded-full border border-white/14 bg-slate-950/72 px-2.5 py-1 text-[11px] font-medium text-slate-100">
+            Sure: {traceSummary.totalDurationLabel}
+          </span>
+          {traceSummary.firstPoint ? (
+            <span className="rounded-full border border-white/14 bg-slate-950/72 px-2.5 py-1 text-[11px] font-medium text-slate-100">
+              Baslangic {formatLocalClock(traceSummary.firstPoint.ts_utc)}
+            </span>
+          ) : null}
+          {traceSummary.lastPoint ? (
+            <span className="rounded-full border border-white/14 bg-slate-950/72 px-2.5 py-1 text-[11px] font-medium text-slate-100">
+              Son {formatLocalClock(traceSummary.lastPoint.ts_utc)}
+            </span>
+          ) : null}
+        </div>
+      </div>
       <div ref={containerRef} className="h-[26rem] w-full" />
       {loadError ? (
         <div className="absolute inset-0 flex items-center justify-center bg-slate-950/84 px-6 text-center text-sm font-medium text-slate-200">
