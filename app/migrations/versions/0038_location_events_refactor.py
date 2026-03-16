@@ -42,6 +42,7 @@ def upgrade() -> None:
         "DEMO_END",
         "LOCATION_PING",
         name="location_event_source",
+        create_type=False,
     )
     location_geofence_status = postgresql.ENUM(
         "NOT_CONFIGURED",
@@ -49,6 +50,7 @@ def upgrade() -> None:
         "OUTSIDE",
         "UNKNOWN",
         name="location_geofence_status",
+        create_type=False,
     )
     location_trust_status = postgresql.ENUM(
         "NO_DATA",
@@ -57,6 +59,7 @@ def upgrade() -> None:
         "HIGH",
         "SUSPICIOUS",
         name="location_trust_status",
+        create_type=False,
     )
     bind = op.get_bind()
     location_event_source.create(bind, checkfirst=True)
