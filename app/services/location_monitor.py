@@ -395,11 +395,16 @@ def _privacy_read(policy: LocationVisibilityPolicy) -> LocationMonitorPrivacyRea
 def _geofence_read(employee_location: EmployeeLocation | None, latest_event: EmployeeLocationEvent | None) -> LocationMonitorGeofenceRead | None:
     if employee_location is None and latest_event is None:
         return None
+    status_value = (
+        latest_event.geofence_status
+        if latest_event is not None and latest_event.geofence_status is not None
+        else (GeofenceStatus.NOT_CONFIGURED if employee_location is None else GeofenceStatus.UNKNOWN)
+    )
     return LocationMonitorGeofenceRead(
         home_lat=employee_location.home_lat if employee_location is not None else None,
         home_lon=employee_location.home_lon if employee_location is not None else None,
         radius_m=employee_location.radius_m if employee_location is not None else None,
-        status=latest_event.geofence_status if latest_event is not None else GeofenceStatus.NOT_CONFIGURED,
+        status=status_value,
         distance_m=latest_event.distance_to_geofence_m if latest_event is not None else None,
     )
 

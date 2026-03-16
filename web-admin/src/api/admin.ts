@@ -1605,6 +1605,9 @@ export async function getLocationMonitorEmployeeMapPoints(
     `/api/admin/location-monitor/employees/${employeeId}/map-points`,
     {
       params,
+      paramsSerializer: {
+        indexes: null,
+      },
     },
   )
   return response.data

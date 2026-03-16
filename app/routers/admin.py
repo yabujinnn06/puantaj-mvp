@@ -3442,6 +3442,7 @@ def get_location_monitor_employee_map_points(
     day: date | None = Query(default=None),
     latest_only: bool = Query(default=False),
     source: list[str] | None = Query(default=None),
+    source_bracketed: list[str] | None = Query(default=None, alias="source[]"),
     min_lon: float | None = Query(default=None),
     min_lat: float | None = Query(default=None),
     max_lon: float | None = Query(default=None),
@@ -3449,10 +3450,11 @@ def get_location_monitor_employee_map_points(
     claims: dict[str, Any] = Depends(require_admin_permission("log")),
     db: Session = Depends(get_db),
 ) -> LocationMonitorMapResponse:
+    raw_source_values = [*(source or []), *(source_bracketed or [])]
     source_filter: set[LocationEventSource] | None = None
-    if source:
+    if raw_source_values:
         source_filter = set()
-        for value in source:
+        for value in raw_source_values:
             try:
                 source_filter.add(LocationEventSource(str(value).strip().upper()))
             except ValueError as exc:
@@ -3477,6 +3479,19 @@ def get_location_monitor_employee_map_points(
         if "not found" in message.lower():
             raise HTTPException(status_code=404, detail=message) from exc
         raise HTTPException(status_code=422, detail=message) from exc
+    except Exception as exc:
+        logger.exception(
+            "location monitor map endpoint failed",
+            extra={
+                "employee_id": employee_id,
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+                "day": day.isoformat() if day else None,
+                "latest_only": latest_only,
+                "source_values": raw_source_values,
+            },
+        )
+        raise HTTPException(status_code=500, detail="Location monitor map data could not be prepared.") from exc
     return map_response
 
 
