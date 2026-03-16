@@ -18,6 +18,31 @@ function isMapRenderingSupported(): boolean {
   return typeof window !== 'undefined' && typeof window.WebGLRenderingContext !== 'undefined'
 }
 
+function pointColor(point: Pick<LocationMonitorMapPoint, 'source'>): string {
+  if (point.source === 'CHECKIN') return '#22c55e'
+  if (point.source === 'CHECKOUT') return '#f43f5e'
+  if (point.source === 'APP_OPEN') return '#f59e0b'
+  if (point.source === 'APP_CLOSE') return '#818cf8'
+  return '#38bdf8'
+}
+
+function createMarkerElement(point: LocationMonitorMapPoint, focused: boolean): HTMLDivElement {
+  const element = document.createElement('div')
+  const color = pointColor(point)
+  element.style.width = focused ? '18px' : '14px'
+  element.style.height = focused ? '18px' : '14px'
+  element.style.borderRadius = '999px'
+  element.style.background = color
+  element.style.border = '3px solid rgba(255,255,255,0.96)'
+  element.style.boxShadow = focused
+    ? `0 0 0 8px ${color}33, 0 8px 24px rgba(15,23,42,0.45)`
+    : `0 0 0 5px ${color}26, 0 6px 18px rgba(15,23,42,0.32)`
+  element.style.transition = 'transform 140ms ease, box-shadow 140ms ease'
+  element.style.transform = focused ? 'scale(1.14)' : 'scale(1)'
+  element.title = point.label
+  return element
+}
+
 function buildRouteData(points: LocationMonitorMapPoint[]) {
   const sorted = [...points].sort((left, right) => new Date(left.ts_utc).getTime() - new Date(right.ts_utc).getTime())
   if (sorted.length < 2) {
@@ -259,15 +284,43 @@ function popupHtml(feature: MapGeoJSONFeature): string {
   ].join('')
 }
 
-export function LocationMonitor3DView({ points }: { points: LocationMonitorMapPoint[] }) {
+function popupHtmlForPoint(point: LocationMonitorMapPoint): string {
+  return [
+    `<strong style="display:block;font-size:13px;margin-bottom:4px;">${point.label}</strong>`,
+    `<div style="font-size:12px;line-height:1.45;">`,
+    `<div><strong>Tip:</strong> ${point.source}</div>`,
+    `<div><strong>Zaman:</strong> ${point.ts_utc}</div>`,
+    `<div><strong>Dogruluk:</strong> ${point.accuracy_m == null ? '-' : `${Math.round(point.accuracy_m)} m`}</div>`,
+    `<div><strong>Durum:</strong> ${point.location_status ?? '-'}</div>`,
+    `<div><strong>Cihaz:</strong> ${point.device_id == null ? '-' : `#${point.device_id}`}</div>`,
+    `<div><strong>IP:</strong> ${point.ip ?? '-'}</div>`,
+    `</div>`,
+  ].join('')
+}
+
+export function LocationMonitor3DView({
+  points,
+  focusedPointId = null,
+}: {
+  points: LocationMonitorMapPoint[]
+  focusedPointId?: string | null
+}) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const mapLoadedRef = useRef(false)
+  const markersRef = useRef<maplibregl.Marker[]>([])
   const isSupported = isMapRenderingSupported()
   const orderedPoints = useMemo(
     () => [...points].sort((left, right) => new Date(left.ts_utc).getTime() - new Date(right.ts_utc).getTime()),
     [points],
   )
+
+  const focusedPoint = useMemo(
+    () => (focusedPointId ? orderedPoints.find((point) => point.id === focusedPointId) ?? null : null),
+    [focusedPointId, orderedPoints],
+  )
+
+  const highlightedPointId = focusedPointId ?? orderedPoints[orderedPoints.length - 1]?.id ?? null
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current || !isSupported) {
@@ -320,6 +373,10 @@ export function LocationMonitor3DView({ points }: { points: LocationMonitorMapPo
     })
 
     return () => {
+      for (const marker of markersRef.current) {
+        marker.remove()
+      }
+      markersRef.current = []
       mapLoadedRef.current = false
       map.remove()
       mapRef.current = null
@@ -341,7 +398,44 @@ export function LocationMonitor3DView({ points }: { points: LocationMonitorMapPo
     pointSource?.setData(buildPointData(orderedPoints))
 
     fitToPoints(map, orderedPoints)
-  }, [orderedPoints])
+
+    for (const marker of markersRef.current) {
+      marker.remove()
+    }
+    markersRef.current = orderedPoints.map((point) => {
+      const marker = new maplibregl.Marker({
+        element: createMarkerElement(point, point.id === highlightedPointId),
+        anchor: 'center',
+      })
+        .setLngLat([point.lon, point.lat])
+        .setPopup(
+          new maplibregl.Popup({
+            closeButton: false,
+            offset: 18,
+            maxWidth: '320px',
+          }).setHTML(popupHtmlForPoint(point)),
+        )
+        .addTo(map)
+
+      return marker
+    })
+  }, [highlightedPointId, orderedPoints])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapLoadedRef.current || !focusedPoint) {
+      return
+    }
+
+    map.easeTo({
+      center: [focusedPoint.lon, focusedPoint.lat],
+      zoom: Math.max(map.getZoom(), orderedPoints.length > 1 ? 16 : 16.8),
+      pitch: 68,
+      bearing: -18,
+      duration: 550,
+      essential: true,
+    })
+  }, [focusedPoint, orderedPoints.length])
 
   if (!isSupported) {
     return (

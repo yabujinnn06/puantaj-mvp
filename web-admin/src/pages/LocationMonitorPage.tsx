@@ -716,7 +716,7 @@ export function LocationMonitorPage() {
                       MapLibre 3D
                     </span>
                   </div>
-                  <LocationMonitor3DView points={visiblePoints} />
+                  <LocationMonitor3DView points={visiblePoints} focusedPointId={focusedPointId} />
                 </article>
               </section>
 
