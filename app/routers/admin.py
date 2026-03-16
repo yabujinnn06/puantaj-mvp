@@ -189,11 +189,13 @@ from app.security import (
     create_refresh_token,
     decode_token,
     ensure_login_attempt_allowed,
+    full_permissions,
     hash_password,
     normalize_permissions,
     register_login_failure,
     register_login_success,
     require_admin,
+    require_admin_any_permission,
     require_admin_permission,
     should_allow_refresh,
     verify_admin_credentials,
@@ -665,24 +667,7 @@ def _verify_current_admin_password(
 
 
 def _full_permissions() -> dict[str, dict[str, bool]]:
-    return {
-        key: {"read": True, "write": True}
-        for key in (
-            "regions",
-            "departments",
-            "employees",
-            "devices",
-            "work_rules",
-            "attendance_events",
-            "leaves",
-            "reports",
-            "compliance",
-            "schedule",
-            "manual_overrides",
-            "audit",
-            "admin_users",
-        )
-    }
+    return full_permissions()
 
 
 def _build_env_admin_identity(username: str) -> dict[str, Any]:
@@ -1199,7 +1184,7 @@ def admin_me(
 @router.get(
     "/api/admin/admin-users",
     response_model=list[AdminUserRead],
-    dependencies=[Depends(require_admin_permission("admin_users"))],
+    dependencies=[Depends(require_admin_any_permission("admin_users", "notifications"))],
 )
 def list_admin_users(db: Session = Depends(get_db)) -> list[AdminUserRead]:
     rows = list(db.scalars(select(AdminUser).order_by(AdminUser.id)).all())
@@ -1882,7 +1867,7 @@ def create_region(
 @router.get(
     "/api/admin/regions",
     response_model=list[RegionRead],
-    dependencies=[Depends(require_admin_permission("regions"))],
+    dependencies=[Depends(require_admin_any_permission("regions", "log"))],
 )
 def list_regions(
     include_inactive: bool = Query(default=True),
@@ -1959,7 +1944,7 @@ def create_department(payload: DepartmentCreate, db: Session = Depends(get_db)) 
 @router.get(
     "/admin/departments",
     response_model=list[DepartmentRead],
-    dependencies=[Depends(require_admin_permission("departments"))],
+    dependencies=[Depends(require_admin_any_permission("departments", "log"))],
 )
 def list_departments(
     region_id: int | None = Query(default=None, ge=1),
@@ -2080,7 +2065,7 @@ def create_employee(payload: EmployeeCreate, db: Session = Depends(get_db)) -> E
 @router.get(
     "/admin/employees",
     response_model=list[EmployeeRead],
-    dependencies=[Depends(require_admin_permission("employees"))],
+    dependencies=[Depends(require_admin_any_permission("employees", "log", "notifications"))],
 )
 def list_employees(
     include_inactive: bool = Query(default=False),
@@ -2118,7 +2103,7 @@ def list_employees(
 @router.get(
     "/api/admin/employees/{employee_id}/detail",
     response_model=EmployeeDetailResponse,
-    dependencies=[Depends(require_admin_permission("employees"))],
+    dependencies=[Depends(require_admin_any_permission("employees", "log"))],
 )
 def get_employee_detail(
     employee_id: int,
@@ -3391,7 +3376,7 @@ def get_control_room_employee_detail(
 @router.get(
     "/api/admin/location-monitor/employees/{employee_id}/timeline",
     response_model=LocationMonitorEmployeeTimelineResponse,
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_admin_permission("log"))],
 )
 def get_location_monitor_employee_timeline(
     employee_id: int,
@@ -4477,7 +4462,7 @@ def delete_department_shift(
     "/api/admin/qr/codes",
     response_model=QRCodeRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_admin_permission("schedule", write=True))],
+    dependencies=[Depends(require_admin_permission("qr_codes", write=True))],
 )
 def create_qr_code(
     payload: QRCodeCreateRequest,
@@ -4533,7 +4518,7 @@ def create_qr_code(
 @router.get(
     "/api/admin/qr/codes",
     response_model=list[QRCodeRead],
-    dependencies=[Depends(require_admin_permission("schedule"))],
+    dependencies=[Depends(require_admin_permission("qr_codes"))],
 )
 def list_qr_codes(
     active_only: bool = Query(default=False),
@@ -4549,7 +4534,7 @@ def list_qr_codes(
 @router.patch(
     "/api/admin/qr/codes/{code_id}",
     response_model=QRCodeRead,
-    dependencies=[Depends(require_admin_permission("schedule", write=True))],
+    dependencies=[Depends(require_admin_permission("qr_codes", write=True))],
 )
 def update_qr_code(
     code_id: int,
@@ -4622,7 +4607,7 @@ def update_qr_code(
 @router.post(
     "/api/admin/qr/codes/{code_id}/points",
     response_model=QRCodeRead,
-    dependencies=[Depends(require_admin_permission("schedule", write=True))],
+    dependencies=[Depends(require_admin_permission("qr_codes", write=True))],
 )
 def assign_qr_code_points(
     code_id: int,
@@ -4688,7 +4673,7 @@ def assign_qr_code_points(
 @router.delete(
     "/api/admin/qr/codes/{code_id}/points/{point_id}",
     response_model=SoftDeleteResponse,
-    dependencies=[Depends(require_admin_permission("schedule", write=True))],
+    dependencies=[Depends(require_admin_permission("qr_codes", write=True))],
 )
 def unassign_qr_code_point(
     code_id: int,
@@ -4728,7 +4713,7 @@ def unassign_qr_code_point(
     "/api/admin/qr/points",
     response_model=QRPointRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_admin_permission("schedule", write=True))],
+    dependencies=[Depends(require_admin_permission("qr_codes", write=True))],
 )
 def create_qr_point(
     payload: QRPointCreateRequest,
@@ -4783,7 +4768,7 @@ def create_qr_point(
 @router.get(
     "/api/admin/qr/points",
     response_model=list[QRPointRead],
-    dependencies=[Depends(require_admin_permission("schedule"))],
+    dependencies=[Depends(require_admin_permission("qr_codes"))],
 )
 def list_qr_points(
     active_only: bool = Query(default=False),
@@ -4804,7 +4789,7 @@ def list_qr_points(
 @router.patch(
     "/api/admin/qr/points/{point_id}",
     response_model=QRPointRead,
-    dependencies=[Depends(require_admin_permission("schedule", write=True))],
+    dependencies=[Depends(require_admin_permission("qr_codes", write=True))],
 )
 def update_qr_point(
     point_id: int,
@@ -4881,7 +4866,7 @@ def update_qr_point(
 @router.delete(
     "/api/admin/qr/points/{point_id}",
     response_model=SoftDeleteResponse,
-    dependencies=[Depends(require_admin_permission("schedule", write=True))],
+    dependencies=[Depends(require_admin_permission("qr_codes", write=True))],
 )
 def deactivate_qr_point(
     point_id: int,
@@ -5200,7 +5185,7 @@ def delete_leave_endpoint(
 @router.get(
     "/admin/attendance-events",
     response_model=list[AttendanceEventRead],
-    dependencies=[Depends(require_admin_permission("attendance_events"))],
+    dependencies=[Depends(require_admin_any_permission("attendance_events", "notifications"))],
 )
 def list_attendance_events(
     employee_id: int | None = Query(default=None),
@@ -5405,7 +5390,7 @@ def soft_delete_attendance_event_endpoint(
 @router.get(
     "/api/admin/audit-logs",
     response_model=AuditLogPageResponse,
-    dependencies=[Depends(require_admin_permission("audit"))],
+    dependencies=[Depends(require_admin_permission("audit_logs"))],
 )
 def list_audit_logs(
     module: str | None = Query(default=None),
@@ -5468,7 +5453,7 @@ def list_notification_jobs(
     end_date: date | None = Query(default=None),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=35, ge=1, le=500),
-    claims: dict[str, Any] = Depends(require_admin_permission("audit")),
+    claims: dict[str, Any] = Depends(require_admin_permission("notifications")),
     db: Session = Depends(get_db),
 ) -> NotificationJobPageResponse:
     data_stmt = select(NotificationJob)
@@ -5540,7 +5525,7 @@ def list_notification_jobs(
 def list_notification_subscriptions(
     request: Request,
     employee_id: int | None = Query(default=None, ge=1),
-    claims: dict[str, Any] = Depends(require_admin_permission("audit")),
+    claims: dict[str, Any] = Depends(require_admin_permission("notifications")),
     db: Session = Depends(get_db),
 ) -> list[AdminPushSubscriptionRead]:
     rows = list_active_push_subscriptions(db, employee_id=employee_id)
@@ -5571,7 +5556,7 @@ def list_notification_subscriptions(
 def list_admin_notification_subscriptions(
     request: Request,
     admin_user_id: int | None = Query(default=None, ge=1),
-    claims: dict[str, Any] = Depends(require_admin_permission("audit")),
+    claims: dict[str, Any] = Depends(require_admin_permission("notifications")),
     db: Session = Depends(get_db),
 ) -> list[AdminDevicePushSubscriptionRead]:
     rows = list_active_admin_push_subscriptions(db, admin_user_id=admin_user_id)
@@ -5600,7 +5585,7 @@ def list_admin_notification_subscriptions(
     response_model=AdminDailyReportJobHealthResponse,
 )
 def admin_daily_report_health(
-    _claims: dict[str, Any] = Depends(require_admin),
+    _claims: dict[str, Any] = Depends(require_admin_permission("notifications")),
 ) -> AdminDailyReportJobHealthResponse:
     return AdminDailyReportJobHealthResponse.model_validate(get_daily_report_job_health())
 
@@ -5611,7 +5596,7 @@ def admin_daily_report_health(
 )
 def get_admin_notification_email_targets(
     request: Request,
-    claims: dict[str, Any] = Depends(require_admin_permission("audit")),
+    claims: dict[str, Any] = Depends(require_admin_permission("notifications")),
     db: Session = Depends(get_db),
 ) -> AdminNotificationEmailTargetsResponse:
     rows = list_admin_notification_email_targets(db, include_inactive=True)
@@ -5651,7 +5636,7 @@ def get_admin_notification_email_targets(
 def update_admin_notification_email_targets(
     payload: AdminNotificationEmailTargetsUpdateRequest,
     request: Request,
-    claims: dict[str, Any] = Depends(require_admin_permission("audit", write=True)),
+    claims: dict[str, Any] = Depends(require_admin_permission("notifications", write=True)),
     db: Session = Depends(get_db),
 ) -> AdminNotificationEmailTargetsResponse:
     invalid_values: list[str] = []
@@ -5716,7 +5701,7 @@ def update_admin_notification_email_targets(
 def test_admin_notification_email(
     payload: AdminNotificationEmailTestRequest,
     request: Request,
-    claims: dict[str, Any] = Depends(require_admin_permission("audit", write=True)),
+    claims: dict[str, Any] = Depends(require_admin_permission("notifications", write=True)),
     db: Session = Depends(get_db),
 ) -> AdminNotificationEmailTestResponse:
     normalized_recipients: list[str] = []
@@ -5770,7 +5755,7 @@ def test_admin_notification_email(
 )
 def admin_push_self_check(
     request: Request,
-    claims: dict[str, Any] = Depends(require_admin),
+    claims: dict[str, Any] = Depends(require_admin_permission("notifications")),
     db: Session = Depends(get_db),
 ) -> AdminPushSelfCheckResponse:
     actor_username, actor_admin_user_id = _normalized_admin_actor_from_claims(claims)
@@ -5964,7 +5949,7 @@ def admin_push_self_check(
 )
 def admin_push_self_test(
     request: Request,
-    claims: dict[str, Any] = Depends(require_admin_permission("audit", write=True)),
+    claims: dict[str, Any] = Depends(require_admin_permission("notifications", write=True)),
     db: Session = Depends(get_db),
 ) -> AdminPushSelfTestResponse:
     if not bool(get_push_public_config().get("enabled")):
@@ -6053,7 +6038,7 @@ def list_notification_delivery_logs(
     end_date: date | None = Query(default=None),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=35, ge=1, le=500),
-    claims: dict[str, Any] = Depends(require_admin_permission("audit")),
+    claims: dict[str, Any] = Depends(require_admin_permission("notifications")),
     db: Session = Depends(get_db),
 ) -> NotificationDeliveryLogPageResponse:
     data_stmt = select(NotificationDeliveryLog).options(
@@ -6166,7 +6151,7 @@ def list_notification_delivery_logs(
     response_model=EmployeePushConfigResponse,
 )
 def admin_push_config(
-    _claims: dict[str, Any] = Depends(require_admin),
+    _claims: dict[str, Any] = Depends(require_admin_permission("notifications")),
 ) -> EmployeePushConfigResponse:
     return EmployeePushConfigResponse(**get_push_public_config())
 
@@ -6186,7 +6171,7 @@ def admin_push_config_public() -> EmployeePushConfigResponse:
 def create_admin_device_invite(
     payload: AdminDeviceInviteCreateRequest,
     request: Request,
-    claims: dict[str, Any] = Depends(require_admin_permission("audit", write=True)),
+    claims: dict[str, Any] = Depends(require_admin_permission("notifications", write=True)),
     db: Session = Depends(get_db),
 ) -> AdminDeviceInviteCreateResponse:
     now_utc = datetime.now(timezone.utc)
@@ -6393,7 +6378,7 @@ def _claim_admin_device_push_with_actor(
 def claim_admin_device_push(
     payload: AdminDeviceClaimRequest,
     request: Request,
-    claims: dict[str, Any] = Depends(require_admin),
+    claims: dict[str, Any] = Depends(require_admin_permission("notifications", write=True)),
     db: Session = Depends(get_db),
 ) -> AdminDeviceClaimResponse:
     actor_id = str(claims.get("username") or claims.get("sub") or settings.admin_user)
@@ -6520,7 +6505,7 @@ def claim_admin_device_push_public(
 def heal_admin_device_push(
     payload: AdminDeviceHealRequest,
     request: Request,
-    claims: dict[str, Any] = Depends(require_admin),
+    claims: dict[str, Any] = Depends(require_admin_permission("notifications", write=True)),
     db: Session = Depends(get_db),
 ) -> AdminDeviceHealResponse:
     actor_id = str(claims.get("username") or claims.get("sub") or settings.admin_user)
@@ -6599,7 +6584,7 @@ def list_daily_report_archives(
     employee_query: str | None = Query(default=None, min_length=1, max_length=255),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=35, ge=1, le=500),
-    claims: dict[str, Any] = Depends(require_admin_permission("reports")),
+    claims: dict[str, Any] = Depends(require_admin_any_permission("reports", "notifications")),
     db: Session = Depends(get_db),
 ) -> AdminDailyReportArchivePageResponse:
     stmt = select(AdminDailyReportArchive)
@@ -6695,12 +6680,12 @@ def list_daily_report_archives(
 
 @router.get(
     "/api/admin/daily-report-archives/{archive_id}/download",
-    dependencies=[Depends(require_admin_permission("reports"))],
+    dependencies=[Depends(require_admin_any_permission("reports", "notifications"))],
 )
 def download_daily_report_archive(
     archive_id: int,
     request: Request,
-    claims: dict[str, Any] = Depends(require_admin_permission("reports")),
+    claims: dict[str, Any] = Depends(require_admin_any_permission("reports", "notifications")),
     db: Session = Depends(get_db),
 ) -> Response:
     archive = db.get(AdminDailyReportArchive, archive_id)
@@ -7038,7 +7023,7 @@ def notify_daily_report_archive(
     archive_id: int,
     payload: AdminDailyReportArchiveNotifyRequest,
     request: Request,
-    claims: dict[str, Any] = Depends(require_admin_permission("reports", write=True)),
+    claims: dict[str, Any] = Depends(require_admin_any_permission("reports", "notifications", write=True)),
     db: Session = Depends(get_db),
 ) -> AdminDailyReportArchiveNotifyResponse:
     archive = db.get(AdminDailyReportArchive, archive_id)
@@ -7147,7 +7132,7 @@ def notify_daily_report_archive(
 def send_manual_notification(
     payload: AdminManualNotificationSendRequest,
     request: Request,
-    claims: dict[str, Any] = Depends(require_admin_permission("audit", write=True)),
+    claims: dict[str, Any] = Depends(require_admin_permission("notifications", write=True)),
     db: Session = Depends(get_db),
 ) -> AdminManualNotificationSendResponse:
     _verify_current_admin_password(
@@ -7314,7 +7299,7 @@ def send_manual_notification(
 )
 def list_scheduled_notification_tasks(
     is_active: bool | None = Query(default=None),
-    claims: dict[str, Any] = Depends(require_admin_permission("audit")),
+    claims: dict[str, Any] = Depends(require_admin_permission("notifications")),
     db: Session = Depends(get_db),
 ) -> ScheduledNotificationTaskPageResponse:
     stmt = select(ScheduledNotificationTask)
@@ -7343,7 +7328,7 @@ def list_scheduled_notification_tasks(
 def create_scheduled_notification_task(
     payload: ScheduledNotificationTaskCreateRequest,
     request: Request,
-    claims: dict[str, Any] = Depends(require_admin_permission("audit", write=True)),
+    claims: dict[str, Any] = Depends(require_admin_permission("notifications", write=True)),
     db: Session = Depends(get_db),
 ) -> ScheduledNotificationTaskRead:
     actor_username, _ = _normalized_admin_actor_from_claims(claims)
@@ -7411,7 +7396,7 @@ def update_scheduled_notification_task(
     task_id: int,
     payload: ScheduledNotificationTaskUpdateRequest,
     request: Request,
-    claims: dict[str, Any] = Depends(require_admin_permission("audit", write=True)),
+    claims: dict[str, Any] = Depends(require_admin_permission("notifications", write=True)),
     db: Session = Depends(get_db),
 ) -> ScheduledNotificationTaskRead:
     row = db.get(ScheduledNotificationTask, task_id)
@@ -7495,7 +7480,7 @@ def update_scheduled_notification_task(
 def delete_scheduled_notification_task(
     task_id: int,
     request: Request,
-    claims: dict[str, Any] = Depends(require_admin_permission("audit", write=True)),
+    claims: dict[str, Any] = Depends(require_admin_permission("notifications", write=True)),
     db: Session = Depends(get_db),
 ) -> SoftDeleteResponse:
     row = db.get(ScheduledNotificationTask, task_id)
@@ -7537,7 +7522,7 @@ def update_notification_job_note(
     job_id: int,
     payload: NotificationJobNoteUpdateRequest,
     request: Request,
-    claims: dict[str, Any] = Depends(require_admin_permission("audit", write=True)),
+    claims: dict[str, Any] = Depends(require_admin_permission("notifications", write=True)),
     db: Session = Depends(get_db),
 ) -> NotificationJobRead:
     job = db.get(NotificationJob, job_id)
@@ -7576,7 +7561,7 @@ def update_notification_job_note(
 def cancel_notification_job(
     job_id: int,
     request: Request,
-    claims: dict[str, Any] = Depends(require_admin_permission("audit", write=True)),
+    claims: dict[str, Any] = Depends(require_admin_permission("notifications", write=True)),
     db: Session = Depends(get_db),
 ) -> NotificationJobRead:
     job = db.get(NotificationJob, job_id)
@@ -8023,7 +8008,7 @@ def export_puantaj_range(
 @router.get(
     "/api/admin/monthly/employee",
     response_model=MonthlyEmployeeResponse,
-    dependencies=[Depends(require_admin_permission("reports"))],
+    dependencies=[Depends(require_admin_any_permission("reports", "log"))],
 )
 def get_employee_monthly(
     employee_id: int = Query(..., ge=1),

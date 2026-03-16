@@ -2,54 +2,10 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 
 import { getAdminPushConfig, healAdminDevice } from '../api/admin'
+import { adminNavItems, adminPageTitles } from '../config/adminNavigation'
 import { UI_BRANDING } from '../config/ui'
 import { useAuth } from '../hooks/useAuth'
 import { urlBase64ToUint8Array } from '../utils/push'
-
-const navItems = [
-  { to: '/management-console', label: 'Ana Panel' },
-  { to: '/log', label: 'Log', permission: 'employees' },
-  { to: '/regions', label: 'Bölgeler', permission: 'regions' },
-  { to: '/departments', label: 'Departmanlar', permission: 'departments' },
-  { to: '/employees', label: 'Çalışanlar', permission: 'employees' },
-  { to: '/quick-setup', label: 'Hızlı Ayarlar', permission: 'schedule' },
-  { to: '/work-rules', label: 'Mesai Kuralları', permission: 'work_rules' },
-  { to: '/attendance-events', label: 'Yoklama Kayıtları', permission: 'attendance_events' },
-  { to: '/devices', label: 'Cihazlar', permission: 'devices' },
-  { to: '/compliance-settings', label: 'Uyumluluk Ayarları', permission: 'compliance' },
-  { to: '/qr-kodlar', label: 'QR Kodlar' },
-  { to: '/leaves', label: 'İzinler', permission: 'leaves' },
-  { to: '/reports/employee-monthly', label: 'Aylık Çalışan Raporu', permission: 'reports' },
-  { to: '/reports/department-summary', label: 'Departman Özeti', permission: 'reports' },
-  { to: '/reports/excel-export', label: 'Excel Dışa Aktar', permission: 'reports' },
-  { to: '/notifications', label: 'Bildirimler', permission: 'audit' },
-  { to: '/audit-logs', label: 'Sistem Logları', permission: 'audit' },
-  { to: '/admin-users', label: 'Admin Kullanıcıları', permission: 'admin_users' },
-]
-
-const pageTitles: Record<string, string> = {
-  '/management-console': 'Ana Panel',
-  '/log': 'Log',
-  '/location-monitor': 'Log',
-  '/control-room': 'Ana Panel',
-  '/dashboard': 'Ana Panel',
-  '/regions': 'Bölgeler',
-  '/departments': 'Departmanlar',
-  '/employees': 'Çalışanlar',
-  '/quick-setup': 'Hızlı Ayarlar',
-  '/work-rules': 'Mesai Kuralları',
-  '/attendance-events': 'Yoklama Kayıtları',
-  '/devices': 'Cihazlar',
-  '/compliance-settings': 'Uyumluluk Ayarları',
-  '/qr-kodlar': 'QR Kodlar',
-  '/leaves': 'İzinler',
-  '/reports/employee-monthly': 'Aylık Çalışan Raporu',
-  '/reports/department-summary': 'Departman Özeti',
-  '/reports/excel-export': 'Excel Dışa Aktar',
-  '/notifications': 'Bildirimler',
-  '/audit-logs': 'Sistem Logları',
-  '/admin-users': 'Admin Kullanıcıları',
-}
 
 const PUSH_VAPID_KEY_STORAGE = 'pf_admin_push_vapid_public_key'
 const ADMIN_AUTO_HEAL_TS_STORAGE = 'pf_admin_push_auto_heal_ts'
@@ -108,13 +64,13 @@ export function AppLayout() {
   const mobileLoaderTimerRef = useRef<number | null>(null)
   const [showMobileNavLoader, setShowMobileNavLoader] = useState(false)
   const [mobileLoaderMessage, setMobileLoaderMessage] = useState('İçeriğe geçiliyor...')
-  const canWriteAudit = hasPermission('audit', 'write')
+  const canWriteNotifications = hasPermission('notifications', 'write')
 
-  const visibleNavItems = navItems.filter((item) => !item.permission || hasPermission(item.permission))
+  const visibleNavItems = adminNavItems.filter((item) => !item.permission || hasPermission(item.permission))
   const adminLogoUrl = `${import.meta.env.BASE_URL}admin-logo.svg`
 
   const title =
-    pageTitles[location.pathname] ??
+    adminPageTitles[location.pathname] ??
     (location.pathname.startsWith('/employees/') ? 'Çalışan Detayı' : 'Admin Panel')
 
   const isMobileViewport = () => typeof window !== 'undefined' && window.innerWidth < 1024
@@ -175,7 +131,7 @@ export function AppLayout() {
   }, [])
 
   useEffect(() => {
-    if (!canWriteAudit) {
+    if (!canWriteNotifications) {
       return
     }
     const lastAttemptRaw = window.sessionStorage.getItem(ADMIN_AUTO_HEAL_TS_STORAGE)
@@ -189,7 +145,7 @@ export function AppLayout() {
     void autoHealAdminPushClaim().catch(() => {
       // silent fallback: explicit heal action is still available in notifications page
     })
-  }, [canWriteAudit, user?.admin_user_id, user?.username])
+  }, [canWriteNotifications, user?.admin_user_id, user?.username])
 
   useEffect(() => {
     if (!mobileNavPendingRef.current) {

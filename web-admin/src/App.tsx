@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 
 import { AppLayout } from './components/AppLayout'
 import { AuthGuard } from './auth/AuthGuard'
+import { DefaultAdminRoute, PermissionRoute } from './auth/PermissionRoute'
 import { PublicOnlyRoute } from './auth/PublicOnlyRoute'
 import { AdminDeviceClaimPage } from './pages/AdminDeviceClaimPage'
 import { AttendanceEventsPage } from './pages/AttendanceEventsPage'
@@ -41,29 +42,162 @@ function App() {
 
       <Route element={<AuthGuard />}>
         <Route element={<AppLayout />}>
-          <Route path="/" element={<Navigate to="/management-console" replace />} />
-          <Route path="/management-console" element={<ManagementConsolePage />} />
-          <Route path="/log" element={<LocationMonitorPage />} />
+          <Route path="/" element={<DefaultAdminRoute />} />
+          <Route
+            path="/management-console"
+            element={
+              <PermissionRoute permission="employees">
+                <ManagementConsolePage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/log"
+            element={
+              <PermissionRoute permission="log">
+                <LocationMonitorPage />
+              </PermissionRoute>
+            }
+          />
           <Route path="/location-monitor" element={<Navigate to="/log" replace />} />
           <Route path="/control-room" element={<Navigate to="/management-console?focus=matrix" replace />} />
           <Route path="/dashboard" element={<Navigate to="/management-console" replace />} />
-          <Route path="/regions" element={<RegionsPage />} />
-          <Route path="/departments" element={<DepartmentsPage />} />
-          <Route path="/employees" element={<EmployeesPage />} />
-          <Route path="/employees/:id" element={<EmployeeDetailPage />} />
-          <Route path="/quick-setup" element={<QuickSetupPage />} />
-          <Route path="/work-rules" element={<WorkRulesPage />} />
-          <Route path="/attendance-events" element={<AttendanceEventsPage />} />
-          <Route path="/devices" element={<DevicesPage />} />
-          <Route path="/compliance-settings" element={<ComplianceSettingsPage />} />
-          <Route path="/leaves" element={<LeavesPage />} />
-          <Route path="/qr-kodlar" element={<QrCodesPage />} />
-          <Route path="/reports/employee-monthly" element={<EmployeeMonthlyReportPage />} />
-          <Route path="/reports/department-summary" element={<DepartmentSummaryReportPage />} />
-          <Route path="/reports/excel-export" element={<PuantajExportPage />} />
-          <Route path="/notifications" element={<NotificationsPage />} />
-          <Route path="/audit-logs" element={<SystemLogsPage />} />
-          <Route path="/admin-users" element={<AdminUsersPage />} />
+          <Route
+            path="/regions"
+            element={
+              <PermissionRoute permission="regions">
+                <RegionsPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/departments"
+            element={
+              <PermissionRoute permission="departments">
+                <DepartmentsPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/employees"
+            element={
+              <PermissionRoute permission="employees">
+                <EmployeesPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/employees/:id"
+            element={
+              <PermissionRoute permission="employees">
+                <EmployeeDetailPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/quick-setup"
+            element={
+              <PermissionRoute permission="schedule">
+                <QuickSetupPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/work-rules"
+            element={
+              <PermissionRoute permission="work_rules">
+                <WorkRulesPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/attendance-events"
+            element={
+              <PermissionRoute permission="attendance_events">
+                <AttendanceEventsPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/devices"
+            element={
+              <PermissionRoute permission="devices">
+                <DevicesPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/compliance-settings"
+            element={
+              <PermissionRoute permission="compliance">
+                <ComplianceSettingsPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/leaves"
+            element={
+              <PermissionRoute permission="leaves">
+                <LeavesPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/qr-kodlar"
+            element={
+              <PermissionRoute permission="qr_codes">
+                <QrCodesPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/reports/employee-monthly"
+            element={
+              <PermissionRoute permission="reports">
+                <EmployeeMonthlyReportPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/reports/department-summary"
+            element={
+              <PermissionRoute permission="reports">
+                <DepartmentSummaryReportPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/reports/excel-export"
+            element={
+              <PermissionRoute permission="reports">
+                <PuantajExportPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/notifications"
+            element={
+              <PermissionRoute permission="notifications">
+                <NotificationsPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/audit-logs"
+            element={
+              <PermissionRoute permission="audit_logs">
+                <SystemLogsPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/admin-users"
+            element={
+              <PermissionRoute permission="admin_users">
+                <AdminUsersPage />
+              </PermissionRoute>
+            }
+          />
         </Route>
       </Route>
 

@@ -25,6 +25,7 @@ _MAX_ATTEMPTS = 10
 _ATTEMPT_WINDOW = timedelta(minutes=10)
 
 ADMIN_PERMISSION_KEYS: tuple[str, ...] = (
+    "log",
     "regions",
     "departments",
     "employees",
@@ -35,10 +36,20 @@ ADMIN_PERMISSION_KEYS: tuple[str, ...] = (
     "reports",
     "compliance",
     "schedule",
+    "qr_codes",
+    "notifications",
+    "audit_logs",
     "manual_overrides",
     "audit",
     "admin_users",
 )
+
+LEGACY_PERMISSION_FALLBACKS: dict[str, tuple[str, ...]] = {
+    "log": ("employees",),
+    "qr_codes": ("schedule",),
+    "notifications": ("audit",),
+    "audit_logs": ("audit",),
+}
 
 
 def _utcnow() -> datetime:
@@ -141,6 +152,19 @@ def normalize_permissions(raw: Mapping[str, Any] | None) -> dict[str, dict[str, 
         if write:
             read = True
         normalized[key] = {"read": read, "write": write}
+
+    for key, fallback_keys in LEGACY_PERMISSION_FALLBACKS.items():
+        if key in raw:
+            continue
+        for fallback_key in fallback_keys:
+            fallback_value = normalized.get(fallback_key)
+            if not fallback_value:
+                continue
+            normalized[key] = {
+                "read": bool(fallback_value.get("read") or fallback_value.get("write")),
+                "write": bool(fallback_value.get("write")),
+            }
+            break
     return normalized
 
 
@@ -303,6 +327,21 @@ def require_admin_permission(permission: str, *, write: bool = False) -> Callabl
 
     def _dependency(claims: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
         if not has_permission(claims, permission, write=write):
+            raise ApiError(status_code=403, code="FORBIDDEN", message="Insufficient permissions.")
+        return claims
+
+    return _dependency
+
+
+def require_admin_any_permission(*permissions: str, write: bool = False) -> Callable[..., dict[str, Any]]:
+    if not permissions:
+        raise ValueError("At least one admin permission is required.")
+    invalid_permissions = [permission for permission in permissions if permission not in ADMIN_PERMISSION_KEYS]
+    if invalid_permissions:
+        raise ValueError(f"Unknown admin permission: {invalid_permissions[0]}")
+
+    def _dependency(claims: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
+        if not any(has_permission(claims, permission, write=write) for permission in permissions):
             raise ApiError(status_code=403, code="FORBIDDEN", message="Insufficient permissions.")
         return claims
 

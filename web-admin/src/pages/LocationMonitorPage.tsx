@@ -17,6 +17,7 @@ import { MinuteDisplay } from '../components/MinuteDisplay'
 import { LocationMonitor3DView } from '../components/location-monitor/LocationMonitor3DView'
 import { LocationMonitorMap } from '../components/location-monitor/LocationMonitorMap'
 import { dateValue } from '../components/management-console/types'
+import { useAuth } from '../hooks/useAuth'
 import type { LocationMonitorDayRecord, LocationMonitorMapPoint } from '../types/api'
 
 const TIME_FORMAT = new Intl.DateTimeFormat('tr-TR', {
@@ -239,6 +240,7 @@ function latestAvailablePoint(day: LocationMonitorDayRecord): LocationMonitorMap
 }
 
 export function LocationMonitorPage() {
+  const { hasPermission } = useAuth()
   const now = useMemo(() => new Date(), [])
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('')
   const [employeeQuery, setEmployeeQuery] = useState('')
@@ -435,13 +437,15 @@ export function LocationMonitorPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Link
-              to="/management-console"
-              className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-            >
-              Ana panele don
-            </Link>
-            {selectedEmployee ? (
+            {hasPermission('employees') ? (
+              <Link
+                to="/management-console"
+                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Ana panele don
+              </Link>
+            ) : null}
+            {selectedEmployee && hasPermission('employees') ? (
               <Link
                 to={`/employees/${selectedEmployee.id}`}
                 className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"

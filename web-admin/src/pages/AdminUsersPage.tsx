@@ -16,6 +16,7 @@ import {
   updateAdminUser,
 } from '../api/admin'
 import { parseApiError } from '../api/error'
+import { adminPermissionModules, type AdminPermissionKey } from '../config/adminNavigation'
 import { ErrorBlock } from '../components/ErrorBlock'
 import { LoadingBlock } from '../components/LoadingBlock'
 import { Modal } from '../components/Modal'
@@ -30,40 +31,9 @@ import type {
   AdminUserMfaSetupStartResponse,
 } from '../types/api'
 
-type PermissionKey =
-  | 'regions'
-  | 'departments'
-  | 'employees'
-  | 'devices'
-  | 'work_rules'
-  | 'attendance_events'
-  | 'leaves'
-  | 'reports'
-  | 'compliance'
-  | 'schedule'
-  | 'manual_overrides'
-  | 'audit'
-  | 'admin_users'
-
-const permissionModules: Array<{ key: PermissionKey; label: string }> = [
-  { key: 'regions', label: 'Bolgeler' },
-  { key: 'departments', label: 'Departmanlar' },
-  { key: 'employees', label: 'Calisanlar' },
-  { key: 'devices', label: 'Cihazlar' },
-  { key: 'work_rules', label: 'Mesai Kurallari' },
-  { key: 'attendance_events', label: 'Yoklama Kayitlari' },
-  { key: 'leaves', label: 'Izinler' },
-  { key: 'reports', label: 'Raporlar' },
-  { key: 'compliance', label: 'Uyumluluk' },
-  { key: 'schedule', label: 'Planlama' },
-  { key: 'manual_overrides', label: 'Manuel Duzeltme' },
-  { key: 'audit', label: 'Denetim Kayitlari' },
-  { key: 'admin_users', label: 'Admin Kullanicilari' },
-]
-
 function buildEmptyPermissions(): AdminPermissions {
   return Object.fromEntries(
-    permissionModules.map((module) => [module.key, { read: false, write: false }]),
+    adminPermissionModules.map((module) => [module.key, { read: false, write: false }]),
   )
 }
 
@@ -73,7 +43,7 @@ function normalizePermissions(input?: AdminPermissions | null): AdminPermissions
     return base
   }
 
-  permissionModules.forEach(({ key }) => {
+  adminPermissionModules.forEach(({ key }) => {
     const current = input[key]
     if (!current) {
       return
@@ -95,7 +65,7 @@ function PermissionEditor({
   disabled?: boolean
   onChange: (next: AdminPermissions) => void
 }) {
-  const updatePermission = (permission: PermissionKey, mode: 'read' | 'write', checked: boolean) => {
+  const updatePermission = (permission: AdminPermissionKey, mode: 'read' | 'write', checked: boolean) => {
     const current = value[permission] ?? { read: false, write: false }
     const nextPermission = { ...current }
     if (mode === 'read') {
@@ -126,7 +96,7 @@ function PermissionEditor({
           </tr>
         </thead>
         <tbody>
-          {permissionModules.map((module) => {
+          {adminPermissionModules.map((module) => {
             const current = value[module.key] ?? { read: false, write: false }
             return (
               <tr key={module.key} className="border-t border-slate-100">
