@@ -435,7 +435,7 @@ export function ControlRoomPage() {
                         </div>
                         <div className="mc-focus-data-row">
                           <span>Takip ekranı</span>
-                          <strong>Konum takibi ayri merkezde</strong>
+                          <strong>Log</strong>
                         </div>
                       </div>
                     </article>

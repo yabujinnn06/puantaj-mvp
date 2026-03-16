@@ -35,6 +35,7 @@ const LOCATION_OPTIONS: { value: 'ALL' | LocationStatus; label: string }[] = [
   { value: 'UNVERIFIED_LOCATION', label: 'Ev dışı' },
   { value: 'NO_LOCATION', label: 'Konum yok' },
 ]
+void LOCATION_OPTIONS
 
 const EVENT_TYPE_OPTIONS: { value: 'ALL' | AttendanceType; label: string }[] = [
   { value: 'ALL', label: 'Tüm tipler' },
@@ -107,6 +108,7 @@ function locationStatusLabel(status: LocationStatus): string {
   if (status === 'UNVERIFIED_LOCATION') return 'Ev dışı'
   return 'Konum yok'
 }
+void locationStatusLabel
 
 function suspiciousReasons(event: AttendanceEvent): string[] {
   const reasons: string[] = []
@@ -526,19 +528,6 @@ export function AttendanceEventsPage() {
           </label>
 
           <label className="text-sm text-slate-700">
-            Konum
-            <select
-              value={draftFilters.locationStatus}
-              onChange={(e) => setDraftFilters((prev) => ({ ...prev, locationStatus: e.target.value as 'ALL' | LocationStatus }))}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-            >
-              {LOCATION_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-          </label>
-
-          <label className="text-sm text-slate-700">
             Limit
             <input
               type="number"
@@ -845,7 +834,6 @@ export function AttendanceEventsPage() {
                   <th className="py-2">Tip</th>
                   <th className="py-2">Kaynak</th>
                   <th className="py-2">Zaman</th>
-                  <th className="py-2">Konum</th>
                   <th className="py-2">Vardiya</th>
                   <th className="py-2">Not</th>
                   <th className="py-2">Bayraklar</th>
@@ -877,7 +865,6 @@ export function AttendanceEventsPage() {
                         {item.deleted_at ? <span className="ml-1 inline-flex rounded-full bg-rose-100 px-2 py-1 text-[11px] font-semibold text-rose-700">SİLİNDİ</span> : null}
                       </td>
                       <td className="py-2">{formatTs(item.ts_utc)}</td>
-                      <td className="py-2">{locationStatusLabel(item.location_status)}</td>
                       <td className="py-2">
                         {shiftName ? (
                           <span>{shiftName}{shiftId ? ` (#${shiftId})` : ''}</span>

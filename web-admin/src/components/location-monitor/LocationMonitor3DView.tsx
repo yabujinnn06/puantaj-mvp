@@ -27,20 +27,70 @@ function pointColor(point: Pick<LocationMonitorMapPoint, 'source'>): string {
 }
 
 function createMarkerElement(point: LocationMonitorMapPoint, focused: boolean): HTMLDivElement {
-  const element = document.createElement('div')
   const color = pointColor(point)
-  element.style.width = focused ? '18px' : '14px'
-  element.style.height = focused ? '18px' : '14px'
-  element.style.borderRadius = '999px'
-  element.style.background = color
-  element.style.border = '3px solid rgba(255,255,255,0.96)'
-  element.style.boxShadow = focused
-    ? `0 0 0 8px ${color}33, 0 8px 24px rgba(15,23,42,0.45)`
-    : `0 0 0 5px ${color}26, 0 6px 18px rgba(15,23,42,0.32)`
-  element.style.transition = 'transform 140ms ease, box-shadow 140ms ease'
-  element.style.transform = focused ? 'scale(1.14)' : 'scale(1)'
-  element.title = point.label
-  return element
+  const wrapper = document.createElement('div')
+  wrapper.style.position = 'relative'
+  wrapper.style.width = focused ? '32px' : '28px'
+  wrapper.style.height = focused ? '42px' : '38px'
+  wrapper.style.transform = 'translate(-50%, -100%)'
+  wrapper.style.cursor = 'pointer'
+  wrapper.style.zIndex = focused ? '6' : '4'
+  wrapper.title = point.label
+
+  const pulse = document.createElement('div')
+  pulse.style.position = 'absolute'
+  pulse.style.left = '50%'
+  pulse.style.top = focused ? '12px' : '10px'
+  pulse.style.width = focused ? '24px' : '20px'
+  pulse.style.height = focused ? '24px' : '20px'
+  pulse.style.borderRadius = '999px'
+  pulse.style.transform = 'translate(-50%, -50%)'
+  pulse.style.background = `${color}33`
+  pulse.style.boxShadow = `0 0 0 8px ${color}24`
+
+  const pin = document.createElement('div')
+  pin.style.position = 'absolute'
+  pin.style.left = '50%'
+  pin.style.top = '0'
+  pin.style.width = focused ? '22px' : '18px'
+  pin.style.height = focused ? '22px' : '18px'
+  pin.style.borderRadius = '999px'
+  pin.style.transform = 'translateX(-50%)'
+  pin.style.background = color
+  pin.style.border = '3px solid rgba(255,255,255,0.98)'
+  pin.style.boxShadow = focused
+    ? `0 0 0 8px ${color}26, 0 10px 26px rgba(15,23,42,0.46)`
+    : `0 0 0 5px ${color}1f, 0 8px 22px rgba(15,23,42,0.34)`
+  pin.style.transition = 'transform 140ms ease, box-shadow 140ms ease'
+  pin.style.transform += focused ? ' scale(1.08)' : ' scale(1)'
+
+  const core = document.createElement('div')
+  core.style.position = 'absolute'
+  core.style.left = '50%'
+  core.style.top = '50%'
+  core.style.width = focused ? '6px' : '5px'
+  core.style.height = focused ? '6px' : '5px'
+  core.style.borderRadius = '999px'
+  core.style.transform = 'translate(-50%, -50%)'
+  core.style.background = 'rgba(255,255,255,0.98)'
+
+  const tail = document.createElement('div')
+  tail.style.position = 'absolute'
+  tail.style.left = '50%'
+  tail.style.top = focused ? '17px' : '14px'
+  tail.style.width = '0'
+  tail.style.height = '0'
+  tail.style.transform = 'translateX(-50%)'
+  tail.style.borderLeft = focused ? '8px solid transparent' : '7px solid transparent'
+  tail.style.borderRight = focused ? '8px solid transparent' : '7px solid transparent'
+  tail.style.borderTop = focused ? `14px solid ${color}` : `12px solid ${color}`
+  tail.style.filter = 'drop-shadow(0 6px 10px rgba(15,23,42,0.34))'
+
+  pin.appendChild(core)
+  wrapper.appendChild(pulse)
+  wrapper.appendChild(tail)
+  wrapper.appendChild(pin)
+  return wrapper
 }
 
 function buildRouteData(points: LocationMonitorMapPoint[]) {
@@ -130,6 +180,28 @@ function fitToPoints(map: MapLibreMap, points: LocationMonitorMapPoint[]) {
     bearing: -18,
     duration: 0,
   })
+}
+
+function syncDomMarkers(map: MapLibreMap, points: LocationMonitorMapPoint[], highlightedPointId: string | null) {
+  const markers = points.map((point) => {
+    const marker = new maplibregl.Marker({
+      element: createMarkerElement(point, point.id === highlightedPointId),
+      anchor: 'bottom',
+    })
+      .setLngLat([point.lon, point.lat])
+      .setPopup(
+        new maplibregl.Popup({
+          closeButton: false,
+          offset: 18,
+          maxWidth: '320px',
+        }).setHTML(popupHtmlForPoint(point)),
+      )
+
+    marker.addTo(map)
+    return marker
+  })
+
+  return markers
 }
 
 function ensure3DLayers(map: MapLibreMap) {
@@ -366,6 +438,11 @@ export function LocationMonitor3DView({
     map.on('load', () => {
       mapLoadedRef.current = true
       ensure3DLayers(map)
+      const routeSource = map.getSource(ROUTE_SOURCE_ID) as GeoJSONSource | undefined
+      routeSource?.setData(buildRouteData(orderedPoints))
+      const pointSource = map.getSource(POINT_SOURCE_ID) as GeoJSONSource | undefined
+      pointSource?.setData(buildPointData(orderedPoints))
+      markersRef.current = syncDomMarkers(map, orderedPoints, highlightedPointId)
       map.on('click', POINT_LAYER_ID, clickHandler)
       map.on('mouseenter', POINT_LAYER_ID, enterHandler)
       map.on('mouseleave', POINT_LAYER_ID, leaveHandler)
@@ -381,7 +458,7 @@ export function LocationMonitor3DView({
       map.remove()
       mapRef.current = null
     }
-  }, [isSupported, orderedPoints])
+  }, [highlightedPointId, isSupported, orderedPoints])
 
   useEffect(() => {
     const map = mapRef.current
@@ -402,23 +479,7 @@ export function LocationMonitor3DView({
     for (const marker of markersRef.current) {
       marker.remove()
     }
-    markersRef.current = orderedPoints.map((point) => {
-      const marker = new maplibregl.Marker({
-        element: createMarkerElement(point, point.id === highlightedPointId),
-        anchor: 'center',
-      })
-        .setLngLat([point.lon, point.lat])
-        .setPopup(
-          new maplibregl.Popup({
-            closeButton: false,
-            offset: 18,
-            maxWidth: '320px',
-          }).setHTML(popupHtmlForPoint(point)),
-        )
-        .addTo(map)
-
-      return marker
-    })
+    markersRef.current = syncDomMarkers(map, orderedPoints, highlightedPointId)
   }, [highlightedPointId, orderedPoints])
 
   useEffect(() => {

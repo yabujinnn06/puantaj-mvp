@@ -1241,7 +1241,7 @@ def _build_department_summary_sheet(
         ],
     )
     _auto_width(ws)
-    _finalize_visual_scope(ws, used_max_col=11)
+    _finalize_visual_scope(ws, used_max_col=7)
     _apply_print_layout(ws, header_row=header_row)
 
 
@@ -1754,7 +1754,7 @@ def _build_date_range_export(
 
     ws_events = wb.active
     ws_events.title = "RAW_EVENTS"
-    _merge_title(ws_events, 1, "PUANTAJ RAW EVENTS RAPORU", end_col=11)
+    _merge_title(ws_events, 1, "PUANTAJ RAW EVENTS RAPORU", end_col=7)
     ws_events.append(["Tarih Aral\u0131\u011f\u0131", f"{start_date.isoformat()} - {end_date.isoformat()}"])
     ws_events.append(["Filtre - \u00c7al\u0131\u015fan ID", employee_id if employee_id is not None else "T\u00fcm\u00fc"])
     ws_events.append(["Filtre - Departman ID", department_id if department_id is not None else "T\u00fcm\u00fc"])
@@ -1772,11 +1772,7 @@ def _build_date_range_export(
             "Departman",
             "Tip",
             "Zaman (UTC)",
-            "Konum Durumu",
-            "Enlem",
-            "Boylam",
-            "Doğruluk (m)",
-            "Bayraklar",
+                        "Bayraklar",
         ]
     )
     _style_header(ws_events, events_header_row)
@@ -1803,11 +1799,7 @@ def _build_date_range_export(
                 department.name if department is not None else "-",
                 event.type.value,
                 _to_excel_datetime(event.ts_utc),
-                event.location_status.value,
-                event.lat,
-                event.lon,
-                event.accuracy_m,
-                flags,
+                                flags,
             ]
         )
 
@@ -1834,7 +1826,7 @@ def _build_date_range_export(
         header_row=events_header_row,
         data_start_row=events_data_start,
         data_end_row=events_data_end,
-        status_col_name="Konum Durumu",
+        status_col_name="",
         flags_col_name="Bayraklar",
     )
 
@@ -1842,7 +1834,7 @@ def _build_date_range_export(
         if row[5].value is not None:
             row[5].number_format = "yyyy-mm-dd hh:mm"
     _auto_width(ws_events)
-    _finalize_visual_scope(ws_events, used_max_col=11)
+    _finalize_visual_scope(ws_events, used_max_col=7)
     _apply_print_layout(ws_events, header_row=events_header_row)
 
     ws_daily = wb.create_sheet("DAILY_FACT")
@@ -2346,7 +2338,7 @@ def _write_range_sheet_rows(
     *,
     rows: list[tuple[AttendanceEvent, Employee, Department | None]],
 ) -> None:
-    _merge_title(ws, 1, "PUANTAJ TARIH ARALIGI RAPORU", end_col=11)
+    _merge_title(ws, 1, "PUANTAJ TARIH ARALIGI RAPORU", end_col=7)
     ws.append(["Kayıt Sayısı", len(rows)])
     ws.append(["Rapor Üretim (UTC)", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")])
     _append_spacer_row(ws)
@@ -2361,11 +2353,7 @@ def _write_range_sheet_rows(
             "Çalışan Adı",
             "Departman",
             "Tip",
-            "Konum Durumu",
-            "Enlem",
-            "Boylam",
-            "Doğruluk (m)",
-            "Bayraklar",
+                        "Bayraklar",
         ]
     )
     _style_header(ws, header_row)
@@ -2381,11 +2369,7 @@ def _write_range_sheet_rows(
                 employee.full_name,
                 department.name if department is not None else "-",
                 event.type.value,
-                event.location_status.value,
-                event.lat,
-                event.lon,
-                event.accuracy_m,
-                _true_flag_names(event.flags or {}),
+                                _true_flag_names(event.flags or {}),
             ]
         )
 
@@ -2396,7 +2380,7 @@ def _write_range_sheet_rows(
         header_row=header_row,
         data_start_row=data_start,
         data_end_row=data_end,
-        status_col_name="Konum Durumu",
+        status_col_name="",
         flags_col_name="Bayraklar",
     )
 
@@ -2407,7 +2391,7 @@ def _write_range_sheet_rows(
             if row[1].value is not None:
                 row[1].number_format = "hh:mm"
     _auto_width(ws)
-    _finalize_visual_scope(ws, used_max_col=11)
+    _finalize_visual_scope(ws, used_max_col=7)
     _apply_print_layout(ws, header_row=header_row)
 
 

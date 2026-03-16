@@ -4,8 +4,10 @@ import { Link } from 'react-router-dom'
 
 import {
   getDepartments,
+  getEmployeeDetail,
   getEmployees,
   getLocationMonitorEmployeeTimeline,
+  getMonthlyEmployee,
   getRegions,
 } from '../api/admin'
 import { EmployeeAutocompleteField } from '../components/EmployeeAutocompleteField'
@@ -194,6 +196,13 @@ function formatDay(value: string): string {
   return parsed ? DAY_FORMAT.format(parsed) : value
 }
 
+function formatCoordinate(lat: number | null, lon: number | null): string {
+  if (lat == null || lon == null) {
+    return '-'
+  }
+  return `${lat.toFixed(6)}, ${lon.toFixed(6)}`
+}
+
 function dayStatusLabel(value: LocationMonitorDayRecord['status']): string {
   if (value === 'OK') return 'Tamamlandi'
   if (value === 'INCOMPLETE') return 'Eksik'
@@ -228,6 +237,7 @@ function latestAvailablePoint(day: LocationMonitorDayRecord): LocationMonitorMap
 }
 
 export function LocationMonitorPage() {
+  const now = useMemo(() => new Date(), [])
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('')
   const [employeeQuery, setEmployeeQuery] = useState('')
   const [regionId, setRegionId] = useState('')
@@ -238,6 +248,8 @@ export function LocationMonitorPage() {
   const [activeDatePreset, setActiveDatePreset] = useState<DatePresetKey>('LAST_7_DAYS')
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
   const [focusedPointId, setFocusedPointId] = useState<string | null>(null)
+  const [selectedMonth, setSelectedMonth] = useState(String(now.getMonth() + 1))
+  const [selectedYear, setSelectedYear] = useState(String(now.getFullYear()))
   const deferredEmployeeQuery = useDeferredValue(employeeQuery)
   const hasInitialEmployeeSelectionRef = useRef(false)
 
@@ -331,6 +343,23 @@ export function LocationMonitorPage() {
     enabled: Boolean(selectedEmployeeId && startDate && endDate),
   })
 
+  const detailQuery = useQuery({
+    queryKey: ['location-monitor-detail', selectedEmployeeId],
+    queryFn: () => getEmployeeDetail(Number(selectedEmployeeId)),
+    enabled: Boolean(selectedEmployeeId),
+  })
+
+  const parsedMonth = Number(selectedMonth)
+  const parsedYear = Number(selectedYear)
+  const selectedMonthValid =
+    Number.isFinite(parsedYear) && Number.isFinite(parsedMonth) && parsedMonth >= 1 && parsedMonth <= 12
+
+  const monthlyQuery = useQuery({
+    queryKey: ['location-monitor-monthly', selectedEmployeeId, parsedYear, parsedMonth],
+    queryFn: () => getMonthlyEmployee({ employee_id: Number(selectedEmployeeId), year: parsedYear, month: parsedMonth }),
+    enabled: Boolean(selectedEmployeeId) && selectedMonthValid,
+  })
+
   useEffect(() => {
     const days = timelineQuery.data?.days ?? []
     if (!days.length) {
@@ -377,6 +406,20 @@ export function LocationMonitorPage() {
     return Math.max(1, differenceInDays(parsedStart, parsedEnd) + 1)
   }, [endDate, startDate])
 
+  const monthOptions = useMemo(
+    () =>
+      Array.from({ length: 12 }, (_, index) => ({
+        value: String(index + 1),
+        label: new Intl.DateTimeFormat('tr-TR', { month: 'long' }).format(new Date(now.getFullYear(), index, 1)),
+      })),
+    [now],
+  )
+
+  const yearOptions = useMemo(() => {
+    const baseYear = now.getFullYear()
+    return [baseYear - 1, baseYear, baseYear + 1]
+  }, [now])
+
   return (
     <div className="space-y-6">
       <section className="rounded-3xl border border-slate-200 bg-white px-5 py-5 shadow-sm sm:px-6">
@@ -385,8 +428,8 @@ export function LocationMonitorPage() {
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-700">Log Merkezi</p>
             <h2 className="mt-2 text-2xl font-semibold text-slate-900">Log</h2>
             <p className="mt-2 max-w-3xl text-sm text-slate-600">
-              Ana panelden ayrilan bu ekran, uygulama girisi-cikisi, mesai baslangici-bitisi, son konum ve gunluk fazla
-              mesai akisini tek yerde toplar.
+              Uygulama girisi-cikisi, mesai baslangici-bitisi, gunluk hareket izi, cihaz/IP kaydi ve fazla mesai
+              akisini tek yerde toplar.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -421,7 +464,7 @@ export function LocationMonitorPage() {
                 employees={filteredEmployees}
                 value={selectedEmployeeId}
                 onChange={setSelectedEmployeeId}
-                helperText="Secilen kisi icin gun gun konum izi ve mesai akisi gelir."
+                helperText="Secilen kisi icin gun gun log akisi ve gizli takip kayitlari gelir."
               />
 
               <label className="block text-sm text-slate-700">
@@ -862,6 +905,205 @@ export function LocationMonitorPage() {
                     </tbody>
                   </table>
                 </div>
+              </section>
+
+              <section className="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+                <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Guvenli Ozet</p>
+                      <h3 className="mt-1 text-lg font-semibold text-slate-900">Cihaz, IP ve ev kaydi</h3>
+                    </div>
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                      {detailQuery.data?.devices.length ?? 0} cihaz
+                    </span>
+                  </div>
+
+                  {detailQuery.isLoading ? <LoadingBlock label="Gizli log ozeti yukleniyor..." /> : null}
+                  {detailQuery.isError ? <ErrorBlock message="Gizli log ozeti alinamadi." /> : null}
+
+                  {detailQuery.data ? (
+                    <div className="mt-4 space-y-4">
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Ev kaydi</p>
+                          <strong className="mt-2 block text-sm text-slate-900">
+                            {detailQuery.data.home_location ? formatCoordinate(detailQuery.data.home_location.home_lat, detailQuery.data.home_location.home_lon) : 'Kayit yok'}
+                          </strong>
+                          <p className="mt-1 text-xs text-slate-600">
+                            {detailQuery.data.home_location ? `Yaricap ${detailQuery.data.home_location.radius_m} m` : 'Secili personel icin ev koordinati tanimli degil.'}
+                          </p>
+                        </div>
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Son IP</p>
+                          <strong className="mt-2 block text-sm text-slate-900">
+                            {detailQuery.data.ip_summary[0]?.ip ?? detailQuery.data.recent_ips[0] ?? '-'}
+                          </strong>
+                          <p className="mt-1 text-xs text-slate-600">
+                            Son portal izi: {formatDateTime(detailQuery.data.last_portal_seen_utc)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                        {detailQuery.data.ip_summary.length ? (
+                          <table className="min-w-full text-left text-sm">
+                            <thead className="bg-slate-50 text-xs uppercase tracking-[0.16em] text-slate-500">
+                              <tr>
+                                <th className="px-3 py-3">IP</th>
+                                <th className="px-3 py-3">Son gorulme</th>
+                                <th className="px-3 py-3">Aksiyon</th>
+                                <th className="px-3 py-3">Koordinat</th>
+                                <th className="px-3 py-3">Konum zamani</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {detailQuery.data.ip_summary.map((item) => (
+                                <tr key={`${item.ip}-${item.last_seen_at_utc}`} className="bg-white">
+                                  <td className="px-3 py-3 font-mono text-xs">{item.ip}</td>
+                                  <td className="px-3 py-3">{formatDateTime(item.last_seen_at_utc)}</td>
+                                  <td className="px-3 py-3">{item.last_action}</td>
+                                  <td className="px-3 py-3">{formatCoordinate(item.last_lat, item.last_lon)}</td>
+                                  <td className="px-3 py-3">{formatDateTime(item.last_location_ts_utc)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        ) : (
+                          <div className="px-4 py-6 text-sm text-slate-500">IP log kaydi bulunamadi.</div>
+                        )}
+                      </div>
+
+                      <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                        {(detailQuery.data.devices ?? []).length ? (
+                          <table className="min-w-full text-left text-sm">
+                            <thead className="bg-slate-50 text-xs uppercase tracking-[0.16em] text-slate-500">
+                              <tr>
+                                <th className="px-3 py-3">Cihaz</th>
+                                <th className="px-3 py-3">Parmak izi</th>
+                                <th className="px-3 py-3">Son IP</th>
+                                <th className="px-3 py-3">Son islem</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {detailQuery.data.devices.map((device) => (
+                                <tr key={device.id} className="bg-white">
+                                  <td className="px-3 py-3">#{device.id}</td>
+                                  <td className="px-3 py-3 font-mono text-xs">{device.device_fingerprint}</td>
+                                  <td className="px-3 py-3">{device.last_seen_ip ?? '-'}</td>
+                                  <td className="px-3 py-3">{formatDateTime(device.last_seen_at_utc)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        ) : (
+                          <div className="px-4 py-6 text-sm text-slate-500">Cihaz kaydi bulunamadi.</div>
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
+                </article>
+
+                <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Aylik Puantaj Izi</p>
+                      <h3 className="mt-1 text-lg font-semibold text-slate-900">Giris ve cikis koordinatlari</h3>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <select
+                        value={selectedMonth}
+                        onChange={(event) => setSelectedMonth(event.target.value)}
+                        className="rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-700"
+                      >
+                        {monthOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        value={selectedYear}
+                        onChange={(event) => setSelectedYear(event.target.value)}
+                        className="rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-700"
+                      >
+                        {yearOptions.map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {monthlyQuery.isLoading ? <LoadingBlock label="Aylik log kayitlari yukleniyor..." /> : null}
+                  {monthlyQuery.isError ? <ErrorBlock message="Aylik log kayitlari alinamadi." /> : null}
+
+                  {monthlyQuery.data ? (
+                    <div className="mt-4 space-y-4">
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Calisilan sure</p>
+                          <strong className="mt-2 block text-base text-slate-900">
+                            <MinuteDisplay minutes={monthlyQuery.data.totals.worked_minutes} />
+                          </strong>
+                        </div>
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Plan ustu</p>
+                          <strong className="mt-2 block text-base text-slate-900">
+                            <MinuteDisplay minutes={monthlyQuery.data.totals.plan_overtime_minutes} />
+                          </strong>
+                        </div>
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Yasal fazla mesai</p>
+                          <strong className="mt-2 block text-base text-slate-900">
+                            <MinuteDisplay minutes={monthlyQuery.data.totals.legal_overtime_minutes} />
+                          </strong>
+                        </div>
+                      </div>
+
+                      <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                        <table className="min-w-full text-left text-sm">
+                          <thead className="bg-slate-50 text-xs uppercase tracking-[0.16em] text-slate-500">
+                            <tr>
+                              <th className="px-3 py-3">Gun</th>
+                              <th className="px-3 py-3">Giris</th>
+                              <th className="px-3 py-3">Giris konum</th>
+                              <th className="px-3 py-3">Cikis</th>
+                              <th className="px-3 py-3">Cikis konum</th>
+                              <th className="px-3 py-3">Calisilan</th>
+                              <th className="px-3 py-3">Plan ustu</th>
+                              <th className="px-3 py-3">Yasal fazla</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {monthlyQuery.data.days.map((day) => (
+                              <tr key={day.date} className="bg-white">
+                                <td className="px-3 py-3">
+                                  <strong className="block text-slate-900">{formatDay(day.date)}</strong>
+                                  <span className="text-xs text-slate-500">{day.date}</span>
+                                </td>
+                                <td className="px-3 py-3">{formatDateTime(day.in)}</td>
+                                <td className="px-3 py-3 font-mono text-xs">{formatCoordinate(day.in_lat, day.in_lon)}</td>
+                                <td className="px-3 py-3">{formatDateTime(day.out)}</td>
+                                <td className="px-3 py-3 font-mono text-xs">{formatCoordinate(day.out_lat, day.out_lon)}</td>
+                                <td className="px-3 py-3">
+                                  <MinuteDisplay minutes={day.worked_minutes} />
+                                </td>
+                                <td className="px-3 py-3">
+                                  <MinuteDisplay minutes={day.plan_overtime_minutes} />
+                                </td>
+                                <td className="px-3 py-3">
+                                  <MinuteDisplay minutes={day.legal_overtime_minutes} />
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : null}
+                </article>
               </section>
             </>
           ) : null}

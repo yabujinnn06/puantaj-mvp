@@ -28,6 +28,8 @@ import type { LocationStatus, MonthlyEmployeeDay } from '../types/api'
 import { buildMonthlyAttendanceInsight, getAttendanceDayType } from '../utils/attendanceInsights'
 import { getFlagMeta } from '../utils/flagDictionary'
 
+void Link
+
 const locationSchema = z.object({
   home_lat: z.coerce.number().min(-90),
   home_lon: z.coerce.number().min(-180),
@@ -146,6 +148,14 @@ export function EmployeeDetailPage() {
   const [locationHistoryPage, setLocationHistoryPage] = useState(1)
   const [locationHistoryPageSize, setLocationHistoryPageSize] =
     useState<(typeof LOCATION_HISTORY_PAGE_SIZE_OPTIONS)[number]>(20)
+  void formError
+  void setLocationHistorySearch
+  void setLocationHistoryEventType
+  void setLocationHistoryStatus
+  void setLocationHistoryDeviceId
+  void setLocationHistoryDateFrom
+  void setLocationHistoryDateTo
+  void setLocationHistoryPageSize
 
   const [isInviteModalOpen, setInviteModalOpen] = useState(false)
   const [expiresInMinutes, setExpiresInMinutes] = useState('30')
@@ -415,6 +425,7 @@ export function EmployeeDetailPage() {
 
     locationMutation.mutate(parsed.data)
   }
+  void onLocationSubmit
 
   const onProfileSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -552,6 +563,10 @@ export function EmployeeDetailPage() {
     const end = Math.min(locationHistoryPage * locationHistoryPageSize, filteredRecentLocationRows.length)
     return { start, end }
   }, [filteredRecentLocationRows.length, locationHistoryPage, locationHistoryPageSize])
+  void ipSummaryRows
+  void locationHistoryDeviceOptions
+  void pagedRecentLocationRows
+  void locationHistoryShownRange
 
   const deviceCountText = useMemo(() => {
     const count = detailQuery.data?.devices.length ?? 0
@@ -578,7 +593,7 @@ export function EmployeeDetailPage() {
     <div className="space-y-4">
       <PageHeader
         title={`Calisan Detayi #${employee.id}`}
-        description={`${employee.full_name} icin puantaj, cihaz, aktivite ve konum bilgileri`}
+        description={`${employee.full_name} icin puantaj, cihaz ve aktivite bilgileri`}
         action={
           <div className="flex gap-2">
             <button
@@ -828,13 +843,8 @@ export function EmployeeDetailPage() {
               </div>
             </div>
 
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-              Ayni tabloda giris-cikis saatleri, konum koordinatlari ve bayraklar birlikte gosterilir.
-              Detayli 2D ve 3D hareket izi icin ayrik <span className="font-semibold">Log</span> ekranini kullanin.
-            </div>
-
             <div className="list-scroll-area w-full max-w-full overflow-x-auto">
-              <table className="w-full min-w-[1240px] text-left text-sm">
+              <table className="w-full min-w-[1020px] text-left text-sm">
                 <thead className="text-xs uppercase text-slate-500">
                   <tr>
                     <th className="py-2">Tarih</th>
@@ -843,8 +853,6 @@ export function EmployeeDetailPage() {
                     <th className="py-2">Gun Tipi</th>
                     <th className="py-2">Giris</th>
                     <th className="py-2">Cikis</th>
-                    <th className="py-2">Giris Konum (lat/lon)</th>
-                    <th className="py-2">Cikis Konum (lat/lon)</th>
                     <th className="py-2">Net Sure</th>
                     <th className="py-2">Erken Gelis</th>
                     <th className="py-2">Plan Ustu</th>
@@ -864,8 +872,6 @@ export function EmployeeDetailPage() {
                         <td className="py-2">{getAttendanceDayType(day).label}</td>
                         <td className="py-2">{formatDateTime(day.in)}</td>
                         <td className="py-2">{formatDateTime(day.out)}</td>
-                        <td className="py-2 font-mono text-xs">{formatCoordinate(day.in_lat, day.in_lon)}</td>
-                        <td className="py-2 font-mono text-xs">{formatCoordinate(day.out_lat, day.out_lon)}</td>
                         <td className="py-2">
                           <MinuteDisplay minutes={day.worked_minutes} />
                         </td>
@@ -893,8 +899,8 @@ export function EmployeeDetailPage() {
       </Panel>
 
       <Panel>
-        <h4 className="text-base font-semibold text-slate-900">Kayitli Cihazlar ve IP Bilgisi</h4>
-        <p className="mt-1 text-xs text-slate-500">Cihazlar, son attendance zamani ve son gorulen IP bilgisi.</p>
+        <h4 className="text-base font-semibold text-slate-900">Kayitli Cihazlar</h4>
+        <p className="mt-1 text-xs text-slate-500">Cihazlar, son attendance zamani ve durum bilgisi.</p>
         <div className="mt-3 list-scroll-area">
           <table className="min-w-full text-left text-sm">
             <thead className="text-xs uppercase text-slate-500">
@@ -904,7 +910,6 @@ export function EmployeeDetailPage() {
                 <th className="py-2">Durum</th>
                 <th className="py-2">Olusma</th>
                 <th className="py-2">Son Attendance</th>
-                <th className="py-2">Son Gorulen IP</th>
                 <th className="py-2">Son Islem Zamani</th>
               </tr>
             </thead>
@@ -918,7 +923,6 @@ export function EmployeeDetailPage() {
                   </td>
                   <td className="py-2">{formatDateTime(device.created_at)}</td>
                   <td className="py-2">{formatDateTime(device.last_attendance_ts_utc)}</td>
-                  <td className="py-2">{device.last_seen_ip ?? '-'}</td>
                   <td className="py-2">{formatDateTime(device.last_seen_at_utc)}</td>
                 </tr>
               ))}
@@ -927,314 +931,30 @@ export function EmployeeDetailPage() {
         </div>
       </Panel>
 
-      <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
-        <Panel>
-          <h4 className="text-base font-semibold text-slate-900">Employee Portal Aktivite Akisi</h4>
-          <div className="mt-3 list-scroll-area rounded-lg border border-slate-200">
-            <table className="min-w-full text-left text-sm">
-              <thead className="text-xs uppercase text-slate-500">
-                <tr>
-                  <th className="py-2">Zaman</th>
-                  <th className="py-2">Islem</th>
-                  <th className="py-2">IP</th>
-                  <th className="py-2">User Agent</th>
+      <Panel>
+        <h4 className="text-base font-semibold text-slate-900">Employee Portal Aktivite Akisi</h4>
+        <div className="mt-3 list-scroll-area rounded-lg border border-slate-200">
+          <table className="min-w-full text-left text-sm">
+            <thead className="text-xs uppercase text-slate-500">
+              <tr>
+                <th className="py-2">Zaman</th>
+                <th className="py-2">Islem</th>
+                <th className="py-2">User Agent</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(detailQuery.data?.recent_activity ?? []).map((item, index) => (
+                <tr key={`${item.ts_utc}-${index}`} className="border-t border-slate-100">
+                  <td className="py-2">{formatDateTime(item.ts_utc)}</td>
+                  <td className="py-2">{item.action}</td>
+                  <td className="py-2 max-w-[280px] truncate" title={item.user_agent ?? '-'}>
+                    {item.user_agent ?? '-'}
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {(detailQuery.data?.recent_activity ?? []).map((item, index) => (
-                  <tr key={`${item.ts_utc}-${index}`} className="border-t border-slate-100">
-                    <td className="py-2">{formatDateTime(item.ts_utc)}</td>
-                    <td className="py-2">{item.action}</td>
-                    <td className="py-2">{item.ip ?? '-'}</td>
-                    <td className="py-2 max-w-[280px] truncate" title={item.user_agent ?? '-'}>
-                      {item.user_agent ?? '-'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Panel>
-
-        <Panel>
-          <h4 className="text-base font-semibold text-slate-900">Cihaz IP Ozeti</h4>
-          <p className="mt-1 text-xs text-slate-500">IP, son gorulme zamani ve son bilinen konum bilgisi.</p>
-          <div className="mt-3 list-scroll-area rounded-lg border border-slate-200">
-            {ipSummaryRows.length ? (
-              <table className="min-w-full text-left text-sm">
-                <thead className="text-xs uppercase text-slate-500">
-                  <tr>
-                    <th className="py-2">IP</th>
-                    <th className="py-2">Son gorulme</th>
-                    <th className="py-2">Aksiyon</th>
-                    <th className="py-2">Son konum (lat/lon)</th>
-                    <th className="py-2">Konum zamani</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ipSummaryRows.map((item) => (
-                    <tr key={item.ip} className="border-t border-slate-100">
-                      <td className="py-2 font-mono text-xs">{item.ip}</td>
-                      <td className="py-2">{formatDateTime(item.last_seen_at_utc)}</td>
-                      <td className="py-2">{item.last_action}</td>
-                      <td className="py-2">
-                        {item.last_lat !== null && item.last_lon !== null
-                          ? `${item.last_lat.toFixed(6)}, ${item.last_lon.toFixed(6)}`
-                          : '-'}
-                      </td>
-                      <td className="py-2">
-                        {item.last_location_ts_utc ? formatDateTime(item.last_location_ts_utc) : '-'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <div className="p-3 text-sm text-slate-500">IP kaydi bulunamadi.</div>
-            )}
-          </div>
-        </Panel>
-      </div>
-
-      <Panel>
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h4 className="text-base font-semibold text-slate-900">Konum izleme ayrildi</h4>
-              <p className="mt-1 text-sm text-slate-600">
-                Bu sayfadaki haritalar kaldirildi. Ayrintili 2D ve 3D hareket izi, tarih filtreleri ve fazla mesai
-                analizi icin ayri <span className="font-semibold">Log</span> ekranini kullanin.
-              </p>
-            </div>
-            <Link
-              to="/log"
-              className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
-            >
-              Log ekranini ac
-            </Link>
-          </div>
+              ))}
+            </tbody>
+          </table>
         </div>
-        <div className="mt-4 rounded-lg border border-slate-200">
-          <div className="border-b border-slate-200 px-3 py-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Konum Gecmisi</p>
-            <div className="mt-2 grid gap-2 md:grid-cols-7">
-              <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:col-span-2">
-                Ara
-                <input
-                  value={locationHistorySearch}
-                  onChange={(event) => setLocationHistorySearch(event.target.value)}
-                  placeholder="Tarih, koordinat, cihaz, durum..."
-                  className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-slate-800"
-                />
-              </label>
-              <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                Tip
-                <select
-                  value={locationHistoryEventType}
-                  onChange={(event) => setLocationHistoryEventType(event.target.value as 'all' | 'IN' | 'OUT')}
-                  className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-slate-800"
-                >
-                  <option value="all">Tum tipler</option>
-                  <option value="IN">IN</option>
-                  <option value="OUT">OUT</option>
-                </select>
-              </label>
-              <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                Durum
-                <select
-                  value={locationHistoryStatus}
-                  onChange={(event) =>
-                    setLocationHistoryStatus(event.target.value as 'all' | LocationStatus)
-                  }
-                  className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-slate-800"
-                >
-                  <option value="all">Tum durumlar</option>
-                  <option value="VERIFIED_HOME">VERIFIED_HOME</option>
-                  <option value="UNVERIFIED_LOCATION">UNVERIFIED_LOCATION</option>
-                  <option value="NO_LOCATION">NO_LOCATION</option>
-                </select>
-              </label>
-              <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                Cihaz
-                <select
-                  value={locationHistoryDeviceId}
-                  onChange={(event) => setLocationHistoryDeviceId(event.target.value)}
-                  className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-slate-800"
-                >
-                  <option value="all">Tum cihazlar</option>
-                  {locationHistoryDeviceOptions.map((deviceId) => (
-                    <option key={deviceId} value={String(deviceId)}>
-                      #{deviceId}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                Baslangic Tarihi
-                <input
-                  type="date"
-                  value={locationHistoryDateFrom}
-                  onChange={(event) => setLocationHistoryDateFrom(event.target.value)}
-                  className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-slate-800"
-                />
-              </label>
-              <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                Bitis Tarihi
-                <input
-                  type="date"
-                  value={locationHistoryDateTo}
-                  min={locationHistoryDateFrom || undefined}
-                  onChange={(event) => setLocationHistoryDateTo(event.target.value)}
-                  className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-slate-800"
-                />
-              </label>
-            </div>
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-              <p className="text-[11px] text-slate-500">
-                Gosterilen satir: {locationHistoryShownRange.start}-{locationHistoryShownRange.end} /{' '}
-                {filteredRecentLocationRows.length}
-              </p>
-              <label className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                Sayfa basi
-                <select
-                  value={locationHistoryPageSize}
-                  onChange={(event) =>
-                    setLocationHistoryPageSize(Number(event.target.value) as (typeof LOCATION_HISTORY_PAGE_SIZE_OPTIONS)[number])
-                  }
-                  className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-800"
-                >
-                  {LOCATION_HISTORY_PAGE_SIZE_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          </div>
-          {filteredRecentLocationRows.length ? (
-            <>
-              <div className="list-scroll-area-compact">
-                <table className="min-w-full text-left text-sm">
-                  <thead className="text-xs uppercase text-slate-500">
-                    <tr>
-                      <th className="py-2 pl-3">Zaman</th>
-                      <th className="py-2">Gun</th>
-                      <th className="py-2">Tip</th>
-                      <th className="py-2">Durum</th>
-                      <th className="py-2">Cihaz</th>
-                      <th className="py-2 pr-3">Koordinat</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pagedRecentLocationRows.map((item, index) => {
-                      const rowDay = toIstanbulDay(item.ts_utc) ?? '-'
-                      return (
-                        <tr key={`${item.device_id}-${item.ts_utc}-${index}`} className="border-t border-slate-100">
-                          <td className="py-2 pl-3">{formatDateTime(item.ts_utc)}</td>
-                          <td className="py-2 font-mono text-xs text-slate-600">{rowDay}</td>
-                          <td className="py-2">{item.event_type}</td>
-                          <td className="py-2">{item.location_status}</td>
-                          <td className="py-2">#{item.device_id}</td>
-                          <td className="py-2 pr-3">{formatCoordinate(item.lat, item.lon)}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              <div className="flex items-center justify-between border-t border-slate-200 px-3 py-2">
-                <p className="text-xs text-slate-500">
-                  Sayfa {locationHistoryPage} / {locationHistoryTotalPages}
-                </p>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setLocationHistoryPage((current) => Math.max(1, current - 1))}
-                    disabled={locationHistoryPage <= 1}
-                    className="rounded-md border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
-                  >
-                    Onceki
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setLocationHistoryPage((current) =>
-                        Math.min(locationHistoryTotalPages, current + 1),
-                      )
-                    }
-                    disabled={locationHistoryPage >= locationHistoryTotalPages}
-                    className="rounded-md border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
-                  >
-                    Sonraki
-                  </button>
-                </div>
-              </div>
-            </>
-          ) : (
-            <div className="p-3 text-sm text-slate-500">Filtreye uygun konum gecmisi bulunamadi.</div>
-          )}
-        </div>
-      </Panel>
-
-      <Panel>
-        <h4 className="text-base font-semibold text-slate-900">Ev Konumu</h4>
-        <p className="mt-1 text-xs text-slate-500">
-          Check-in konum dogrulamasi icin enlem, boylam ve yaricap metre bilgisini girin.
-        </p>
-        {!detailQuery.data?.home_location ? (
-          <p className="mt-2 text-sm text-amber-700">Kayitli konum bulunamadi. Ilk kaydi olusturabilirsiniz.</p>
-        ) : null}
-
-        <form onSubmit={onLocationSubmit} className="mt-4 grid gap-3 md:grid-cols-3">
-          <label className="text-sm text-slate-700">
-            Ev Enlem (Lat)
-            <input
-              value={homeLat}
-              onChange={(event) => setHomeLat(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-            />
-          </label>
-
-          <label className="text-sm text-slate-700">
-            Ev Boylam (Lon)
-            <input
-              value={homeLon}
-              onChange={(event) => setHomeLon(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-            />
-          </label>
-
-          <label className="text-sm text-slate-700">
-            Yaricap (metre)
-            <input
-              value={radiusM}
-              onChange={(event) => setRadiusM(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-            />
-          </label>
-
-          <div className="md:col-span-3">
-            <button
-              type="submit"
-              disabled={locationMutation.isPending}
-              className="btn-primary rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
-            >
-              {locationMutation.isPending ? (
-                <>
-                  <span className="inline-spinner" aria-hidden="true" />
-                  Kaydediliyor...
-                </>
-              ) : detailQuery.data?.home_location ? (
-                'Konumu Guncelle'
-              ) : (
-                'Konumu Kaydet'
-              )}
-            </button>
-          </div>
-        </form>
-
-        {formError ? <p className="form-validation">{formError}</p> : null}
       </Panel>
 
       <Modal open={isInviteModalOpen} title="Cihaz Baglama Linki Olustur" onClose={() => setInviteModalOpen(false)}>

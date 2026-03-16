@@ -18,8 +18,8 @@ export function ManagementConsoleHeader({
           <p className="mc-kicker">YÖNETİM KONSOLU</p>
           <h2>Ana Panel</h2>
           <p>
-            Calisan operasyon matrisi ana odak olarak korunur; konum takibi ayri ekranda, bildirim ve
-            yardimci analitik katmanlari ise destekleyici rolde calisir.
+            Calisan operasyon matrisi ana odak olarak korunur; bildirim ve yardimci analitik katmanlari
+            destekleyici rolde calisir.
           </p>
         </div>
 
