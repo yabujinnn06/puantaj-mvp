@@ -28,6 +28,13 @@ LOCATION_STATUS_VALUES = (
     "VERIFIED",
 )
 
+ALL_ATTENDANCE_LOCATION_STATUS_VALUES = (
+    "VERIFIED_HOME",
+    "UNVERIFIED_LOCATION",
+    "NO_LOCATION",
+    *LOCATION_STATUS_VALUES,
+)
+
 
 def upgrade() -> None:
     for value in LOCATION_STATUS_VALUES:
@@ -61,6 +68,11 @@ def upgrade() -> None:
         name="location_trust_status",
         create_type=False,
     )
+    attendance_location_status = postgresql.ENUM(
+        *ALL_ATTENDANCE_LOCATION_STATUS_VALUES,
+        name="attendance_location_status",
+        create_type=False,
+    )
     bind = op.get_bind()
     location_event_source.create(bind, checkfirst=True)
     location_geofence_status.create(bind, checkfirst=True)
@@ -92,7 +104,7 @@ def upgrade() -> None:
         sa.Column("distance_to_geofence_m", sa.Float(), nullable=True),
         sa.Column(
             "location_status",
-            sa.Enum(name="attendance_location_status", create_type=False),
+            attendance_location_status,
             nullable=False,
             server_default=sa.text("'NO_LOCATION'"),
         ),
