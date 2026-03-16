@@ -3524,6 +3524,18 @@ def get_location_monitor_employee_timeline_events(
         if "not found" in message.lower():
             raise HTTPException(status_code=404, detail=message) from exc
         raise HTTPException(status_code=422, detail=message) from exc
+    except Exception as exc:
+        logger.exception(
+            "location monitor timeline endpoint failed",
+            extra={
+                "employee_id": employee_id,
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+                "day": day.isoformat() if day else None,
+                "latest_only": latest_only,
+            },
+        )
+        raise HTTPException(status_code=500, detail="Location monitor timeline data could not be prepared.") from exc
     return timeline_response
 
 

@@ -71,6 +71,33 @@ class LocationVisibilityPolicy:
     device_visible: bool = True
 
 
+def _safe_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed != parsed or parsed in {float("inf"), float("-inf")}:
+        return None
+    return parsed
+
+
+def _safe_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_flags(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    return {}
+
+
 def _normalize_utc(value: datetime | None) -> datetime | None:
     if value is None:
         return None
@@ -102,6 +129,10 @@ def _apply_coordinate_visibility(value: float, *, exact: bool) -> float:
     return value if exact else round(value, 3)
 
 
+def _has_valid_coordinates(event: EmployeeLocationEvent | None) -> bool:
+    return event is not None and _safe_float(event.lat) is not None and _safe_float(event.lon) is not None
+
+
 def _point_label(source: LocationEventSource) -> str:
     return POINT_SOURCE_LABELS.get(source, "Konum")
 
@@ -116,7 +147,9 @@ def _event_to_map_point(
     visibility: LocationVisibilityPolicy,
     marker_kind: str = "EVENT",
 ) -> LocationMonitorMapPointRead | None:
-    if event.lat is None or event.lon is None:
+    lat = _safe_float(event.lat)
+    lon = _safe_float(event.lon)
+    if lat is None or lon is None:
         return None
     point_day = _local_day(event.ts_utc)
     if point_day is None:
@@ -125,9 +158,9 @@ def _event_to_map_point(
         id=f"location-event-{event.id}",
         day=point_day,
         source=_summary_point_source(event.source),  # type: ignore[arg-type]
-        lat=_apply_coordinate_visibility(float(event.lat), exact=visibility.exact_coordinates),
-        lon=_apply_coordinate_visibility(float(event.lon), exact=visibility.exact_coordinates),
-        accuracy_m=event.accuracy_m,
+        lat=_apply_coordinate_visibility(lat, exact=visibility.exact_coordinates),
+        lon=_apply_coordinate_visibility(lon, exact=visibility.exact_coordinates),
+        accuracy_m=_safe_float(event.accuracy_m),
         ts_utc=event.ts_utc,
         label=_point_label(event.source),
         location_status=event.location_status,
@@ -135,13 +168,13 @@ def _event_to_map_point(
         ip=event.ip if visibility.ip_visible else _mask_ip(event.ip),
         geofence_status=event.geofence_status,
         trust_status=event.trust_status,
-        trust_score=event.trust_score,
+        trust_score=_safe_int(event.trust_score),
         provider=event.provider,
-        speed_mps=event.speed_mps,
-        heading_deg=event.heading_deg,
-        altitude_m=event.altitude_m,
+        speed_mps=_safe_float(event.speed_mps),
+        heading_deg=_safe_float(event.heading_deg),
+        altitude_m=_safe_float(event.altitude_m),
         is_mocked=event.is_mocked,
-        battery_level=event.battery_level,
+        battery_level=_safe_float(event.battery_level),
         network_type=event.network_type,
         marker_kind=marker_kind,  # type: ignore[arg-type]
     )
@@ -152,48 +185,48 @@ def _event_to_timeline_event(
     *,
     visibility: LocationVisibilityPolicy,
 ) -> LocationMonitorTimelineEventRead:
+    lat = _safe_float(event.lat)
+    lon = _safe_float(event.lon)
     return LocationMonitorTimelineEventRead(
         id=f"location-event-{event.id}",
         ts_utc=event.ts_utc,
         day=_local_day(event.ts_utc) or event.ts_utc.astimezone(_attendance_timezone()).date(),
         source=event.source,
         label=_point_label(event.source),
-        lat=(
-            _apply_coordinate_visibility(float(event.lat), exact=visibility.exact_coordinates)
-            if event.lat is not None
-            else None
-        ),
-        lon=(
-            _apply_coordinate_visibility(float(event.lon), exact=visibility.exact_coordinates)
-            if event.lon is not None
-            else None
-        ),
-        accuracy_m=event.accuracy_m,
+        lat=_apply_coordinate_visibility(lat, exact=visibility.exact_coordinates) if lat is not None else None,
+        lon=_apply_coordinate_visibility(lon, exact=visibility.exact_coordinates) if lon is not None else None,
+        accuracy_m=_safe_float(event.accuracy_m),
         location_status=event.location_status,
         geofence_status=event.geofence_status,
         trust_status=event.trust_status,
-        trust_score=event.trust_score,
+        trust_score=_safe_int(event.trust_score),
         device_id=event.device_id if visibility.device_visible else None,
         ip=event.ip if visibility.ip_visible else _mask_ip(event.ip),
         provider=event.provider,
-        speed_mps=event.speed_mps,
-        heading_deg=event.heading_deg,
-        altitude_m=event.altitude_m,
+        speed_mps=_safe_float(event.speed_mps),
+        heading_deg=_safe_float(event.heading_deg),
+        altitude_m=_safe_float(event.altitude_m),
         is_mocked=event.is_mocked,
-        battery_level=event.battery_level,
+        battery_level=_safe_float(event.battery_level),
         network_type=event.network_type,
-        flags=dict(event.details or {}),
+        flags=_safe_flags(event.details),
     )
 
 
 def _route_points(events: Iterable[EmployeeLocationEvent]) -> list[EmployeeLocationEvent]:
-    return [event for event in events if event.lat is not None and event.lon is not None]
+    return [event for event in events if _has_valid_coordinates(event)]
 
 
 def _movement_distance(points: list[EmployeeLocationEvent]) -> float:
     total = 0.0
     for previous, current in zip(points, points[1:]):
-        total += distance_m(float(previous.lat), float(previous.lon), float(current.lat), float(current.lon))
+        previous_lat = _safe_float(previous.lat)
+        previous_lon = _safe_float(previous.lon)
+        current_lat = _safe_float(current.lat)
+        current_lon = _safe_float(current.lon)
+        if None in {previous_lat, previous_lon, current_lat, current_lon}:
+            continue
+        total += distance_m(previous_lat, previous_lon, current_lat, current_lon)
     return total
 
 
@@ -225,8 +258,16 @@ def _repeated_groups(
         if dwell_minutes < DWELL_MINUTES_THRESHOLD:
             current_group = []
             return
-        avg_lat = sum(float(item.lat) for item in current_group if item.lat is not None) / len(current_group)
-        avg_lon = sum(float(item.lon) for item in current_group if item.lon is not None) / len(current_group)
+        valid_points = [
+            (_safe_float(item.lat), _safe_float(item.lon))
+            for item in current_group
+            if _safe_float(item.lat) is not None and _safe_float(item.lon) is not None
+        ]
+        if not valid_points:
+            current_group = []
+            return
+        avg_lat = sum(item[0] for item in valid_points if item[0] is not None) / len(valid_points)
+        avg_lon = sum(item[1] for item in valid_points if item[1] is not None) / len(valid_points)
         groups.append(
             LocationMonitorRepeatedPointRead(
                 id=f"dwell-{current_group[0].id}",
@@ -241,7 +282,11 @@ def _repeated_groups(
 
     for point in points[1:]:
         previous = current_group[-1]
-        if distance_m(float(previous.lat), float(previous.lon), float(point.lat), float(point.lon)) <= DWELL_RADIUS_M:
+        previous_lat = _safe_float(previous.lat)
+        previous_lon = _safe_float(previous.lon)
+        point_lat = _safe_float(point.lat)
+        point_lon = _safe_float(point.lon)
+        if None not in {previous_lat, previous_lon, point_lat, point_lon} and distance_m(previous_lat, previous_lon, point_lat, point_lon) <= DWELL_RADIUS_M:
             current_group.append(point)
             continue
         flush_group()
@@ -267,7 +312,11 @@ def _simplify_points(points: list[EmployeeLocationEvent]) -> list[EmployeeLocati
             simplified.append(point)
             last_kept = point
             continue
-        if distance_m(float(last_kept.lat), float(last_kept.lon), float(point.lat), float(point.lon)) >= SIMPLIFY_DISTANCE_M:
+        last_kept_lat = _safe_float(last_kept.lat)
+        last_kept_lon = _safe_float(last_kept.lon)
+        point_lat = _safe_float(point.lat)
+        point_lon = _safe_float(point.lon)
+        if None not in {last_kept_lat, last_kept_lon, point_lat, point_lon} and distance_m(last_kept_lat, last_kept_lon, point_lat, point_lon) >= SIMPLIFY_DISTANCE_M:
             simplified.append(point)
             last_kept = point
     simplified.append(points[-1])
@@ -277,10 +326,14 @@ def _simplify_points(points: list[EmployeeLocationEvent]) -> list[EmployeeLocati
 def _suspicious_jump_count(points: list[EmployeeLocationEvent]) -> int:
     total = 0
     for previous, current in zip(points, points[1:]):
-        if previous.lat is None or previous.lon is None or current.lat is None or current.lon is None:
+        previous_lat = _safe_float(previous.lat)
+        previous_lon = _safe_float(previous.lon)
+        current_lat = _safe_float(current.lat)
+        current_lon = _safe_float(current.lon)
+        if None in {previous_lat, previous_lon, current_lat, current_lon}:
             continue
         delta_seconds = max(1.0, (current.ts_utc - previous.ts_utc).total_seconds())
-        speed_mps = distance_m(float(previous.lat), float(previous.lon), float(current.lat), float(current.lon)) / delta_seconds
+        speed_mps = distance_m(previous_lat, previous_lon, current_lat, current_lon) / delta_seconds
         if speed_mps > SUSPICIOUS_SPEED_THRESHOLD_MPS or current.location_status == LocationStatus.SUSPICIOUS_JUMP:
             total += 1
     return total
