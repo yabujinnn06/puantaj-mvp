@@ -12,11 +12,13 @@ MODULE_CORE = "CORE"
 
 EVENT_APP_LOGIN = "app_login"
 EVENT_APP_LAST_SEEN = "app_last_seen"
+EVENT_APP_DEMO_MARK = "app_demo_mark"
 EVENT_LOCATION_PING = "location_ping"
 
 APP_ACTIVITY_EVENTS = {
     EVENT_APP_LOGIN,
     EVENT_APP_LAST_SEEN,
+    EVENT_APP_DEMO_MARK,
     EVENT_LOCATION_PING,
 }
 
@@ -27,6 +29,8 @@ def app_presence_event_type(source: str | None) -> str:
         return EVENT_APP_LAST_SEEN
     if normalized == "APP_OPEN":
         return EVENT_APP_LOGIN
+    if normalized == "DEMO_MARK":
+        return EVENT_APP_DEMO_MARK
     return EVENT_LOCATION_PING
 
 

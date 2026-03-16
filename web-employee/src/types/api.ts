@@ -92,7 +92,7 @@ export interface EmployeeStatusResponse {
 
 export interface EmployeeAppPresencePingRequest {
   device_fingerprint: string
-  source?: 'APP_OPEN' | 'APP_CLOSE'
+  source?: 'APP_OPEN' | 'APP_CLOSE' | 'DEMO_MARK'
   lat?: number
   lon?: number
   accuracy_m?: number | null

@@ -223,7 +223,7 @@ from app.services.control_room import (
 )
 from app.services.weekday_shift_assignments import normalize_shift_ids
 from app.services.monthly import calculate_department_monthly_summary, calculate_employee_monthly
-from app.services.activity_events import EVENT_APP_LAST_SEEN, EVENT_APP_LOGIN, MODULE_APP
+from app.services.activity_events import EVENT_APP_DEMO_MARK, EVENT_APP_LAST_SEEN, MODULE_APP
 from app.services.push_notifications import (
     get_push_public_config,
     list_active_admin_push_subscriptions,
@@ -3013,8 +3013,10 @@ def _coerce_float(value: Any) -> float | None:
     return parsed
 
 
-def _audit_log_source(log_item: AuditLog) -> Literal["APP_OPEN", "APP_CLOSE"]:
+def _audit_log_source(log_item: AuditLog) -> Literal["APP_OPEN", "APP_CLOSE", "DEMO_MARK"]:
     source = str((log_item.details or {}).get("source") or "").strip().upper()
+    if source == "DEMO_MARK" or log_item.event_type == EVENT_APP_DEMO_MARK:
+        return "DEMO_MARK"
     if source == "APP_CLOSE" or log_item.event_type == EVENT_APP_LAST_SEEN:
         return "APP_CLOSE"
     return "APP_OPEN"
@@ -3070,7 +3072,12 @@ def _audit_log_to_location_monitor_point(
         lon=lon,
         accuracy_m=_coerce_float(details.get("accuracy_m")),
         ts_utc=point_ts,
-        label=label or ("Uygulama acilisi" if point_source == "APP_OPEN" else "Uygulama cikisi"),
+        label=label
+        or (
+            "Demo varisi"
+            if point_source == "DEMO_MARK"
+            else ("Uygulama acilisi" if point_source == "APP_OPEN" else "Uygulama cikisi")
+        ),
         device_id=log_item.device_id,
         ip=log_item.ip,
     )
@@ -3501,6 +3508,7 @@ def get_location_monitor_employee_timeline(
 
     last_app_open_utc: datetime | None = None
     last_app_close_utc: datetime | None = None
+    last_demo_mark_utc: datetime | None = None
     recent_ip: str | None = None
     for log_item in app_logs:
         point = _audit_log_to_location_monitor_point(log_item)
@@ -3512,6 +3520,8 @@ def get_location_monitor_employee_timeline(
             last_app_open_utc = point.ts_utc
         elif point.source == "APP_CLOSE":
             last_app_close_utc = point.ts_utc
+        elif point.source == "DEMO_MARK":
+            last_demo_mark_utc = point.ts_utc
         if recent_ip is None and log_item.ip:
             recent_ip = log_item.ip
 
@@ -3571,7 +3581,17 @@ def get_location_monitor_employee_timeline(
             total_devices=len(list(employee.devices or [])),
             recent_ip=recent_ip,
             last_activity_utc=max(
-                [value for value in [last_checkin_utc, last_checkout_utc, last_app_open_utc, last_app_close_utc] if value],
+                [
+                    value
+                    for value in [
+                        last_checkin_utc,
+                        last_checkout_utc,
+                        last_app_open_utc,
+                        last_app_close_utc,
+                        last_demo_mark_utc,
+                    ]
+                    if value
+                ],
                 default=None,
             ),
             last_portal_seen_utc=max(

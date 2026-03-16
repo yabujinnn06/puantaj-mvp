@@ -6,7 +6,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import type { LocationMonitorMapPoint } from '../../types/api'
 
 const DEFAULT_CENTER: [number, number] = [28.97953, 41.015137]
-const STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty'
+const STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty/style.json'
 const ROUTE_SOURCE_ID = 'location-monitor-route-source'
 const POINT_SOURCE_ID = 'location-monitor-point-source'
 const ROUTE_SHADOW_LAYER_ID = 'location-monitor-route-shadow-layer'
@@ -23,6 +23,7 @@ function pointColor(point: Pick<LocationMonitorMapPoint, 'source'>): string {
   if (point.source === 'CHECKOUT') return '#f43f5e'
   if (point.source === 'APP_OPEN') return '#f59e0b'
   if (point.source === 'APP_CLOSE') return '#818cf8'
+  if (point.source === 'DEMO_MARK') return '#22d3ee'
   return '#38bdf8'
 }
 
@@ -30,8 +31,8 @@ function createMarkerElement(point: LocationMonitorMapPoint, focused: boolean): 
   const color = pointColor(point)
   const wrapper = document.createElement('div')
   wrapper.style.position = 'relative'
-  wrapper.style.width = focused ? '32px' : '28px'
-  wrapper.style.height = focused ? '42px' : '38px'
+  wrapper.style.width = focused ? '28px' : '24px'
+  wrapper.style.height = focused ? '38px' : '34px'
   wrapper.style.transform = 'translate(-50%, -100%)'
   wrapper.style.cursor = 'pointer'
   wrapper.style.zIndex = focused ? '6' : '4'
@@ -40,27 +41,27 @@ function createMarkerElement(point: LocationMonitorMapPoint, focused: boolean): 
   const pulse = document.createElement('div')
   pulse.style.position = 'absolute'
   pulse.style.left = '50%'
-  pulse.style.top = focused ? '12px' : '10px'
-  pulse.style.width = focused ? '24px' : '20px'
-  pulse.style.height = focused ? '24px' : '20px'
+  pulse.style.top = focused ? '10px' : '9px'
+  pulse.style.width = focused ? '20px' : '16px'
+  pulse.style.height = focused ? '20px' : '16px'
   pulse.style.borderRadius = '999px'
   pulse.style.transform = 'translate(-50%, -50%)'
   pulse.style.background = `${color}33`
-  pulse.style.boxShadow = `0 0 0 8px ${color}24`
+  pulse.style.boxShadow = `0 0 0 6px ${color}24`
 
   const pin = document.createElement('div')
   pin.style.position = 'absolute'
   pin.style.left = '50%'
   pin.style.top = '0'
-  pin.style.width = focused ? '22px' : '18px'
-  pin.style.height = focused ? '22px' : '18px'
+  pin.style.width = focused ? '18px' : '15px'
+  pin.style.height = focused ? '18px' : '15px'
   pin.style.borderRadius = '999px'
   pin.style.transform = 'translateX(-50%)'
   pin.style.background = color
-  pin.style.border = '3px solid rgba(255,255,255,0.98)'
+  pin.style.border = '2px solid rgba(255,255,255,0.98)'
   pin.style.boxShadow = focused
-    ? `0 0 0 8px ${color}26, 0 10px 26px rgba(15,23,42,0.46)`
-    : `0 0 0 5px ${color}1f, 0 8px 22px rgba(15,23,42,0.34)`
+    ? `0 0 0 6px ${color}26, 0 10px 20px rgba(15,23,42,0.42)`
+    : `0 0 0 4px ${color}1f, 0 8px 18px rgba(15,23,42,0.32)`
   pin.style.transition = 'transform 140ms ease, box-shadow 140ms ease'
   pin.style.transform += focused ? ' scale(1.08)' : ' scale(1)'
 
@@ -68,8 +69,8 @@ function createMarkerElement(point: LocationMonitorMapPoint, focused: boolean): 
   core.style.position = 'absolute'
   core.style.left = '50%'
   core.style.top = '50%'
-  core.style.width = focused ? '6px' : '5px'
-  core.style.height = focused ? '6px' : '5px'
+  core.style.width = focused ? '5px' : '4px'
+  core.style.height = focused ? '5px' : '4px'
   core.style.borderRadius = '999px'
   core.style.transform = 'translate(-50%, -50%)'
   core.style.background = 'rgba(255,255,255,0.98)'
@@ -77,13 +78,13 @@ function createMarkerElement(point: LocationMonitorMapPoint, focused: boolean): 
   const tail = document.createElement('div')
   tail.style.position = 'absolute'
   tail.style.left = '50%'
-  tail.style.top = focused ? '17px' : '14px'
+  tail.style.top = focused ? '14px' : '12px'
   tail.style.width = '0'
   tail.style.height = '0'
   tail.style.transform = 'translateX(-50%)'
-  tail.style.borderLeft = focused ? '8px solid transparent' : '7px solid transparent'
-  tail.style.borderRight = focused ? '8px solid transparent' : '7px solid transparent'
-  tail.style.borderTop = focused ? `14px solid ${color}` : `12px solid ${color}`
+  tail.style.borderLeft = focused ? '7px solid transparent' : '6px solid transparent'
+  tail.style.borderRight = focused ? '7px solid transparent' : '6px solid transparent'
+  tail.style.borderTop = focused ? `12px solid ${color}` : `10px solid ${color}`
   tail.style.filter = 'drop-shadow(0 6px 10px rgba(15,23,42,0.34))'
 
   pin.appendChild(core)
@@ -300,14 +301,16 @@ function ensure3DLayers(map: MapLibreMap) {
           'match',
           ['get', 'source'],
           'CHECKIN',
-          6.5,
+          5.5,
           'CHECKOUT',
-          7.5,
-          'APP_OPEN',
-          6,
-          'APP_CLOSE',
-          6,
           6.5,
+          'APP_OPEN',
+          5,
+          'APP_CLOSE',
+          5,
+          'DEMO_MARK',
+          5.5,
+          5.5,
         ],
         'circle-stroke-width': 2,
         'circle-stroke-color': '#ffffff',
@@ -322,6 +325,8 @@ function ensure3DLayers(map: MapLibreMap) {
           '#f59e0b',
           'APP_CLOSE',
           '#818cf8',
+          'DEMO_MARK',
+          '#22d3ee',
           '#38bdf8',
         ],
       },
@@ -410,6 +415,7 @@ export function LocationMonitor3DView({
 
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right')
     mapRef.current = map
+    markersRef.current = syncDomMarkers(map, orderedPoints, highlightedPointId)
 
     const clickHandler = (event: maplibregl.MapMouseEvent & { features?: MapGeoJSONFeature[] }) => {
       const feature = event.features?.[0]
@@ -442,7 +448,6 @@ export function LocationMonitor3DView({
       routeSource?.setData(buildRouteData(orderedPoints))
       const pointSource = map.getSource(POINT_SOURCE_ID) as GeoJSONSource | undefined
       pointSource?.setData(buildPointData(orderedPoints))
-      markersRef.current = syncDomMarkers(map, orderedPoints, highlightedPointId)
       map.on('click', POINT_LAYER_ID, clickHandler)
       map.on('mouseenter', POINT_LAYER_ID, enterHandler)
       map.on('mouseleave', POINT_LAYER_ID, leaveHandler)
@@ -462,7 +467,16 @@ export function LocationMonitor3DView({
 
   useEffect(() => {
     const map = mapRef.current
-    if (!map || !mapLoadedRef.current) {
+    if (!map) {
+      return
+    }
+
+    for (const marker of markersRef.current) {
+      marker.remove()
+    }
+    markersRef.current = syncDomMarkers(map, orderedPoints, highlightedPointId)
+
+    if (!mapLoadedRef.current) {
       return
     }
 
@@ -475,11 +489,6 @@ export function LocationMonitor3DView({
     pointSource?.setData(buildPointData(orderedPoints))
 
     fitToPoints(map, orderedPoints)
-
-    for (const marker of markersRef.current) {
-      marker.remove()
-    }
-    markersRef.current = syncDomMarkers(map, orderedPoints, highlightedPointId)
   }, [highlightedPointId, orderedPoints])
 
   useEffect(() => {

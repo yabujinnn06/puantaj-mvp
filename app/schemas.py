@@ -116,7 +116,7 @@ class EmployeeLiveLocationRead(BaseModel):
     device_id: int
 
 
-LocationMonitorPointSource = Literal["CHECKIN", "CHECKOUT", "APP_OPEN", "APP_CLOSE", "LAST_LOCATION"]
+LocationMonitorPointSource = Literal["CHECKIN", "CHECKOUT", "APP_OPEN", "APP_CLOSE", "DEMO_MARK", "LAST_LOCATION"]
 
 
 class LocationMonitorMapPointRead(BaseModel):
@@ -1715,7 +1715,7 @@ class EmployeeStatusResponse(BaseModel):
 
 class EmployeeAppPresencePingRequest(BaseModel):
     device_fingerprint: str
-    source: Literal["APP_OPEN", "APP_CLOSE"] = "APP_OPEN"
+    source: Literal["APP_OPEN", "APP_CLOSE", "DEMO_MARK"] = "APP_OPEN"
     lat: float | None = None
     lon: float | None = None
     accuracy_m: float | None = Field(default=None, ge=0)

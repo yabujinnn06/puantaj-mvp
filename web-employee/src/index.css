@@ -1123,6 +1123,26 @@ textarea:focus {
   font-size: 0.78rem;
 }
 
+.action-secondary-row {
+  margin-top: 10px;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.action-secondary-btn {
+  min-height: 2.45rem;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.action-secondary-note {
+  margin: 0;
+  padding-inline: 0.15rem;
+  font-size: 0.74rem;
+  line-height: 1.4;
+  color: #496779;
+}
+
 .scanner-title {
   margin: 0 0 8px;
   font-size: 0.88rem;

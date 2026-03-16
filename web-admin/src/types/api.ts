@@ -910,7 +910,7 @@ export interface MonthlyEmployeeResponse {
   labor_profile: LaborProfile | null
 }
 
-export type LocationMonitorPointSource = 'CHECKIN' | 'CHECKOUT' | 'APP_OPEN' | 'APP_CLOSE' | 'LAST_LOCATION'
+export type LocationMonitorPointSource = 'CHECKIN' | 'CHECKOUT' | 'APP_OPEN' | 'APP_CLOSE' | 'DEMO_MARK' | 'LAST_LOCATION'
 
 export interface LocationMonitorMapPoint {
   id: string

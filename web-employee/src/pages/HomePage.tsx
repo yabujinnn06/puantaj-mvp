@@ -9,6 +9,7 @@ import {
   getEmployeeStatus,
   getPasskeyRegisterOptions,
   issueRecoveryCodes,
+  postEmployeeAppPresencePing,
   postEmployeeInstallFunnelEvent,
   parseApiError,
   revealRecoveryCodes,
@@ -506,15 +507,18 @@ export function HomePage() {
   const [scanSuccessFxOpen, setScanSuccessFxOpen] = useState(false)
   const [scannerError, setScannerError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [pendingAction, setPendingAction] = useState<'checkin' | 'checkout' | null>(null)
+  const [pendingAction, setPendingAction] = useState<'checkin' | 'checkout' | 'demo' | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [, setLocationWarning] = useState<string | null>(null)
   const [requestId, setRequestId] = useState<string | null>(null)
   const [lastAction, setLastAction] = useState<LastAction | null>(null)
+  const [actionNotice, setActionNotice] = useState<{ tone: 'success' | 'warning'; text: string } | null>(null)
   const [todayStatus, setTodayStatus] = useState<TodayStatus>('NOT_STARTED')
   const [statusSnapshot, setStatusSnapshot] = useState<EmployeeStatusResponse | null>(null)
   const [isHelpOpen, setIsHelpOpen] = useState(false)
   const [isCheckoutConfirmOpen, setIsCheckoutConfirmOpen] = useState(false)
+  const [isDemoConfirmOpen, setIsDemoConfirmOpen] = useState(false)
+  const [isDemoLocationPromptOpen, setIsDemoLocationPromptOpen] = useState(false)
 
   const [isPasskeyBusy, setIsPasskeyBusy] = useState(false)
   const [passkeyNotice, setPasskeyNotice] = useState<string | null>(null)
@@ -654,6 +658,7 @@ export function HomePage() {
     setRecoveryCodesPreview(null)
     setRecoveryRevealPin('')
     setPushNotice(null)
+    setActionNotice(null)
     return true
   }, [])
 
@@ -1017,6 +1022,7 @@ export function HomePage() {
     (!pushGateCanBeDismissedForInstall || !pushGateDismissed)
   const canQrScan = Boolean(deviceFingerprint) && !isSubmitting
   const canCheckout = Boolean(deviceFingerprint) && !isSubmitting && hasOpenShift
+  const canDemoMark = Boolean(deviceFingerprint) && !isSubmitting
 
   const currentHour = new Date().getHours()
   const shouldShowEveningReminder = useMemo(() => {
@@ -1656,6 +1662,7 @@ export function HomePage() {
 
     setIsSubmitting(true)
     setPendingAction('checkin')
+    setActionNotice(null)
     setErrorMessage(null)
     setLocationWarning(null)
     setRequestId(null)
@@ -1722,6 +1729,7 @@ export function HomePage() {
 
     setIsSubmitting(true)
     setPendingAction('checkout')
+    setActionNotice(null)
     setErrorMessage(null)
     setLocationWarning(null)
     setRequestId(null)
@@ -1772,9 +1780,68 @@ export function HomePage() {
     }
 
     setScannerActive(false)
+    setActionNotice(null)
     setIsCheckoutConfirmOpen(true)
     triggerCheckoutPromptFx()
   }, [canCheckout, todayStatus, triggerCheckoutPromptFx])
+
+  const runDemoMark = async () => {
+    if (!deviceFingerprint) {
+      setErrorMessage('Cihaz bagli degil. Davet linkine tiklayin.')
+      return
+    }
+
+    setIsSubmitting(true)
+    setPendingAction('demo')
+    setActionNotice(null)
+    setErrorMessage(null)
+    setLocationWarning(null)
+    setRequestId(null)
+
+    try {
+      const locationResult = await getCurrentLocation()
+      if (!locationResult.location) {
+        setIsDemoLocationPromptOpen(true)
+        setErrorMessage('Demo kaydi icin konumu acip tekrar deneyin.')
+        return
+      }
+
+      await postEmployeeAppPresencePing({
+        device_fingerprint: deviceFingerprint,
+        source: 'DEMO_MARK',
+        lat: locationResult.location.lat,
+        lon: locationResult.location.lon,
+        accuracy_m: locationResult.location.accuracy_m,
+      })
+
+      setActionNotice({
+        tone: 'success',
+        text: 'Demo varisi kaydedildi.',
+      })
+      triggerScanSuccessFx()
+    } catch (error) {
+      const parsed = parseApiError(error, 'Demo kaydi alinamadi.')
+      handleDeviceNotClaimed(parsed)
+      setErrorMessage(parsed.message)
+      setRequestId(parsed.requestId ?? null)
+    } finally {
+      setIsSubmitting(false)
+      setPendingAction(null)
+    }
+  }
+
+  const openDemoConfirmModal = useCallback(() => {
+    if (!canDemoMark) {
+      return
+    }
+
+    setScannerActive(false)
+    setActionNotice(null)
+    setErrorMessage(null)
+    setRequestId(null)
+    setIsDemoConfirmOpen(true)
+    triggerCheckoutPromptFx()
+  }, [canDemoMark, triggerCheckoutPromptFx])
 
   const resultMessage = useMemo(() => {
     if (!lastAction) return null
@@ -2269,6 +2336,25 @@ export function HomePage() {
                 </button>
               </div>
 
+              <div className="action-secondary-row">
+                <button
+                  type="button"
+                  className="btn btn-soft action-secondary-btn"
+                  disabled={!canDemoMark}
+                  onClick={openDemoConfirmModal}
+                >
+                  {isSubmitting && pendingAction === 'demo' ? (
+                    <>
+                      <span className="inline-spinner inline-spinner-dark" aria-hidden="true" />
+                      Kayit aliniyor...
+                    </>
+                  ) : (
+                    'Demo varisini isaretle'
+                  )}
+                </button>
+                <p className="action-secondary-note">Gun icindeki ziyaretlerde bu kaydi kullanin.</p>
+              </div>
+
               <ol className="action-flow">
                 <li>QR okutun ve işlemi başlatın.</li>
                 <li>Mesai sonunda güvenli bitiş yapın.</li>
@@ -2391,6 +2477,17 @@ export function HomePage() {
         {installNotice ? (
           <div className="notice-box notice-box-warning mt-3">
             <p>{installNotice}</p>
+          </div>
+        ) : null}
+
+        {actionNotice ? (
+          <div className={`notice-box ${actionNotice.tone === 'success' ? 'notice-box-success' : 'notice-box-warning'} mt-3`}>
+            <p>
+              <span className="banner-icon" aria-hidden="true">
+                {actionNotice.tone === 'success' ? '+' : '!'}
+              </span>
+              {actionNotice.text}
+            </p>
           </div>
         ) : null}
 
@@ -2581,6 +2678,80 @@ export function HomePage() {
               document.body,
             )
           : null}
+
+        {isDemoConfirmOpen && typeof document !== 'undefined'
+          ? createPortal(
+              <div
+                className="modal-backdrop checkout-confirm-backdrop"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="demo-confirm-title"
+                aria-describedby="demo-confirm-description"
+                onClick={() => setIsDemoConfirmOpen(false)}
+              >
+                <div className="checkout-confirm-lights" aria-hidden="true">
+                  <span className="checkout-confirm-light checkout-confirm-light-left" />
+                  <span className="checkout-confirm-light checkout-confirm-light-center" />
+                  <span className="checkout-confirm-light checkout-confirm-light-right" />
+                </div>
+                <div className="help-modal checkout-confirm-modal" onClick={(event) => event.stopPropagation()}>
+                  <p className="checkout-confirm-kicker">DEMO KAYDI ONAYI</p>
+                  <h2 id="demo-confirm-title">Demo varisini isaretlemek istiyor musunuz?</h2>
+                  <p id="demo-confirm-description">
+                    Bu islem gun icindeki ziyaretiniz icin bir demo kaydi olusturur. Devam etmek istiyor musunuz?
+                  </p>
+                  <div className="stack">
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={() => {
+                        setIsDemoConfirmOpen(false)
+                        void runDemoMark()
+                      }}
+                    >
+                      Evet, kaydet
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-soft"
+                      onClick={() => setIsDemoConfirmOpen(false)}
+                    >
+                      Hayir
+                    </button>
+                  </div>
+                </div>
+              </div>,
+              document.body,
+            )
+          : null}
+
+        {isDemoLocationPromptOpen ? (
+          <div className="modal-backdrop" role="dialog" aria-modal="true">
+            <div className="help-modal">
+              <h2>Konumu Acin</h2>
+              <p>Demo kaydini tamamlamak icin cihazinizda konum acik olmali. Konumu actiktan sonra tekrar deneyin.</p>
+              <div className="stack">
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => {
+                    setIsDemoLocationPromptOpen(false)
+                    void runDemoMark()
+                  }}
+                >
+                  Tekrar dene
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-soft"
+                  onClick={() => setIsDemoLocationPromptOpen(false)}
+                >
+                  Kapat
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         {isHelpOpen ? (
           <div className="modal-backdrop" role="dialog" aria-modal="true">

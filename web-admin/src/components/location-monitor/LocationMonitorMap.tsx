@@ -7,7 +7,7 @@ import type { LocationMonitorMapPoint, LocationMonitorPointSource } from '../../
 function markerStyle(source: LocationMonitorPointSource): L.CircleMarkerOptions {
   if (source === 'CHECKIN') {
     return {
-      radius: 8,
+      radius: 7,
       color: '#15803d',
       fillColor: '#22c55e',
       fillOpacity: 0.9,
@@ -16,7 +16,7 @@ function markerStyle(source: LocationMonitorPointSource): L.CircleMarkerOptions 
   }
   if (source === 'CHECKOUT') {
     return {
-      radius: 10,
+      radius: 8,
       color: '#be123c',
       fillColor: '#ffffff',
       fillOpacity: 0.15,
@@ -25,7 +25,7 @@ function markerStyle(source: LocationMonitorPointSource): L.CircleMarkerOptions 
   }
   if (source === 'APP_OPEN') {
     return {
-      radius: 7,
+      radius: 6,
       color: '#b45309',
       fillColor: '#f59e0b',
       fillOpacity: 0.9,
@@ -34,15 +34,24 @@ function markerStyle(source: LocationMonitorPointSource): L.CircleMarkerOptions 
   }
   if (source === 'APP_CLOSE') {
     return {
-      radius: 7,
+      radius: 6,
       color: '#4338ca',
       fillColor: '#818cf8',
       fillOpacity: 0.9,
       weight: 2,
     }
   }
+  if (source === 'DEMO_MARK') {
+    return {
+      radius: 6.5,
+      color: '#0f766e',
+      fillColor: '#22d3ee',
+      fillOpacity: 0.95,
+      weight: 2,
+    }
+  }
   return {
-    radius: 9,
+    radius: 7,
     color: '#0369a1',
     fillColor: '#38bdf8',
     fillOpacity: 0.92,

@@ -215,6 +215,7 @@ function pointSourceLabel(value: LocationMonitorMapPoint['source']): string {
   if (value === 'CHECKOUT') return 'Mesai cikisi'
   if (value === 'APP_OPEN') return 'Uygulama girisi'
   if (value === 'APP_CLOSE') return 'Uygulama cikisi'
+  if (value === 'DEMO_MARK') return 'Demo varisi'
   return 'Son konum'
 }
 
@@ -223,6 +224,7 @@ function pointTone(value: LocationMonitorMapPoint['source']): string {
   if (value === 'CHECKOUT') return 'border-rose-200 bg-rose-50 text-rose-700'
   if (value === 'APP_OPEN') return 'border-amber-200 bg-amber-50 text-amber-700'
   if (value === 'APP_CLOSE') return 'border-indigo-200 bg-indigo-50 text-indigo-700'
+  if (value === 'DEMO_MARK') return 'border-cyan-200 bg-cyan-50 text-cyan-700'
   return 'border-sky-200 bg-sky-50 text-sky-700'
 }
 
@@ -792,7 +794,7 @@ export function LocationMonitorPage() {
                         key={point.id}
                         type="button"
                         onClick={() => setFocusedPointId(point.id)}
-                        className={`rounded-2xl border px-3 py-2 text-left transition ${
+                        className={`rounded-xl border px-2.5 py-1.5 text-left transition ${
                           focusedPointId === point.id
                             ? 'border-slate-900 bg-slate-900 text-white'
                             : `${pointTone(point.source)} hover:shadow-sm`
