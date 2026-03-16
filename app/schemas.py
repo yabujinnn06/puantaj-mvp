@@ -7,9 +7,12 @@ from app.models import (
     AttendanceEventSource,
     AttendanceType,
     AuditActorType,
+    GeofenceStatus,
     LeaveStatus,
     LeaveType,
+    LocationEventSource,
     LocationStatus,
+    LocationTrustStatus,
     OvertimeRoundingMode,
     QRCodeType,
     SchedulePlanTargetType,
@@ -123,9 +126,51 @@ LocationMonitorPointSource = Literal[
     "APP_CLOSE",
     "DEMO_START",
     "DEMO_END",
-    "DEMO_MARK",
+    "LOCATION_PING",
     "LAST_LOCATION",
 ]
+
+
+class LocationMonitorPrivacyRead(BaseModel):
+    exact_coordinates: bool = True
+    ip_visible: bool = True
+    device_visible: bool = True
+
+
+class LocationMonitorInsightRead(BaseModel):
+    code: str
+    severity: Literal["info", "warning", "critical"]
+    title: str
+    message: str
+    value: float | int | None = None
+
+
+class LocationMonitorGeofenceRead(BaseModel):
+    home_lat: float | None = None
+    home_lon: float | None = None
+    radius_m: int | None = None
+    status: GeofenceStatus = GeofenceStatus.UNKNOWN
+    distance_m: float | None = None
+
+
+class LocationMonitorRouteStatsRead(BaseModel):
+    total_distance_m: float = 0
+    total_duration_minutes: int = 0
+    event_count: int = 0
+    simplified_point_count: int = 0
+    repeated_group_count: int = 0
+    suspicious_jump_count: int = 0
+    low_accuracy_event_count: int = 0
+    dwell_stop_count: int = 0
+
+
+class LocationMonitorRepeatedPointRead(BaseModel):
+    id: str
+    lat: float
+    lon: float
+    point_count: int = 0
+    dwell_minutes: int = 0
+    label: str
 
 
 class LocationMonitorMapPointRead(BaseModel):
@@ -140,6 +185,42 @@ class LocationMonitorMapPointRead(BaseModel):
     location_status: LocationStatus | None = None
     device_id: int | None = None
     ip: str | None = None
+    geofence_status: GeofenceStatus | None = None
+    trust_status: LocationTrustStatus | None = None
+    trust_score: int | None = None
+    provider: str | None = None
+    speed_mps: float | None = None
+    heading_deg: float | None = None
+    altitude_m: float | None = None
+    is_mocked: bool | None = None
+    battery_level: float | None = None
+    network_type: str | None = None
+    marker_kind: Literal["START", "END", "EVENT", "LAST", "DWELL", "JUMP"] = "EVENT"
+
+
+class LocationMonitorTimelineEventRead(BaseModel):
+    id: str
+    ts_utc: datetime
+    day: date
+    source: LocationEventSource
+    label: str
+    lat: float | None = None
+    lon: float | None = None
+    accuracy_m: float | None = None
+    location_status: LocationStatus | None = None
+    geofence_status: GeofenceStatus | None = None
+    trust_status: LocationTrustStatus | None = None
+    trust_score: int | None = None
+    device_id: int | None = None
+    ip: str | None = None
+    provider: str | None = None
+    speed_mps: float | None = None
+    heading_deg: float | None = None
+    altitude_m: float | None = None
+    is_mocked: bool | None = None
+    battery_level: float | None = None
+    network_type: str | None = None
+    flags: dict[str, Any] = Field(default_factory=dict)
 
 
 class LocationMonitorRangeTotalsRead(BaseModel):
@@ -171,6 +252,13 @@ class LocationMonitorEmployeeSummaryRead(BaseModel):
     last_demo_end_utc: datetime | None = None
     location_label: str | None = None
     latest_location: LocationMonitorMapPointRead | None = None
+    last_location_status: LocationStatus | None = None
+    last_geofence_status: GeofenceStatus | None = None
+    last_trust_status: LocationTrustStatus | None = None
+    last_trust_score: int | None = None
+    last_accuracy_m: float | None = None
+    last_device_id: int | None = None
+    last_provider: str | None = None
 
 
 class LocationMonitorDayRecordRead(BaseModel):
@@ -193,6 +281,40 @@ class LocationMonitorDayRecordRead(BaseModel):
     first_demo_start_point: LocationMonitorMapPointRead | None = None
     last_demo_end_point: LocationMonitorMapPointRead | None = None
     last_location_point: LocationMonitorMapPointRead | None = None
+    suspicious_jump_count: int = 0
+    low_accuracy_count: int = 0
+    outside_geofence_count: int = 0
+    event_count: int = 0
+
+
+class LocationMonitorSummaryResponse(BaseModel):
+    generated_at_utc: datetime
+    summary: LocationMonitorEmployeeSummaryRead
+    insights: list[LocationMonitorInsightRead] = Field(default_factory=list)
+    geofence: LocationMonitorGeofenceRead | None = None
+    privacy: LocationMonitorPrivacyRead = Field(default_factory=LocationMonitorPrivacyRead)
+
+
+class LocationMonitorTimelineResponse(BaseModel):
+    generated_at_utc: datetime
+    start_date: date
+    end_date: date
+    days: list[LocationMonitorDayRecordRead] = Field(default_factory=list)
+    events: list[LocationMonitorTimelineEventRead] = Field(default_factory=list)
+    insights: list[LocationMonitorInsightRead] = Field(default_factory=list)
+    totals: LocationMonitorRangeTotalsRead
+
+
+class LocationMonitorMapResponse(BaseModel):
+    generated_at_utc: datetime
+    start_date: date
+    end_date: date
+    points: list[LocationMonitorMapPointRead] = Field(default_factory=list)
+    simplified_points: list[LocationMonitorMapPointRead] = Field(default_factory=list)
+    repeated_groups: list[LocationMonitorRepeatedPointRead] = Field(default_factory=list)
+    route_stats: LocationMonitorRouteStatsRead = Field(default_factory=LocationMonitorRouteStatsRead)
+    geofence: LocationMonitorGeofenceRead | None = None
+    privacy: LocationMonitorPrivacyRead = Field(default_factory=LocationMonitorPrivacyRead)
 
 
 class LocationMonitorEmployeeTimelineResponse(BaseModel):
@@ -203,6 +325,13 @@ class LocationMonitorEmployeeTimelineResponse(BaseModel):
     totals: LocationMonitorRangeTotalsRead
     days: list[LocationMonitorDayRecordRead] = Field(default_factory=list)
     map_points: list[LocationMonitorMapPointRead] = Field(default_factory=list)
+    simplified_map_points: list[LocationMonitorMapPointRead] = Field(default_factory=list)
+    timeline_events: list[LocationMonitorTimelineEventRead] = Field(default_factory=list)
+    insights: list[LocationMonitorInsightRead] = Field(default_factory=list)
+    route_stats: LocationMonitorRouteStatsRead = Field(default_factory=LocationMonitorRouteStatsRead)
+    repeated_groups: list[LocationMonitorRepeatedPointRead] = Field(default_factory=list)
+    geofence: LocationMonitorGeofenceRead | None = None
+    privacy: LocationMonitorPrivacyRead = Field(default_factory=LocationMonitorPrivacyRead)
 
 
 class EmployeeDetailResponse(BaseModel):
@@ -1737,6 +1866,13 @@ class EmployeeAppPresencePingRequest(BaseModel):
     lat: float | None = None
     lon: float | None = None
     accuracy_m: float | None = Field(default=None, ge=0)
+    provider: str | None = Field(default=None, max_length=40)
+    speed_mps: float | None = None
+    heading_deg: float | None = None
+    altitude_m: float | None = None
+    is_mocked: bool | None = None
+    battery_level: float | None = Field(default=None, ge=0, le=100)
+    network_type: str | None = Field(default=None, max_length=40)
 
 
 class EmployeeAppPresencePingResponse(BaseModel):

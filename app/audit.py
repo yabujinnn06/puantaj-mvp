@@ -28,7 +28,7 @@ def log_audit(
     user_agent: str | None = None,
     details: dict[str, Any] | None = None,
     request_id: str | None = None,
-) -> None:
+) -> AuditLog | None:
     audit = AuditLog(
         ts_utc=datetime.now(timezone.utc),
         actor_type=actor_type,
@@ -62,7 +62,9 @@ def log_audit(
                 "success": success,
             },
         )
-        return
+        return None
+
+    db.refresh(audit)
 
     logger.info(
         "audit_event",
@@ -83,3 +85,4 @@ def log_audit(
             "details": details or {},
         },
     )
+    return audit

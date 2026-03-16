@@ -34,6 +34,38 @@ class LocationStatus(str, enum.Enum):
     VERIFIED_HOME = "VERIFIED_HOME"
     UNVERIFIED_LOCATION = "UNVERIFIED_LOCATION"
     NO_LOCATION = "NO_LOCATION"
+    LOW_ACCURACY = "LOW_ACCURACY"
+    STALE_LOCATION = "STALE_LOCATION"
+    OUTSIDE_GEOFENCE = "OUTSIDE_GEOFENCE"
+    INSIDE_GEOFENCE = "INSIDE_GEOFENCE"
+    SUSPICIOUS_JUMP = "SUSPICIOUS_JUMP"
+    MOCK_GPS_SUSPECTED = "MOCK_GPS_SUSPECTED"
+    VERIFIED = "VERIFIED"
+
+
+class LocationEventSource(str, enum.Enum):
+    CHECKIN = "CHECKIN"
+    CHECKOUT = "CHECKOUT"
+    APP_OPEN = "APP_OPEN"
+    APP_CLOSE = "APP_CLOSE"
+    DEMO_START = "DEMO_START"
+    DEMO_END = "DEMO_END"
+    LOCATION_PING = "LOCATION_PING"
+
+
+class GeofenceStatus(str, enum.Enum):
+    NOT_CONFIGURED = "NOT_CONFIGURED"
+    INSIDE = "INSIDE"
+    OUTSIDE = "OUTSIDE"
+    UNKNOWN = "UNKNOWN"
+
+
+class LocationTrustStatus(str, enum.Enum):
+    NO_DATA = "NO_DATA"
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    SUSPICIOUS = "SUSPICIOUS"
 
 
 class LeaveType(str, enum.Enum):
@@ -152,6 +184,7 @@ class Employee(Base):
     leaves: Mapped[list[Leave]] = relationship(back_populates="employee")
     location: Mapped[EmployeeLocation | None] = relationship(back_populates="employee", uselist=False)
     attendance_events: Mapped[list[AttendanceEvent]] = relationship(back_populates="employee")
+    location_events: Mapped[list[EmployeeLocationEvent]] = relationship(back_populates="employee")
     manual_day_overrides: Mapped[list[ManualDayOverride]] = relationship(back_populates="employee")
     schedule_plan_targets: Mapped[list[DepartmentSchedulePlan]] = relationship(back_populates="target_employee")
     schedule_plan_scopes: Mapped[list[DepartmentSchedulePlanEmployee]] = relationship(
@@ -178,6 +211,7 @@ class Device(Base):
 
     employee: Mapped[Employee] = relationship(back_populates="devices")
     attendance_events: Mapped[list[AttendanceEvent]] = relationship(back_populates="device")
+    location_events: Mapped[list[EmployeeLocationEvent]] = relationship(back_populates="device")
     passkeys: Mapped[list[DevicePasskey]] = relationship(
         back_populates="device",
         cascade="all, delete-orphan",
@@ -359,6 +393,100 @@ class EmployeeLocation(Base):
     )
 
     employee: Mapped[Employee] = relationship(back_populates="location")
+
+
+class EmployeeLocationEvent(Base):
+    __tablename__ = "employee_location_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    employee_id: Mapped[int] = mapped_column(
+        ForeignKey("employees.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    device_id: Mapped[int | None] = mapped_column(
+        ForeignKey("devices.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    attendance_event_id: Mapped[int | None] = mapped_column(
+        ForeignKey("attendance_events.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        unique=True,
+    )
+    audit_log_id: Mapped[int | None] = mapped_column(
+        ForeignKey("audit_logs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        unique=True,
+    )
+    source: Mapped[LocationEventSource] = mapped_column(
+        Enum(LocationEventSource, name="location_event_source"),
+        nullable=False,
+        index=True,
+    )
+    ts_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    lat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    lon: Mapped[float | None] = mapped_column(Float, nullable=True)
+    accuracy_m: Mapped[float | None] = mapped_column(Float, nullable=True)
+    speed_mps: Mapped[float | None] = mapped_column(Float, nullable=True)
+    heading_deg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    altitude_m: Mapped[float | None] = mapped_column(Float, nullable=True)
+    provider: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    ip: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    network_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    battery_level: Mapped[float | None] = mapped_column(Float, nullable=True)
+    is_mocked: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    geofence_status: Mapped[GeofenceStatus] = mapped_column(
+        Enum(GeofenceStatus, name="location_geofence_status"),
+        nullable=False,
+        default=GeofenceStatus.UNKNOWN,
+        server_default=text("'UNKNOWN'"),
+    )
+    trust_status: Mapped[LocationTrustStatus] = mapped_column(
+        Enum(LocationTrustStatus, name="location_trust_status"),
+        nullable=False,
+        default=LocationTrustStatus.NO_DATA,
+        server_default=text("'NO_DATA'"),
+        index=True,
+    )
+    trust_score: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
+    distance_to_geofence_m: Mapped[float | None] = mapped_column(Float, nullable=True)
+    location_status: Mapped[LocationStatus] = mapped_column(
+        Enum(LocationStatus, name="attendance_location_status"),
+        nullable=False,
+        default=LocationStatus.NO_LOCATION,
+        server_default=text("'NO_LOCATION'"),
+        index=True,
+    )
+    details: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    employee: Mapped[Employee] = relationship(back_populates="location_events")
+    device: Mapped[Device | None] = relationship(back_populates="location_events")
+    attendance_event: Mapped[AttendanceEvent | None] = relationship()
+    audit_log: Mapped[AuditLog | None] = relationship()
 
 
 class WorkRule(Base):

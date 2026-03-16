@@ -37,6 +37,7 @@ from app.models import (
     DevicePushSubscription,
     Employee,
     EmployeeLocation,
+    LocationEventSource,
     LocationStatus,
     ManualDayOverride,
     NotificationDeliveryLog,
@@ -145,9 +146,12 @@ from app.schemas import (
     EmployeeLocationRead,
     EmployeeLiveLocationRead,
     LocationMonitorDayRecordRead,
+    LocationMonitorSummaryResponse,
     LocationMonitorEmployeeSummaryRead,
     LocationMonitorEmployeeTimelineResponse,
+    LocationMonitorTimelineResponse,
     EmployeeIpSummaryRead,
+    LocationMonitorMapResponse,
     LocationMonitorMapPointRead,
     LocationMonitorRangeTotalsRead,
     EmployeePortalActivityRead,
@@ -194,6 +198,7 @@ from app.security import (
     normalize_permissions,
     register_login_failure,
     register_login_success,
+    has_permission,
     require_admin,
     require_admin_any_permission,
     require_admin_permission,
@@ -225,6 +230,7 @@ from app.services.control_room import (
 )
 from app.services.weekday_shift_assignments import normalize_shift_ids
 from app.services.monthly import calculate_department_monthly_summary, calculate_employee_monthly
+from app.services.location_monitor import LocationVisibilityPolicy, build_location_monitor_payloads
 from app.services.activity_events import (
     EVENT_APP_DEMO_END,
     EVENT_APP_DEMO_MARK,
@@ -616,6 +622,17 @@ def _is_super_admin(claims: dict[str, Any]) -> bool:
     if str(claims.get("username") or claims.get("sub") or "") == settings.admin_user:
         return True
     return bool(claims.get("is_super_admin"))
+
+
+def _location_visibility_policy(claims: dict[str, Any]) -> LocationVisibilityPolicy:
+    exact_coordinates = _is_super_admin(claims) or has_permission(claims, "audit", write=True)
+    ip_visible = exact_coordinates or has_permission(claims, "audit", read=True)
+    device_visible = exact_coordinates or has_permission(claims, "devices", read=True)
+    return LocationVisibilityPolicy(
+        exact_coordinates=exact_coordinates,
+        ip_visible=ip_visible,
+        device_visible=device_visible,
+    )
 
 
 def _assert_super_admin(claims: dict[str, Any]) -> None:
@@ -3386,6 +3403,108 @@ def get_control_room_employee_detail(
 
 
 @router.get(
+    "/api/admin/location-monitor/employees/{employee_id}/summary",
+    response_model=LocationMonitorSummaryResponse,
+    dependencies=[Depends(require_admin_permission("log"))],
+)
+def get_location_monitor_employee_summary(
+    employee_id: int,
+    start_date: date = Query(...),
+    end_date: date = Query(...),
+    claims: dict[str, Any] = Depends(require_admin_permission("log")),
+    db: Session = Depends(get_db),
+) -> LocationMonitorSummaryResponse:
+    try:
+        summary_response, _, _, _ = build_location_monitor_payloads(
+            db,
+            employee_id=employee_id,
+            start_date=start_date,
+            end_date=end_date,
+            visibility=_location_visibility_policy(claims),
+        )
+    except ValueError as exc:
+        message = str(exc)
+        if "not found" in message.lower():
+            raise HTTPException(status_code=404, detail=message) from exc
+        raise HTTPException(status_code=422, detail=message) from exc
+    return summary_response
+
+
+@router.get(
+    "/api/admin/location-monitor/employees/{employee_id}/map-points",
+    response_model=LocationMonitorMapResponse,
+    dependencies=[Depends(require_admin_permission("log"))],
+)
+def get_location_monitor_employee_map_points(
+    employee_id: int,
+    start_date: date = Query(...),
+    end_date: date = Query(...),
+    source: list[str] | None = Query(default=None),
+    min_lon: float | None = Query(default=None),
+    min_lat: float | None = Query(default=None),
+    max_lon: float | None = Query(default=None),
+    max_lat: float | None = Query(default=None),
+    claims: dict[str, Any] = Depends(require_admin_permission("log")),
+    db: Session = Depends(get_db),
+) -> LocationMonitorMapResponse:
+    source_filter: set[LocationEventSource] | None = None
+    if source:
+        source_filter = set()
+        for value in source:
+            try:
+                source_filter.add(LocationEventSource(str(value).strip().upper()))
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=f"Invalid location source: {value}") from exc
+    bbox = None
+    if None not in {min_lon, min_lat, max_lon, max_lat}:
+        bbox = (float(min_lon), float(min_lat), float(max_lon), float(max_lat))
+    try:
+        _, _, map_response, _ = build_location_monitor_payloads(
+            db,
+            employee_id=employee_id,
+            start_date=start_date,
+            end_date=end_date,
+            visibility=_location_visibility_policy(claims),
+            source_filter=source_filter,
+            bbox=bbox,
+        )
+    except ValueError as exc:
+        message = str(exc)
+        if "not found" in message.lower():
+            raise HTTPException(status_code=404, detail=message) from exc
+        raise HTTPException(status_code=422, detail=message) from exc
+    return map_response
+
+
+@router.get(
+    "/api/admin/location-monitor/employees/{employee_id}/timeline-events",
+    response_model=LocationMonitorTimelineResponse,
+    dependencies=[Depends(require_admin_permission("log"))],
+)
+def get_location_monitor_employee_timeline_events(
+    employee_id: int,
+    start_date: date = Query(...),
+    end_date: date = Query(...),
+    claims: dict[str, Any] = Depends(require_admin_permission("log")),
+    db: Session = Depends(get_db),
+) -> LocationMonitorTimelineResponse:
+    try:
+        _, timeline_response, _, _ = build_location_monitor_payloads(
+            db,
+            employee_id=employee_id,
+            start_date=start_date,
+            end_date=end_date,
+            visibility=_location_visibility_policy(claims),
+        )
+    except ValueError as exc:
+        message = str(exc)
+        if "not found" in message.lower():
+            raise HTTPException(status_code=404, detail=message) from exc
+        raise HTTPException(status_code=422, detail=message) from exc
+    return timeline_response
+
+
+@router.get(
     "/api/admin/location-monitor/employees/{employee_id}/timeline",
     response_model=LocationMonitorEmployeeTimelineResponse,
     dependencies=[Depends(require_admin_permission("log"))],
@@ -3394,236 +3513,23 @@ def get_location_monitor_employee_timeline(
     employee_id: int,
     start_date: date = Query(...),
     end_date: date = Query(...),
+    claims: dict[str, Any] = Depends(require_admin_permission("log")),
     db: Session = Depends(get_db),
 ) -> LocationMonitorEmployeeTimelineResponse:
-    employee = db.get(Employee, employee_id)
-    if employee is None:
-        raise HTTPException(status_code=404, detail="Employee not found")
-    if end_date < start_date:
-        raise HTTPException(status_code=422, detail="end_date must be on or after start_date")
-    if (end_date - start_date).days > 120:
-        raise HTTPException(status_code=422, detail="Date range cannot exceed 120 days")
-
-    tz = _attendance_timezone()
-    now_utc = datetime.now(timezone.utc)
-    now_local = now_utc.astimezone(tz)
-    start_utc = datetime.combine(start_date, time.min, tzinfo=tz).astimezone(timezone.utc)
-    end_utc_exclusive = datetime.combine(end_date + timedelta(days=1), time.min, tzinfo=tz).astimezone(timezone.utc)
-
-    current_report = calculate_employee_monthly(
-        db,
-        employee_id=employee_id,
-        year=now_local.year,
-        month=now_local.month,
-    )
-    worked_today_minutes = 0
-    weekly_total_minutes = 0
-    today_local = now_local.date()
-    for day_item in current_report.days:
-        if day_item.date == today_local:
-            worked_today_minutes = day_item.worked_minutes
-            break
-    week_start = today_local - timedelta(days=today_local.weekday())
-    week_end = week_start + timedelta(days=6)
-    weekly_total_minutes = sum(
-        day_item.worked_minutes
-        for day_item in current_report.days
-        if week_start <= day_item.date <= week_end
-    )
-
-    monthly_days_map: dict[date, Any] = {}
-    range_worked_minutes = 0
-    range_overtime_minutes = 0
-    range_plan_overtime_minutes = 0
-    range_legal_overtime_minutes = 0
-    overtime_day_count = 0
-    for year_value, month_value in _iter_months_between(start_date, end_date):
-        report = calculate_employee_monthly(
+    try:
+        _, _, _, legacy_response = build_location_monitor_payloads(
             db,
             employee_id=employee_id,
-            year=year_value,
-            month=month_value,
+            start_date=start_date,
+            end_date=end_date,
+            visibility=_location_visibility_policy(claims),
         )
-        for day_item in report.days:
-            if not (start_date <= day_item.date <= end_date):
-                continue
-            monthly_days_map[day_item.date] = day_item
-            range_worked_minutes += day_item.worked_minutes
-            range_overtime_minutes += day_item.overtime_minutes
-            range_plan_overtime_minutes += day_item.plan_overtime_minutes
-            range_legal_overtime_minutes += day_item.legal_overtime_minutes
-            if day_item.legal_overtime_minutes > 0 or day_item.overtime_minutes > 0:
-                overtime_day_count += 1
-
-    attendance_events = list(
-        db.scalars(
-            select(AttendanceEvent)
-            .where(
-                AttendanceEvent.employee_id == employee_id,
-                AttendanceEvent.deleted_at.is_(None),
-                AttendanceEvent.ts_utc >= start_utc,
-                AttendanceEvent.ts_utc < end_utc_exclusive,
-            )
-            .order_by(AttendanceEvent.ts_utc.asc(), AttendanceEvent.id.asc())
-        ).all()
-    )
-
-    app_logs = list(
-        db.scalars(
-            select(AuditLog)
-            .where(
-                AuditLog.employee_id == employee_id,
-                AuditLog.module == MODULE_APP,
-                AuditLog.action == "EMPLOYEE_APP_LOCATION_PING",
-                AuditLog.ts_utc >= start_utc,
-                AuditLog.ts_utc < end_utc_exclusive,
-            )
-            .order_by(AuditLog.ts_utc.asc(), AuditLog.id.asc())
-        ).all()
-    )
-
-    attendance_points_by_day: dict[date, list[LocationMonitorMapPointRead]] = defaultdict(list)
-    app_points_by_day: dict[date, list[LocationMonitorMapPointRead]] = defaultdict(list)
-    checkin_points_by_day: dict[date, LocationMonitorMapPointRead] = {}
-    checkout_points_by_day: dict[date, LocationMonitorMapPointRead] = {}
-    map_points: list[LocationMonitorMapPointRead] = []
-
-    last_checkin_utc: datetime | None = None
-    last_checkout_utc: datetime | None = None
-    for event in attendance_events:
-        point = _attendance_event_to_location_monitor_point(event)
-        if point is None:
-            continue
-        map_points.append(point)
-        attendance_points_by_day[point.day].append(point)
-        if point.source == "CHECKIN":
-            checkin_points_by_day[point.day] = point
-            last_checkin_utc = point.ts_utc
-        elif point.source == "CHECKOUT":
-            checkout_points_by_day[point.day] = point
-            last_checkout_utc = point.ts_utc
-
-    last_app_open_utc: datetime | None = None
-    last_app_close_utc: datetime | None = None
-    last_demo_start_utc: datetime | None = None
-    last_demo_end_utc: datetime | None = None
-    recent_ip: str | None = None
-    for log_item in app_logs:
-        point = _audit_log_to_location_monitor_point(log_item)
-        if point is None:
-            continue
-        map_points.append(point)
-        app_points_by_day[point.day].append(point)
-        if point.source == "APP_OPEN":
-            last_app_open_utc = point.ts_utc
-        elif point.source == "APP_CLOSE":
-            last_app_close_utc = point.ts_utc
-        elif point.source == "DEMO_START":
-            last_demo_start_utc = point.ts_utc
-        elif point.source == "DEMO_END":
-            last_demo_end_utc = point.ts_utc
-        if recent_ip is None and log_item.ip:
-            recent_ip = log_item.ip
-
-    latest_location = _latest_location_monitor_point(*map_points)
-    map_points.sort(key=lambda item: (item.ts_utc, item.id))
-
-    timeline_days: list[LocationMonitorDayRecordRead] = []
-    all_days = sorted(monthly_days_map.keys(), reverse=True)
-    for day_key in all_days:
-        day_item = monthly_days_map[day_key]
-        day_app_points = sorted(app_points_by_day.get(day_key, []), key=lambda item: (item.ts_utc, item.id))
-        first_app_open_point = next((item for item in day_app_points if item.source == "APP_OPEN"), None)
-        last_app_close_point = next((item for item in reversed(day_app_points) if item.source == "APP_CLOSE"), None)
-        first_demo_start_point = next((item for item in day_app_points if item.source == "DEMO_START"), None)
-        last_demo_end_point = next((item for item in reversed(day_app_points) if item.source == "DEMO_END"), None)
-        last_location_point = _latest_location_monitor_point(
-            *attendance_points_by_day.get(day_key, []),
-            *day_app_points,
-        )
-        timeline_days.append(
-            LocationMonitorDayRecordRead(
-                date=day_item.date,
-                status=day_item.status,
-                check_in=day_item.check_in,
-                check_out=day_item.check_out,
-                worked_minutes=day_item.worked_minutes,
-                overtime_minutes=day_item.overtime_minutes,
-                plan_overtime_minutes=day_item.plan_overtime_minutes,
-                legal_overtime_minutes=day_item.legal_overtime_minutes,
-                first_app_open_utc=first_app_open_point.ts_utc if first_app_open_point is not None else None,
-                last_app_close_utc=last_app_close_point.ts_utc if last_app_close_point is not None else None,
-                first_demo_start_utc=first_demo_start_point.ts_utc if first_demo_start_point is not None else None,
-                last_demo_end_utc=last_demo_end_point.ts_utc if last_demo_end_point is not None else None,
-                check_in_point=checkin_points_by_day.get(day_key),
-                check_out_point=checkout_points_by_day.get(day_key),
-                first_app_open_point=first_app_open_point,
-                last_app_close_point=last_app_close_point,
-                first_demo_start_point=first_demo_start_point,
-                last_demo_end_point=last_demo_end_point,
-                last_location_point=last_location_point,
-            )
-        )
-
-    today_events = [
-        event_item
-        for event_item in attendance_events
-        if _location_monitor_day(event_item.ts_utc) == today_local
-    ]
-    latest_label = latest_location.label if latest_location is not None else None
-    return LocationMonitorEmployeeTimelineResponse(
-        generated_at_utc=now_utc,
-        start_date=start_date,
-        end_date=end_date,
-        summary=LocationMonitorEmployeeSummaryRead(
-            employee=_to_employee_read(employee),
-            department_name=employee.department.name if employee.department is not None else None,
-            region_name=employee.region.name if employee.region is not None else None,
-            shift_name=employee.shift.name if employee.shift is not None else None,
-            today_status=_today_status_from_events(today_events),
-            worked_today_minutes=worked_today_minutes,
-            weekly_total_minutes=weekly_total_minutes,
-            active_devices=sum(1 for device in list(employee.devices or []) if device.is_active),
-            total_devices=len(list(employee.devices or [])),
-            recent_ip=recent_ip,
-            last_activity_utc=max(
-                [
-                    value
-                    for value in [
-                        last_checkin_utc,
-                        last_checkout_utc,
-                        last_app_open_utc,
-                        last_app_close_utc,
-                        last_demo_start_utc,
-                        last_demo_end_utc,
-                    ]
-                    if value
-                ],
-                default=None,
-            ),
-            last_portal_seen_utc=max(
-                [value for value in [last_app_open_utc, last_app_close_utc] if value],
-                default=None,
-            ),
-            last_checkin_utc=last_checkin_utc,
-            last_checkout_utc=last_checkout_utc,
-            last_app_open_utc=last_app_open_utc,
-            last_app_close_utc=last_app_close_utc,
-            last_demo_start_utc=last_demo_start_utc,
-            last_demo_end_utc=last_demo_end_utc,
-            location_label=latest_label,
-            latest_location=latest_location,
-        ),
-        totals=LocationMonitorRangeTotalsRead(
-            worked_minutes=range_worked_minutes,
-            overtime_minutes=range_overtime_minutes,
-            plan_overtime_minutes=range_plan_overtime_minutes,
-            legal_overtime_minutes=range_legal_overtime_minutes,
-            overtime_day_count=overtime_day_count,
-        ),
-        days=timeline_days,
-        map_points=map_points,
-    )
+    except ValueError as exc:
+        message = str(exc)
+        if "not found" in message.lower():
+            raise HTTPException(status_code=404, detail=message) from exc
+        raise HTTPException(status_code=422, detail=message) from exc
+    return legacy_response
 
 
 @router.post(

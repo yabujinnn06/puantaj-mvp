@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
+import type { LocationStatus } from '../../types/api'
 import { eventSourceLabel, eventTypeLabel, formatDateTime, locationStatusLabel } from './utils'
 
 export interface ManagementConsoleMapEvent {
@@ -13,7 +14,7 @@ export interface ManagementConsoleMapEvent {
   lon: number
   accuracyM: number | null
   eventType: 'IN' | 'OUT'
-  locationStatus: 'VERIFIED_HOME' | 'UNVERIFIED_LOCATION' | 'NO_LOCATION'
+  locationStatus: LocationStatus
   tsUtc: string
   deviceId: number
   source: 'DEVICE' | 'MANUAL'

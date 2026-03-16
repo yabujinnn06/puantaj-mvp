@@ -1,5 +1,15 @@
 export type AttendanceType = 'IN' | 'OUT'
-export type LocationStatus = 'VERIFIED_HOME' | 'UNVERIFIED_LOCATION' | 'NO_LOCATION'
+export type LocationStatus =
+  | 'VERIFIED_HOME'
+  | 'UNVERIFIED_LOCATION'
+  | 'NO_LOCATION'
+  | 'LOW_ACCURACY'
+  | 'STALE_LOCATION'
+  | 'OUTSIDE_GEOFENCE'
+  | 'INSIDE_GEOFENCE'
+  | 'SUSPICIOUS_JUMP'
+  | 'MOCK_GPS_SUSPECTED'
+  | 'VERIFIED'
 export type AttendanceEventSource = 'DEVICE' | 'MANUAL'
 export type SchedulePlanTargetType = 'DEPARTMENT' | 'DEPARTMENT_EXCEPT_EMPLOYEE' | 'ONLY_EMPLOYEE'
 
@@ -917,8 +927,53 @@ export type LocationMonitorPointSource =
   | 'APP_CLOSE'
   | 'DEMO_START'
   | 'DEMO_END'
-  | 'DEMO_MARK'
+  | 'LOCATION_PING'
   | 'LAST_LOCATION'
+
+export type LocationGeofenceStatus = 'NOT_CONFIGURED' | 'INSIDE' | 'OUTSIDE' | 'UNKNOWN'
+export type LocationTrustStatus = 'NO_DATA' | 'LOW' | 'MEDIUM' | 'HIGH' | 'SUSPICIOUS'
+
+export interface LocationMonitorPrivacy {
+  exact_coordinates: boolean
+  ip_visible: boolean
+  device_visible: boolean
+}
+
+export interface LocationMonitorInsight {
+  code: string
+  severity: 'info' | 'warning' | 'critical'
+  title: string
+  message: string
+  value: number | null
+}
+
+export interface LocationMonitorGeofence {
+  home_lat: number | null
+  home_lon: number | null
+  radius_m: number | null
+  status: LocationGeofenceStatus
+  distance_m: number | null
+}
+
+export interface LocationMonitorRouteStats {
+  total_distance_m: number
+  total_duration_minutes: number
+  event_count: number
+  simplified_point_count: number
+  repeated_group_count: number
+  suspicious_jump_count: number
+  low_accuracy_event_count: number
+  dwell_stop_count: number
+}
+
+export interface LocationMonitorRepeatedPoint {
+  id: string
+  lat: number
+  lon: number
+  point_count: number
+  dwell_minutes: number
+  label: string
+}
 
 export interface LocationMonitorMapPoint {
   id: string
@@ -932,6 +987,42 @@ export interface LocationMonitorMapPoint {
   location_status: LocationStatus | null
   device_id: number | null
   ip: string | null
+  geofence_status: LocationGeofenceStatus | null
+  trust_status: LocationTrustStatus | null
+  trust_score: number | null
+  provider: string | null
+  speed_mps: number | null
+  heading_deg: number | null
+  altitude_m: number | null
+  is_mocked: boolean | null
+  battery_level: number | null
+  network_type: string | null
+  marker_kind: 'START' | 'END' | 'EVENT' | 'LAST' | 'DWELL' | 'JUMP'
+}
+
+export interface LocationMonitorTimelineEvent {
+  id: string
+  ts_utc: string
+  day: string
+  source: 'CHECKIN' | 'CHECKOUT' | 'APP_OPEN' | 'APP_CLOSE' | 'DEMO_START' | 'DEMO_END' | 'LOCATION_PING'
+  label: string
+  lat: number | null
+  lon: number | null
+  accuracy_m: number | null
+  location_status: LocationStatus | null
+  geofence_status: LocationGeofenceStatus | null
+  trust_status: LocationTrustStatus | null
+  trust_score: number | null
+  device_id: number | null
+  ip: string | null
+  provider: string | null
+  speed_mps: number | null
+  heading_deg: number | null
+  altitude_m: number | null
+  is_mocked: boolean | null
+  battery_level: number | null
+  network_type: string | null
+  flags: Record<string, unknown>
 }
 
 export interface LocationMonitorEmployeeSummary {
@@ -955,6 +1046,13 @@ export interface LocationMonitorEmployeeSummary {
   last_demo_end_utc: string | null
   location_label: string | null
   latest_location: LocationMonitorMapPoint | null
+  last_location_status: LocationStatus | null
+  last_geofence_status: LocationGeofenceStatus | null
+  last_trust_status: LocationTrustStatus | null
+  last_trust_score: number | null
+  last_accuracy_m: number | null
+  last_device_id: number | null
+  last_provider: string | null
 }
 
 export interface LocationMonitorRangeTotals {
@@ -985,6 +1083,40 @@ export interface LocationMonitorDayRecord {
   first_demo_start_point: LocationMonitorMapPoint | null
   last_demo_end_point: LocationMonitorMapPoint | null
   last_location_point: LocationMonitorMapPoint | null
+  suspicious_jump_count: number
+  low_accuracy_count: number
+  outside_geofence_count: number
+  event_count: number
+}
+
+export interface LocationMonitorSummaryResponse {
+  generated_at_utc: string
+  summary: LocationMonitorEmployeeSummary
+  insights: LocationMonitorInsight[]
+  geofence: LocationMonitorGeofence | null
+  privacy: LocationMonitorPrivacy
+}
+
+export interface LocationMonitorTimelineResponse {
+  generated_at_utc: string
+  start_date: string
+  end_date: string
+  days: LocationMonitorDayRecord[]
+  events: LocationMonitorTimelineEvent[]
+  insights: LocationMonitorInsight[]
+  totals: LocationMonitorRangeTotals
+}
+
+export interface LocationMonitorMapResponse {
+  generated_at_utc: string
+  start_date: string
+  end_date: string
+  points: LocationMonitorMapPoint[]
+  simplified_points: LocationMonitorMapPoint[]
+  repeated_groups: LocationMonitorRepeatedPoint[]
+  route_stats: LocationMonitorRouteStats
+  geofence: LocationMonitorGeofence | null
+  privacy: LocationMonitorPrivacy
 }
 
 export interface LocationMonitorEmployeeTimelineResponse {
@@ -995,6 +1127,13 @@ export interface LocationMonitorEmployeeTimelineResponse {
   totals: LocationMonitorRangeTotals
   days: LocationMonitorDayRecord[]
   map_points: LocationMonitorMapPoint[]
+  simplified_map_points: LocationMonitorMapPoint[]
+  timeline_events: LocationMonitorTimelineEvent[]
+  insights: LocationMonitorInsight[]
+  route_stats: LocationMonitorRouteStats
+  repeated_groups: LocationMonitorRepeatedPoint[]
+  geofence: LocationMonitorGeofence | null
+  privacy: LocationMonitorPrivacy
 }
 
 export interface DepartmentSummaryItem {

@@ -36,6 +36,7 @@ from app.services.activity_events import (
     MODULE_APP,
 )
 from app.services.location import distance_m, evaluate_location
+from app.services.location_events import sync_location_event_from_attendance_event
 from app.services.push_notifications import send_push_to_admins
 from app.services.schedule_plans import resolve_effective_plan_for_employee_day
 from app.services.weekday_shift_assignments import resolve_employee_day_shift_candidates
@@ -1003,7 +1004,16 @@ def _build_attendance_event(
     employee_location = db.scalar(
         select(EmployeeLocation).where(EmployeeLocation.employee_id == employee.id)
     )
-    location_status, location_flags = evaluate_location(employee_location, lat, lon)
+    location_status, location_flags = evaluate_location(
+        employee_location,
+        lat,
+        lon,
+        accuracy_m=accuracy_m,
+        captured_at_utc=ts_utc,
+        previous_lat=latest_event.lat if latest_event is not None else None,
+        previous_lon=latest_event.lon if latest_event is not None else None,
+        previous_ts_utc=latest_event.ts_utc if latest_event is not None else None,
+    )
 
     flags: dict[str, Any] = dict(location_flags)
     local_day = _normalize_ts(ts_utc).astimezone(_attendance_timezone()).date()
@@ -1121,6 +1131,7 @@ def _build_attendance_event(
         )
     db.commit()
     db.refresh(event)
+    sync_location_event_from_attendance_event(db, event)
     return event
 
 
@@ -1180,7 +1191,21 @@ def create_attendance_event(db: Session, payload: AttendanceEventCreate) -> Atte
     employee_location = db.scalar(
         select(EmployeeLocation).where(EmployeeLocation.employee_id == employee.id)
     )
-    location_status, flags = evaluate_location(employee_location, payload.lat, payload.lon)
+    previous_event = _resolve_latest_event_for_employee(
+        db,
+        employee_id=employee.id,
+        reference_ts_utc=ts_utc,
+    )
+    location_status, flags = evaluate_location(
+        employee_location,
+        payload.lat,
+        payload.lon,
+        accuracy_m=payload.accuracy_m,
+        captured_at_utc=ts_utc,
+        previous_lat=previous_event.lat if previous_event is not None else None,
+        previous_lon=previous_event.lon if previous_event is not None else None,
+        previous_ts_utc=previous_event.ts_utc if previous_event is not None else None,
+    )
 
     event = AttendanceEvent(
         employee_id=employee.id,
@@ -1199,6 +1224,7 @@ def create_attendance_event(db: Session, payload: AttendanceEventCreate) -> Atte
     db.add(event)
     db.commit()
     db.refresh(event)
+    sync_location_event_from_attendance_event(db, event)
     return event
 
 
@@ -1261,7 +1287,21 @@ def create_admin_manual_event(
     employee_location = db.scalar(
         select(EmployeeLocation).where(EmployeeLocation.employee_id == employee.id)
     )
-    location_status, location_flags = evaluate_location(employee_location, lat, lon)
+    previous_event = _resolve_latest_event_for_employee(
+        db,
+        employee_id=employee.id,
+        reference_ts_utc=normalized_ts,
+    )
+    location_status, location_flags = evaluate_location(
+        employee_location,
+        lat,
+        lon,
+        accuracy_m=accuracy_m,
+        captured_at_utc=normalized_ts,
+        previous_lat=previous_event.lat if previous_event is not None else None,
+        previous_lon=previous_event.lon if previous_event is not None else None,
+        previous_ts_utc=previous_event.ts_utc if previous_event is not None else None,
+    )
 
     flags: dict[str, Any] = dict(location_flags)
     flags["ADMIN_MANUAL"] = True
@@ -1309,6 +1349,7 @@ def create_admin_manual_event(
     db.add(event)
     db.commit()
     db.refresh(event)
+    sync_location_event_from_attendance_event(db, event)
     return event
 
 
@@ -1398,6 +1439,7 @@ def update_admin_manual_event(
     event.created_by_admin = True
     db.commit()
     db.refresh(event)
+    sync_location_event_from_attendance_event(db, event)
     return event
 
 

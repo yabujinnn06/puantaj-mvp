@@ -57,8 +57,8 @@ def log_employee_activity(
     user_agent: str | None = None,
     details: dict[str, Any] | None = None,
     request_id: str | None = None,
-) -> None:
-    log_audit(
+) -> Any:
+    return log_audit(
         db,
         actor_type=AuditActorType.SYSTEM,
         actor_id=str(employee_id),

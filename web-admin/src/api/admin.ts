@@ -49,6 +49,9 @@ import type {
   LaborProfile,
   LeaveRecord,
   LocationStatus,
+  LocationMonitorMapResponse,
+  LocationMonitorSummaryResponse,
+  LocationMonitorTimelineResponse,
   LocationMonitorEmployeeTimelineResponse,
   ManualDayOverride,
   MonthlyEmployeeResponse,
@@ -493,6 +496,26 @@ export interface MonthlyEmployeeParams {
 }
 
 export interface LocationMonitorEmployeeTimelineParams {
+  start_date: string;
+  end_date: string;
+}
+
+export interface LocationMonitorSummaryParams {
+  start_date: string;
+  end_date: string;
+}
+
+export interface LocationMonitorMapPointsParams {
+  start_date: string;
+  end_date: string;
+  source?: string[];
+  min_lon?: number;
+  min_lat?: number;
+  max_lon?: number;
+  max_lat?: number;
+}
+
+export interface LocationMonitorTimelineEventsParams {
   start_date: string;
   end_date: string;
 }
@@ -1550,6 +1573,45 @@ export async function getLocationMonitorEmployeeTimeline(
 ): Promise<LocationMonitorEmployeeTimelineResponse> {
   const response = await apiClient.get<LocationMonitorEmployeeTimelineResponse>(
     `/api/admin/location-monitor/employees/${employeeId}/timeline`,
+    {
+      params,
+    },
+  )
+  return response.data
+}
+
+export async function getLocationMonitorEmployeeSummary(
+  employeeId: number,
+  params: LocationMonitorSummaryParams,
+): Promise<LocationMonitorSummaryResponse> {
+  const response = await apiClient.get<LocationMonitorSummaryResponse>(
+    `/api/admin/location-monitor/employees/${employeeId}/summary`,
+    {
+      params,
+    },
+  )
+  return response.data
+}
+
+export async function getLocationMonitorEmployeeMapPoints(
+  employeeId: number,
+  params: LocationMonitorMapPointsParams,
+): Promise<LocationMonitorMapResponse> {
+  const response = await apiClient.get<LocationMonitorMapResponse>(
+    `/api/admin/location-monitor/employees/${employeeId}/map-points`,
+    {
+      params,
+    },
+  )
+  return response.data
+}
+
+export async function getLocationMonitorEmployeeTimelineEvents(
+  employeeId: number,
+  params: LocationMonitorTimelineEventsParams,
+): Promise<LocationMonitorTimelineResponse> {
+  const response = await apiClient.get<LocationMonitorTimelineResponse>(
+    `/api/admin/location-monitor/employees/${employeeId}/timeline-events`,
     {
       params,
     },

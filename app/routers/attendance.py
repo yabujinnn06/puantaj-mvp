@@ -55,6 +55,7 @@ from app.services.activity_events import (
     app_presence_event_type,
     log_employee_activity,
 )
+from app.services.location_events import sync_location_event_from_audit_log
 from app.services.push_notifications import (
     deactivate_device_push_subscription,
     get_push_public_config,
@@ -910,7 +911,7 @@ def employee_app_presence_ping(
     logged_at = datetime.now(timezone.utc)
     request.state.employee_id = employee.id
     request.state.flags = {"source": payload.source}
-    log_employee_activity(
+    audit_log = log_employee_activity(
         db,
         employee_id=employee.id,
         device_id=device.id,
@@ -927,9 +928,18 @@ def employee_app_presence_ping(
             "lat": payload.lat,
             "lon": payload.lon,
             "accuracy_m": payload.accuracy_m,
+            "provider": payload.provider,
+            "speed_mps": payload.speed_mps,
+            "heading_deg": payload.heading_deg,
+            "altitude_m": payload.altitude_m,
+            "is_mocked": payload.is_mocked,
+            "battery_level": payload.battery_level,
+            "network_type": payload.network_type,
         },
         request_id=getattr(request.state, "request_id", None),
     )
+    if audit_log is not None:
+        sync_location_event_from_audit_log(db, audit_log)
     return EmployeeAppPresencePingResponse(ok=True, employee_id=employee.id, logged_at=logged_at)
 
 

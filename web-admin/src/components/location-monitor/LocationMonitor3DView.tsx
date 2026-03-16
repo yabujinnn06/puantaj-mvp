@@ -348,7 +348,7 @@ function pointColor(point: Pick<LocationMonitorMapPoint, 'source'>): string {
   if (point.source === 'CHECKOUT') return '#f43f5e'
   if (point.source === 'APP_OPEN') return '#f59e0b'
   if (point.source === 'APP_CLOSE') return '#818cf8'
-  if (point.source === 'DEMO_START' || point.source === 'DEMO_MARK') return '#22d3ee'
+  if (point.source === 'DEMO_START') return '#22d3ee'
   if (point.source === 'DEMO_END') return '#a78bfa'
   return '#38bdf8'
 }
@@ -358,8 +358,9 @@ function pointSourceLabel(source: LocationMonitorMapPoint['source']): string {
   if (source === 'CHECKOUT') return 'Mesai cikisi'
   if (source === 'APP_OPEN') return 'Uygulama girisi'
   if (source === 'APP_CLOSE') return 'Uygulama cikisi'
-  if (source === 'DEMO_START' || source === 'DEMO_MARK') return 'Demo baslangici'
+  if (source === 'DEMO_START') return 'Demo baslangici'
   if (source === 'DEMO_END') return 'Demo bitisi'
+  if (source === 'LOCATION_PING') return 'Konum pingi'
   return 'Konum noktasi'
 }
 
@@ -406,8 +407,9 @@ function markerBadgeLabel(source: LocationMonitorMapPoint['source']): string {
   if (source === 'CHECKOUT') return 'MESAI BITIS'
   if (source === 'APP_OPEN') return 'APP GIRIS'
   if (source === 'APP_CLOSE') return 'APP CIKIS'
-  if (source === 'DEMO_START' || source === 'DEMO_MARK') return 'DEMO BASLA'
+  if (source === 'DEMO_START') return 'DEMO BASLA'
   if (source === 'DEMO_END') return 'DEMO BITIR'
+  if (source === 'LOCATION_PING') return 'KONUM'
   return 'KONUM'
 }
 
@@ -860,8 +862,6 @@ function ensure3DLayers(map: MapLibreMap) {
       6,
       'DEMO_END',
       6,
-      'DEMO_MARK',
-      6,
       6,
     ] as const
 
@@ -896,8 +896,8 @@ function ensure3DLayers(map: MapLibreMap) {
           '#22d3ee',
           'DEMO_END',
           '#a78bfa',
-          'DEMO_MARK',
-          '#22d3ee',
+          'LOCATION_PING',
+          '#38bdf8',
           '#38bdf8',
         ],
       },

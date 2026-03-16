@@ -45,6 +45,7 @@ from app.schemas import (
     EmployeeRead,
 )
 from app.services.attendance import _attendance_timezone
+from app.services.location import location_status_is_verified, location_status_needs_attention
 from app.services.monthly import calculate_employee_monthly
 from app.services.schedule_plans import resolve_best_plan_for_day
 from app.services.weekday_shift_assignments import (
@@ -546,9 +547,9 @@ def _minutes_since_midnight(dt_value: datetime | None, tz: Any) -> int | None:
 def _location_label(event: AttendanceEvent | None) -> str | None:
     if event is None or event.lat is None or event.lon is None:
         return None
-    if event.location_status == LocationStatus.VERIFIED_HOME:
+    if location_status_is_verified(event.location_status):
         status_label = "Dogrulanmis konum"
-    elif event.location_status == LocationStatus.UNVERIFIED_LOCATION:
+    elif location_status_needs_attention(event.location_status):
         status_label = "Konum sapmasi"
     else:
         status_label = "Konum verisi"
@@ -1004,11 +1005,11 @@ def build_control_room_overview(
                     if first_in_local is not None:
                         violation_hour_counter[first_in_local.astimezone(tz).hour] += 1
 
-            if any(item.location_status == LocationStatus.UNVERIFIED_LOCATION for item in day_events):
+            if any(location_status_needs_attention(item.location_status) for item in day_events):
                 location_deviation_days += 1
                 violation_count_7d += 1
                 day_violation_count += 1
-                flagged_location = next((item for item in day_events if item.location_status == LocationStatus.UNVERIFIED_LOCATION), None)
+                flagged_location = next((item for item in day_events if location_status_needs_attention(item.location_status)), None)
                 if flagged_location is not None:
                     flagged_local = _normalize_utc(flagged_location.ts_utc)
                     if flagged_local is not None:
@@ -1065,7 +1066,7 @@ def build_control_room_overview(
         if employee_today_status == "IN_PROGRESS" and worked_today_minutes >= 10 * 60:
             add_alert("LONG_OPEN_SHIFT", "Acik vardiya 10 saati asti", "critical")
             add_tooltip("Uzun acik vardiya", "Bugun acik kalan vardiya 10 saatin uzerine cikti.")
-        if latest_location is not None and latest_location.location_status == LocationStatus.UNVERIFIED_LOCATION:
+        if latest_location is not None and location_status_needs_attention(latest_location.location_status):
             add_alert("UNVERIFIED_LOCATION", "Son lokasyon dogrulanamadi", "warning")
 
         recent_ip_set = {
@@ -1590,7 +1591,7 @@ def _build_employee_risk_history(
         if has_in and not has_out and day_date < today_local_date:
             daily_score += 8
 
-        if any(item.location_status == LocationStatus.UNVERIFIED_LOCATION for item in day_events):
+        if any(location_status_needs_attention(item.location_status) for item in day_events):
             daily_score += 10
 
         if schedule.shift_start_local is not None and schedule.shift_end_local is not None:
