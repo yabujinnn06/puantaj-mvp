@@ -527,6 +527,8 @@ def build_location_monitor_payloads(
     visibility: LocationVisibilityPolicy,
     source_filter: set[LocationEventSource] | None = None,
     bbox: tuple[float, float, float, float] | None = None,
+    focus_day: date | None = None,
+    latest_only: bool = False,
 ) -> tuple[LocationMonitorSummaryResponse, LocationMonitorTimelineResponse, LocationMonitorMapResponse, LocationMonitorEmployeeTimelineResponse]:
     employee = db.scalar(
         select(Employee)
@@ -552,11 +554,15 @@ def build_location_monitor_payloads(
     events = [event for event in all_events if event.attendance_event is None or event.attendance_event.deleted_at is None]
     route_events = _route_points(events)
     latest_event = events[-1] if events else None
+    resolved_focus_day = focus_day
+    if resolved_focus_day is None and latest_only:
+        resolved_focus_day = max((_local_day(event.ts_utc) for event in events if _local_day(event.ts_utc) is not None), default=None)
+    focus_day_events = [event for event in events if _local_day(event.ts_utc) == resolved_focus_day] if resolved_focus_day is not None else events
 
     if source_filter:
-        events_for_map = [event for event in events if event.source in source_filter]
+        events_for_map = [event for event in focus_day_events if event.source in source_filter]
     else:
-        events_for_map = events
+        events_for_map = focus_day_events
     if bbox is not None:
         min_lon, min_lat, max_lon, max_lat = bbox
         events_for_map = [
@@ -626,9 +632,14 @@ def build_location_monitor_payloads(
         )
 
     total_distance_m = _movement_distance(route_events)
+    visible_distance_m = _movement_distance(route_events_for_map)
     route_stats = LocationMonitorRouteStatsRead(
-        total_distance_m=round(total_distance_m, 2),
-        total_duration_minutes=_elapsed_minutes(route_events[0].ts_utc, route_events[-1].ts_utc) if route_events else 0,
+        total_distance_m=round(visible_distance_m, 2),
+        total_duration_minutes=(
+            _elapsed_minutes(route_events_for_map[0].ts_utc, route_events_for_map[-1].ts_utc)
+            if route_events_for_map
+            else 0
+        ),
         event_count=len(route_events_for_map),
         simplified_point_count=len(simplified_route),
         repeated_group_count=len(repeated_groups),
@@ -671,7 +682,7 @@ def build_location_monitor_payloads(
             "LAST" if latest_event is not None and simplified_route and simplified_route[-1].id == latest_event.id else "END"
         )
 
-    timeline_events = [_event_to_timeline_event(event, visibility=visibility) for event in events]
+    timeline_events = [_event_to_timeline_event(event, visibility=visibility) for event in focus_day_events]
 
     summary_response = LocationMonitorSummaryResponse(
         generated_at_utc=now_utc,

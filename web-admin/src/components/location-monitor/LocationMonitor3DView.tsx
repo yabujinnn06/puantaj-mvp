@@ -968,9 +968,11 @@ function popupHtmlForPoint(point: LocationMonitorMapPoint, metrics?: PointMetric
 export function LocationMonitor3DView({
   points,
   focusedPointId = null,
+  className = '',
 }: {
   points: LocationMonitorMapPoint[]
   focusedPointId?: string | null
+  className?: string
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
@@ -1113,15 +1115,19 @@ export function LocationMonitor3DView({
 
   if (!isSupported) {
     return (
-      <div className="flex h-[26rem] items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 text-sm text-slate-500">
+      <div
+        className={`flex items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 text-sm text-slate-500 ${className || 'h-[26rem]'}`}
+      >
         Bu tarayicida WebGL tabanli 3D harita desteklenmiyor.
       </div>
     )
   }
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 shadow-sm">
-      <div ref={containerRef} className="h-[26rem] w-full" />
+    <div
+      className={`relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 shadow-sm ${className || 'h-[26rem]'}`}
+    >
+      <div ref={containerRef} className="h-full w-full" />
       {loadError ? (
         <div className="absolute inset-0 flex items-center justify-center bg-slate-950/84 px-6 text-center text-sm font-medium text-slate-200">
           {loadError}

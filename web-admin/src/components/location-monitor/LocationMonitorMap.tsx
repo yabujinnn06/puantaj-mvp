@@ -96,12 +96,14 @@ export function LocationMonitorMap({
   repeatedGroups = [],
   geofence = null,
   focusedPointId = null,
+  className = '',
 }: {
   points: LocationMonitorMapPoint[]
   simplifiedPoints?: LocationMonitorMapPoint[]
   repeatedGroups?: LocationMonitorRepeatedPoint[]
   geofence?: LocationMonitorGeofence | null
   focusedPointId?: string | null
+  className?: string
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<L.Map | null>(null)
@@ -282,5 +284,10 @@ export function LocationMonitorMap({
     marker.openPopup()
   }, [focusedPointId, points])
 
-  return <div ref={containerRef} className="h-[33rem] w-full rounded-2xl border border-slate-200 bg-slate-100" />
+  return (
+    <div
+      ref={containerRef}
+      className={`w-full rounded-2xl border border-slate-200 bg-slate-100 ${className || 'h-[33rem]'}`}
+    />
+  )
 }

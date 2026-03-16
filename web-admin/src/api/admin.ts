@@ -508,6 +508,8 @@ export interface LocationMonitorSummaryParams {
 export interface LocationMonitorMapPointsParams {
   start_date: string;
   end_date: string;
+  day?: string;
+  latest_only?: boolean;
   source?: string[];
   min_lon?: number;
   min_lat?: number;
@@ -518,6 +520,8 @@ export interface LocationMonitorMapPointsParams {
 export interface LocationMonitorTimelineEventsParams {
   start_date: string;
   end_date: string;
+  day?: string;
+  latest_only?: boolean;
 }
 
 export interface DepartmentSummaryParams {

@@ -3439,6 +3439,8 @@ def get_location_monitor_employee_map_points(
     employee_id: int,
     start_date: date = Query(...),
     end_date: date = Query(...),
+    day: date | None = Query(default=None),
+    latest_only: bool = Query(default=False),
     source: list[str] | None = Query(default=None),
     min_lon: float | None = Query(default=None),
     min_lat: float | None = Query(default=None),
@@ -3467,6 +3469,8 @@ def get_location_monitor_employee_map_points(
             visibility=_location_visibility_policy(claims),
             source_filter=source_filter,
             bbox=bbox,
+            focus_day=day,
+            latest_only=latest_only,
         )
     except ValueError as exc:
         message = str(exc)
@@ -3485,6 +3489,8 @@ def get_location_monitor_employee_timeline_events(
     employee_id: int,
     start_date: date = Query(...),
     end_date: date = Query(...),
+    day: date | None = Query(default=None),
+    latest_only: bool = Query(default=False),
     claims: dict[str, Any] = Depends(require_admin_permission("log")),
     db: Session = Depends(get_db),
 ) -> LocationMonitorTimelineResponse:
@@ -3495,6 +3501,8 @@ def get_location_monitor_employee_timeline_events(
             start_date=start_date,
             end_date=end_date,
             visibility=_location_visibility_policy(claims),
+            focus_day=day,
+            latest_only=latest_only,
         )
     except ValueError as exc:
         message = str(exc)
