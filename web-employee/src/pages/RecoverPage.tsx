@@ -9,7 +9,6 @@ import {
   verifyPasskeyRecover,
 } from '../api/attendance'
 import { BrandSignature } from '../components/BrandSignature'
-import { setDeviceBinding, setStoredDeviceFingerprint } from '../utils/device'
 
 export function RecoverPage() {
   const navigate = useNavigate()
@@ -22,18 +21,7 @@ export function RecoverPage() {
   const [recoveryPin, setRecoveryPin] = useState('')
   const [recoveryCode, setRecoveryCode] = useState('')
 
-  const applyRecoveredDevice = (
-    nextEmployeeId: number,
-    nextDeviceId: number,
-    nextFingerprint: string,
-    successText: string,
-  ) => {
-    setStoredDeviceFingerprint(nextFingerprint)
-    setDeviceBinding({
-      employeeId: nextEmployeeId,
-      deviceId: nextDeviceId,
-      deviceFingerprint: nextFingerprint,
-    })
+  const applyRecoveredDevice = (successText: string) => {
     setSuccessMessage(successText)
     window.setTimeout(() => {
       navigate('/', { replace: true })
@@ -56,17 +44,12 @@ export function RecoverPage() {
         optionsJSON: optionsData.options as unknown as Parameters<typeof startAuthentication>[0]['optionsJSON'],
       })
 
-      const verifyData = await verifyPasskeyRecover({
+      await verifyPasskeyRecover({
         challenge_id: optionsData.challenge_id,
         credential: assertion as unknown as Record<string, unknown>,
       })
 
-      applyRecoveredDevice(
-        verifyData.employee_id,
-        verifyData.device_id,
-        verifyData.device_fingerprint,
-        'Cihaz kimligi passkey ile geri yuklendi. Yonlendiriliyorsunuz...',
-      )
+      applyRecoveredDevice('Cihaz kimligi passkey ile geri yuklendi. Yonlendiriliyorsunuz...')
     } catch (error) {
       const parsed = parseApiError(error, 'Passkey kurtarma islemi basarisiz oldu.')
       setErrorMessage(parsed.message)
@@ -94,18 +77,13 @@ export function RecoverPage() {
         throw new Error('Recovery code girin.')
       }
 
-      const result = await recoverDeviceWithCode({
+      await recoverDeviceWithCode({
         employee_id: parsedEmployeeId,
         recovery_pin: recoveryPin.trim(),
         recovery_code: recoveryCode.trim(),
       })
 
-      applyRecoveredDevice(
-        result.employee_id,
-        result.device_id,
-        result.device_fingerprint,
-        'Cihaz kimligi recovery code ile geri yuklendi. Yonlendiriliyorsunuz...',
-      )
+      applyRecoveredDevice('Cihaz kimligi recovery code ile geri yuklendi. Yonlendiriliyorsunuz...')
     } catch (error) {
       const parsed = parseApiError(error, 'Recovery code ile kurtarma basarisiz oldu.')
       setErrorMessage(parsed.message)
