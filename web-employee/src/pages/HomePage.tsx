@@ -579,6 +579,7 @@ export function HomePage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [pendingAction, setPendingAction] = useState<'checkin' | 'checkout' | 'demo' | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [secondCheckinApprovalAlert, setSecondCheckinApprovalAlert] = useState<ParsedApiError | null>(null)
   const [, setLocationWarning] = useState<string | null>(null)
   const [requestId, setRequestId] = useState<string | null>(null)
   const [lastAction, setLastAction] = useState<LastAction | null>(null)
@@ -729,6 +730,7 @@ export function HomePage() {
     setRecoveryRevealPin('')
     setPushNotice(null)
     setActionNotice(null)
+    setSecondCheckinApprovalAlert(null)
     return true
   }, [])
 
@@ -1746,6 +1748,7 @@ export function HomePage() {
     setPendingAction('checkin')
     setActionNotice(null)
     setErrorMessage(null)
+    setSecondCheckinApprovalAlert(null)
     setLocationWarning(null)
     setRequestId(null)
 
@@ -1791,13 +1794,24 @@ export function HomePage() {
     } catch (error) {
       const parsed = parseApiError(error, 'QR işlemi tamamlanamadı.')
       handleDeviceNotClaimed(parsed)
-      setErrorMessage(
-        sanitizeEmployeeActionMessage(
-          parsed,
-          'QR işlemi için gerekli cihaz hazırlığı tamamlanamadı. Ayarları kontrol edip tekrar deneyin.',
-        ),
-      )
-      setRequestId(parsed.requestId ?? null)
+      if (parsed.code === 'SECOND_CHECKIN_APPROVAL_REQUIRED') {
+        setSecondCheckinApprovalAlert({
+          ...parsed,
+          message:
+            parsed.message.trim()
+            || 'Bugünkü ikinci giriş için admin onayı gerekiyor. Admin onayından sonra tekrar QR okutun.',
+        })
+        setErrorMessage(null)
+        setRequestId(null)
+      } else {
+        setErrorMessage(
+          sanitizeEmployeeActionMessage(
+            parsed,
+            'QR işlemi için gerekli cihaz hazırlığı tamamlanamadı. Ayarları kontrol edip tekrar deneyin.',
+          ),
+        )
+        setRequestId(parsed.requestId ?? null)
+      }
     } finally {
       setIsSubmitting(false)
       setPendingAction(null)
@@ -2633,6 +2647,35 @@ export function HomePage() {
               {errorMessage}
             </p>
             {requestId ? <p className="request-id">request_id: {requestId}</p> : null}
+          </div>
+        ) : null}
+
+        {secondCheckinApprovalAlert ? (
+          <div
+            className="modal-backdrop"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="second-checkin-approval-title"
+          >
+            <div className="help-modal">
+              <h2 id="second-checkin-approval-title">Admin Onayı Gerekli</h2>
+              <p>{secondCheckinApprovalAlert.message}</p>
+              <p className="muted">
+                Admin bildirimi onayladıktan sonra aynı QR kodu tekrar okutun.
+              </p>
+              {secondCheckinApprovalAlert.requestId ? (
+                <p className="request-id">request_id: {secondCheckinApprovalAlert.requestId}</p>
+              ) : null}
+              <div className="stack">
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => setSecondCheckinApprovalAlert(null)}
+                >
+                  Tamam
+                </button>
+              </div>
+            </div>
           </div>
         ) : null}
 
