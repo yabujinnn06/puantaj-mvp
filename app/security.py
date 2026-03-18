@@ -307,18 +307,41 @@ def should_allow_refresh() -> bool:
     return bool(get_settings().allow_refresh)
 
 
+_ADMIN_ACCESS_COOKIE_NAME = "puantaj_admin_access_token"
+
+
+def _admin_access_token_candidates(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None,
+) -> list[str]:
+    candidates: list[str] = []
+    if credentials is not None and credentials.scheme.lower() == "bearer":
+        bearer_token = credentials.credentials.strip()
+        if bearer_token:
+            candidates.append(bearer_token)
+
+    cookie_token = (request.cookies.get(_ADMIN_ACCESS_COOKIE_NAME) or "").strip()
+    if cookie_token and cookie_token not in candidates:
+        candidates.append(cookie_token)
+
+    return candidates
+
+
 def require_admin(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> dict[str, Any]:
-    if credentials is None or credentials.scheme.lower() != "bearer":
-        raise ApiError(status_code=401, code="INVALID_TOKEN", message="Missing bearer token.")
+    for token in _admin_access_token_candidates(request, credentials):
+        try:
+            payload = decode_token(token, expected_type="access")
+        except ApiError:
+            continue
 
-    payload = decode_token(credentials.credentials, expected_type="access")
+        request.state.actor = "admin"
+        request.state.actor_id = str(payload.get("username") or payload.get("sub") or "admin")
+        return payload
 
-    request.state.actor = "admin"
-    request.state.actor_id = str(payload.get("username") or payload.get("sub") or "admin")
-    return payload
+    raise ApiError(status_code=401, code="INVALID_TOKEN", message="Missing admin access token.")
 
 
 def require_admin_permission(permission: str, *, write: bool = False) -> Callable[..., dict[str, Any]]:

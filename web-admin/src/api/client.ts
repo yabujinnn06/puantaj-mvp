@@ -1,6 +1,6 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios'
 
-import { clearAuthTokens, getAccessToken, getRefreshToken, setAuthTokens } from '../auth/token'
+import { clearAuthTokens, getAccessToken, setAuthTokens } from '../auth/token'
 import type { AdminAuthResponse } from '../types/api'
 
 const defaultBaseURL =
@@ -22,6 +22,7 @@ const appBasePrefix =
 
 export const apiClient = axios.create({
   baseURL,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -29,6 +30,7 @@ export const apiClient = axios.create({
 
 export const publicApiClient = axios.create({
   baseURL,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -67,18 +69,9 @@ apiClient.interceptors.request.use((config) => {
 let refreshPromise: Promise<string | null> | null = null
 
 async function requestTokenRefresh(): Promise<string | null> {
-  const refreshToken = getRefreshToken()
-  if (!refreshToken) {
-    forceLogoutAndRedirect()
-    return null
-  }
-
   try {
-    const response = await axios.post<AdminAuthResponse>(`${baseURL}/api/admin/auth/refresh`, {
-      refresh_token: refreshToken,
-    })
-
-    setAuthTokens(response.data.access_token, response.data.refresh_token ?? refreshToken)
+    const response = await publicApiClient.post<AdminAuthResponse>('/api/admin/auth/refresh')
+    setAuthTokens(response.data.access_token, response.data.refresh_token ?? null)
     return response.data.access_token
   } catch {
     forceLogoutAndRedirect()
@@ -122,7 +115,6 @@ apiClient.interceptors.response.use(
       return Promise.reject(error)
     }
 
-    originalRequest.headers.Authorization = `Bearer ${freshToken}`
     return apiClient(originalRequest)
   },
 )

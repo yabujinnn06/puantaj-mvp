@@ -3,12 +3,6 @@ const LEGACY_DEVICE_FINGERPRINT_KEY = 'puantaj_employee_device_fingerprint'
 const DEVICE_BINDING_KEY = 'puantaj_employee_device_binding'
 const DEVICE_FINGERPRINT_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365 * 3
 
-export interface DeviceBinding {
-  employeeId: number
-  deviceId: number
-  deviceFingerprint: string
-}
-
 function readDeviceFingerprintCookie(): string | null {
   if (typeof document === 'undefined') {
     return null
@@ -55,6 +49,15 @@ function clearDeviceFingerprintCookie(): void {
   document.cookie = `${DEVICE_FINGERPRINT_KEY}=;path=/;max-age=0;samesite=lax${secure}`
 }
 
+function clearLegacyDeviceFingerprintStorage(): void {
+  if (typeof window === 'undefined') {
+    return
+  }
+  window.localStorage.removeItem(DEVICE_FINGERPRINT_KEY)
+  window.localStorage.removeItem(LEGACY_DEVICE_FINGERPRINT_KEY)
+  window.localStorage.removeItem(DEVICE_BINDING_KEY)
+}
+
 function fallbackUuidV4(): string {
   const tpl = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'
   return tpl.replace(/[xy]/g, (char) => {
@@ -65,23 +68,26 @@ function fallbackUuidV4(): string {
 }
 
 export function getStoredDeviceFingerprint(): string | null {
-  const existing = localStorage.getItem(DEVICE_FINGERPRINT_KEY)
-  if (existing) {
-    writeDeviceFingerprintCookie(existing)
-    return existing
-  }
-
-  const legacy = localStorage.getItem(LEGACY_DEVICE_FINGERPRINT_KEY)
-  if (legacy) {
-    localStorage.setItem(DEVICE_FINGERPRINT_KEY, legacy)
-    writeDeviceFingerprintCookie(legacy)
-    return legacy
-  }
-
   const cookieValue = readDeviceFingerprintCookie()
   if (cookieValue) {
-    localStorage.setItem(DEVICE_FINGERPRINT_KEY, cookieValue)
+    clearLegacyDeviceFingerprintStorage()
     return cookieValue
+  }
+
+  if (typeof window !== 'undefined') {
+    const existing = window.localStorage.getItem(DEVICE_FINGERPRINT_KEY)
+    if (existing) {
+      clearLegacyDeviceFingerprintStorage()
+      writeDeviceFingerprintCookie(existing)
+      return existing
+    }
+
+    const legacy = window.localStorage.getItem(LEGACY_DEVICE_FINGERPRINT_KEY)
+    if (legacy) {
+      clearLegacyDeviceFingerprintStorage()
+      writeDeviceFingerprintCookie(legacy)
+      return legacy
+    }
   }
 
   return null
@@ -102,37 +108,11 @@ export function getOrCreateDeviceFingerprint(): string {
 }
 
 export function setStoredDeviceFingerprint(value: string): void {
-  localStorage.setItem(DEVICE_FINGERPRINT_KEY, value)
   writeDeviceFingerprintCookie(value)
+  clearLegacyDeviceFingerprintStorage()
 }
 
 export function clearStoredDeviceFingerprint(): void {
-  localStorage.removeItem(DEVICE_FINGERPRINT_KEY)
-  localStorage.removeItem(LEGACY_DEVICE_FINGERPRINT_KEY)
-  localStorage.removeItem(DEVICE_BINDING_KEY)
+  clearLegacyDeviceFingerprintStorage()
   clearDeviceFingerprintCookie()
-}
-
-export function getDeviceBinding(): DeviceBinding | null {
-  const raw = localStorage.getItem(DEVICE_BINDING_KEY)
-  if (!raw) {
-    return null
-  }
-  try {
-    const parsed = JSON.parse(raw) as DeviceBinding
-    if (
-      typeof parsed.employeeId === 'number' &&
-      typeof parsed.deviceId === 'number' &&
-      typeof parsed.deviceFingerprint === 'string'
-    ) {
-      return parsed
-    }
-    return null
-  } catch {
-    return null
-  }
-}
-
-export function setDeviceBinding(binding: DeviceBinding): void {
-  localStorage.setItem(DEVICE_BINDING_KEY, JSON.stringify(binding))
 }

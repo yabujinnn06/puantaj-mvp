@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from app.db import get_db
 from app.main import app
-from app.models import AdminUser, Employee
+from app.models import AdminRefreshToken, AdminUser, Employee
 from app.security import hash_password, require_admin, verify_password
 from app.services.admin_mfa import _hotp, _normalize_totp_secret
 
@@ -25,9 +25,19 @@ class _FakeLoginDB:
         self.admin_user = admin_user
         self.rows: list[object] = []
 
-    def scalar(self, statement):  # type: ignore[no-untyped-def]
-        if "admin_users" in str(statement):
+    def get(self, model, pk):  # type: ignore[no-untyped-def]
+        if model is AdminUser and pk == self.admin_user.id:
             return self.admin_user
+        return None
+
+    def scalar(self, statement):  # type: ignore[no-untyped-def]
+        statement_text = str(statement)
+        if "admin_users" in statement_text:
+            return self.admin_user
+        if "admin_refresh_tokens" in statement_text:
+            for row in reversed(self.rows):
+                if isinstance(row, AdminRefreshToken):
+                    return row
         return None
 
     def add(self, obj: object) -> None:
@@ -136,6 +146,68 @@ class AdminRbacTests(unittest.TestCase):
         payload = response.json()
         self.assertIn("access_token", payload)
         self.assertEqual(payload.get("token_type"), "bearer")
+        set_cookie_headers = response.headers.get_list("set-cookie")
+        self.assertTrue(any("puantaj_admin_access_token=" in value for value in set_cookie_headers))
+        self.assertTrue(any("puantaj_admin_refresh_token=" in value for value in set_cookie_headers))
+
+    def test_admin_cookie_session_supports_me_refresh_and_logout(self) -> None:
+        admin_user = AdminUser(
+            id=12,
+            username="ik_cookie_user",
+            password_hash=hash_password("StrongPass123!"),
+            full_name="IK Cookie",
+            is_active=True,
+            is_super_admin=False,
+            permissions={"reports": {"read": True, "write": False}},
+        )
+        fake_db = _FakeLoginDB(admin_user)
+        app.dependency_overrides[get_db] = _override_get_db(fake_db)
+        client = TestClient(app)
+
+        login_response = client.post(
+            "/api/admin/auth/login",
+            json={"username": "ik_cookie_user", "password": "StrongPass123!"},
+        )
+        self.assertEqual(login_response.status_code, 200)
+
+        me_response = client.get("/api/admin/auth/me")
+        self.assertEqual(me_response.status_code, 200)
+        self.assertEqual(me_response.json()["username"], "ik_cookie_user")
+
+        refresh_response = client.post("/api/admin/auth/refresh")
+        self.assertEqual(refresh_response.status_code, 200)
+        self.assertIn("access_token", refresh_response.json())
+
+        logout_response = client.post("/api/admin/auth/logout")
+        self.assertEqual(logout_response.status_code, 200)
+        self.assertTrue(logout_response.json()["ok"])
+
+        post_logout_me = client.get("/api/admin/auth/me")
+        self.assertEqual(post_logout_me.status_code, 401)
+
+    def test_login_sets_secure_cookie_when_request_is_https(self) -> None:
+        admin_user = AdminUser(
+            id=13,
+            username="ik_https_user",
+            password_hash=hash_password("StrongPass123!"),
+            full_name="IK HTTPS",
+            is_active=True,
+            is_super_admin=False,
+            permissions={"reports": {"read": True, "write": False}},
+        )
+        fake_db = _FakeLoginDB(admin_user)
+        app.dependency_overrides[get_db] = _override_get_db(fake_db)
+        client = TestClient(app)
+
+        response = client.post(
+            "/api/admin/auth/login",
+            json={"username": "ik_https_user", "password": "StrongPass123!"},
+            headers={"x-forwarded-proto": "https"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        set_cookie_headers = response.headers.get_list("set-cookie")
+        self.assertTrue(any("Secure" in value for value in set_cookie_headers))
 
     def test_login_requires_and_accepts_per_user_mfa_code(self) -> None:
         secret_key = "JBSWY3DPEHPK3PXP"

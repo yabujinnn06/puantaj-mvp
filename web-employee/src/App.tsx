@@ -6,6 +6,7 @@ import { BrandSignature } from './components/BrandSignature'
 import { ClaimPage } from './pages/ClaimPage'
 import { HomePage } from './pages/HomePage'
 import { RecoverPage } from './pages/RecoverPage'
+import { getPendingClaimToken } from './utils/claimToken'
 import { getStoredDeviceFingerprint } from './utils/device'
 import { getCachedLocation, getCurrentLocation } from './utils/location'
 
@@ -17,10 +18,16 @@ function EmployeeRouteGuard({ children }: { children: ReactNode }) {
     () => (new URLSearchParams(location.search).get('token') ?? '').trim(),
     [location.search],
   )
+  const pendingClaimToken = useMemo(() => getPendingClaimToken(), [location.key])
 
   useEffect(() => {
     if (queryToken) {
       navigate(`/claim?token=${encodeURIComponent(queryToken)}`, { replace: true })
+      return
+    }
+
+    if (pendingClaimToken) {
+      navigate('/claim', { replace: true })
       return
     }
 
@@ -38,7 +45,7 @@ function EmployeeRouteGuard({ children }: { children: ReactNode }) {
     return () => {
       window.clearTimeout(recoverTimer)
     }
-  }, [hasDeviceFingerprint, location.pathname, location.search, navigate, queryToken])
+  }, [hasDeviceFingerprint, location.pathname, location.search, navigate, pendingClaimToken, queryToken])
 
   if (hasDeviceFingerprint) {
     return <>{children}</>

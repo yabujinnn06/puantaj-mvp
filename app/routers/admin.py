@@ -827,10 +827,132 @@ def _persist_refresh_token(
     return token_row
 
 
+_ADMIN_ACCESS_COOKIE_NAME = "puantaj_admin_access_token"
+_ADMIN_REFRESH_COOKIE_NAME = "puantaj_admin_refresh_token"
+
+
+def _is_https_request(request: Request) -> bool:
+    forwarded_proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip().lower()
+    if forwarded_proto:
+        return forwarded_proto == "https"
+    return request.url.scheme.lower() == "https"
+
+
+def _token_cookie_max_age(claims: dict[str, Any]) -> int:
+    expires_at = _as_int(claims.get("exp"), 0)
+    now_ts = int(datetime.now(timezone.utc).timestamp())
+    return max(0, expires_at - now_ts)
+
+
+def _set_admin_auth_cookies(
+    response: Response,
+    *,
+    request: Request,
+    access_token: str,
+    access_claims: dict[str, Any],
+    refresh_token: str | None = None,
+    refresh_claims: dict[str, Any] | None = None,
+) -> None:
+    is_https = _is_https_request(request)
+    response.set_cookie(
+        key=_ADMIN_ACCESS_COOKIE_NAME,
+        value=access_token,
+        httponly=True,
+        secure=is_https,
+        samesite="strict",
+        path="/",
+        max_age=_token_cookie_max_age(access_claims),
+    )
+    if refresh_token and refresh_claims is not None:
+        response.set_cookie(
+            key=_ADMIN_REFRESH_COOKIE_NAME,
+            value=refresh_token,
+            httponly=True,
+            secure=is_https,
+            samesite="strict",
+            path="/",
+            max_age=_token_cookie_max_age(refresh_claims),
+        )
+    else:
+        response.delete_cookie(
+            key=_ADMIN_REFRESH_COOKIE_NAME,
+            path="/",
+            httponly=True,
+            secure=is_https,
+            samesite="strict",
+        )
+
+
+def _clear_admin_auth_cookies(response: Response, *, request: Request) -> None:
+    is_https = _is_https_request(request)
+    response.delete_cookie(
+        key=_ADMIN_ACCESS_COOKIE_NAME,
+        path="/",
+        httponly=True,
+        secure=is_https,
+        samesite="strict",
+    )
+    response.delete_cookie(
+        key=_ADMIN_REFRESH_COOKIE_NAME,
+        path="/",
+        httponly=True,
+        secure=is_https,
+        samesite="strict",
+    )
+
+
+def _extract_access_token_candidates(request: Request) -> list[str]:
+    candidates: list[str] = []
+    auth_header = (request.headers.get("authorization") or "").strip()
+    if auth_header.lower().startswith("bearer "):
+        token = auth_header[7:].strip()
+        if token:
+            candidates.append(token)
+    cookie_token = (request.cookies.get(_ADMIN_ACCESS_COOKIE_NAME) or "").strip()
+    if cookie_token and cookie_token not in candidates:
+        candidates.append(cookie_token)
+    return candidates
+
+
+def _extract_refresh_token_candidate(
+    request: Request,
+    payload: AdminRefreshRequest | AdminLogoutRequest | None = None,
+) -> str | None:
+    cookie_token = (request.cookies.get(_ADMIN_REFRESH_COOKIE_NAME) or "").strip()
+    if cookie_token:
+        return cookie_token
+    if payload is None:
+        return None
+    raw_token = getattr(payload, "refresh_token", None)
+    if not isinstance(raw_token, str):
+        return None
+    token = raw_token.strip()
+    return token or None
+
+
+def _decode_admin_claims_from_request(request: Request) -> dict[str, Any]:
+    for token in _extract_access_token_candidates(request):
+        try:
+            return decode_token(token, expected_type="access")
+        except Exception:
+            continue
+    raise ApiError(status_code=401, code="INVALID_TOKEN", message="Missing bearer token.")
+
+
+def _optional_admin_claims(request: Request) -> dict[str, Any] | None:
+    for token in _extract_access_token_candidates(request):
+        try:
+            return decode_token(token, expected_type="access")
+        except Exception:
+            continue
+    return None
+
+
 @router.post("/api/admin/auth/login", response_model=AdminAuthResponse)
 def admin_login(
     payload: AdminLoginRequest,
     request: Request,
+    response: Response,
     db: Session = Depends(get_db),
 ) -> AdminAuthResponse:
     username = payload.username.strip()
@@ -1054,6 +1176,16 @@ def admin_login(
         request_id=request_id,
     )
 
+    _clear_admin_auth_cookies(response, request=request)
+    _set_admin_auth_cookies(
+        response,
+        request=request,
+        access_token=access_token,
+        access_claims=access_claims,
+        refresh_token=refresh_token,
+        refresh_claims=refresh_claims,
+    )
+
     return AdminAuthResponse(
         access_token=access_token,
         expires_in=expires_in,
@@ -1063,8 +1195,9 @@ def admin_login(
 
 @router.post("/api/admin/auth/refresh", response_model=AdminAuthResponse)
 def admin_refresh(
-    payload: AdminRefreshRequest,
     request: Request,
+    response: Response,
+    payload: AdminRefreshRequest | None = None,
     db: Session = Depends(get_db),
 ) -> AdminAuthResponse:
     if not should_allow_refresh():
@@ -1073,7 +1206,11 @@ def admin_refresh(
     ip = _client_ip(request)
     user_agent = _user_agent(request)
     request_id = getattr(request.state, "request_id", None)
-    claims = decode_token(payload.refresh_token, expected_type="refresh")
+    refresh_token_value = _extract_refresh_token_candidate(request, payload)
+    if not refresh_token_value:
+        raise ApiError(status_code=401, code="INVALID_TOKEN", message="Refresh token is invalid.")
+
+    claims = decode_token(refresh_token_value, expected_type="refresh")
     jti = str(claims.get("jti"))
     now_utc = datetime.now(timezone.utc)
 
@@ -1139,6 +1276,16 @@ def admin_refresh(
         request_id=request_id,
     )
 
+    _clear_admin_auth_cookies(response, request=request)
+    _set_admin_auth_cookies(
+        response,
+        request=request,
+        access_token=access_token,
+        access_claims=access_claims,
+        refresh_token=new_refresh_token,
+        refresh_claims=new_refresh_claims,
+    )
+
     return AdminAuthResponse(
         access_token=access_token,
         expires_in=expires_in,
@@ -1151,36 +1298,43 @@ def admin_refresh(
     response_model=AdminLogoutResponse,
 )
 def admin_logout(
-    payload: AdminLogoutRequest,
     request: Request,
-    auth_claims: dict[str, Any] = Depends(require_admin),
+    response: Response,
+    payload: AdminLogoutRequest | None = None,
     db: Session = Depends(get_db),
 ) -> AdminLogoutResponse:
-    if not should_allow_refresh():
-        raise ApiError(status_code=403, code="FORBIDDEN", message="Refresh token is disabled.")
+    refresh_token_value = _extract_refresh_token_candidate(request, payload)
+    refresh_claims: dict[str, Any] | None = None
+    if should_allow_refresh() and refresh_token_value:
+        try:
+            refresh_claims = decode_token(refresh_token_value, expected_type="refresh")
+        except Exception:
+            refresh_claims = None
 
-    refresh_claims = decode_token(payload.refresh_token, expected_type="refresh")
-    jti = str(refresh_claims.get("jti"))
-    token_row = db.scalar(select(AdminRefreshToken).where(AdminRefreshToken.jti == jti))
-    if token_row is None or token_row.subject != str(refresh_claims.get("sub")):
-        raise ApiError(status_code=401, code="INVALID_TOKEN", message="Refresh token is invalid.")
+    if refresh_claims is not None:
+        jti = str(refresh_claims.get("jti"))
+        token_row = db.scalar(select(AdminRefreshToken).where(AdminRefreshToken.jti == jti))
+        if token_row is not None and token_row.subject == str(refresh_claims.get("sub")):
+            token_row.revoked_at = datetime.now(timezone.utc)
+            token_row.last_ip = _client_ip(request)
+            token_row.last_user_agent = _user_agent(request)
+            db.commit()
 
-    token_row.revoked_at = datetime.now(timezone.utc)
-    token_row.last_ip = _client_ip(request)
-    token_row.last_user_agent = _user_agent(request)
-    db.commit()
-
+    actor_claims = _optional_admin_claims(request) or refresh_claims or {}
     log_audit(
         db,
         actor_type=AuditActorType.ADMIN,
-        actor_id=str(auth_claims.get("username") or auth_claims.get("sub") or "admin"),
+        actor_id=str(actor_claims.get("username") or actor_claims.get("sub") or "admin"),
         action="ADMIN_LOGOUT",
         success=True,
         ip=_client_ip(request),
         user_agent=_user_agent(request),
-        details={"refresh_jti": jti},
+        details={
+            "refresh_jti": str(refresh_claims.get("jti")) if refresh_claims is not None else None,
+        },
         request_id=getattr(request.state, "request_id", None),
     )
+    _clear_admin_auth_cookies(response, request=request)
     return AdminLogoutResponse(ok=True)
 
 
