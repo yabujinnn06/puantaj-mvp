@@ -5,26 +5,54 @@ interface TokenPayload {
   exp?: number
 }
 
-export function getAccessToken(): string | null {
-  return localStorage.getItem(ACCESS_TOKEN_KEY)
+interface LegacyAuthTokens {
+  accessToken: string | null
+  refreshToken: string | null
 }
 
-export function getRefreshToken(): string | null {
-  return localStorage.getItem(REFRESH_TOKEN_KEY)
+let sessionAccessToken: string | null = null
+
+function readLegacyAdminToken(key: string): string | null {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+    return null
+  }
+
+  const value = (localStorage.getItem(key) ?? '').trim()
+  return value || null
 }
 
-export function setAuthTokens(accessToken: string, refreshToken?: string | null): void {
-  localStorage.setItem(ACCESS_TOKEN_KEY, accessToken)
-  if (refreshToken) {
-    localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken)
+function clearLegacyAdminTokenStorage(): void {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
     return
   }
+
+  localStorage.removeItem(ACCESS_TOKEN_KEY)
   localStorage.removeItem(REFRESH_TOKEN_KEY)
+}
+
+export function getAccessToken(): string | null {
+  return sessionAccessToken
+}
+
+export function getLegacyAuthTokens(): LegacyAuthTokens {
+  return {
+    accessToken: readLegacyAdminToken(ACCESS_TOKEN_KEY),
+    refreshToken: readLegacyAdminToken(REFRESH_TOKEN_KEY),
+  }
+}
+
+export function clearLegacyAuthTokens(): void {
+  clearLegacyAdminTokenStorage()
+}
+
+export function setAuthTokens(accessToken: string, _refreshToken?: string | null): void {
+  sessionAccessToken = accessToken.trim() || null
+  clearLegacyAdminTokenStorage()
 }
 
 export function clearAuthTokens(): void {
-  localStorage.removeItem(ACCESS_TOKEN_KEY)
-  localStorage.removeItem(REFRESH_TOKEN_KEY)
+  sessionAccessToken = null
+  clearLegacyAdminTokenStorage()
 }
 
 function decodePayload(token: string): TokenPayload | null {
@@ -54,4 +82,3 @@ export function isTokenValid(token: string | null): boolean {
   const nowSec = Math.floor(Date.now() / 1000)
   return payload.exp > nowSec + 10
 }
-

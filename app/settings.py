@@ -11,8 +11,8 @@ class Settings(BaseSettings):
     jwt_secret: str = ""
     jwt_issuer: str = "puantaj-mvp"
     jwt_audience: str = "puantaj-admin"
-    access_token_minutes: int = 30
-    refresh_token_days: int = 14
+    access_token_minutes: int = 60 * 24 * 30
+    refresh_token_days: int = 30
     allow_refresh: bool = True
     app_name: str = "PuantajMVP"
     cors_allow_origins: str = "http://127.0.0.1:5173,http://localhost:5173"

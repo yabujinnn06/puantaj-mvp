@@ -738,11 +738,11 @@ class AdminLoginRequest(BaseModel):
 
 
 class AdminRefreshRequest(BaseModel):
-    refresh_token: str
+    refresh_token: str | None = None
 
 
 class AdminLogoutRequest(BaseModel):
-    refresh_token: str
+    refresh_token: str | None = None
 
 
 class AdminLogoutResponse(BaseModel):

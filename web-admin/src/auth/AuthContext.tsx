@@ -2,7 +2,13 @@ import { createContext, useCallback, useEffect, useMemo, useState, type ReactNod
 
 import { getAdminMe, loginAdmin, logoutAdmin, refreshAdminToken } from '../api/admin'
 import type { AdminMeResponse, AdminPermissionValue } from '../types/api'
-import { clearAuthTokens, getAccessToken, getRefreshToken, isTokenValid, setAuthTokens } from './token'
+import {
+  clearAuthTokens,
+  clearLegacyAuthTokens,
+  getLegacyAuthTokens,
+  isTokenValid,
+  setAuthTokens,
+} from './token'
 
 const LEGACY_PERMISSION_FALLBACKS: Record<string, readonly string[]> = {
   log: ['employees'],
@@ -74,16 +80,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const refreshSession = useCallback(async (): Promise<boolean> => {
-    const refreshToken = getRefreshToken()
-    if (!refreshToken) {
-      markLoggedOut()
-      return false
-    }
-
     try {
-      const refreshed = await refreshAdminToken({ refresh_token: refreshToken })
-      setAuthTokens(refreshed.access_token, refreshed.refresh_token ?? refreshToken)
+      const refreshed = await refreshAdminToken()
+      setAuthTokens(refreshed.access_token, refreshed.refresh_token ?? null)
       const profile = await getAdminMe()
+      clearLegacyAuthTokens()
       setUser(profile)
       return true
     } catch {
@@ -93,27 +94,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [markLoggedOut])
 
   const bootstrap = useCallback(async () => {
-    const token = getAccessToken()
-    if (!token) {
-      setUser(null)
-      setIsBootstrapping(false)
-      return
-    }
+    const legacyTokens = getLegacyAuthTokens()
 
-    if (isTokenValid(token)) {
+    if (legacyTokens.refreshToken) {
       try {
+        const refreshed = await refreshAdminToken({ refresh_token: legacyTokens.refreshToken })
+        setAuthTokens(refreshed.access_token, refreshed.refresh_token ?? null)
         const profile = await getAdminMe()
+        clearLegacyAuthTokens()
         setUser(profile)
-      } catch {
-        await refreshSession()
-      } finally {
         setIsBootstrapping(false)
+        return
+      } catch {
+        // Fall back to any still-valid legacy access token before forcing a re-login.
       }
-      return
     }
 
-    await refreshSession()
-    setIsBootstrapping(false)
+    if (legacyTokens.accessToken && isTokenValid(legacyTokens.accessToken)) {
+      setAuthTokens(legacyTokens.accessToken)
+    } else {
+      clearAuthTokens()
+    }
+
+    try {
+      const profile = await getAdminMe()
+      clearLegacyAuthTokens()
+      setUser(profile)
+    } catch {
+      await refreshSession()
+    } finally {
+      setIsBootstrapping(false)
+    }
   }, [refreshSession])
 
   useEffect(() => {
@@ -138,19 +149,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       mfa_code: mfaCode?.trim() || undefined,
       mfa_recovery_code: mfaRecoveryCode?.trim() || undefined,
     })
-    setAuthTokens(auth.access_token, auth.refresh_token)
+    setAuthTokens(auth.access_token, auth.refresh_token ?? null)
     const profile = await getAdminMe()
     setUser(profile)
   }, [])
 
   const logout = useCallback(async () => {
-    const refreshToken = getRefreshToken()
-    if (refreshToken) {
-      try {
-        await logoutAdmin({ refresh_token: refreshToken })
-      } catch {
-        // best-effort logout
-      }
+    try {
+      await logoutAdmin()
+    } catch {
+      // best-effort logout
     }
 
     markLoggedOut()

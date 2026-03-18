@@ -87,11 +87,11 @@ export interface LoginPayload {
 }
 
 export interface RefreshPayload {
-  refresh_token: string;
+  refresh_token?: string;
 }
 
 export interface LogoutPayload {
-  refresh_token: string;
+  refresh_token?: string;
 }
 
 export interface AdminUserCreatePayload {
@@ -622,7 +622,7 @@ export interface GetQrPointsParams {
 export async function loginAdmin(
   payload: LoginPayload,
 ): Promise<AdminAuthResponse> {
-  const response = await apiClient.post<AdminAuthResponse>(
+  const response = await publicApiClient.post<AdminAuthResponse>(
     "/api/admin/auth/login",
     payload,
   );
@@ -630,9 +630,9 @@ export async function loginAdmin(
 }
 
 export async function refreshAdminToken(
-  payload: RefreshPayload,
+  payload?: RefreshPayload,
 ): Promise<AdminAuthResponse> {
-  const response = await apiClient.post<AdminAuthResponse>(
+  const response = await publicApiClient.post<AdminAuthResponse>(
     "/api/admin/auth/refresh",
     payload,
   );
@@ -640,9 +640,9 @@ export async function refreshAdminToken(
 }
 
 export async function logoutAdmin(
-  payload: LogoutPayload,
+  payload?: LogoutPayload,
 ): Promise<{ ok: boolean }> {
-  const response = await apiClient.post<{ ok: boolean }>(
+  const response = await publicApiClient.post<{ ok: boolean }>(
     "/api/admin/auth/logout",
     payload,
   );
