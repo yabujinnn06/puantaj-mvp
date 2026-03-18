@@ -6,6 +6,82 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim())
 })
 
+function getAdminBasePath() {
+  try {
+    const scopeUrl = new URL(self.registration.scope)
+    return scopeUrl.pathname.endsWith('/') ? scopeUrl.pathname : `${scopeUrl.pathname}/`
+  } catch {
+    return '/admin-panel/'
+  }
+}
+
+function normalizeAdminTargetUrl(rawUrl) {
+  const origin = self.location.origin
+  const adminBasePath = getAdminBasePath()
+  const fallbackUrl = new URL(`${adminBasePath}notifications`, origin).href
+
+  if (typeof rawUrl !== 'string' || !rawUrl.trim()) {
+    return fallbackUrl
+  }
+
+  const candidate = rawUrl.trim()
+  try {
+    if (candidate.startsWith('https://') || candidate.startsWith('http://')) {
+      const absoluteUrl = new URL(candidate)
+      if (absoluteUrl.origin !== origin) {
+        return fallbackUrl
+      }
+      return absoluteUrl.href
+    }
+
+    if (candidate.startsWith('/')) {
+      return new URL(candidate, origin).href
+    }
+
+    return new URL(`${adminBasePath}${candidate.replace(/^\/+/, '')}`, origin).href
+  } catch {
+    return fallbackUrl
+  }
+}
+
+async function focusOrOpenAdminTarget(targetUrl) {
+  const adminBasePath = getAdminBasePath()
+  const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+
+  for (const client of clients) {
+    let clientPath = ''
+    try {
+      clientPath = new URL(client.url).pathname
+    } catch {
+      continue
+    }
+
+    if (!clientPath.startsWith(adminBasePath)) {
+      continue
+    }
+
+    try {
+      await client.focus()
+      if ('navigate' in client) {
+        const navigatedClient = await client.navigate(targetUrl)
+        if (navigatedClient) {
+          await navigatedClient.focus()
+          return navigatedClient
+        }
+      }
+    } catch {
+      // best effort; try in-app message bridge below
+    }
+
+    if (typeof client.postMessage === 'function') {
+      client.postMessage({ type: 'ADMIN_OPEN_URL', url: targetUrl })
+    }
+    return client
+  }
+
+  return self.clients.openWindow(targetUrl)
+}
+
 function parsePayload(event) {
   const fallback = {
     title: 'Puantaj Bildirimi',
@@ -131,20 +207,7 @@ self.addEventListener('notificationclick', (event) => {
     return
   }
   const rawUrl = event.notification?.data?.url
-  const targetUrl = typeof rawUrl === 'string' && rawUrl.trim() ? rawUrl.trim() : '/admin-panel/notifications'
+  const targetUrl = normalizeAdminTargetUrl(rawUrl)
 
-  event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-      for (const client of clients) {
-        if (client.url.includes('/admin-panel/')) {
-          client.focus()
-          if ('navigate' in client) {
-            return client.navigate(targetUrl)
-          }
-          return client
-        }
-      }
-      return self.clients.openWindow(targetUrl)
-    }),
-  )
+  event.waitUntil(focusOrOpenAdminTarget(targetUrl))
 })

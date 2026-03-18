@@ -10,6 +10,55 @@ import { AuthProvider } from './auth/AuthContext'
 import { ToastProvider } from './components/ToastProvider'
 import './index.css'
 
+type WindowWithAdminBridgeFlag = Window & {
+  __adminPushClickBridgeInstalled?: boolean
+}
+
+function installAdminPushClickBridge(): void {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
+    return
+  }
+
+  const flaggedWindow = window as WindowWithAdminBridgeFlag
+  if (flaggedWindow.__adminPushClickBridgeInstalled) {
+    return
+  }
+  flaggedWindow.__adminPushClickBridgeInstalled = true
+
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    const payload = event.data as { type?: string; url?: string } | null
+    if (!payload || payload.type !== 'ADMIN_OPEN_URL' || typeof payload.url !== 'string') {
+      return
+    }
+
+    const rawUrl = payload.url.trim()
+    if (!rawUrl) {
+      return
+    }
+
+    let targetUrl: URL
+    try {
+      targetUrl = new URL(rawUrl, window.location.origin)
+    } catch {
+      return
+    }
+
+    if (targetUrl.origin !== window.location.origin) {
+      return
+    }
+
+    const nextPath = `${targetUrl.pathname}${targetUrl.search}${targetUrl.hash}`
+    const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`
+    if (nextPath === currentPath) {
+      return
+    }
+
+    window.location.assign(nextPath)
+  })
+}
+
+installAdminPushClickBridge()
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {

@@ -49,6 +49,9 @@ def _resolve_vapid_subject(raw_subject: str | None) -> str:
 
 def _with_push_delivery_defaults(data: dict[str, Any] | None) -> dict[str, Any]:
     payload_data: dict[str, Any] = dict(data or {})
+    normalized_url = _normalize_push_target_url(payload_data.get("url"))
+    if normalized_url:
+        payload_data["url"] = normalized_url
     if "requireInteraction" not in payload_data:
         payload_data["requireInteraction"] = True
     if "vibrate" not in payload_data:
@@ -56,6 +59,24 @@ def _with_push_delivery_defaults(data: dict[str, Any] | None) -> dict[str, Any]:
     if "priority" not in payload_data:
         payload_data["priority"] = "high"
     return payload_data
+
+
+def _normalize_push_target_url(raw_url: Any) -> str | None:
+    if not isinstance(raw_url, str):
+        return None
+
+    candidate = raw_url.strip()
+    if not candidate:
+        return None
+
+    if candidate.startswith(("https://", "http://")):
+        return candidate
+
+    normalized_path = f"/{candidate.lstrip('/')}"
+    public_base = (get_public_base_url() or "").strip().rstrip("/")
+    if public_base.startswith(("https://", "http://")):
+        return f"{public_base}{normalized_path}"
+    return normalized_path
 
 
 def get_push_public_config() -> dict[str, Any]:
