@@ -2650,34 +2650,47 @@ export function HomePage() {
           </div>
         ) : null}
 
-        {secondCheckinApprovalAlert ? (
-          <div
-            className="modal-backdrop"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="second-checkin-approval-title"
-          >
-            <div className="help-modal">
-              <h2 id="second-checkin-approval-title">Admin Onayı Gerekli</h2>
-              <p>{secondCheckinApprovalAlert.message}</p>
-              <p className="muted">
-                Admin bildirimi onayladıktan sonra aynı QR kodu tekrar okutun.
-              </p>
-              {secondCheckinApprovalAlert.requestId ? (
-                <p className="request-id">request_id: {secondCheckinApprovalAlert.requestId}</p>
-              ) : null}
-              <div className="stack">
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  onClick={() => setSecondCheckinApprovalAlert(null)}
-                >
-                  Tamam
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : null}
+        {secondCheckinApprovalAlert && typeof document !== 'undefined'
+          ? createPortal(
+              <div
+                className="modal-backdrop checkout-confirm-backdrop"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="second-checkin-approval-title"
+                aria-describedby="second-checkin-approval-description"
+                onClick={() => setSecondCheckinApprovalAlert(null)}
+              >
+                <div className="checkout-confirm-lights" aria-hidden="true">
+                  <span className="checkout-confirm-light checkout-confirm-light-left" />
+                  <span className="checkout-confirm-light checkout-confirm-light-center" />
+                  <span className="checkout-confirm-light checkout-confirm-light-right" />
+                </div>
+                <div className="help-modal checkout-confirm-modal" onClick={(event) => event.stopPropagation()}>
+                  <p className="checkout-confirm-kicker">ADMIN ONAYI GEREKLI</p>
+                  <h2 id="second-checkin-approval-title">Bugunku ikinci giris icin onay bekleniyor</h2>
+                  <p id="second-checkin-approval-description">
+                    {secondCheckinApprovalAlert.message}
+                  </p>
+                  <p className="muted">
+                    Admin bildirimi onayladiktan sonra ayni QR kodu tekrar okutun.
+                  </p>
+                  {secondCheckinApprovalAlert.requestId ? (
+                    <p className="request-id">request_id: {secondCheckinApprovalAlert.requestId}</p>
+                  ) : null}
+                  <div className="stack">
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={() => setSecondCheckinApprovalAlert(null)}
+                    >
+                      Tamam
+                    </button>
+                  </div>
+                </div>
+              </div>,
+              document.body,
+            )
+          : null}
 
         {resultMessage ? (
           <div className={`notice-box ${resultMessage.tone === 'success' ? 'notice-box-success' : 'notice-box-warning'}`}>
