@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { z } from 'zod'
@@ -21,7 +21,7 @@ import { TableSearchInput } from '../components/TableSearchInput'
 import { useToast } from '../hooks/useToast'
 
 const employeeSchema = z.object({
-  full_name: z.string().min(2, 'Ad soyad en az 2 karakter olmali.'),
+  full_name: z.string().min(2, 'Ad soyad en az 2 karakter olmalı.'),
   region_id: z.union([z.coerce.number().int().positive(), z.null()]),
   department_id: z.union([z.coerce.number().int().positive(), z.null()]),
   is_active: z.boolean(),
@@ -72,17 +72,17 @@ export function EmployeesPage() {
       setIsCreateOpen(false)
       pushToast({
         variant: 'success',
-        title: 'Calisan olusturuldu',
-        description: `${employee.full_name} basariyla eklendi.`,
+        title: 'Çalışan oluşturuldu',
+        description: `${employee.full_name} başarıyla eklendi.`,
       })
       void queryClient.invalidateQueries({ queryKey: ['employees'] })
     },
     onError: (mutationError) => {
-      const message = parseApiError(mutationError, 'Calisan olusturulamadi.').message
+      const message = parseApiError(mutationError, 'Çalışan oluşturulamadı.').message
       setError(message)
       pushToast({
         variant: 'error',
-        title: 'Calisan olusturulamadi',
+        title: 'Çalışan oluşturulamadı',
         description: message,
       })
     },
@@ -94,16 +94,16 @@ export function EmployeesPage() {
     onSuccess: (employee) => {
       pushToast({
         variant: 'success',
-        title: employee.is_active ? 'Calisan arsivden cikarildi' : 'Calisan arsivlendi',
-        description: `${employee.full_name} icin durum guncellendi.`,
+        title: employee.is_active ? 'Çalışan arşivden çıkarıldı' : 'Çalışan arşivlendi',
+        description: `${employee.full_name} için durum güncellendi.`,
       })
       void queryClient.invalidateQueries({ queryKey: ['employees'] })
     },
     onError: (mutationError) => {
-      const message = parseApiError(mutationError, 'Calisan durumu guncellenemedi.').message
+      const message = parseApiError(mutationError, 'Çalışan durumu güncellenemedi.').message
       pushToast({
         variant: 'error',
-        title: 'Islem basarisiz',
+        title: 'İşlem başarısız',
         description: message,
       })
     },
@@ -114,16 +114,16 @@ export function EmployeesPage() {
     onSuccess: () => {
       pushToast({
         variant: 'success',
-        title: 'Calisan kalici olarak silindi',
-        description: 'Arsivli calisan kaydi sistemden kaldirildi.',
+        title: 'Çalışan kalıcı olarak silindi',
+        description: 'Arşivli çalışan kaydı sistemden kaldırıldı.',
       })
       void queryClient.invalidateQueries({ queryKey: ['employees'] })
     },
     onError: (mutationError) => {
-      const message = parseApiError(mutationError, 'Calisan silinemedi.').message
+      const message = parseApiError(mutationError, 'Çalışan silinemedi.').message
       pushToast({
         variant: 'error',
-        title: 'Kalici silme basarisiz',
+        title: 'Kalıcı silme başarısız',
         description: message,
       })
     },
@@ -143,11 +143,11 @@ export function EmployeesPage() {
     })
 
     if (!parsed.success) {
-      const message = parsed.error.issues[0]?.message ?? 'Calisan formunu kontrol edin.'
+      const message = parsed.error.issues[0]?.message ?? 'Çalışan formunu kontrol edin.'
       setError(message)
       pushToast({
         variant: 'error',
-        title: 'Form hatasi',
+        title: 'Form hatası',
         description: message,
       })
       return
@@ -156,9 +156,9 @@ export function EmployeesPage() {
     createMutation.mutate(parsed.data)
   }
 
-  const employees = employeesQuery.data ?? []
-  const departments = departmentsQuery.data ?? []
-  const regions = regionsQuery.data ?? []
+  const employees = useMemo(() => employeesQuery.data ?? [], [employeesQuery.data])
+  const departments = useMemo(() => departmentsQuery.data ?? [], [departmentsQuery.data])
+  const regions = useMemo(() => regionsQuery.data ?? [], [regionsQuery.data])
   const departmentById = new Map(departments.map((department) => [department.id, department.name]))
   const regionById = new Map(regions.map((region) => [region.id, region.name]))
 
@@ -187,7 +187,8 @@ export function EmployeesPage() {
   }, [employees, searchTerm])
 
   const employeeListTotalPages = Math.max(1, Math.ceil(filteredEmployees.length / employeeListPageSize))
-  const employeeListStartIndex = (employeeListPage - 1) * employeeListPageSize
+  const safeEmployeeListPage = Math.min(employeeListPage, employeeListTotalPages)
+  const employeeListStartIndex = (safeEmployeeListPage - 1) * employeeListPageSize
   const pagedEmployees = useMemo(
     () => filteredEmployees.slice(employeeListStartIndex, employeeListStartIndex + employeeListPageSize),
     [filteredEmployees, employeeListStartIndex, employeeListPageSize],
@@ -196,63 +197,103 @@ export function EmployeesPage() {
   const employeeListRangeEnd = filteredEmployees.length === 0
     ? 0
     : Math.min(employeeListStartIndex + employeeListPageSize, filteredEmployees.length)
+  const activeEmployeeCount = employees.filter((employee) => employee.is_active).length
+  const archivedEmployeeCount = employees.length - activeEmployeeCount
+  const filteredActiveCount = filteredEmployees.filter((employee) => employee.is_active).length
+  const filteredArchivedCount = filteredEmployees.length - filteredActiveCount
+  const coverageRegionCount = new Set(employees.filter((employee) => employee.region_id).map((employee) => employee.region_id)).size
+  const coverageDepartmentCount = new Set(
+    employees.filter((employee) => employee.department_id).map((employee) => employee.department_id),
+  ).size
+  const missingRegionCount = employees.filter((employee) => !employee.region_id).length
+  const missingDepartmentCount = employees.filter((employee) => !employee.department_id).length
 
-  useEffect(() => {
-    setEmployeeListPage(1)
-  }, [searchTerm, showInactive, regionFilterId, departmentFilterId, employeeListPageSize])
-
-  useEffect(() => {
-    setEmployeeListPage((prev) => Math.min(prev, employeeListTotalPages))
-  }, [employeeListTotalPages])
+  const resetEmployeePagination = () => setEmployeeListPage(1)
 
   if (employeesQuery.isLoading || departmentsQuery.isLoading || regionsQuery.isLoading) {
     return <LoadingBlock />
   }
 
   if (employeesQuery.isError || departmentsQuery.isError || regionsQuery.isError) {
-    return <ErrorBlock message="Calisan verileri alinamadi." />
+    return <ErrorBlock message="Çalışan verileri alınamadı." />
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <PageHeader
-        title="Calisanlar"
-        description="Calisan kayitlarini bolge ve departman bazli yonetin."
+        title="Çalışanlar"
+        description="Çalışan kadrosunu tek ekranda filtreleyin, eksik atamaları görün ve profil akışını hızla yönetin."
         action={
           <button
             type="button"
             onClick={() => setIsCreateOpen((prev) => !prev)}
             className="btn-primary rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
           >
-            Yeni Calisan
+            {isCreateOpen ? 'Formu Kapat' : 'Yeni Çalışan'}
           </button>
         }
       />
 
+      <Panel className="border-slate-200/90 bg-[radial-gradient(circle_at_top_left,_rgba(15,118,110,0.10),_transparent_30%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.96))]">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-2xl border border-white/80 bg-white/85 p-4 shadow-sm">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Toplam kadro</p>
+            <p className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">{employees.length}</p>
+            <p className="mt-1 text-sm text-slate-600">{activeEmployeeCount} aktif, {archivedEmployeeCount} arşiv</p>
+          </div>
+          <div className="rounded-2xl border border-white/80 bg-white/85 p-4 shadow-sm">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Filtre görünümü</p>
+            <p className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">{filteredEmployees.length}</p>
+            <p className="mt-1 text-sm text-slate-600">{filteredActiveCount} aktif, {filteredArchivedCount} arşiv satırı</p>
+          </div>
+          <div className="rounded-2xl border border-white/80 bg-white/85 p-4 shadow-sm">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Kapsam</p>
+            <p className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">{coverageRegionCount}</p>
+            <p className="mt-1 text-sm text-slate-600">{coverageDepartmentCount} departman aktif görünüyor</p>
+          </div>
+          <div className="rounded-2xl border border-white/80 bg-white/85 p-4 shadow-sm">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Atama açığı</p>
+            <p className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">{missingDepartmentCount}</p>
+            <p className="mt-1 text-sm text-slate-600">{missingRegionCount} çalışanda bölge ataması eksik</p>
+          </div>
+        </div>
+      </Panel>
+
       {isCreateOpen ? (
         <Panel>
-          <form onSubmit={onSubmit} className="grid gap-3 md:grid-cols-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h4 className="text-base font-semibold text-slate-900">Yeni çalışan oluştur</h4>
+              <p className="mt-1 text-xs text-slate-500">
+                Listeyi terk etmeden yeni kayıt açın; bölge ve departman seçimiyle daha temiz bir başlangıç yapın.
+              </p>
+            </div>
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+              Hızlı kayıt
+            </span>
+          </div>
+          <form onSubmit={onSubmit} className="mt-4 grid gap-3 md:grid-cols-5">
             <label className="text-sm text-slate-700 md:col-span-2">
               Ad Soyad
               <input
                 value={fullName}
                 onChange={(event) => setFullName(event.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5"
                 placeholder="Ada Lovelace"
               />
             </label>
 
             <label className="text-sm text-slate-700">
-              Bolge
+              Bölge
               <select
                 value={regionId}
                 onChange={(event) => {
                   setRegionId(event.target.value)
                   setDepartmentId('')
                 }}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5"
               >
-                <option value="">Atanmamis</option>
+                <option value="">Atanmamış</option>
                 {regions.map((region) => (
                   <option key={region.id} value={region.id}>
                     {region.name}
@@ -266,9 +307,9 @@ export function EmployeesPage() {
               <select
                 value={departmentId}
                 onChange={(event) => setDepartmentId(event.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5"
               >
-                <option value="">Atanmamis</option>
+                <option value="">Atanmamış</option>
                 {selectableDepartments.map((department) => (
                   <option key={department.id} value={department.id}>
                     {department.name}
@@ -302,7 +343,7 @@ export function EmployeesPage() {
                 }}
                 className="btn-secondary rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
               >
-                Vazgec
+                Vazgeç
               </button>
             </div>
           </form>
@@ -311,23 +352,40 @@ export function EmployeesPage() {
       ) : null}
 
       <Panel>
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h4 className="text-base font-semibold text-slate-900">Liste görünümü</h4>
+            <p className="mt-1 text-xs text-slate-500">
+              Filtreler, eksik atamalar ve arşiv görünümü tek akışta toplandı.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs text-slate-600">
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">Sayfa {safeEmployeeListPage} / {employeeListTotalPages}</span>
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">{filteredEmployees.length} sonuç</span>
+          </div>
+        </div>
+
         <div className="mb-4 grid gap-3 md:grid-cols-5">
           <TableSearchInput
             value={searchTerm}
-            onChange={setSearchTerm}
-            placeholder="Calisan adina gore ara..."
+            onChange={(value) => {
+              setSearchTerm(value)
+              resetEmployeePagination()
+            }}
+            placeholder="Çalışan adına göre ara..."
           />
           <label className="text-sm text-slate-700">
-            Bolge filtresi
+            Bölge filtresi
             <select
               value={regionFilterId}
               onChange={(event) => {
                 setRegionFilterId(event.target.value)
                 setDepartmentFilterId('')
+                resetEmployeePagination()
               }}
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
             >
-              <option value="">Tum bolgeler</option>
+              <option value="">Tüm bölgeler</option>
               {regions.map((region) => (
                 <option key={region.id} value={region.id}>
                   {region.name}
@@ -339,10 +397,13 @@ export function EmployeesPage() {
             Departman filtresi
             <select
               value={departmentFilterId}
-              onChange={(event) => setDepartmentFilterId(event.target.value)}
+              onChange={(event) => {
+                setDepartmentFilterId(event.target.value)
+                resetEmployeePagination()
+              }}
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
             >
-              <option value="">Tum departmanlar</option>
+              <option value="">Tüm departmanlar</option>
               {filterDepartments.map((department) => (
                 <option key={department.id} value={department.id}>
                   {department.name}
@@ -354,69 +415,106 @@ export function EmployeesPage() {
             <input
               type="checkbox"
               checked={showInactive}
-              onChange={(event) => setShowInactive(event.target.checked)}
+              onChange={(event) => {
+                setShowInactive(event.target.checked)
+                resetEmployeePagination()
+              }}
             />
-            Arsivdekileri goster
+            Arşivdekileri göster
           </label>
+        </div>
+
+        <div className="mb-4 grid gap-3 md:grid-cols-3">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Gösterim</p>
+            <p className="mt-2 text-sm text-slate-700">
+              Satır aralığı: {employeeListRangeStart}-{employeeListRangeEnd} / {filteredEmployees.length}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Atama açığı</p>
+            <p className="mt-2 text-sm text-slate-700">
+              {missingDepartmentCount} departman eksik, {missingRegionCount} bölge eksik
+            </p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3">
+            <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+              Sayfa başı
+              <select
+                value={employeeListPageSize}
+                onChange={(event) => {
+                  setEmployeeListPageSize(Number(event.target.value))
+                  resetEmployeePagination()
+                }}
+                className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-800"
+              >
+                {EMPLOYEE_LIST_PAGE_SIZES.map((size) => (
+                  <option key={size} value={size}>
+                    {size}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
 
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
           <p>
-            Gosterilen satir: {employeeListRangeStart}-{employeeListRangeEnd} / {filteredEmployees.length}
+            Görünen aktif kayıt: {filteredActiveCount}
           </p>
-          <label className="inline-flex items-center gap-2">
-            Sayfa basi
-            <select
-              value={employeeListPageSize}
-              onChange={(event) => setEmployeeListPageSize(Number(event.target.value))}
-              className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-800"
-            >
-              {EMPLOYEE_LIST_PAGE_SIZES.map((size) => (
-                <option key={size} value={size}>
-                  {size}
-                </option>
-              ))}
-            </select>
-          </label>
+          <p>Arşiv görünümü: {showInactive ? 'Açık' : 'Kapalı'}</p>
         </div>
 
         <div className="list-scroll-area w-full max-w-full overflow-x-auto">
           <table className="min-w-full text-left text-sm">
             <thead className="text-xs uppercase text-slate-500">
               <tr>
-                <th className="py-2">Calisan ID</th>
-                <th className="py-2">Ad Soyad</th>
-                <th className="py-2">Bolge</th>
-                <th className="py-2">Departman</th>
+                <th className="py-2">Çalışan</th>
+                <th className="py-2">Kapsam</th>
                 <th className="py-2">Durum</th>
-                <th className="py-2">Islem</th>
+                <th className="py-2">Not</th>
+                <th className="py-2">İşlem</th>
               </tr>
             </thead>
             <tbody>
               {pagedEmployees.map((employee) => (
                 <tr key={employee.id} className="border-t border-slate-100">
-                  <td className="py-2">{employee.id}</td>
-                  <td className="py-2">{employee.full_name}</td>
                   <td className="py-2">
-                    {employee.region_name ?? (employee.region_id ? regionById.get(employee.region_id) : '-') ?? '-'}
+                    <div className="min-w-[220px]">
+                      <p className="font-semibold text-slate-900">{employee.full_name}</p>
+                      <p className="text-xs text-slate-500">ID #{employee.id}</p>
+                    </div>
                   </td>
                   <td className="py-2">
-                    {employee.department_id ? departmentById.get(employee.department_id) : '-'}
+                    <div className="space-y-1 text-sm text-slate-600">
+                      <p>Bölge: {employee.region_name ?? (employee.region_id ? regionById.get(employee.region_id) : '-') ?? 'Atanmamış'}</p>
+                      <p>Departman: {employee.department_id ? departmentById.get(employee.department_id) : 'Atanmamış'}</p>
+                    </div>
                   </td>
                   <td className="py-2">
-                    <StatusBadge value={employee.is_active ? 'Aktif' : 'Pasif'} />
+                    <div className="space-y-2">
+                      <StatusBadge value={employee.is_active ? 'Aktif' : 'Pasif'} />
+                      <p className="text-xs text-slate-500">
+                        {employee.region_id && employee.department_id ? 'Atama tamam' : 'Atama gözden geçirilmeli'}
+                      </p>
+                    </div>
+                  </td>
+                  <td className="py-2">
+                    <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-medium ${
+                      employee.region_id && employee.department_id
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                        : 'border-amber-200 bg-amber-50 text-amber-700'
+                    }`}>
+                      {employee.region_id && employee.department_id ? 'Düzenli profil' : 'Eksik profil'}
+                    </span>
                   </td>
                   <td className="py-2">
                     <div className="flex flex-wrap gap-2">
                       <Link
                         to={`/employees/${employee.id}`}
-                        onClick={() => {
-                          sessionStorage.setItem('employee-detail-origin', 'employees')
-                          sessionStorage.setItem('employee-detail-id', String(employee.id))
-                        }}
                         className="employee-action-btn employee-action-edit"
                       >
-                        Duzenle
+                        Düzenle
                       </Link>
                       <button
                         type="button"
@@ -425,8 +523,8 @@ export function EmployeesPage() {
                           const nextStatus = !employee.is_active
                           const confirmed = window.confirm(
                             nextStatus
-                              ? `${employee.full_name} arsivden cikarilsin mi?`
-                              : `${employee.full_name} arsivlensin mi?`,
+                              ? `${employee.full_name} arşivden çıkarılsın mı?`
+                              : `${employee.full_name} arşivlensin mi?`,
                           )
                           if (!confirmed) {
                             return
@@ -442,7 +540,7 @@ export function EmployeesPage() {
                             : 'employee-action-restore'
                         }`}
                       >
-                        {employee.is_active ? 'Arsivle' : 'Arsivden Cikar'}
+                        {employee.is_active ? 'Arşivle' : 'Arşivden Çıkar'}
                       </button>
                       {!employee.is_active ? (
                         <button
@@ -450,7 +548,7 @@ export function EmployeesPage() {
                           disabled={deleteEmployeeMutation.isPending}
                           onClick={() => {
                             const confirmed = window.confirm(
-                              `${employee.full_name} kalici olarak silinsin mi? Bu islem bagli cihaz ve eski kayitlari da veritabanindan kaldirabilir.`,
+                              `${employee.full_name} kalıcı olarak silinsin mi? Bu işlem bağlı cihaz ve eski kayıtları da veritabanından kaldırabilir.`,
                             )
                             if (!confirmed) {
                               return
@@ -459,7 +557,7 @@ export function EmployeesPage() {
                           }}
                           className="employee-action-btn employee-action-delete"
                         >
-                          Kalici Sil
+                          Kalıcı Sil
                         </button>
                       ) : null}
                     </div>
@@ -472,21 +570,21 @@ export function EmployeesPage() {
 
         <div className="mt-3 flex items-center justify-between">
           <p className="text-xs text-slate-500">
-            Sayfa {employeeListPage} / {employeeListTotalPages}
+            Sayfa {safeEmployeeListPage} / {employeeListTotalPages}
           </p>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => setEmployeeListPage((prev) => Math.max(1, prev - 1))}
-              disabled={employeeListPage <= 1}
+              disabled={safeEmployeeListPage <= 1}
               className="rounded-md border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
             >
-              Onceki
+              Önceki
             </button>
             <button
               type="button"
               onClick={() => setEmployeeListPage((prev) => Math.min(employeeListTotalPages, prev + 1))}
-              disabled={employeeListPage >= employeeListTotalPages}
+              disabled={safeEmployeeListPage >= employeeListTotalPages}
               className="rounded-md border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
             >
               Sonraki
@@ -495,7 +593,7 @@ export function EmployeesPage() {
         </div>
 
         {filteredEmployees.length === 0 ? (
-          <p className="mt-3 text-sm text-slate-500">Arama kriterine uygun calisan bulunamadi.</p>
+          <p className="mt-3 text-sm text-slate-500">Arama kriterine uygun çalışan bulunamadı.</p>
         ) : null}
       </Panel>
     </div>

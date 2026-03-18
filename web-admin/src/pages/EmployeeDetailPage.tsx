@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { z } from 'zod'
 
 import {
@@ -8,11 +8,11 @@ import {
   getDepartments,
   getDepartmentShifts,
   getEmployeeDetail,
+  getLocationMonitorEmployeeTimeline,
   getMonthlyEmployee,
   updateEmployeeActive,
   updateEmployeeProfile,
   updateEmployeeShift,
-  upsertEmployeeLocation,
 } from '../api/admin'
 import { parseApiError } from '../api/error'
 import { CopyField } from '../components/CopyField'
@@ -23,18 +23,11 @@ import { Modal } from '../components/Modal'
 import { PageHeader } from '../components/PageHeader'
 import { Panel } from '../components/Panel'
 import { StatusBadge } from '../components/StatusBadge'
+import { useAuth } from '../hooks/useAuth'
 import { useToast } from '../hooks/useToast'
 import type { LocationStatus, MonthlyEmployeeDay } from '../types/api'
 import { buildMonthlyAttendanceInsight, getAttendanceDayType } from '../utils/attendanceInsights'
 import { getFlagMeta } from '../utils/flagDictionary'
-
-void Link
-
-const locationSchema = z.object({
-  home_lat: z.coerce.number().min(-90),
-  home_lon: z.coerce.number().min(-180),
-  radius_m: z.coerce.number().int().positive().max(2000),
-})
 
 const inviteSchema = z.object({
   expires_in_minutes: z.coerce.number().int().positive().max(1440),
@@ -54,7 +47,7 @@ function formatDateTime(value?: string | null): string {
 function formatDayStatus(status: MonthlyEmployeeDay['status']): string {
   if (status === 'OK') return 'Tamam'
   if (status === 'INCOMPLETE') return 'Eksik'
-  if (status === 'LEAVE') return 'Izinli'
+  if (status === 'LEAVE') return 'İzinli'
   return 'Tatilde'
 }
 
@@ -82,18 +75,37 @@ function resolveMonthlyRowTone(day: MonthlyEmployeeDay): string {
   return ''
 }
 
-function formatCoordinate(lat: number | null, lon: number | null): string {
-  if (lat === null || lon === null) {
-    return '-'
-  }
-  return `${lat.toFixed(6)}, ${lon.toFixed(6)}`
-}
-
 function formatFlagList(flags: string[]): string {
   if (!flags.length) {
     return '-'
   }
   return flags.map((flag) => `${getFlagMeta(flag).label} (${flag})`).join(', ')
+}
+
+function formatLocationSignalStatus(status?: LocationStatus | null): string {
+  if (status === 'VERIFIED_HOME') return 'Doğrulama güçlü'
+  if (status === 'UNVERIFIED_LOCATION') return 'Kontrol gerektiriyor'
+  if (status === 'NO_LOCATION') return 'Sinyal alınmadı'
+  return 'Bekleniyor'
+}
+
+function formatAttendanceEventLabel(eventType?: 'IN' | 'OUT' | null): string {
+  if (eventType === 'IN') return 'Giriş'
+  if (eventType === 'OUT') return 'Çıkış'
+  return '-'
+}
+
+function locationSignalTone(status?: LocationStatus | null): string {
+  if (status === 'VERIFIED_HOME') {
+    return 'border-emerald-200 bg-emerald-50 text-emerald-900'
+  }
+  if (status === 'UNVERIFIED_LOCATION') {
+    return 'border-amber-200 bg-amber-50 text-amber-900'
+  }
+  if (status === 'NO_LOCATION') {
+    return 'border-slate-200 bg-slate-50 text-slate-800'
+  }
+  return 'border-slate-200 bg-white text-slate-800'
 }
 
 const istanbulDayFormatter = new Intl.DateTimeFormat('en-CA', {
@@ -114,48 +126,21 @@ function toIstanbulDay(value?: string | null): string | null {
   return istanbulDayFormatter.format(parsed)
 }
 
-const LOCATION_HISTORY_PAGE_SIZE_OPTIONS = [10, 20, 35, 50] as const
-
 export function EmployeeDetailPage() {
   const params = useParams()
-  const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { hasPermission } = useAuth()
   const { pushToast } = useToast()
   const now = new Date()
+  const todayIstanbul = istanbulDayFormatter.format(now)
 
   const employeeId = Number(params.id)
-  const isAllowedFromEmployees =
-    Number.isFinite(employeeId) &&
-    sessionStorage.getItem('employee-detail-origin') === 'employees' &&
-    sessionStorage.getItem('employee-detail-id') === String(employeeId)
-
-  const [homeLat, setHomeLat] = useState('41.0')
-  const [homeLon, setHomeLon] = useState('29.0')
-  const [radiusM, setRadiusM] = useState('120')
-  const [formError, setFormError] = useState<string | null>(null)
-  const [selectedShiftId, setSelectedShiftId] = useState('')
-  const [profileFullName, setProfileFullName] = useState('')
-  const [profileDepartmentId, setProfileDepartmentId] = useState('')
+  const [selectedShiftId, setSelectedShiftId] = useState<string | null>(null)
+  const [profileFullName, setProfileFullName] = useState<string | null>(null)
+  const [profileDepartmentId, setProfileDepartmentId] = useState<string | null>(null)
 
   const [selectedYear, setSelectedYear] = useState(String(now.getFullYear()))
   const [selectedMonth, setSelectedMonth] = useState(String(now.getMonth() + 1))
-  const [locationHistorySearch, setLocationHistorySearch] = useState('')
-  const [locationHistoryEventType, setLocationHistoryEventType] = useState<'all' | 'IN' | 'OUT'>('all')
-  const [locationHistoryStatus, setLocationHistoryStatus] = useState<'all' | LocationStatus>('all')
-  const [locationHistoryDeviceId, setLocationHistoryDeviceId] = useState<'all' | string>('all')
-  const [locationHistoryDateFrom, setLocationHistoryDateFrom] = useState('')
-  const [locationHistoryDateTo, setLocationHistoryDateTo] = useState('')
-  const [locationHistoryPage, setLocationHistoryPage] = useState(1)
-  const [locationHistoryPageSize, setLocationHistoryPageSize] =
-    useState<(typeof LOCATION_HISTORY_PAGE_SIZE_OPTIONS)[number]>(20)
-  void formError
-  void setLocationHistorySearch
-  void setLocationHistoryEventType
-  void setLocationHistoryStatus
-  void setLocationHistoryDeviceId
-  void setLocationHistoryDateFrom
-  void setLocationHistoryDateTo
-  void setLocationHistoryPageSize
 
   const [isInviteModalOpen, setInviteModalOpen] = useState(false)
   const [expiresInMinutes, setExpiresInMinutes] = useState('30')
@@ -203,31 +188,19 @@ export function EmployeeDetailPage() {
         employee_id: employeeId,
         year: now.getFullYear(),
         month: now.getMonth() + 1,
-      }),
+    }),
     enabled: Number.isFinite(employeeId),
   })
 
-  const locationMutation = useMutation({
-    mutationFn: (payload: { home_lat: number; home_lon: number; radius_m: number }) =>
-      upsertEmployeeLocation(employeeId, payload),
-    onSuccess: () => {
-      setFormError(null)
-      pushToast({
-        variant: 'success',
-        title: 'Ev konumu guncellendi',
-        description: `Calisan #${employeeId} icin konum kaydedildi.`,
-      })
-      void queryClient.invalidateQueries({ queryKey: ['employee-detail', employeeId] })
-    },
-    onError: (error) => {
-      const message = parseApiError(error, 'Konum kaydedilemedi.').message
-      setFormError(message)
-      pushToast({
-        variant: 'error',
-        title: 'Konum kaydedilemedi',
-        description: message,
-      })
-    },
+  const fieldSignalQuery = useQuery({
+    queryKey: ['employee-detail-field-signal', employeeId, todayIstanbul],
+    queryFn: () =>
+      getLocationMonitorEmployeeTimeline(employeeId, {
+        start_date: todayIstanbul,
+        end_date: todayIstanbul,
+      }),
+    enabled: Number.isFinite(employeeId) && hasPermission('log'),
+    retry: false,
   })
 
   const toggleActiveMutation = useMutation({
@@ -235,8 +208,8 @@ export function EmployeeDetailPage() {
     onSuccess: (updatedEmployee) => {
       pushToast({
         variant: 'success',
-        title: updatedEmployee.is_active ? 'Calisan aktife alindi' : 'Calisan arsive alindi',
-        description: `${updatedEmployee.full_name} icin durum guncellendi.`,
+        title: updatedEmployee.is_active ? 'Çalışan aktife alındı' : 'Çalışan arşive alındı',
+        description: `${updatedEmployee.full_name} için durum güncellendi.`,
       })
       void queryClient.invalidateQueries({ queryKey: ['employees'] })
       void queryClient.invalidateQueries({ queryKey: ['employee-detail', employeeId] })
@@ -244,8 +217,8 @@ export function EmployeeDetailPage() {
     onError: (error) => {
       pushToast({
         variant: 'error',
-        title: 'Durum guncellenemedi',
-        description: parseApiError(error, 'Islem basarisiz.').message,
+        title: 'Durum güncellenemedi',
+        description: parseApiError(error, 'İşlem başarısız.').message,
       })
     },
   })
@@ -256,8 +229,8 @@ export function EmployeeDetailPage() {
     onSuccess: (updatedEmployee) => {
       pushToast({
         variant: 'success',
-        title: 'Calisan bilgileri guncellendi',
-        description: `${updatedEmployee.full_name} icin profil bilgileri kaydedildi.`,
+        title: 'Çalışan bilgileri güncellendi',
+        description: `${updatedEmployee.full_name} için profil bilgileri kaydedildi.`,
       })
       void queryClient.invalidateQueries({ queryKey: ['employees'] })
       void queryClient.invalidateQueries({ queryKey: ['employee-detail', employeeId] })
@@ -267,8 +240,8 @@ export function EmployeeDetailPage() {
     onError: (error) => {
       pushToast({
         variant: 'error',
-        title: 'Calisan bilgileri guncellenemedi',
-        description: parseApiError(error, 'Islem basarisiz.').message,
+        title: 'Çalışan bilgileri güncellenemedi',
+        description: parseApiError(error, 'İşlem başarısız.').message,
       })
     },
   })
@@ -278,8 +251,8 @@ export function EmployeeDetailPage() {
     onSuccess: (updatedEmployee) => {
       pushToast({
         variant: 'success',
-        title: 'Vardiya atamasi guncellendi',
-        description: `${updatedEmployee.full_name} icin vardiya kaydedildi.`,
+        title: 'Vardiya ataması güncellendi',
+        description: `${updatedEmployee.full_name} için vardiya kaydedildi.`,
       })
       void queryClient.invalidateQueries({ queryKey: ['employees'] })
       void queryClient.invalidateQueries({ queryKey: ['employee-detail', employeeId] })
@@ -288,8 +261,8 @@ export function EmployeeDetailPage() {
     onError: (error) => {
       pushToast({
         variant: 'error',
-        title: 'Vardiya atamasi basarisiz',
-        description: parseApiError(error, 'Islem basarisiz.').message,
+        title: 'Vardiya ataması başarısız',
+        description: parseApiError(error, 'İşlem başarısız.').message,
       })
     },
   })
@@ -302,46 +275,21 @@ export function EmployeeDetailPage() {
       setInviteUrl(result.invite_url)
       pushToast({
         variant: 'success',
-        title: 'Cihaz daveti olusturuldu',
-        description: `Calisan #${employeeId} icin davet hazir.`,
+        title: 'Cihaz daveti oluşturuldu',
+        description: `Çalışan #${employeeId} için davet hazır.`,
       })
       void queryClient.invalidateQueries({ queryKey: ['employee-detail', employeeId] })
     },
     onError: (error) => {
-      const message = parseApiError(error, 'Cihaz daveti olusturulamadi.').message
+      const message = parseApiError(error, 'Cihaz daveti oluşturulamadı.').message
       setInviteError(message)
       pushToast({
         variant: 'error',
-        title: 'Davet olusturulamadi',
+        title: 'Davet oluşturulamadı',
         description: message,
       })
     },
   })
-
-  useEffect(() => {
-    if (detailQuery.data?.home_location) {
-      setHomeLat(String(detailQuery.data.home_location.home_lat))
-      setHomeLon(String(detailQuery.data.home_location.home_lon))
-      setRadiusM(String(detailQuery.data.home_location.radius_m))
-    }
-  }, [detailQuery.data?.home_location])
-
-  useEffect(() => {
-    if (!employee) return
-    setSelectedShiftId(employee.shift_id ? String(employee.shift_id) : '')
-  }, [employee])
-
-  useEffect(() => {
-    if (!employee) return
-    setProfileFullName(employee.full_name)
-    setProfileDepartmentId(employee.department_id ? String(employee.department_id) : '')
-  }, [employee])
-
-  useEffect(() => {
-    if (!Number.isFinite(employeeId)) return
-    if (isAllowedFromEmployees) return
-    navigate('/employees', { replace: true })
-  }, [employeeId, isAllowedFromEmployees, navigate])
 
   const copyText = async (text: string) => {
     try {
@@ -357,14 +305,14 @@ export function EmployeeDetailPage() {
       }
       pushToast({
         variant: 'success',
-        title: 'Kopyalandi',
-        description: 'Deger panoya kopyalandi.',
+        title: 'Kopyalandı',
+        description: 'Değer panoya kopyalandı.',
       })
     } catch {
       pushToast({
         variant: 'error',
-        title: 'Kopyalanamadi',
-        description: 'Tarayici kopyalama islemini engelledi.',
+        title: 'Kopyalanamadı',
+        description: 'Tarayıcı kopyalama işlemini engelledi.',
       })
     }
   }
@@ -386,11 +334,11 @@ export function EmployeeDetailPage() {
     })
 
     if (!parsed.success) {
-      const message = parsed.error.issues[0]?.message ?? 'Sure alanini kontrol edin.'
+      const message = parsed.error.issues[0]?.message ?? 'Süre alanını kontrol edin.'
       setInviteError(message)
       pushToast({
         variant: 'error',
-        title: 'Form hatasi',
+        title: 'Form hatası',
         description: message,
       })
       return
@@ -402,52 +350,28 @@ export function EmployeeDetailPage() {
     })
   }
 
-  const onLocationSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setFormError(null)
-
-    const parsed = locationSchema.safeParse({
-      home_lat: homeLat,
-      home_lon: homeLon,
-      radius_m: radiusM,
-    })
-
-    if (!parsed.success) {
-      const message = parsed.error.issues[0]?.message ?? 'Konum alanlarini kontrol edin.'
-      setFormError(message)
-      pushToast({
-        variant: 'error',
-        title: 'Form hatasi',
-        description: message,
-      })
-      return
-    }
-
-    locationMutation.mutate(parsed.data)
-  }
-  void onLocationSubmit
-
   const onProfileSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const normalizedFullName = profileFullName.trim()
+    const normalizedFullName = (profileFullName ?? employee?.full_name ?? '').trim()
     if (!normalizedFullName) {
       pushToast({
         variant: 'error',
-        title: 'Form hatasi',
-        description: 'Ad Soyad alani bos birakilamaz.',
+        title: 'Form hatası',
+        description: 'Ad Soyad alanı boş bırakılamaz.',
       })
       return
     }
 
-    const parsedDepartmentId = profileDepartmentId ? Number(profileDepartmentId) : null
+    const effectiveDepartmentId = profileDepartmentId ?? (employee?.department_id ? String(employee.department_id) : '')
+    const parsedDepartmentId = effectiveDepartmentId ? Number(effectiveDepartmentId) : null
     if (
-      profileDepartmentId &&
+      effectiveDepartmentId &&
       (parsedDepartmentId === null || !Number.isFinite(parsedDepartmentId) || parsedDepartmentId <= 0)
     ) {
       pushToast({
         variant: 'error',
-        title: 'Form hatasi',
-        description: 'Departman secimi gecersiz.',
+        title: 'Form hatası',
+        description: 'Departman seçimi geçersiz.',
       })
       return
     }
@@ -458,7 +382,7 @@ export function EmployeeDetailPage() {
     })
   }
 
-  const monthlyRows = monthlyQuery.data?.days ?? []
+  const monthlyRows = useMemo(() => monthlyQuery.data?.days ?? [], [monthlyQuery.data])
   const monthlyInsight = useMemo(() => buildMonthlyAttendanceInsight(monthlyRows), [monthlyRows])
   const monthlyFlaggedDayCount = useMemo(
     () => monthlyRows.filter((day) => day.flags.length > 0).length,
@@ -470,115 +394,74 @@ export function EmployeeDetailPage() {
     }
     return `%${Math.round(((monthlyQuery.data?.totals.incomplete_days ?? 0) / monthlyRows.length) * 100)}`
   }, [monthlyQuery.data?.totals.incomplete_days, monthlyRows.length])
-  const ipSummaryRows = detailQuery.data?.ip_summary ?? []
-  const recentLocationRows = detailQuery.data?.recent_locations ?? []
-  const locationHistoryDeviceOptions = useMemo(
-    () =>
-      Array.from(new Set(recentLocationRows.map((item) => item.device_id)))
-        .filter((item) => Number.isFinite(item))
-        .sort((a, b) => a - b),
-    [recentLocationRows],
+  const recentLocationRows = useMemo(
+    () => detailQuery.data?.recent_locations ?? [],
+    [detailQuery.data?.recent_locations],
   )
-
-  const filteredRecentLocationRows = useMemo(() => {
-    const normalizedSearch = locationHistorySearch.trim().toLowerCase()
-    return recentLocationRows.filter((item) => {
-      const rowDay = toIstanbulDay(item.ts_utc)
-      if (locationHistoryDateFrom && rowDay && rowDay < locationHistoryDateFrom) {
-        return false
-      }
-      if (locationHistoryDateTo && rowDay && rowDay > locationHistoryDateTo) {
-        return false
-      }
-      if (locationHistoryEventType !== 'all' && item.event_type !== locationHistoryEventType) {
-        return false
-      }
-      if (locationHistoryStatus !== 'all' && item.location_status !== locationHistoryStatus) {
-        return false
-      }
-      if (locationHistoryDeviceId !== 'all' && String(item.device_id) !== locationHistoryDeviceId) {
-        return false
-      }
-      if (!normalizedSearch) {
-        return true
-      }
-      const haystack = [
-        formatDateTime(item.ts_utc),
-        rowDay ?? '',
-        item.event_type,
-        item.location_status,
-        String(item.device_id),
-        formatCoordinate(item.lat, item.lon),
-      ]
-        .join(' ')
-        .toLowerCase()
-      return haystack.includes(normalizedSearch)
-    })
-  }, [
-    locationHistoryDateFrom,
-    locationHistoryDateTo,
-    locationHistoryDeviceId,
-    locationHistoryEventType,
-    locationHistorySearch,
-    locationHistoryStatus,
-    recentLocationRows,
-  ])
-
-  useEffect(() => {
-    setLocationHistoryPage(1)
-  }, [
-    locationHistorySearch,
-    locationHistoryEventType,
-    locationHistoryStatus,
-    locationHistoryDeviceId,
-    locationHistoryDateFrom,
-    locationHistoryDateTo,
-    locationHistoryPageSize,
-  ])
-
-  const locationHistoryTotalPages = useMemo(() => {
-    if (!filteredRecentLocationRows.length) {
-      return 1
-    }
-    return Math.max(1, Math.ceil(filteredRecentLocationRows.length / locationHistoryPageSize))
-  }, [filteredRecentLocationRows.length, locationHistoryPageSize])
-
-  useEffect(() => {
-    if (locationHistoryPage <= locationHistoryTotalPages) {
-      return
-    }
-    setLocationHistoryPage(locationHistoryTotalPages)
-  }, [locationHistoryPage, locationHistoryTotalPages])
-
-  const pagedRecentLocationRows = useMemo(() => {
-    const start = (locationHistoryPage - 1) * locationHistoryPageSize
-    return filteredRecentLocationRows.slice(start, start + locationHistoryPageSize)
-  }, [filteredRecentLocationRows, locationHistoryPage, locationHistoryPageSize])
-
-  const locationHistoryShownRange = useMemo(() => {
-    if (!filteredRecentLocationRows.length) {
-      return { start: 0, end: 0 }
-    }
-    const start = (locationHistoryPage - 1) * locationHistoryPageSize + 1
-    const end = Math.min(locationHistoryPage * locationHistoryPageSize, filteredRecentLocationRows.length)
-    return { start, end }
-  }, [filteredRecentLocationRows.length, locationHistoryPage, locationHistoryPageSize])
-  void ipSummaryRows
-  void locationHistoryDeviceOptions
-  void pagedRecentLocationRows
-  void locationHistoryShownRange
+  const portalActivityRows = useMemo(
+    () => detailQuery.data?.recent_activity ?? [],
+    [detailQuery.data?.recent_activity],
+  )
+  const effectiveSelectedShiftId = selectedShiftId ?? (employee?.shift_id ? String(employee.shift_id) : '')
+  const effectiveProfileFullName = profileFullName ?? employee?.full_name ?? ''
+  const effectiveProfileDepartmentId =
+    profileDepartmentId ?? (employee?.department_id ? String(employee.department_id) : '')
+  const todayFieldSignal = useMemo(
+    () => fieldSignalQuery.data?.days.find((day) => day.date === todayIstanbul) ?? fieldSignalQuery.data?.days[0] ?? null,
+    [fieldSignalQuery.data, todayIstanbul],
+  )
+  const latestFieldSignal =
+    todayFieldSignal?.last_location_point
+    ?? fieldSignalQuery.data?.summary.latest_location
+    ?? detailQuery.data?.latest_location
+    ?? null
+  const demoStartAt = todayFieldSignal?.first_demo_start_utc ?? fieldSignalQuery.data?.summary.last_demo_start_utc ?? null
+  const demoEndAt = todayFieldSignal?.last_demo_end_utc ?? fieldSignalQuery.data?.summary.last_demo_end_utc ?? null
+  const fieldSignalStatus = latestFieldSignal?.location_status ?? null
+  const fieldSignalMessage =
+    demoStartAt || demoEndAt
+      ? 'Bugün gün içi demo ritminde saha doğrulaması kullanıldı.'
+      : latestFieldSignal
+        ? 'Koordinat göstermeden saha doğrulaması kullanım özeti sunuluyor.'
+        : hasPermission('log')
+          ? 'Bugün için saha sinyali kaydı görünmüyor.'
+          : 'Detaylı konum göstermeden saha kullanımının izi burada özetlenir.'
 
   const deviceCountText = useMemo(() => {
     const count = detailQuery.data?.devices.length ?? 0
     return `${count} cihaz`
   }, [detailQuery.data?.devices.length])
+  const activeDeviceCount = useMemo(
+    () => (detailQuery.data?.devices ?? []).filter((device) => device.is_active).length,
+    [detailQuery.data?.devices],
+  )
+  const todayFieldSignalRows = useMemo(
+    () => recentLocationRows.filter((row) => toIstanbulDay(row.ts_utc) === todayIstanbul),
+    [recentLocationRows, todayIstanbul],
+  )
+  const visibleFieldSignalRows = useMemo(
+    () => (todayFieldSignalRows.length > 0 ? todayFieldSignalRows : recentLocationRows).slice(0, 6),
+    [recentLocationRows, todayFieldSignalRows],
+  )
+  const visiblePortalActivityRows = useMemo(() => portalActivityRows.slice(0, 6), [portalActivityRows])
+  const topIpSummaries = useMemo(
+    () => (detailQuery.data?.ip_summary ?? []).slice(0, 3),
+    [detailQuery.data?.ip_summary],
+  )
+  const departmentNameById = useMemo(
+    () => new Map((departmentsQuery.data ?? []).map((department) => [department.id, department.name])),
+    [departmentsQuery.data],
+  )
+  const currentDepartmentName = employee?.department_id ? departmentNameById.get(employee.department_id) ?? 'Atanmamış' : 'Atanmamış'
+  const assignmentHealthLabel = employee?.department_id && employee?.region_id ? 'Düzenli atama' : 'Atama eksikleri var'
+  const assignmentHealthTone = employee?.department_id && employee?.region_id
+    ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+    : 'border-amber-200 bg-amber-50 text-amber-800'
+  const lastPortalActivity = portalActivityRows[0] ?? null
+  const lastFieldSignalAt = latestFieldSignal?.ts_utc ?? null
 
   if (!Number.isFinite(employeeId)) {
-    return <ErrorBlock message="Gecersiz calisan id degeri." />
-  }
-
-  if (!isAllowedFromEmployees) {
-    return <LoadingBlock />
+    return <ErrorBlock message="Geçersiz çalışan kimliği." />
   }
 
   if (detailQuery.isLoading) {
@@ -586,24 +469,24 @@ export function EmployeeDetailPage() {
   }
 
   if (detailQuery.isError || !employee) {
-    return <ErrorBlock message="Calisan kaydi bulunamadi." />
+    return <ErrorBlock message="Çalışan kaydı bulunamadı." />
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <PageHeader
-        title={`Calisan Detayi #${employee.id}`}
-        description={`${employee.full_name} icin puantaj, cihaz ve aktivite bilgileri`}
+        title={`Çalışan Profili #${employee.id}`}
+        description={`${employee.full_name} için puantaj, cihaz ve gün içi hareket özetini tek ekranda yönetin.`}
         action={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => {
                 const nextStatus = !employee.is_active
                 const confirmed = window.confirm(
                   nextStatus
-                    ? `${employee.full_name} arsivden cikarilsin mi?`
-                    : `${employee.full_name} arsivlensin mi?`,
+                    ? `${employee.full_name} arşivden çıkarılsın mı?`
+                    : `${employee.full_name} arşivlensin mi?`,
                 )
                 if (!confirmed) return
                 toggleActiveMutation.mutate(nextStatus)
@@ -613,138 +496,223 @@ export function EmployeeDetailPage() {
                 employee.is_active ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'
               }`}
             >
-              {employee.is_active ? 'Arsivle' : 'Arsivden Cikar'}
+              {employee.is_active ? 'Arşivle' : 'Arşivden Çıkar'}
             </button>
             <button
               type="button"
               onClick={onCreateInvite}
               className="btn-primary rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
             >
-              Cihaz Baglama Linki Olustur
+              Cihaz Bağlama Linki Oluştur
             </button>
           </div>
         }
       />
 
-      <Panel>
-        <div className="grid gap-3 md:grid-cols-4">
-          <div>
-            <p className="text-xs text-slate-500">Calisan</p>
-            <p className="text-base font-semibold text-slate-900">{employee.full_name}</p>
-            <p className="text-xs text-slate-500">ID: {employee.id}</p>
+      <Panel className="border-slate-200/90 bg-[radial-gradient(circle_at_top_left,_rgba(15,118,110,0.12),_transparent_32%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.96))]">
+        <div className="grid gap-4 xl:grid-cols-[1.35fr_0.9fr]">
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Çalışan kartı
+                  </span>
+                  <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${assignmentHealthTone}`}>
+                    {assignmentHealthLabel}
+                  </span>
+                </div>
+                <div>
+                  <h2 className="text-2xl font-semibold tracking-tight text-slate-950">{employee.full_name}</h2>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Bölge, departman, saha doğrulaması ve portal izleri bu özet akışta bir arada tutulur.
+                  </p>
+                </div>
+              </div>
+              <StatusBadge value={employee.is_active ? 'Aktif' : 'Pasif'} />
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
+              <div className="rounded-2xl border border-white/80 bg-white/80 p-4 shadow-sm">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Organizasyon</p>
+                <p className="mt-3 text-lg font-semibold text-slate-900">{employee.region_name ?? 'Bölge bekliyor'}</p>
+                <p className="mt-1 text-sm text-slate-600">
+                  Departman: {currentDepartmentName}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-white/80 bg-white/80 p-4 shadow-sm">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Portal teması</p>
+                <p className="mt-3 text-sm font-semibold text-slate-900">{formatDateTime(detailQuery.data?.last_portal_seen_utc)}</p>
+                <p className="mt-1 text-sm text-slate-600">
+                  Son işlem: {lastPortalActivity?.action ?? 'Henüz portal izi yok'}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-white/80 bg-white/80 p-4 shadow-sm">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Cihaz sağlığı</p>
+                <p className="mt-3 text-lg font-semibold text-slate-900">{deviceCountText}</p>
+                <p className="mt-1 text-sm text-slate-600">{activeDeviceCount} cihaz aktif çalışıyor</p>
+              </div>
+              <div className="rounded-2xl border border-white/80 bg-white/80 p-4 shadow-sm">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Bu ay mesai</p>
+                <p className="mt-3 text-lg font-semibold text-slate-900">
+                  <MinuteDisplay minutes={currentMonthQuery.data?.totals.legal_overtime_minutes ?? 0} />
+                </p>
+                <p className="mt-1 text-sm text-slate-600">
+                  Plan üstü: <MinuteDisplay minutes={currentMonthQuery.data?.totals.plan_overtime_minutes ?? 0} />
+                </p>
+              </div>
+            </div>
           </div>
-          <div>
-            <p className="text-xs text-slate-500">Durum</p>
-            <StatusBadge value={employee.is_active ? 'Aktif' : 'Pasif'} />
-            <p className="mt-2 text-xs text-slate-500">Bolge: {employee.region_name ?? '-'}</p>
-            <p className="text-xs text-slate-500">Departman ID: {employee.department_id ?? '-'}</p>
-          </div>
-          <div>
-            <p className="text-xs text-slate-500">Son employee portal aktivitesi</p>
-            <p className="text-sm font-medium text-slate-800">{formatDateTime(detailQuery.data?.last_portal_seen_utc)}</p>
-            <p className="mt-2 text-xs text-slate-500">Cihaz sayisi: {deviceCountText}</p>
-          </div>
-          <div>
-            <p className="text-xs text-slate-500">Bu ay yasal fazla mesai</p>
-            <p className="text-lg font-semibold text-slate-900">
-              <MinuteDisplay minutes={currentMonthQuery.data?.totals.legal_overtime_minutes ?? 0} />
-            </p>
-            <p className="text-xs text-slate-500">
-              Plan ustu: <MinuteDisplay minutes={currentMonthQuery.data?.totals.plan_overtime_minutes ?? 0} />
-            </p>
-            <p className="text-xs text-slate-500">
-              {now.getFullYear()}-{String(now.getMonth() + 1).padStart(2, '0')}
-            </p>
+
+          <div className="rounded-[1.5rem] border border-slate-200/80 bg-slate-950 p-5 text-white shadow-[0_20px_40px_rgba(15,23,42,0.28)]">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-teal-200/80">Gün içi demo ritmi</p>
+                <h3 className="mt-2 text-xl font-semibold">Saha teması özeti</h3>
+              </div>
+              <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${locationSignalTone(fieldSignalStatus)}`}>
+                {formatLocationSignalStatus(fieldSignalStatus)}
+              </span>
+            </div>
+            <p className="mt-3 max-w-md text-sm leading-6 text-slate-300">{fieldSignalMessage}</p>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <p className="text-xs text-slate-400">İlk demo başlangıcı</p>
+                <p className="mt-2 text-sm font-semibold text-white">{formatDateTime(demoStartAt)}</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <p className="text-xs text-slate-400">Son demo kapanışı</p>
+                <p className="mt-2 text-sm font-semibold text-white">{formatDateTime(demoEndAt)}</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <p className="text-xs text-slate-400">Bugünkü saha sinyali</p>
+                <p className="mt-2 text-sm font-semibold text-white">{todayFieldSignalRows.length} kayıt</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <p className="text-xs text-slate-400">Son mobil iz</p>
+                <p className="mt-2 text-sm font-semibold text-white">{formatDateTime(lastFieldSignalAt)}</p>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-teal-300/20 bg-teal-400/10 p-4 text-sm leading-6 text-teal-50">
+              Bu blok koordinat veya açık konum bilgisi göstermez. Sadece gün içindeki saha doğrulamasının kullanılıp
+              kullanılmadığını ve ne kadar canlı olduğunu anlatır.
+            </div>
           </div>
         </div>
       </Panel>
 
-      <Panel>
-        <h4 className="text-base font-semibold text-slate-900">Calisan Bilgileri</h4>
-        <p className="mt-1 text-xs text-slate-500">Ad Soyad ve departman bilgisini bu alandan guncelleyebilirsiniz.</p>
-        <form onSubmit={onProfileSubmit} className="mt-3 grid gap-3 md:grid-cols-3 md:items-end">
-          <label className="text-sm text-slate-700">
-            Ad Soyad
-            <input
-              value={profileFullName}
-              onChange={(event) => setProfileFullName(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-              placeholder="Calisan adi soyadi"
-            />
-          </label>
+      <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
+        <Panel>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h4 className="text-base font-semibold text-slate-900">Profil düzeni</h4>
+              <p className="mt-1 text-xs text-slate-500">
+                Ad, departman ve temel organizasyon akışını bu bloktan düzenleyebilirsiniz.
+              </p>
+            </div>
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+              ID #{employee.id}
+            </span>
+          </div>
+          <form onSubmit={onProfileSubmit} className="mt-4 grid gap-3 md:grid-cols-3 md:items-end">
+            <label className="text-sm text-slate-700">
+              Ad Soyad
+              <input
+                value={effectiveProfileFullName}
+                onChange={(event) => setProfileFullName(event.target.value)}
+                className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5"
+                placeholder="Çalışan adı soyadı"
+              />
+            </label>
 
-          <label className="text-sm text-slate-700">
-            Departman
-            <select
-              value={profileDepartmentId}
-              onChange={(event) => setProfileDepartmentId(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-              disabled={departmentsQuery.isLoading}
+            <label className="text-sm text-slate-700">
+              Departman
+              <select
+                value={effectiveProfileDepartmentId}
+                onChange={(event) => setProfileDepartmentId(event.target.value)}
+                className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5"
+                disabled={departmentsQuery.isLoading}
+              >
+                <option value="">Atanmamış</option>
+                {(departmentsQuery.data ?? []).map((department) => (
+                  <option key={department.id} value={department.id}>
+                    {department.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <button
+              type="submit"
+              disabled={updateProfileMutation.isPending || departmentsQuery.isLoading}
+              className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-60"
             >
-              <option value="">Atanmamis</option>
-              {(departmentsQuery.data ?? []).map((department) => (
-                <option key={department.id} value={department.id}>
-                  {department.name}
-                </option>
-              ))}
-            </select>
-          </label>
+              {updateProfileMutation.isPending ? 'Kaydediliyor...' : 'Profili Kaydet'}
+            </button>
+          </form>
+          {departmentsQuery.isError ? (
+            <p className="mt-3 text-xs text-amber-700">Departman listesi alınamadı. Lütfen tekrar deneyin.</p>
+          ) : null}
+        </Panel>
 
-          <button
-            type="submit"
-            disabled={updateProfileMutation.isPending || departmentsQuery.isLoading}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-60"
-          >
-            {updateProfileMutation.isPending ? 'Kaydediliyor...' : 'Bilgileri Kaydet'}
-          </button>
-        </form>
-        {departmentsQuery.isError ? (
-          <p className="mt-2 text-xs text-amber-700">Departman listesi alinamadi. Lutfen tekrar deneyin.</p>
-        ) : null}
-      </Panel>
-
-      <Panel>
-        <h4 className="text-base font-semibold text-slate-900">Vardiya Atamasi</h4>
-        <div className="mt-3 grid gap-2 md:grid-cols-[1fr_auto] md:items-end">
-          <label className="text-sm text-slate-700">
-            Vardiya
-            <select
-              value={selectedShiftId}
-              onChange={(event) => setSelectedShiftId(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-              disabled={!employee.department_id || shiftsQuery.isLoading}
+        <Panel>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h4 className="text-base font-semibold text-slate-900">Vardiya ataması</h4>
+              <p className="mt-1 text-xs text-slate-500">
+                Çalışanın aktif departmanına göre uygun vardiyayı seçip anında kaydedin.
+              </p>
+            </div>
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+              {employee.shift_id ? `Mevcut vardiya #${employee.shift_id}` : 'Vardiya bekliyor'}
+            </span>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
+            <label className="text-sm text-slate-700">
+              Vardiya
+              <select
+                value={effectiveSelectedShiftId}
+                onChange={(event) => setSelectedShiftId(event.target.value)}
+                className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5"
+                disabled={!employee.department_id || shiftsQuery.isLoading}
+              >
+                <option value="">Atanmamış</option>
+                {(shiftsQuery.data ?? []).map((shift) => (
+                  <option key={shift.id} value={shift.id}>
+                    {shift.name} ({shift.start_time_local}-{shift.end_time_local})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              disabled={updateShiftMutation.isPending || !employee.department_id}
+              onClick={() => {
+                const shiftId = effectiveSelectedShiftId ? Number(effectiveSelectedShiftId) : null
+                updateShiftMutation.mutate(shiftId)
+              }}
+              className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-60"
             >
-              <option value="">Atanmamis</option>
-              {(shiftsQuery.data ?? []).map((shift) => (
-                <option key={shift.id} value={shift.id}>
-                  {shift.name} ({shift.start_time_local}-{shift.end_time_local})
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            type="button"
-            disabled={updateShiftMutation.isPending || !employee.department_id}
-            onClick={() => {
-              const shiftId = selectedShiftId ? Number(selectedShiftId) : null
-              updateShiftMutation.mutate(shiftId)
-            }}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-60"
-          >
-            {updateShiftMutation.isPending ? 'Kaydediliyor...' : 'Vardiya Ata'}
-          </button>
-        </div>
-      </Panel>
+              {updateShiftMutation.isPending ? 'Kaydediliyor...' : 'Vardiyayı Uygula'}
+            </button>
+          </div>
+          {!employee.department_id ? (
+            <p className="mt-3 text-xs text-amber-700">Önce departman ataması yapıldığında vardiya seçimi açılır.</p>
+          ) : null}
+        </Panel>
+      </div>
 
       <Panel>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h4 className="text-base font-semibold text-slate-900">Aylik Puantaj</h4>
-            <p className="text-xs text-slate-500">Aydan aya puantaj ve secili ay fazla mesai durumunu inceleyin.</p>
+            <h4 className="text-base font-semibold text-slate-900">Aylık puantaj</h4>
+            <p className="text-xs text-slate-500">Aydan aya puantaj ve seçili ay fazla mesai durumunu inceleyin.</p>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <label className="text-xs text-slate-600">
-              Yil
+              Yıl
               <input
                 type="number"
                 value={selectedYear}
@@ -767,79 +735,79 @@ export function EmployeeDetailPage() {
         </div>
 
         {!selectedMonthValid ? (
-          <p className="mt-3 text-sm text-amber-700">Yil/ay degeri gecersiz.</p>
+          <p className="mt-3 text-sm text-amber-700">Yıl/ay değeri geçersiz.</p>
         ) : monthlyQuery.isLoading ? (
           <LoadingBlock />
         ) : monthlyQuery.isError ? (
-          <ErrorBlock message={parseApiError(monthlyQuery.error, 'Aylik puantaj alinamadi.').message} />
+          <ErrorBlock message={parseApiError(monthlyQuery.error, 'Aylık puantaj alınamadı.').message} />
         ) : (
           <div className="mt-4 space-y-3">
             <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-7">
               <div className="rounded-lg border border-slate-200 p-3">
-                <p className="text-xs text-slate-500">Secili ay net calisma</p>
+                <p className="text-xs text-slate-500">Seçili ay net çalışma</p>
                 <p className="text-lg font-semibold text-slate-900">
                   <MinuteDisplay minutes={monthlyQuery.data?.totals.worked_minutes ?? 0} />
                 </p>
               </div>
               <div className="rounded-lg border border-slate-200 p-3">
-                <p className="text-xs text-slate-500">Secili ay plan ustu sure</p>
+                <p className="text-xs text-slate-500">Seçili ay plan üstü süre</p>
                 <p className="text-lg font-semibold text-slate-900">
                   <MinuteDisplay minutes={monthlyQuery.data?.totals.plan_overtime_minutes ?? 0} />
                 </p>
-                <p className="text-xs text-slate-500">{monthlyInsight.planOvertimeDayCount} gun</p>
+                <p className="text-xs text-slate-500">{monthlyInsight.planOvertimeDayCount} gün</p>
               </div>
               <div className="rounded-lg border border-slate-200 p-3">
-                <p className="text-xs text-slate-500">Secili ay yasal fazla sure</p>
+                <p className="text-xs text-slate-500">Seçili ay yasal fazla süre</p>
                 <p className="text-lg font-semibold text-slate-900">
                   <MinuteDisplay minutes={monthlyQuery.data?.totals.legal_extra_work_minutes ?? 0} />
                 </p>
               </div>
               <div className="rounded-lg border border-slate-200 p-3">
-                <p className="text-xs text-slate-500">Secili ay yasal fazla mesai</p>
+                <p className="text-xs text-slate-500">Seçili ay yasal fazla mesai</p>
                 <p className="text-lg font-semibold text-slate-900">
                   <MinuteDisplay minutes={monthlyQuery.data?.totals.legal_overtime_minutes ?? 0} />
                 </p>
-                <p className="text-xs text-slate-500">{monthlyInsight.overtimeDayCount} gun fazla mesai</p>
+                <p className="text-xs text-slate-500">{monthlyInsight.overtimeDayCount} gün fazla mesai</p>
               </div>
               <div className="rounded-lg border border-slate-200 p-3">
-                <p className="text-xs text-slate-500">Eksik gun</p>
+                <p className="text-xs text-slate-500">Eksik gün</p>
                 <p className="text-lg font-semibold text-slate-900">{monthlyQuery.data?.totals.incomplete_days ?? 0}</p>
               </div>
               <div className="rounded-lg border border-slate-200 p-3">
-                <p className="text-xs text-slate-500">Erken gelis</p>
+                <p className="text-xs text-slate-500">Erken geliş</p>
                 <p className="text-lg font-semibold text-slate-900">
                   <MinuteDisplay minutes={monthlyQuery.data?.totals.early_arrival_minutes ?? 0} />
                 </p>
-                <p className="text-xs text-slate-500">{monthlyRows.filter((day) => day.early_arrival_minutes > 0).length} gun</p>
+                <p className="text-xs text-slate-500">{monthlyRows.filter((day) => day.early_arrival_minutes > 0).length} gün</p>
               </div>
               <div className="rounded-lg border border-slate-200 p-3">
-                <p className="text-xs text-slate-500">Calisilan gun</p>
+                <p className="text-xs text-slate-500">Çalışılan gün</p>
                 <p className="text-lg font-semibold text-slate-900">{monthlyInsight.workedDayCount}</p>
-                <p className="text-xs text-slate-500">Hafta ici: {monthlyInsight.weekdayWorkedDayCount} gun</p>
+                <p className="text-xs text-slate-500">Hafta içi: {monthlyInsight.weekdayWorkedDayCount} gün</p>
               </div>
               <div className="rounded-lg border border-slate-200 p-3">
                 <p className="text-xs text-slate-500">Pazar mesaisi</p>
-                <p className="text-sm font-semibold text-slate-900">{monthlyInsight.sundayWorkedDayCount} gun</p>
+                <p className="text-sm font-semibold text-slate-900">{monthlyInsight.sundayWorkedDayCount} gün</p>
                 <p className="text-xs text-slate-500">
                   <MinuteDisplay minutes={monthlyInsight.sundayWorkedMinutes} />
                 </p>
               </div>
               <div className="rounded-lg border border-slate-200 p-3">
-                <p className="text-xs text-slate-500">Ozel gun mesaisi</p>
-                <p className="text-sm font-semibold text-slate-900">{monthlyInsight.specialWorkedDayCount} gun</p>
+                <p className="text-xs text-slate-500">Özel gün mesaisi</p>
+                <p className="text-sm font-semibold text-slate-900">{monthlyInsight.specialWorkedDayCount} gün</p>
                 <p className="text-xs text-slate-500">
                   <MinuteDisplay minutes={monthlyInsight.specialWorkedMinutes} />
                 </p>
               </div>
               <div className="rounded-lg border border-slate-200 p-3">
-                <p className="text-xs text-slate-500">Bayrakli gun</p>
+                <p className="text-xs text-slate-500">Bayraklı gün</p>
                 <p className="text-lg font-semibold text-slate-900">{monthlyFlaggedDayCount}</p>
-                <p className="text-xs text-slate-500">Riskli veya kontrol gerektiren satir sayisi</p>
+                <p className="text-xs text-slate-500">Riskli veya kontrol gerektiren satır sayısı</p>
               </div>
               <div className="rounded-lg border border-slate-200 p-3">
-                <p className="text-xs text-slate-500">Eksik gun orani</p>
+                <p className="text-xs text-slate-500">Eksik gün oranı</p>
                 <p className="text-lg font-semibold text-slate-900">{monthlyIncompleteRatio}</p>
-                <p className="text-xs text-slate-500">{monthlyQuery.data?.totals.incomplete_days ?? 0} / {monthlyRows.length} gun</p>
+                <p className="text-xs text-slate-500">{monthlyQuery.data?.totals.incomplete_days ?? 0} / {monthlyRows.length} gün</p>
               </div>
             </div>
 
@@ -848,15 +816,15 @@ export function EmployeeDetailPage() {
                 <thead className="text-xs uppercase text-slate-500">
                   <tr>
                     <th className="py-2">Tarih</th>
-                    <th className="py-2">Gun</th>
+                    <th className="py-2">Gün</th>
                     <th className="py-2">Durum</th>
-                    <th className="py-2">Gun Tipi</th>
-                    <th className="py-2">Giris</th>
-                    <th className="py-2">Cikis</th>
-                    <th className="py-2">Net Sure</th>
-                    <th className="py-2">Erken Gelis</th>
-                    <th className="py-2">Plan Ustu</th>
-                    <th className="py-2">Yasal Fazla Sure</th>
+                    <th className="py-2">Gün Tipi</th>
+                    <th className="py-2">Giriş</th>
+                    <th className="py-2">Çıkış</th>
+                    <th className="py-2">Net Süre</th>
+                    <th className="py-2">Erken Geliş</th>
+                    <th className="py-2">Plan Üstü</th>
+                    <th className="py-2">Yasal Fazla Süre</th>
                     <th className="py-2">Yasal Fazla Mesai</th>
                     <th className="py-2">Bayraklar</th>
                   </tr>
@@ -898,69 +866,168 @@ export function EmployeeDetailPage() {
         )}
       </Panel>
 
-      <Panel>
-        <h4 className="text-base font-semibold text-slate-900">Kayitli Cihazlar</h4>
-        <p className="mt-1 text-xs text-slate-500">Cihazlar, son attendance zamani ve durum bilgisi.</p>
-        <div className="mt-3 list-scroll-area">
-          <table className="min-w-full text-left text-sm">
-            <thead className="text-xs uppercase text-slate-500">
-              <tr>
-                <th className="py-2">Cihaz ID</th>
-                <th className="py-2">Parmak Izi</th>
-                <th className="py-2">Durum</th>
-                <th className="py-2">Olusma</th>
-                <th className="py-2">Son Attendance</th>
-                <th className="py-2">Son Islem Zamani</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(detailQuery.data?.devices ?? []).map((device) => (
-                <tr key={device.id} className="border-t border-slate-100">
-                  <td className="py-2">{device.id}</td>
-                  <td className="py-2 font-mono text-xs">{device.device_fingerprint}</td>
-                  <td className="py-2">
-                    <StatusBadge value={device.is_active ? 'Aktif' : 'Pasif'} />
-                  </td>
-                  <td className="py-2">{formatDateTime(device.created_at)}</td>
-                  <td className="py-2">{formatDateTime(device.last_attendance_ts_utc)}</td>
-                  <td className="py-2">{formatDateTime(device.last_seen_at_utc)}</td>
+      <div className="grid gap-5 xl:grid-cols-[1.2fr_1fr]">
+        <Panel>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h4 className="text-base font-semibold text-slate-900">Kayıtlı cihazlar</h4>
+              <p className="mt-1 text-xs text-slate-500">Cihazlar, son attendance zamanı ve canlılık sinyalini birlikte gösterir.</p>
+            </div>
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+              {activeDeviceCount}/{detailQuery.data?.devices.length ?? 0} aktif
+            </span>
+          </div>
+          <div className="mt-4 list-scroll-area">
+            <table className="min-w-full text-left text-sm">
+              <thead className="text-xs uppercase text-slate-500">
+                <tr>
+                  <th className="py-2">Cihaz ID</th>
+                  <th className="py-2">Parmak İzi</th>
+                  <th className="py-2">Durum</th>
+                  <th className="py-2">Oluşma</th>
+                  <th className="py-2">Son Attendance</th>
+                  <th className="py-2">Son İşlem</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {(detailQuery.data?.devices ?? []).map((device) => (
+                  <tr key={device.id} className="border-t border-slate-100">
+                    <td className="py-2">{device.id}</td>
+                    <td className="py-2 font-mono text-xs">{device.device_fingerprint}</td>
+                    <td className="py-2">
+                      <StatusBadge value={device.is_active ? 'Aktif' : 'Pasif'} />
+                    </td>
+                    <td className="py-2">{formatDateTime(device.created_at)}</td>
+                    <td className="py-2">{formatDateTime(device.last_attendance_ts_utc)}</td>
+                    <td className="py-2">{formatDateTime(device.last_seen_at_utc)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
+
+        <div className="grid gap-5">
+          <Panel>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h4 className="text-base font-semibold text-slate-900">Saha izi</h4>
+                <p className="mt-1 text-xs text-slate-500">
+                  Konum koordinatı göstermeden mobil doğrulama akışını ve gün içi canlılığı özetler.
+                </p>
+              </div>
+              <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${locationSignalTone(fieldSignalStatus)}`}>
+                {formatLocationSignalStatus(fieldSignalStatus)}
+              </span>
+            </div>
+            <div className="mt-4 space-y-3">
+              {visibleFieldSignalRows.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+                  Saha izi bulunmadığında bu alan sessiz kalır; ek koordinat ya da hassas bilgi gösterilmez.
+                </p>
+              ) : (
+                visibleFieldSignalRows.map((row, index) => (
+                  <div
+                    key={`${row.ts_utc}-${row.device_id}-${index}`}
+                    className="rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-slate-900">{formatDateTime(row.ts_utc)}</p>
+                      <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${locationSignalTone(row.location_status)}`}>
+                        {formatLocationSignalStatus(row.location_status)}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-sm text-slate-600">
+                      {formatAttendanceEventLabel(row.event_type)} akışı, cihaz #{row.device_id}
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
+          </Panel>
+
+          <Panel>
+            <h4 className="text-base font-semibold text-slate-900">Bağlantı özeti</h4>
+            <p className="mt-1 text-xs text-slate-500">Son portal izleri ve tekrar eden ağ izleri kullanıcı desteğini hızlandırır.</p>
+            <div className="mt-4 space-y-3">
+              {topIpSummaries.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+                  Bağlantı özeti henüz oluşmadı.
+                </p>
+              ) : (
+                topIpSummaries.map((item) => (
+                  <div key={`${item.ip}-${item.last_seen_at_utc ?? 'summary'}`} className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="font-mono text-xs text-slate-700">{item.ip}</p>
+                      <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${locationSignalTone(item.last_location_status)}`}>
+                        {formatLocationSignalStatus(item.last_location_status)}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-500">Son portal işlemi: {item.last_action ?? '-'}</p>
+                    <p className="text-xs text-slate-500">Son iz: {formatDateTime(item.last_seen_at_utc)}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </Panel>
+        </div>
+      </div>
+
+      <Panel>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h4 className="text-base font-semibold text-slate-900">Portal hareketleri</h4>
+            <p className="mt-1 text-xs text-slate-500">Kullanıcının son portal adımlarını ve tarayıcı izini hızlıca okuyun.</p>
+          </div>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+            Son ziyaret: {formatDateTime(detailQuery.data?.last_portal_seen_utc)}
+          </span>
+        </div>
+        <div className="mt-4 grid gap-3 lg:grid-cols-[0.95fr_1.05fr]">
+          <div className="space-y-3">
+            {visiblePortalActivityRows.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+                Portal tarafında henüz hareket izi oluşmadı.
+              </p>
+            ) : (
+              visiblePortalActivityRows.map((item, index) => (
+                <div key={`${item.ts_utc}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-slate-900">{item.action}</p>
+                    <span className="text-xs text-slate-500">{formatDateTime(item.ts_utc)}</span>
+                  </div>
+                  <p className="mt-2 truncate text-xs text-slate-500" title={item.user_agent ?? '-'}>
+                    {item.user_agent ?? 'User agent bilgisi yok'}
+                  </p>
+                </div>
+              ))
+            )}
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Hızlı yorum</p>
+            <h5 className="mt-2 text-lg font-semibold text-slate-900">Kullanım kolaylığı notu</h5>
+            <p className="mt-3 text-sm leading-6 text-slate-600">
+              Çalışan sayfası artık sadece kayıt listesi değil; operasyon ekibinin "hangi cihaz aktif, portalda en son ne
+              olmuş, saha doğrulaması bugün canlı mı" sorularına tek bakışta cevap veren bir çalışma yüzeyi gibi davranıyor.
+            </p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-xl border border-white bg-white p-3">
+                <p className="text-xs text-slate-500">Son portal olayı</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{lastPortalActivity?.action ?? '-'}</p>
+              </div>
+              <div className="rounded-xl border border-white bg-white p-3">
+                <p className="text-xs text-slate-500">Son saha izi</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{formatDateTime(lastFieldSignalAt)}</p>
+              </div>
+            </div>
+          </div>
         </div>
       </Panel>
 
-      <Panel>
-        <h4 className="text-base font-semibold text-slate-900">Employee Portal Aktivite Akisi</h4>
-        <div className="mt-3 list-scroll-area rounded-lg border border-slate-200">
-          <table className="min-w-full text-left text-sm">
-            <thead className="text-xs uppercase text-slate-500">
-              <tr>
-                <th className="py-2">Zaman</th>
-                <th className="py-2">Islem</th>
-                <th className="py-2">User Agent</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(detailQuery.data?.recent_activity ?? []).map((item, index) => (
-                <tr key={`${item.ts_utc}-${index}`} className="border-t border-slate-100">
-                  <td className="py-2">{formatDateTime(item.ts_utc)}</td>
-                  <td className="py-2">{item.action}</td>
-                  <td className="py-2 max-w-[280px] truncate" title={item.user_agent ?? '-'}>
-                    {item.user_agent ?? '-'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Panel>
-
-      <Modal open={isInviteModalOpen} title="Cihaz Baglama Linki Olustur" onClose={() => setInviteModalOpen(false)}>
+      <Modal open={isInviteModalOpen} title="Cihaz Bağlama Linki Oluştur" onClose={() => setInviteModalOpen(false)}>
         <form onSubmit={onInviteSubmit} className="space-y-4">
           <label className="block text-sm text-slate-700">
-            Gecerlilik Suresi (dakika)
+            Geçerlilik süresi (dakika)
             <input
               value={expiresInMinutes}
               onChange={(event) => setExpiresInMinutes(event.target.value)}
@@ -976,16 +1043,16 @@ export function EmployeeDetailPage() {
             {inviteMutation.isPending ? (
               <>
                 <span className="inline-spinner" aria-hidden="true" />
-                Olusturuluyor...
+                Oluşturuluyor...
               </>
             ) : (
-              'Daveti Uret'
+              'Daveti Üret'
             )}
           </button>
         </form>
 
         <p className="mt-3 text-xs text-slate-500">
-          Bu linki calisana iletin. Calisan linki acinca cihazini otomatik olarak hesabina baglayabilir.
+          Bu linki çalışana iletin. Çalışan linki açınca cihazını otomatik olarak hesabına bağlayabilir.
         </p>
 
         {inviteError ? <p className="form-validation">{inviteError}</p> : null}
@@ -993,7 +1060,7 @@ export function EmployeeDetailPage() {
         {inviteToken && inviteUrl ? (
           <div className="mt-4 space-y-3">
             <CopyField label="Token" value={inviteToken} onCopy={copyText} />
-            <CopyField label="Baglanti Linki (invite_url)" value={inviteUrl} onCopy={copyText} />
+            <CopyField label="Bağlantı linki (invite_url)" value={inviteUrl} onCopy={copyText} />
           </div>
         ) : null}
       </Modal>
