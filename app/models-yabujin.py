@@ -1,0 +1,1598 @@
+from __future__ import annotations
+
+import enum
+from datetime import date, datetime, time, timezone
+from typing import Any
+
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Integer,
+    LargeBinary,
+    String,
+    Text,
+    Time,
+    UniqueConstraint,
+    text,
+)
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db import Base
+
+
+class AttendanceType(str, enum.Enum):
+    IN = "IN"
+    OUT = "OUT"
+
+
+class LocationStatus(str, enum.Enum):
+    VERIFIED_HOME = "VERIFIED_HOME"
+    UNVERIFIED_LOCATION = "UNVERIFIED_LOCATION"
+    NO_LOCATION = "NO_LOCATION"
+    LOW_ACCURACY = "LOW_ACCURACY"
+    STALE_LOCATION = "STALE_LOCATION"
+    OUTSIDE_GEOFENCE = "OUTSIDE_GEOFENCE"
+    INSIDE_GEOFENCE = "INSIDE_GEOFENCE"
+    SUSPICIOUS_JUMP = "SUSPICIOUS_JUMP"
+    MOCK_GPS_SUSPECTED = "MOCK_GPS_SUSPECTED"
+    VERIFIED = "VERIFIED"
+
+
+class LocationEventSource(str, enum.Enum):
+    CHECKIN = "CHECKIN"
+    CHECKOUT = "CHECKOUT"
+    APP_OPEN = "APP_OPEN"
+    APP_CLOSE = "APP_CLOSE"
+    DEMO_START = "DEMO_START"
+    DEMO_END = "DEMO_END"
+    LOCATION_PING = "LOCATION_PING"
+
+
+class GeofenceStatus(str, enum.Enum):
+    NOT_CONFIGURED = "NOT_CONFIGURED"
+    INSIDE = "INSIDE"
+    OUTSIDE = "OUTSIDE"
+    UNKNOWN = "UNKNOWN"
+
+
+class LocationTrustStatus(str, enum.Enum):
+    NO_DATA = "NO_DATA"
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    SUSPICIOUS = "SUSPICIOUS"
+
+
+class LeaveType(str, enum.Enum):
+    ANNUAL = "ANNUAL"
+    SICK = "SICK"
+    UNPAID = "UNPAID"
+    EXCUSE = "EXCUSE"
+    PUBLIC_HOLIDAY = "PUBLIC_HOLIDAY"
+
+
+class LeaveStatus(str, enum.Enum):
+    APPROVED = "APPROVED"
+    PENDING = "PENDING"
+    REJECTED = "REJECTED"
+
+
+class AuditActorType(str, enum.Enum):
+    ADMIN = "ADMIN"
+    SYSTEM = "SYSTEM"
+
+
+class OvertimeRoundingMode(str, enum.Enum):
+    OFF = "OFF"
+    REG_HALF_HOUR = "REG_HALF_HOUR"
+
+
+class AttendanceEventSource(str, enum.Enum):
+    DEVICE = "DEVICE"
+    MANUAL = "MANUAL"
+
+
+class SchedulePlanTargetType(str, enum.Enum):
+    DEPARTMENT = "DEPARTMENT"
+    DEPARTMENT_EXCEPT_EMPLOYEE = "DEPARTMENT_EXCEPT_EMPLOYEE"
+    ONLY_EMPLOYEE = "ONLY_EMPLOYEE"
+
+
+class QRCodeType(str, enum.Enum):
+    CHECKIN = "CHECKIN"
+    CHECKOUT = "CHECKOUT"
+    BOTH = "BOTH"
+
+
+class Region(Base):
+    __tablename__ = "regions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    departments: Mapped[list[Department]] = relationship(back_populates="region")
+    employees: Mapped[list[Employee]] = relationship(back_populates="region")
+    qr_points: Mapped[list[QRPoint]] = relationship(back_populates="region")
+
+
+class Department(Base):
+    __tablename__ = "departments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    region_id: Mapped[int | None] = mapped_column(
+        ForeignKey("regions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    region: Mapped[Region | None] = relationship(back_populates="departments")
+    employees: Mapped[list[Employee]] = relationship(back_populates="department")
+    work_rule: Mapped[WorkRule | None] = relationship(back_populates="department", uselist=False)
+    weekly_rules: Mapped[list[DepartmentWeeklyRule]] = relationship(back_populates="department")
+    weekday_shift_assignments: Mapped[list[DepartmentWeekdayShiftAssignment]] = relationship(
+        back_populates="department"
+    )
+    shifts: Mapped[list[DepartmentShift]] = relationship(back_populates="department")
+    schedule_plans: Mapped[list[DepartmentSchedulePlan]] = relationship(back_populates="department")
+    qr_points: Mapped[list[QRPoint]] = relationship(back_populates="department")
+
+
+class Employee(Base):
+    __tablename__ = "employees"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    full_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    region_id: Mapped[int | None] = mapped_column(
+        ForeignKey("regions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    department_id: Mapped[int | None] = mapped_column(
+        ForeignKey("departments.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    shift_id: Mapped[int | None] = mapped_column(
+        ForeignKey("department_shifts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
+    contract_weekly_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    region: Mapped[Region | None] = relationship(back_populates="employees")
+    department: Mapped[Department | None] = relationship(back_populates="employees")
+    shift: Mapped[DepartmentShift | None] = relationship(back_populates="employees")
+    devices: Mapped[list[Device]] = relationship(back_populates="employee")
+    device_invites: Mapped[list[DeviceInvite]] = relationship(back_populates="employee")
+    leaves: Mapped[list[Leave]] = relationship(back_populates="employee")
+    location: Mapped[EmployeeLocation | None] = relationship(back_populates="employee", uselist=False)
+    attendance_events: Mapped[list[AttendanceEvent]] = relationship(back_populates="employee")
+    location_events: Mapped[list[EmployeeLocationEvent]] = relationship(back_populates="employee")
+    manual_day_overrides: Mapped[list[ManualDayOverride]] = relationship(back_populates="employee")
+    schedule_plan_targets: Mapped[list[DepartmentSchedulePlan]] = relationship(back_populates="target_employee")
+    schedule_plan_scopes: Mapped[list[DepartmentSchedulePlanEmployee]] = relationship(
+        back_populates="employee"
+    )
+
+
+class Device(Base):
+    __tablename__ = "devices"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"), nullable=False)
+    device_fingerprint: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
+    recovery_pin_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    recovery_pin_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    recovery_admin_vault: Mapped[str | None] = mapped_column(Text, nullable=True)
+    recovery_admin_vault_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    employee: Mapped[Employee] = relationship(back_populates="devices")
+    attendance_events: Mapped[list[AttendanceEvent]] = relationship(back_populates="device")
+    location_events: Mapped[list[EmployeeLocationEvent]] = relationship(back_populates="device")
+    passkeys: Mapped[list[DevicePasskey]] = relationship(
+        back_populates="device",
+        cascade="all, delete-orphan",
+    )
+    recovery_codes: Mapped[list[DeviceRecoveryCode]] = relationship(
+        back_populates="device",
+        cascade="all, delete-orphan",
+    )
+    push_subscriptions: Mapped[list[DevicePushSubscription]] = relationship(
+        back_populates="device",
+        cascade="all, delete-orphan",
+    )
+
+
+class DevicePasskey(Base):
+    __tablename__ = "device_passkeys"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    device_id: Mapped[int] = mapped_column(
+        ForeignKey("devices.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    credential_id: Mapped[str] = mapped_column(String(512), nullable=False, unique=True, index=True)
+    public_key: Mapped[str] = mapped_column(Text, nullable=False)
+    sign_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    transports: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    device: Mapped[Device] = relationship(back_populates="passkeys")
+
+
+class DeviceRecoveryCode(Base):
+    __tablename__ = "device_recovery_codes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    device_id: Mapped[int] = mapped_column(
+        ForeignKey("devices.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    code_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    device: Mapped[Device] = relationship(back_populates="recovery_codes")
+
+
+class DevicePushSubscription(Base):
+    __tablename__ = "device_push_subscriptions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    device_id: Mapped[int] = mapped_column(
+        ForeignKey("devices.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    endpoint: Mapped[str] = mapped_column(String(1024), nullable=False, unique=True, index=True)
+    p256dh: Mapped[str] = mapped_column(String(512), nullable=False)
+    auth: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
+    user_agent: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    device: Mapped[Device] = relationship(back_populates="push_subscriptions")
+
+
+class WebAuthnChallenge(Base):
+    __tablename__ = "webauthn_challenges"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    purpose: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    challenge: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    device_id: Mapped[int | None] = mapped_column(
+        ForeignKey("devices.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ip: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    device: Mapped[Device | None] = relationship()
+
+
+class DeviceInvite(Base):
+    __tablename__ = "device_invites"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"), nullable=False)
+    token: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    is_used: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=5, server_default=text("5"))
+    bound_ip: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    bound_user_agent_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    employee: Mapped[Employee] = relationship(back_populates="device_invites")
+
+
+class EmployeeLocation(Base):
+    __tablename__ = "employee_locations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    employee_id: Mapped[int] = mapped_column(
+        ForeignKey("employees.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    home_lat: Mapped[float] = mapped_column(Float, nullable=False)
+    home_lon: Mapped[float] = mapped_column(Float, nullable=False)
+    radius_m: Mapped[int] = mapped_column(Integer, nullable=False, default=120, server_default=text("120"))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    employee: Mapped[Employee] = relationship(back_populates="location")
+
+
+class EmployeeLocationEvent(Base):
+    __tablename__ = "employee_location_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    employee_id: Mapped[int] = mapped_column(
+        ForeignKey("employees.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    device_id: Mapped[int | None] = mapped_column(
+        ForeignKey("devices.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    attendance_event_id: Mapped[int | None] = mapped_column(
+        ForeignKey("attendance_events.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        unique=True,
+    )
+    audit_log_id: Mapped[int | None] = mapped_column(
+        ForeignKey("audit_logs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        unique=True,
+    )
+    source: Mapped[LocationEventSource] = mapped_column(
+        Enum(LocationEventSource, name="location_event_source"),
+        nullable=False,
+        index=True,
+    )
+    ts_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    lat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    lon: Mapped[float | None] = mapped_column(Float, nullable=True)
+    accuracy_m: Mapped[float | None] = mapped_column(Float, nullable=True)
+    speed_mps: Mapped[float | None] = mapped_column(Float, nullable=True)
+    heading_deg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    altitude_m: Mapped[float | None] = mapped_column(Float, nullable=True)
+    provider: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    ip: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    network_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    battery_level: Mapped[float | None] = mapped_column(Float, nullable=True)
+    is_mocked: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    geofence_status: Mapped[GeofenceStatus] = mapped_column(
+        Enum(GeofenceStatus, name="location_geofence_status"),
+        nullable=False,
+        default=GeofenceStatus.UNKNOWN,
+        server_default=text("'UNKNOWN'"),
+    )
+    trust_status: Mapped[LocationTrustStatus] = mapped_column(
+        Enum(LocationTrustStatus, name="location_trust_status"),
+        nullable=False,
+        default=LocationTrustStatus.NO_DATA,
+        server_default=text("'NO_DATA'"),
+        index=True,
+    )
+    trust_score: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
+    distance_to_geofence_m: Mapped[float | None] = mapped_column(Float, nullable=True)
+    location_status: Mapped[LocationStatus] = mapped_column(
+        Enum(LocationStatus, name="attendance_location_status"),
+        nullable=False,
+        default=LocationStatus.NO_LOCATION,
+        server_default=text("'NO_LOCATION'"),
+        index=True,
+    )
+    details: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    employee: Mapped[Employee] = relationship(back_populates="location_events")
+    device: Mapped[Device | None] = relationship(back_populates="location_events")
+    attendance_event: Mapped[AttendanceEvent | None] = relationship()
+    audit_log: Mapped[AuditLog | None] = relationship()
+
+
+class WorkRule(Base):
+    __tablename__ = "work_rules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    department_id: Mapped[int] = mapped_column(
+        ForeignKey("departments.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    daily_minutes_planned: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=540,
+        server_default=text("540"),
+    )
+    break_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=60, server_default=text("60"))
+    grace_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=5, server_default=text("5"))
+    overtime_grace_minutes: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
+    off_shift_tolerance_minutes: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
+
+    department: Mapped[Department] = relationship(back_populates="work_rule")
+
+
+class DepartmentWeeklyRule(Base):
+    __tablename__ = "department_weekly_rules"
+    __table_args__ = (
+        UniqueConstraint("department_id", "weekday", name="uq_department_weekly_rules_department_weekday"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    department_id: Mapped[int] = mapped_column(
+        ForeignKey("departments.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    weekday: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_workday: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
+    planned_minutes: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=540,
+        server_default=text("540"),
+    )
+    break_minutes: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=60,
+        server_default=text("60"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    department: Mapped[Department] = relationship(back_populates="weekly_rules")
+
+
+class DepartmentShift(Base):
+    __tablename__ = "department_shifts"
+    __table_args__ = (
+        UniqueConstraint("department_id", "name", name="uq_department_shifts_department_name"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    department_id: Mapped[int] = mapped_column(
+        ForeignKey("departments.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    start_time_local: Mapped[time] = mapped_column(Time(timezone=False), nullable=False)
+    end_time_local: Mapped[time] = mapped_column(Time(timezone=False), nullable=False)
+    break_minutes: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=60,
+        server_default=text("60"),
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    department: Mapped[Department] = relationship(back_populates="shifts")
+    employees: Mapped[list[Employee]] = relationship(back_populates="shift")
+    weekday_assignments: Mapped[list[DepartmentWeekdayShiftAssignment]] = relationship(
+        back_populates="shift"
+    )
+    schedule_plans: Mapped[list[DepartmentSchedulePlan]] = relationship(back_populates="shift")
+
+
+class DepartmentWeekdayShiftAssignment(Base):
+    __tablename__ = "department_weekday_shift_assignments"
+    __table_args__ = (
+        UniqueConstraint(
+            "department_id",
+            "weekday",
+            "shift_id",
+            name="uq_department_weekday_shift_assignments_dep_weekday_shift",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    department_id: Mapped[int] = mapped_column(
+        ForeignKey("departments.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    weekday: Mapped[int] = mapped_column(Integer, nullable=False)
+    shift_id: Mapped[int] = mapped_column(
+        ForeignKey("department_shifts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    sort_order: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    department: Mapped[Department] = relationship(back_populates="weekday_shift_assignments")
+    shift: Mapped[DepartmentShift] = relationship(back_populates="weekday_assignments")
+
+
+class DepartmentSchedulePlan(Base):
+    __tablename__ = "department_schedule_plans"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    department_id: Mapped[int] = mapped_column(
+        ForeignKey("departments.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    target_type: Mapped[SchedulePlanTargetType] = mapped_column(
+        Enum(SchedulePlanTargetType, name="schedule_plan_target_type"),
+        nullable=False,
+    )
+    target_employee_id: Mapped[int | None] = mapped_column(
+        ForeignKey("employees.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    shift_id: Mapped[int | None] = mapped_column(
+        ForeignKey("department_shifts.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    daily_minutes_planned: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    break_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    grace_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    overtime_grace_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    off_shift_tolerance_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    start_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    end_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    is_locked: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
+    note: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    department: Mapped[Department] = relationship(back_populates="schedule_plans")
+    target_employee: Mapped[Employee | None] = relationship(back_populates="schedule_plan_targets")
+    shift: Mapped[DepartmentShift | None] = relationship(back_populates="schedule_plans")
+    target_employees: Mapped[list[DepartmentSchedulePlanEmployee]] = relationship(
+        back_populates="schedule_plan",
+        cascade="all, delete-orphan",
+    )
+
+
+class DepartmentSchedulePlanEmployee(Base):
+    __tablename__ = "department_schedule_plan_employees"
+    __table_args__ = (
+        UniqueConstraint(
+            "schedule_plan_id",
+            "employee_id",
+            name="uq_department_schedule_plan_employees_plan_employee",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    schedule_plan_id: Mapped[int] = mapped_column(
+        ForeignKey("department_schedule_plans.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    employee_id: Mapped[int] = mapped_column(
+        ForeignKey("employees.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    schedule_plan: Mapped[DepartmentSchedulePlan] = relationship(back_populates="target_employees")
+    employee: Mapped[Employee] = relationship(back_populates="schedule_plan_scopes")
+
+
+class QRCode(Base):
+    __tablename__ = "qr_codes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    code_value: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    code_type: Mapped[QRCodeType] = mapped_column(
+        Enum(QRCodeType, name="qr_code_type"),
+        nullable=False,
+        default=QRCodeType.BOTH,
+        server_default=text("'BOTH'"),
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    qr_code_points: Mapped[list[QRCodePoint]] = relationship(
+        back_populates="qr_code",
+        cascade="all, delete-orphan",
+    )
+    qr_points: Mapped[list[QRPoint]] = relationship(
+        secondary="qr_code_points",
+        back_populates="qr_codes",
+        viewonly=True,
+    )
+
+
+class QRPoint(Base):
+    __tablename__ = "qr_points"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    lat: Mapped[float] = mapped_column(Float, nullable=False)
+    lon: Mapped[float] = mapped_column(Float, nullable=False)
+    radius_m: Mapped[int] = mapped_column(Integer, nullable=False, default=75, server_default=text("75"))
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
+    department_id: Mapped[int | None] = mapped_column(
+        ForeignKey("departments.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    region_id: Mapped[int | None] = mapped_column(
+        ForeignKey("regions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    department: Mapped[Department | None] = relationship(back_populates="qr_points")
+    region: Mapped[Region | None] = relationship(back_populates="qr_points")
+    qr_code_points: Mapped[list[QRCodePoint]] = relationship(
+        back_populates="qr_point",
+        cascade="all, delete-orphan",
+    )
+    qr_codes: Mapped[list[QRCode]] = relationship(
+        secondary="qr_code_points",
+        back_populates="qr_points",
+        viewonly=True,
+    )
+
+
+class QRCodePoint(Base):
+    __tablename__ = "qr_code_points"
+    __table_args__ = (
+        UniqueConstraint("qr_code_id", "qr_point_id", name="uq_qr_code_points_qr_code_qr_point"),
+    )
+
+    qr_code_id: Mapped[int] = mapped_column(
+        ForeignKey("qr_codes.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+        index=True,
+    )
+    qr_point_id: Mapped[int] = mapped_column(
+        ForeignKey("qr_points.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    qr_code: Mapped[QRCode] = relationship(back_populates="qr_code_points")
+    qr_point: Mapped[QRPoint] = relationship(back_populates="qr_code_points")
+
+
+class LaborProfile(Base):
+    __tablename__ = "labor_profiles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, default="TR_DEFAULT")
+    weekly_normal_minutes_default: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=2700,
+        server_default=text("2700"),
+    )
+    daily_max_minutes: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=660,
+        server_default=text("660"),
+    )
+    enforce_min_break_rules: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
+    night_work_max_minutes_default: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=450,
+        server_default=text("450"),
+    )
+    night_work_exceptions_note_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
+    overtime_annual_cap_minutes: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=16200,
+        server_default=text("16200"),
+    )
+    overtime_premium: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        default=1.5,
+        server_default=text("1.5"),
+    )
+    extra_work_premium: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        default=1.25,
+        server_default=text("1.25"),
+    )
+    overtime_rounding_mode: Mapped[OvertimeRoundingMode] = mapped_column(
+        Enum(OvertimeRoundingMode, name="overtime_rounding_mode"),
+        nullable=False,
+        default=OvertimeRoundingMode.OFF,
+        server_default=text("'OFF'"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class Leave(Base):
+    __tablename__ = "leaves"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"), nullable=False, index=True)
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date] = mapped_column(Date, nullable=False)
+    type: Mapped[LeaveType] = mapped_column(
+        Enum(LeaveType, name="leave_type"),
+        nullable=False,
+    )
+    status: Mapped[LeaveStatus] = mapped_column(
+        Enum(LeaveStatus, name="leave_status"),
+        nullable=False,
+        default=LeaveStatus.APPROVED,
+        server_default=text("'APPROVED'"),
+    )
+    note: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    employee: Mapped[Employee] = relationship(back_populates="leaves")
+
+
+class ManualDayOverride(Base):
+    __tablename__ = "manual_day_overrides"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    employee_id: Mapped[int] = mapped_column(
+        ForeignKey("employees.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    day_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    in_ts: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    out_ts: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_absent: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
+    rule_source_override: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    rule_shift_id_override: Mapped[int | None] = mapped_column(
+        ForeignKey("department_shifts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    note: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False, default="admin")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    employee: Mapped[Employee] = relationship(back_populates="manual_day_overrides")
+
+
+class AdminUser(Base):
+    __tablename__ = "admin_users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    username: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
+    is_super_admin: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
+    permissions: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+    )
+    mfa_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
+    mfa_secret_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mfa_secret_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    refresh_tokens: Mapped[list[AdminRefreshToken]] = relationship(back_populates="admin_user")
+    push_subscriptions: Mapped[list[AdminPushSubscription]] = relationship(back_populates="admin_user")
+    mfa_recovery_codes: Mapped[list[AdminMfaRecoveryCode]] = relationship(
+        back_populates="admin_user",
+        cascade="all, delete-orphan",
+    )
+    created_device_invites: Mapped[list[AdminDeviceInvite]] = relationship(
+        back_populates="created_by_admin_user",
+        foreign_keys="AdminDeviceInvite.created_by_admin_user_id",
+    )
+    used_device_invites: Mapped[list[AdminDeviceInvite]] = relationship(
+        back_populates="used_by_admin_user",
+        foreign_keys="AdminDeviceInvite.used_by_admin_user_id",
+    )
+
+
+class AdminMfaRecoveryCode(Base):
+    __tablename__ = "admin_mfa_recovery_codes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    admin_user_id: Mapped[int] = mapped_column(
+        ForeignKey("admin_users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    code_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    admin_user: Mapped[AdminUser] = relationship(back_populates="mfa_recovery_codes")
+
+
+class AdminRefreshToken(Base):
+    __tablename__ = "admin_refresh_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    jti: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    admin_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("admin_users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    subject: Mapped[str] = mapped_column(String(255), nullable=False, default="admin", server_default=text("'admin'"))
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_ip: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    last_user_agent: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+
+    admin_user: Mapped[AdminUser | None] = relationship(back_populates="refresh_tokens")
+
+
+class AdminPushSubscription(Base):
+    __tablename__ = "admin_push_subscriptions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    admin_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("admin_users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    admin_username: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    endpoint: Mapped[str] = mapped_column(String(1024), nullable=False, unique=True, index=True)
+    p256dh: Mapped[str] = mapped_column(String(512), nullable=False)
+    auth: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
+    user_agent: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    admin_user: Mapped[AdminUser | None] = relationship(back_populates="push_subscriptions")
+
+
+class AdminNotificationEmailTarget(Base):
+    __tablename__ = "admin_notification_email_targets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    email: Mapped[str] = mapped_column(String(320), nullable=False, unique=True, index=True)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
+    created_by_username: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    updated_by_username: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class AdminDeviceInvite(Base):
+    __tablename__ = "admin_device_invites"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    is_used: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=5, server_default=text("5"))
+    bound_ip: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    bound_user_agent_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by_admin_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("admin_users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    created_by_username: Mapped[str] = mapped_column(String(100), nullable=False, default="admin")
+    used_by_admin_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("admin_users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    used_by_username: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    created_by_admin_user: Mapped[AdminUser | None] = relationship(
+        back_populates="created_device_invites",
+        foreign_keys=[created_by_admin_user_id],
+    )
+    used_by_admin_user: Mapped[AdminUser | None] = relationship(
+        back_populates="used_device_invites",
+        foreign_keys=[used_by_admin_user_id],
+    )
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    ts_utc: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        index=True,
+    )
+    actor_type: Mapped[AuditActorType] = mapped_column(
+        Enum(AuditActorType, name="audit_actor_type"),
+        nullable=False,
+    )
+    actor_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    module: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+        default="CORE",
+        server_default=text("'CORE'"),
+        index=True,
+    )
+    event_type: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    employee_id: Mapped[int | None] = mapped_column(
+        ForeignKey("employees.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    device_id: Mapped[int | None] = mapped_column(
+        ForeignKey("devices.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    action: Mapped[str] = mapped_column(String(255), nullable=False)
+    entity_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    entity_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    ip: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    success: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
+    details: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+    )
+
+    employee: Mapped[Employee | None] = relationship()
+    device: Mapped[Device | None] = relationship()
+
+
+class NotificationJob(Base):
+    __tablename__ = "notification_jobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    employee_id: Mapped[int | None] = mapped_column(
+        ForeignKey("employees.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    admin_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("admin_users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    job_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    notification_type: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    audience: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+    risk_level: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+    event_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    event_hash: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True, index=True)
+    local_day: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    event_ts_utc: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    shift_summary: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    actual_time_summary: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    suggested_action: Mapped[str | None] = mapped_column(Text, nullable=True)
+    admin_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+    )
+    scheduled_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="PENDING",
+        server_default=text("'PENDING'"),
+        index=True,
+    )
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    employee: Mapped[Employee | None] = relationship()
+    admin_user: Mapped[AdminUser | None] = relationship()
+    delivery_logs: Mapped[list[NotificationDeliveryLog]] = relationship(
+        back_populates="notification_job",
+        cascade="all, delete-orphan",
+    )
+
+
+class NotificationDeliveryLog(Base):
+    __tablename__ = "notification_delivery_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    notification_job_id: Mapped[int | None] = mapped_column(
+        ForeignKey("notification_jobs.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    event_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    notification_type: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    audience: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+    channel: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    recipient_type: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    employee_id: Mapped[int | None] = mapped_column(
+        ForeignKey("employees.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    admin_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("admin_users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    recipient_address: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    endpoint: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    notification_job: Mapped[NotificationJob | None] = relationship(back_populates="delivery_logs")
+    employee: Mapped[Employee | None] = relationship()
+    admin_user: Mapped[AdminUser | None] = relationship()
+
+
+class ScheduledNotificationTask(Base):
+    __tablename__ = "scheduled_notification_tasks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    target: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    employee_scope: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    admin_scope: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    employee_ids: Mapped[list[int]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+    )
+    admin_user_ids: Mapped[list[int]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+    )
+    schedule_kind: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    run_date_local: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    run_time_local: Mapped[time] = mapped_column(Time, nullable=False)
+    timezone_name: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        default="Europe/Istanbul",
+        server_default=text("'Europe/Istanbul'"),
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+        index=True,
+    )
+    last_enqueued_local_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    last_enqueued_at_utc: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by_username: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    updated_by_username: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class AttendanceExtraCheckinApproval(Base):
+    __tablename__ = "attendance_extra_checkin_approvals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    employee_id: Mapped[int] = mapped_column(
+        ForeignKey("employees.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    device_id: Mapped[int | None] = mapped_column(
+        ForeignKey("devices.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    local_day: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    approval_token: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="PENDING",
+        server_default=text("'PENDING'"),
+        index=True,
+    )
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approved_by_admin_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("admin_users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    approved_by_username: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    consumed_by_event_id: Mapped[int | None] = mapped_column(
+        ForeignKey("attendance_events.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    push_total_targets: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    push_sent: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    push_failed: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    last_push_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    employee: Mapped[Employee] = relationship("Employee")
+    device: Mapped[Device | None] = relationship("Device")
+    approved_by_admin_user: Mapped[AdminUser | None] = relationship("AdminUser")
+    consumed_by_event: Mapped[AttendanceEvent | None] = relationship("AttendanceEvent")
+
+
+class AdminDailyReportArchive(Base):
+    __tablename__ = "admin_daily_report_archives"
+    __table_args__ = (
+        UniqueConstraint(
+            "report_date",
+            "department_id",
+            "region_id",
+            name="uq_admin_daily_report_archives_scope",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    report_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    department_id: Mapped[int | None] = mapped_column(
+        ForeignKey("departments.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    region_id: Mapped[int | None] = mapped_column(
+        ForeignKey("regions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    file_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    file_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    employee_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    employee_ids_index: Mapped[str | None] = mapped_column(Text, nullable=True)
+    employee_names_index: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    department: Mapped[Department | None] = relationship()
+    region: Mapped[Region | None] = relationship()
+
+
+class AttendanceEvent(Base):
+    __tablename__ = "attendance_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    employee_id: Mapped[int] = mapped_column(
+        ForeignKey("employees.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    device_id: Mapped[int] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), nullable=False)
+    type: Mapped[AttendanceType] = mapped_column(
+        Enum(AttendanceType, name="attendance_event_type"),
+        nullable=False,
+    )
+    ts_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    lat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    lon: Mapped[float | None] = mapped_column(Float, nullable=True)
+    accuracy_m: Mapped[float | None] = mapped_column(Float, nullable=True)
+    location_status: Mapped[LocationStatus] = mapped_column(
+        Enum(LocationStatus, name="attendance_location_status"),
+        nullable=False,
+    )
+    flags: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+    )
+    source: Mapped[AttendanceEventSource] = mapped_column(
+        Enum(AttendanceEventSource, name="attendance_event_source"),
+        nullable=False,
+        default=AttendanceEventSource.DEVICE,
+        server_default=text("'DEVICE'"),
+    )
+    created_by_admin: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
+    note: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_by_admin: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
+
+    employee: Mapped[Employee] = relationship(back_populates="attendance_events")
+    device: Mapped[Device] = relationship(back_populates="attendance_events")
+
+
