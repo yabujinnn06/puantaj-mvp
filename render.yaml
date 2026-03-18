@@ -23,9 +23,9 @@ services:
       - key: JWT_AUDIENCE
         value: puantaj-admin
       - key: ACCESS_TOKEN_MINUTES
-        value: "30"
+        value: "43200"
       - key: REFRESH_TOKEN_DAYS
-        value: "14"
+        value: "30"
       - key: ALLOW_REFRESH
         value: "true"
       - key: APP_NAME
