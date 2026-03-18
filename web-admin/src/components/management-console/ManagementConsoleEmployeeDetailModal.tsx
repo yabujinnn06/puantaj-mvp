@@ -16,6 +16,7 @@ import { ErrorBlock } from '../ErrorBlock'
 import { LoadingBlock } from '../LoadingBlock'
 import { MinuteDisplay } from '../MinuteDisplay'
 import { Modal } from '../Modal'
+import { useAuth } from '../../hooks/useAuth'
 import { useToast } from '../../hooks/useToast'
 import type { AttendanceEvent, MonthlyEmployeeDay, NotificationJob } from '../../types/api'
 import type { ActionState } from './types'
@@ -355,8 +356,13 @@ export function ManagementConsoleEmployeeDetailModal({
   onClose: () => void
 }) {
   const queryClient = useQueryClient()
+  const { hasPermission } = useAuth()
   const { pushToast } = useToast()
   const bounds = useMemo(() => currentMonthBounds(), [])
+  const canViewAttendanceEvents = hasPermission('attendance_events') || hasPermission('notifications')
+  const canViewMonthlyReport = hasPermission('reports') || hasPermission('log')
+  const canViewNotifications = hasPermission('notifications')
+  const canWriteAudit = hasPermission('audit', 'write')
   const [actionState, setActionState] = useState<ActionState>(null)
   const [reason, setReason] = useState('')
   const [note, setNote] = useState('')
@@ -367,19 +373,23 @@ export function ManagementConsoleEmployeeDetailModal({
 
   useEffect(() => {
     if (!open) {
-      setActionState(null)
-      setReason('')
-      setNote('')
-      setDuration('3')
-      setOverrideScore('50')
-      setFormError(null)
-      setExpandedTimelineKeys([])
+      queueMicrotask(() => {
+        setActionState(null)
+        setReason('')
+        setNote('')
+        setDuration('3')
+        setOverrideScore('50')
+        setFormError(null)
+        setExpandedTimelineKeys([])
+      })
     }
   }, [open])
 
   useEffect(() => {
     if (!open || employeeId == null) return
-    setExpandedTimelineKeys(defaultExpandedTimelineKeys())
+    queueMicrotask(() => {
+      setExpandedTimelineKeys(defaultExpandedTimelineKeys())
+    })
   }, [open, employeeId])
 
   const detailQuery = useQuery({
@@ -390,28 +400,31 @@ export function ManagementConsoleEmployeeDetailModal({
   const attendanceQuery = useQuery({
     queryKey: ['management-console-detail-events', employeeId, bounds.start, bounds.end],
     queryFn: () => getAttendanceEvents({ employee_id: employeeId as number, start_date: bounds.start, end_date: bounds.end, limit: 250 }),
-    enabled: open && employeeId != null,
+    enabled: open && employeeId != null && canViewAttendanceEvents,
   })
   const monthlyQuery = useQuery({
     queryKey: ['management-console-detail-monthly', employeeId, bounds.year, bounds.month],
     queryFn: () => getMonthlyEmployee({ employee_id: employeeId as number, year: bounds.year, month: bounds.month }),
-    enabled: open && employeeId != null,
+    enabled: open && employeeId != null && canViewMonthlyReport,
   })
   const notificationQuery = useQuery({
     queryKey: ['management-console-detail-notifications', employeeId, bounds.start, bounds.end],
     queryFn: () => getNotificationJobs({ employee_id: employeeId as number, start_date: bounds.start, end_date: bounds.end, offset: 0, limit: 8 }),
-    enabled: open && employeeId != null,
+    enabled: open && employeeId != null && canViewNotifications,
   })
 
   const detail = detailQuery.data
   const employee = detail?.employee_state ?? null
-  const monthDays = monthlyQuery.data?.days ?? []
+  const monthDays = useMemo(
+    () => (canViewMonthlyReport ? monthlyQuery.data?.days ?? [] : []),
+    [canViewMonthlyReport, monthlyQuery.data],
+  )
   const notificationJobs = notificationQuery.data?.items ?? []
   const timeline = useMemo(() => buildTimeline(attendanceQuery.data ?? [], monthDays), [attendanceQuery.data, monthDays])
   const operationalDays = useMemo(() => buildOperationalDays(monthDays), [monthDays])
   const riskHistoryMax = Math.max(1, ...(detail?.risk_history ?? []).map((item) => item.value))
   const riskMeterWidth = `${Math.max(0, Math.min(100, employee?.risk_score ?? 0))}%`
-  const failedNotificationCount = notificationJobs.filter((job) => job.status === 'FAILED').length
+  const failedNotificationCount = canViewNotifications ? notificationJobs.filter((job) => job.status === 'FAILED').length : null
 
   const toggleTimelineDay = (dateKey: string) => {
     setExpandedTimelineKeys((current) =>
@@ -431,6 +444,9 @@ export function ManagementConsoleEmployeeDetailModal({
 
   const actionMutation = useMutation({
     mutationFn: async () => {
+      if (!canWriteAudit) {
+        throw new Error('Yetersiz yetki.')
+      }
       if (!employeeId || !actionState) throw new Error('Personel seçilmedi.')
       if (actionState.kind === 'action') {
         return createControlRoomEmployeeAction({
@@ -525,8 +541,8 @@ export function ManagementConsoleEmployeeDetailModal({
             <article className="mc-ops__metric"><span>Son çıkış</span><strong>{formatDateTime(employee.last_checkout_utc)}</strong></article>
             <article className="mc-ops__metric"><span>Bugünkü süre</span><strong><MinuteDisplay minutes={employee.worked_today_minutes} /></strong></article>
             <article className="mc-ops__metric"><span>Haftalık toplam</span><strong><MinuteDisplay minutes={employee.weekly_total_minutes} /></strong></article>
-            <article className="mc-ops__metric"><span>Erken geliş</span><strong><MinuteDisplay minutes={monthlyQuery.data?.totals.early_arrival_minutes ?? 0} /></strong></article>
-            <article className="mc-ops__metric"><span>Bildirim hatası</span><strong>{failedNotificationCount}</strong></article>
+            <article className="mc-ops__metric"><span>Erken geliş</span><strong>{canViewMonthlyReport ? <MinuteDisplay minutes={monthlyQuery.data?.totals.early_arrival_minutes ?? 0} /> : '-'}</strong></article>
+            <article className="mc-ops__metric"><span>Bildirim hatası</span><strong>{failedNotificationCount ?? '-'}</strong></article>
           </section>
 
           <div className="mc-ops__shell">
@@ -570,87 +586,95 @@ export function ManagementConsoleEmployeeDetailModal({
               <section className="mc-ops__section">
                 <div className="mc-ops__section-head">
                   <div><h4>Günlük akış</h4><p>Son günlerdeki giriş, çıkış ve vardiya sonucu</p></div>
-                  <Link to={`/attendance-events?employee_id=${employee.employee.id}&start_date=${bounds.start}&end_date=${bounds.end}`} className="mc-button mc-button--ghost">Yoklama kayıtlarına git</Link>
+                  {canViewAttendanceEvents ? (
+                    <Link to={`/attendance-events?employee_id=${employee.employee.id}&start_date=${bounds.start}&end_date=${bounds.end}`} className="mc-button mc-button--ghost">Yoklama kayıtlarına git</Link>
+                  ) : null}
                 </div>
-                {attendanceQuery.isError ? <ErrorBlock message="Giriş çıkış zaman çizelgesi alınamadı." /> : null}
-                <div className="mc-ops__timeline">
-                  {timeline.length ? (
-                    timeline.map((group) => {
-                      const isExpanded = expandedTimelineKeys.includes(group.dateKey)
-                      const summaryId = `timeline-${group.dateKey}`
+                {canViewAttendanceEvents ? (
+                  <>
+                    {attendanceQuery.isError ? <ErrorBlock message="Giriş çıkış zaman çizelgesi alınamadı." /> : null}
+                    <div className="mc-ops__timeline">
+                      {timeline.length ? (
+                        timeline.map((group) => {
+                          const isExpanded = expandedTimelineKeys.includes(group.dateKey)
+                          const summaryId = `timeline-${group.dateKey}`
 
-                      return (
-                        <article key={group.dateKey} className={`mc-ops__timeline-day ${isExpanded ? 'is-expanded' : ''}`}>
-                          <button
-                            type="button"
-                            className="mc-ops__timeline-toggle"
-                            onClick={() => toggleTimelineDay(group.dateKey)}
-                            aria-expanded={isExpanded}
-                            aria-controls={summaryId}
-                          >
-                            <div className="mc-ops__timeline-head">
-                              <div>
-                                <strong>{group.label}</strong>
-                                <p>
-                                  {group.day?.shift_name ?? employee.shift_name ?? 'Vardiya tanımsız'} ·{' '}
-                                  {dailyStatusLabel(group.day?.status)}
-                                </p>
-                              </div>
-                              <div className="mc-ops__timeline-meta">
-                                <span><MinuteDisplay minutes={group.day?.worked_minutes ?? 0} /></span>
-                                <span>Eksik: <MinuteDisplay minutes={group.day?.missing_minutes ?? 0} /></span>
-                                <span className="mc-ops__timeline-chevron">{isExpanded ? 'Gizle' : 'Detay'}</span>
-                              </div>
-                            </div>
-                          </button>
+                          return (
+                            <article key={group.dateKey} className={`mc-ops__timeline-day ${isExpanded ? 'is-expanded' : ''}`}>
+                              <button
+                                type="button"
+                                className="mc-ops__timeline-toggle"
+                                onClick={() => toggleTimelineDay(group.dateKey)}
+                                aria-expanded={isExpanded}
+                                aria-controls={summaryId}
+                              >
+                                <div className="mc-ops__timeline-head">
+                                  <div>
+                                    <strong>{group.label}</strong>
+                                    <p>
+                                      {group.day?.shift_name ?? employee.shift_name ?? 'Vardiya tanımsız'} ·{' '}
+                                      {dailyStatusLabel(group.day?.status)}
+                                    </p>
+                                  </div>
+                                  <div className="mc-ops__timeline-meta">
+                                    <span><MinuteDisplay minutes={group.day?.worked_minutes ?? 0} /></span>
+                                    <span>Eksik: <MinuteDisplay minutes={group.day?.missing_minutes ?? 0} /></span>
+                                    <span className="mc-ops__timeline-chevron">{isExpanded ? 'Gizle' : 'Detay'}</span>
+                                  </div>
+                                </div>
+                              </button>
 
-                          {isExpanded ? (
-                            <div id={summaryId} className="mc-ops__timeline-details">
-                              <div className="mc-ops__timeline-summary-grid">
-                                <span className="mc-ops__timeline-summary-item">İlk giriş: {formatTime(group.firstIn?.ts_utc ?? null)}</span>
-                                <span className="mc-ops__timeline-summary-item">Son çıkış: {formatTime(group.lastOut?.ts_utc ?? null)}</span>
-                                <span className="mc-ops__timeline-summary-item">
-                                  Erken geliş: <MinuteDisplay minutes={group.day?.early_arrival_minutes ?? 0} />
-                                </span>
-                                <span className="mc-ops__timeline-summary-item">
-                                  Mesai: <MinuteDisplay minutes={group.day?.overtime_minutes ?? 0} />
-                                </span>
-                              </div>
+                              {isExpanded ? (
+                                <div id={summaryId} className="mc-ops__timeline-details">
+                                  <div className="mc-ops__timeline-summary-grid">
+                                    <span className="mc-ops__timeline-summary-item">İlk giriş: {formatTime(group.firstIn?.ts_utc ?? null)}</span>
+                                    <span className="mc-ops__timeline-summary-item">Son çıkış: {formatTime(group.lastOut?.ts_utc ?? null)}</span>
+                                    <span className="mc-ops__timeline-summary-item">
+                                      Erken geliş: <MinuteDisplay minutes={group.day?.early_arrival_minutes ?? 0} />
+                                    </span>
+                                    <span className="mc-ops__timeline-summary-item">
+                                      Mesai: <MinuteDisplay minutes={group.day?.overtime_minutes ?? 0} />
+                                    </span>
+                                  </div>
 
-                              <div className="mc-ops__event-list">
-                                {group.events.map((event) => (
-                                  <article
-                                    key={event.id}
-                                    className={`mc-ops__event-row ${event.type === 'IN' ? 'is-in' : 'is-out'}`}
-                                  >
-                                    <div className="mc-ops__event-line">
-                                      <span
-                                        className={`mc-ops__event-dot ${event.type === 'IN' ? 'is-in' : 'is-out'}`}
-                                        aria-hidden="true"
-                                      />
-                                      <strong>{eventTypeLabel(event.type)}</strong>
-                                      <span>{formatTime(event.ts_utc)}</span>
-                                      <span>·</span>
-                                      <span>{eventDeviceLabel(event)}</span>
-                                      {event.note ? (
-                                        <>
+                                  <div className="mc-ops__event-list">
+                                    {group.events.map((event) => (
+                                      <article
+                                        key={event.id}
+                                        className={`mc-ops__event-row ${event.type === 'IN' ? 'is-in' : 'is-out'}`}
+                                      >
+                                        <div className="mc-ops__event-line">
+                                          <span
+                                            className={`mc-ops__event-dot ${event.type === 'IN' ? 'is-in' : 'is-out'}`}
+                                            aria-hidden="true"
+                                          />
+                                          <strong>{eventTypeLabel(event.type)}</strong>
+                                          <span>{formatTime(event.ts_utc)}</span>
                                           <span>·</span>
-                                          <span>{event.note}</span>
-                                        </>
-                                      ) : null}
-                                    </div>
-                                  </article>
-                                ))}
-                              </div>
-                            </div>
-                          ) : null}
-                        </article>
-                      )
-                    })
-                  ) : (
-                    <div className="mc-empty-state">Bu dönem için giriş çıkış kaydı bulunmuyor.</div>
-                  )}
-                </div>
+                                          <span>{eventDeviceLabel(event)}</span>
+                                          {event.note ? (
+                                            <>
+                                              <span>·</span>
+                                              <span>{event.note}</span>
+                                            </>
+                                          ) : null}
+                                        </div>
+                                      </article>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : null}
+                            </article>
+                          )
+                        })
+                      ) : (
+                        <div className="mc-empty-state">Bu dönem için giriş çıkış kaydı bulunmuyor.</div>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="mc-empty-state">Yoklama zaman çizelgesi için attendance_events veya notifications yetkisi gerekir.</div>
+                )}
               </section>
 
               <section className="mc-ops__section">
@@ -658,23 +682,27 @@ export function ManagementConsoleEmployeeDetailModal({
                   <div><h4>Problemli günler</h4><p>Eksik kayıt, mesai ve erken geliş çetelesi</p></div>
                   <span className="mc-chip">{operationalDays.length} kayıt</span>
                 </div>
-                <div className="mc-ops__issue-list">
-                  {operationalDays.length ? operationalDays.map((day) => (
-                    <article key={day.date} className={`mc-ops__issue ${day.tone}`}>
-                      <div>
-                        <strong>{day.label}</strong>
-                        <p>{day.summary} · {day.shiftName}</p>
-                      </div>
-                      <div className="mc-ops__issue-metrics">
-                        <span>Çalışma <MinuteDisplay minutes={day.workedMinutes} /></span>
-                        <span>Mesai <MinuteDisplay minutes={day.overtimeMinutes} /></span>
-                        <span>Erken geliş <MinuteDisplay minutes={day.earlyArrivalMinutes} /></span>
-                        <span>Eksik <MinuteDisplay minutes={day.missingMinutes} /></span>
-                        <span>{day.flagCount} işaret</span>
-                      </div>
-                    </article>
-                  )) : <div className="mc-empty-state">Bu ay için dikkat gerektiren gün bulunmuyor.</div>}
-                </div>
+                {canViewMonthlyReport ? (
+                  <div className="mc-ops__issue-list">
+                    {operationalDays.length ? operationalDays.map((day) => (
+                      <article key={day.date} className={`mc-ops__issue ${day.tone}`}>
+                        <div>
+                          <strong>{day.label}</strong>
+                          <p>{day.summary} · {day.shiftName}</p>
+                        </div>
+                        <div className="mc-ops__issue-metrics">
+                          <span>Çalışma <MinuteDisplay minutes={day.workedMinutes} /></span>
+                          <span>Mesai <MinuteDisplay minutes={day.overtimeMinutes} /></span>
+                          <span>Erken geliş <MinuteDisplay minutes={day.earlyArrivalMinutes} /></span>
+                          <span>Eksik <MinuteDisplay minutes={day.missingMinutes} /></span>
+                          <span>{day.flagCount} işaret</span>
+                        </div>
+                      </article>
+                    )) : <div className="mc-empty-state">Bu ay için dikkat gerektiren gün bulunmuyor.</div>}
+                  </div>
+                ) : (
+                  <div className="mc-empty-state">Aylık rapor özeti için reports veya log yetkisi gerekir.</div>
+                )}
               </section>
             </main>
 
@@ -683,38 +711,44 @@ export function ManagementConsoleEmployeeDetailModal({
                 <div className="mc-ops__section-head">
                   <div><h4>Müdahale merkezi</h4><p>İnceleme, kontrol ve açıklama kayıtları</p></div>
                 </div>
-                <div className="mc-ops__action-grid">
-                  <button type="button" className={`mc-button ${ACTION_PRESETS.REVIEW.buttonClass}`} onClick={() => startActionFlow({ kind: 'action', actionType: 'REVIEW' })}>{ACTION_PRESETS.REVIEW.title}</button>
-                  <button type="button" className={`mc-button ${ACTION_PRESETS.DISABLE_TEMP.buttonClass}`} onClick={() => startActionFlow({ kind: 'action', actionType: 'DISABLE_TEMP' })}>{ACTION_PRESETS.DISABLE_TEMP.title}</button>
-                  <button type="button" className={`mc-button ${ACTION_PRESETS.SUSPEND.buttonClass}`} onClick={() => startActionFlow({ kind: 'action', actionType: 'SUSPEND' })}>{ACTION_PRESETS.SUSPEND.title}</button>
-                  <button type="button" className={`mc-button ${ACTION_PRESETS.RISK_OVERRIDE.buttonClass}`} onClick={() => startActionFlow({ kind: 'override' })}>{ACTION_PRESETS.RISK_OVERRIDE.title}</button>
-                  <button type="button" className={`mc-button ${ACTION_PRESETS.NOTE.buttonClass}`} onClick={() => startActionFlow({ kind: 'note' })}>{ACTION_PRESETS.NOTE.title}</button>
-                </div>
-                {actionState ? (
-                  <div className="mc-ops__composer">
-                    <div className="mc-ops__composer-head">
-                      <strong>{actionTitle(actionState)}</strong>
-                      <span>{resolvePreset(actionState).summary}</span>
+                {canWriteAudit ? (
+                  <>
+                    <div className="mc-ops__action-grid">
+                      <button type="button" className={`mc-button ${ACTION_PRESETS.REVIEW.buttonClass}`} onClick={() => startActionFlow({ kind: 'action', actionType: 'REVIEW' })}>{ACTION_PRESETS.REVIEW.title}</button>
+                      <button type="button" className={`mc-button ${ACTION_PRESETS.DISABLE_TEMP.buttonClass}`} onClick={() => startActionFlow({ kind: 'action', actionType: 'DISABLE_TEMP' })}>{ACTION_PRESETS.DISABLE_TEMP.title}</button>
+                      <button type="button" className={`mc-button ${ACTION_PRESETS.SUSPEND.buttonClass}`} onClick={() => startActionFlow({ kind: 'action', actionType: 'SUSPEND' })}>{ACTION_PRESETS.SUSPEND.title}</button>
+                      <button type="button" className={`mc-button ${ACTION_PRESETS.RISK_OVERRIDE.buttonClass}`} onClick={() => startActionFlow({ kind: 'override' })}>{ACTION_PRESETS.RISK_OVERRIDE.title}</button>
+                      <button type="button" className={`mc-button ${ACTION_PRESETS.NOTE.buttonClass}`} onClick={() => startActionFlow({ kind: 'note' })}>{ACTION_PRESETS.NOTE.title}</button>
                     </div>
-                    {actionState.kind !== 'note' ? (
-                      <>
-                        <label className="mc-field"><span>Sebep</span><input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="İşlem gerekçesi" /></label>
-                        {actionState.kind === 'override' ? <label className="mc-field"><span>Risk skoru</span><input type="number" min={0} max={100} value={overrideScore} onChange={(event) => setOverrideScore(event.target.value)} /></label> : null}
-                        <label className="mc-field"><span>Süre</span><select value={duration} onChange={(event) => setDuration(event.target.value as DurationValue)}><option value="1">1 gün</option><option value="3">3 gün</option><option value="7">7 gün</option><option value="indefinite">Süresiz</option></select></label>
-                      </>
-                    ) : null}
-                    <label className="mc-field"><span>{actionState.kind === 'note' ? 'Not' : 'Operasyon notu'}</span><textarea rows={5} value={note} onChange={(event) => setNote(event.target.value)} /></label>
-                    {formError ? <div className="mc-ops__form-error">{formError}</div> : null}
-                    <div className="mc-action-composer__footer">
-                      <span>{actionState.kind === 'note' ? 'Sadece kayıt izi oluşturulur.' : duration === 'indefinite' ? 'Süresiz işlem' : `${duration} günlük işlem`}</span>
-                      <div className="mc-action-composer__actions">
-                        <button type="button" className="mc-button mc-button--ghost" onClick={() => setActionState(null)}>İptal</button>
-                        <button type="button" className="mc-button mc-button--primary" onClick={() => void actionMutation.mutateAsync()} disabled={actionMutation.isPending}>{actionMutation.isPending ? 'Kaydediliyor...' : 'Kaydet'}</button>
+                    {actionState ? (
+                      <div className="mc-ops__composer">
+                        <div className="mc-ops__composer-head">
+                          <strong>{actionTitle(actionState)}</strong>
+                          <span>{resolvePreset(actionState).summary}</span>
+                        </div>
+                        {actionState.kind !== 'note' ? (
+                          <>
+                            <label className="mc-field"><span>Sebep</span><input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="İşlem gerekçesi" /></label>
+                            {actionState.kind === 'override' ? <label className="mc-field"><span>Risk skoru</span><input type="number" min={0} max={100} value={overrideScore} onChange={(event) => setOverrideScore(event.target.value)} /></label> : null}
+                            <label className="mc-field"><span>Süre</span><select value={duration} onChange={(event) => setDuration(event.target.value as DurationValue)}><option value="1">1 gün</option><option value="3">3 gün</option><option value="7">7 gün</option><option value="indefinite">Süresiz</option></select></label>
+                          </>
+                        ) : null}
+                        <label className="mc-field"><span>{actionState.kind === 'note' ? 'Not' : 'Operasyon notu'}</span><textarea rows={5} value={note} onChange={(event) => setNote(event.target.value)} /></label>
+                        {formError ? <div className="mc-ops__form-error">{formError}</div> : null}
+                        <div className="mc-action-composer__footer">
+                          <span>{actionState.kind === 'note' ? 'Sadece kayıt izi oluşturulur.' : duration === 'indefinite' ? 'Süresiz işlem' : `${duration} günlük işlem`}</span>
+                          <div className="mc-action-composer__actions">
+                            <button type="button" className="mc-button mc-button--ghost" onClick={() => setActionState(null)}>İptal</button>
+                            <button type="button" className="mc-button mc-button--primary" onClick={() => void actionMutation.mutateAsync()} disabled={actionMutation.isPending}>{actionMutation.isPending ? 'Kaydediliyor...' : 'Kaydet'}</button>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
+                    ) : (
+                      <div className="mc-ops__placeholder">Operasyon notu veya müdahale seçildiğinde bu alanda onay formu açılır.</div>
+                    )}
+                  </>
                 ) : (
-                  <div className="mc-ops__placeholder">Operasyon notu veya müdahale seçildiğinde bu alanda onay formu açılır.</div>
+                  <div className="mc-empty-state">Müdahale merkezi için audit yazma yetkisi gerekir.</div>
                 )}
               </section>
 
@@ -755,13 +789,19 @@ export function ManagementConsoleEmployeeDetailModal({
                   <div><h4>Bildirim ve denetim izi</h4><p>Son bildirimler, notlar, önlemler ve audit kayıtları</p></div>
                 </div>
                 <div className="mc-ops__feed">
-                  {notificationQuery.isError ? <ErrorBlock message="Bildirim akışı alınamadı." /> : null}
-                  {notificationJobs.slice(0, 4).map((job) => (
-                    <article key={job.id} className="mc-ops__feed-row">
-                      <div><strong>{job.title ?? job.notification_type ?? 'Bildirim'}</strong><p>{job.description ?? 'Açıklama yok.'}</p></div>
-                      <div className="mc-ops__feed-side"><strong>{notificationStatusLabel(job.status)}</strong><span>{notificationAudienceLabel(job.audience)}</span></div>
-                    </article>
-                  ))}
+                  {!canViewNotifications ? (
+                    <div className="mc-empty-state">Bildirim akışı için notifications yetkisi gerekir.</div>
+                  ) : (
+                    <>
+                      {notificationQuery.isError ? <ErrorBlock message="Bildirim akışı alınamadı." /> : null}
+                      {notificationJobs.slice(0, 4).map((job) => (
+                        <article key={job.id} className="mc-ops__feed-row">
+                          <div><strong>{job.title ?? job.notification_type ?? 'Bildirim'}</strong><p>{job.description ?? 'Açıklama yok.'}</p></div>
+                          <div className="mc-ops__feed-side"><strong>{notificationStatusLabel(job.status)}</strong><span>{notificationAudienceLabel(job.audience)}</span></div>
+                        </article>
+                      ))}
+                    </>
+                  )}
                   {detail.recent_measures.slice(0, 4).map((measure) => (
                     <article key={`${measure.action_type}-${measure.created_at}`} className="mc-ops__feed-row">
                       <div><strong>{measure.label}</strong><p>{measure.note}</p></div>
