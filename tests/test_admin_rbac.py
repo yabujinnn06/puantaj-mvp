@@ -46,6 +46,9 @@ class _FakeLoginDB:
     def commit(self) -> None:
         return
 
+    def refresh(self, _obj: object) -> None:
+        return
+
     def rollback(self) -> None:
         return
 
