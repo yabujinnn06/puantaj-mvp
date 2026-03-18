@@ -1,8 +1,49 @@
 import { createContext, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 
 import { getAdminMe, loginAdmin, logoutAdmin, refreshAdminToken } from '../api/admin'
-import type { AdminMeResponse } from '../types/api'
+import type { AdminMeResponse, AdminPermissionValue } from '../types/api'
 import { clearAuthTokens, getAccessToken, getRefreshToken, isTokenValid, setAuthTokens } from './token'
+
+const LEGACY_PERMISSION_FALLBACKS: Record<string, readonly string[]> = {
+  log: ['employees'],
+  qr_codes: ['schedule'],
+  notifications: ['audit'],
+  audit_logs: ['audit'],
+}
+
+function getPermissionEntry(
+  permissions: AdminMeResponse['permissions'] | null | undefined,
+  permission: string,
+): AdminPermissionValue | null {
+  if (!permissions || !Object.prototype.hasOwnProperty.call(permissions, permission)) {
+    return null
+  }
+  return permissions[permission] ?? null
+}
+
+function resolvePermissionEntry(
+  permissions: AdminMeResponse['permissions'] | null | undefined,
+  permission: string,
+): AdminPermissionValue | null {
+  const direct = getPermissionEntry(permissions, permission)
+  if (direct) {
+    return direct
+  }
+
+  const fallbackKeys = LEGACY_PERMISSION_FALLBACKS[permission]
+  if (!fallbackKeys) {
+    return null
+  }
+
+  for (const fallbackKey of fallbackKeys) {
+    const fallback = getPermissionEntry(permissions, fallbackKey)
+    if (fallback) {
+      return fallback
+    }
+  }
+
+  return null
+}
 
 interface AuthContextValue {
   user: AdminMeResponse | null
@@ -20,6 +61,7 @@ interface AuthContextValue {
   hasPermission: (permission: string, mode?: 'read' | 'write') => boolean
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -130,7 +172,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (user.is_super_admin) {
           return true
         }
-        const current = user.permissions?.[permission]
+        const current = resolvePermissionEntry(user.permissions, permission)
         if (!current) {
           return false
         }

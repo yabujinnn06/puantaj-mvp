@@ -22,6 +22,7 @@ import { Panel } from '../components/Panel'
 import { SuspiciousBadge } from '../components/SuspiciousBadge'
 import { SuspiciousReasonList } from '../components/SuspiciousReasonList'
 import { StatusBadge } from '../components/StatusBadge'
+import { useAuth } from '../hooks/useAuth'
 import { useToast } from '../hooks/useToast'
 import type { ManualDayOverride, MonthlyEmployeeDay } from '../types/api'
 import { getFlagMeta, knownComplianceFlags } from '../utils/flagDictionary'
@@ -175,7 +176,11 @@ function encodeManualOverrideNote(status: ManualDayStatus, reason: string): stri
 export function EmployeeMonthlyReportPage() {
   const queryClient = useQueryClient()
   const { pushToast } = useToast()
+  const { hasPermission } = useAuth()
   const now = new Date()
+  const canViewManualOverrides = hasPermission('manual_overrides')
+  const canWriteManualOverrides = hasPermission('manual_overrides', 'write')
+  const canUseManualShiftRules = canWriteManualOverrides && hasPermission('schedule')
 
   const defaultFilters: MonthlyFilters = {
     employeeId: '',
@@ -232,7 +237,7 @@ export function EmployeeMonthlyReportPage() {
   const overridesQuery = useQuery({
     queryKey: ['manual-overrides', parsedEmployeeId, parsedYear, parsedMonth],
     queryFn: () => getManualDayOverrides(parsedEmployeeId, parsedYear, parsedMonth),
-    enabled: reportEnabled,
+    enabled: reportEnabled && canViewManualOverrides,
   })
 
   const upsertOverrideMutation = useMutation({
@@ -323,18 +328,21 @@ export function EmployeeMonthlyReportPage() {
           ? { department_id: selectedEmployee.department_id, active_only: false }
           : undefined,
       ),
-    enabled: Boolean(selectedEmployee?.department_id),
+    enabled: Boolean(selectedEmployee?.department_id) && canUseManualShiftRules && isManualModalOpen,
   })
 
   const overridesByDate = useMemo(() => {
+    if (!canViewManualOverrides) {
+      return new Map<string, ManualDayOverride>()
+    }
     const map = new Map<string, ManualDayOverride>()
     for (const item of overridesQuery.data ?? []) {
       map.set(item.day_date, item)
     }
     return map
-  }, [overridesQuery.data])
+  }, [canViewManualOverrides, overridesQuery.data])
 
-  const days = reportQuery.data?.days ?? []
+  const days = useMemo(() => reportQuery.data?.days ?? [], [reportQuery.data])
   const totalMissingMinutes = useMemo(
     () => days.reduce((sum, day) => sum + (day.missing_minutes ?? 0), 0),
     [days],
@@ -454,6 +462,9 @@ export function EmployeeMonthlyReportPage() {
   }
 
   const openManualModalForDay = (day: MonthlyEmployeeDay) => {
+    if (!canViewManualOverrides) {
+      return
+    }
     const override = overridesByDate.get(day.date)
     const decoded = decodeManualOverrideStatus(override)
     setEditingDay(day.date)
@@ -475,6 +486,9 @@ export function EmployeeMonthlyReportPage() {
   }
 
   const openManualModalFromToolbar = () => {
+    if (!canWriteManualOverrides) {
+      return
+    }
     if (!reportEnabled || days.length === 0) {
       pushToast({
         variant: 'error',
@@ -513,7 +527,7 @@ export function EmployeeMonthlyReportPage() {
 
   const onSaveManual = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!reportEnabled) return
+    if (!reportEnabled || !canWriteManualOverrides) return
     if (!validateManualForm()) return
 
     upsertOverrideMutation.mutate({
@@ -548,6 +562,7 @@ export function EmployeeMonthlyReportPage() {
             <button
               type="button"
               onClick={openManualModalFromToolbar}
+              disabled={!canWriteManualOverrides || !reportEnabled}
               className="btn-secondary rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
             >
               Manuel Duzeltme
@@ -877,9 +892,11 @@ export function EmployeeMonthlyReportPage() {
                       const reasons = getDaySuspicionReasons(day)
                       const suspicious = reasons.length > 0
                       const suspiciousTooltip = buildSuspicionTooltip(reasons)
-                      const override = overridesByDate.get(day.date)
+                      const override = canViewManualOverrides ? overridesByDate.get(day.date) : undefined
                       const decodedOverride = decodeManualOverrideStatus(override)
-                      const hasManual = day.flags.includes('MANUAL_OVERRIDE') || day.flags.includes('MANUAL_EVENT') || Boolean(override)
+                      const hasManual =
+                        canViewManualOverrides &&
+                        (day.flags.includes('MANUAL_OVERRIDE') || day.flags.includes('MANUAL_EVENT') || Boolean(override))
                       const showManualStatusBadge = decodedOverride.status !== 'NORMAL'
                       const dayRowTone = resolveDayRowTone(day, suspicious)
 
@@ -947,13 +964,17 @@ export function EmployeeMonthlyReportPage() {
                             <SuspiciousReasonList reasons={reasons} />
                           </td>
                           <td className="py-2">
-                            <button
-                              type="button"
-                              onClick={() => openManualModalForDay(day)}
-                              className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                            >
-                              Manuel Duzelt
-                            </button>
+                            {canViewManualOverrides ? (
+                              <button
+                                type="button"
+                                onClick={() => openManualModalForDay(day)}
+                                className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                              >
+                                {canWriteManualOverrides ? 'Manuel Duzelt' : 'Incele'}
+                              </button>
+                            ) : (
+                              <span className="text-xs text-slate-500">Yetki yok</span>
+                            )}
                           </td>
                         </tr>
                       )
@@ -974,12 +995,19 @@ export function EmployeeMonthlyReportPage() {
         maxWidthClass="max-w-2xl"
       >
         <form onSubmit={onSaveManual} className="space-y-3">
+          {!canWriteManualOverrides ? (
+            <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              Manuel duzeltme verisini goruntuleyebilirsiniz, ancak kaydetme icin yazma yetkisi gerekir.
+            </p>
+          ) : null}
+
           <label className="text-sm text-slate-700">
             Tarih
             <input
               type="date"
               value={editingDay}
               onChange={(event) => setEditingDay(event.target.value)}
+              disabled={!canWriteManualOverrides}
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
             />
           </label>
@@ -989,6 +1017,7 @@ export function EmployeeMonthlyReportPage() {
             <select
               value={editStatus}
               onChange={(event) => setEditStatus(event.target.value as ManualDayStatus)}
+              disabled={!canWriteManualOverrides}
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
             >
               <option value="NORMAL">Normal</option>
@@ -1009,14 +1038,23 @@ export function EmployeeMonthlyReportPage() {
                   setEditRuleShiftId('')
                 }
               }}
+              disabled={!canWriteManualOverrides}
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
             >
               <option value="AUTO">{ruleSourceOverrideLabels.AUTO}</option>
-              <option value="SHIFT">{ruleSourceOverrideLabels.SHIFT}</option>
+              <option value="SHIFT" disabled={!hasPermission('schedule')}>
+                {ruleSourceOverrideLabels.SHIFT}
+              </option>
               <option value="WEEKLY">{ruleSourceOverrideLabels.WEEKLY}</option>
               <option value="WORK_RULE">{ruleSourceOverrideLabels.WORK_RULE}</option>
             </select>
           </label>
+
+          {canWriteManualOverrides && !hasPermission('schedule') ? (
+            <p className="text-xs text-slate-500">
+              Vardiya bazli duzeltme icin schedule yetkisi gerekir; bu nedenle vardiya secimi gizlendi.
+            </p>
+          ) : null}
 
           {editRuleSource === 'SHIFT' ? (
             <label className="text-sm text-slate-700">
@@ -1024,6 +1062,7 @@ export function EmployeeMonthlyReportPage() {
               <select
                 value={editRuleShiftId}
                 onChange={(event) => setEditRuleShiftId(event.target.value)}
+                disabled={!canWriteManualOverrides || !canUseManualShiftRules}
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
               >
                 <option value="">Vardiya seciniz</option>
@@ -1043,7 +1082,7 @@ export function EmployeeMonthlyReportPage() {
                 type="time"
                 value={editInTime}
                 onChange={(event) => setEditInTime(event.target.value)}
-                disabled={editStatus !== 'NORMAL'}
+                disabled={!canWriteManualOverrides || editStatus !== 'NORMAL'}
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
               />
             </label>
@@ -1053,7 +1092,7 @@ export function EmployeeMonthlyReportPage() {
                 type="time"
                 value={editOutTime}
                 onChange={(event) => setEditOutTime(event.target.value)}
-                disabled={editStatus !== 'NORMAL'}
+                disabled={!canWriteManualOverrides || editStatus !== 'NORMAL'}
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
               />
             </label>
@@ -1075,6 +1114,7 @@ export function EmployeeMonthlyReportPage() {
               type="text"
               value={editReason}
               onChange={(event) => setEditReason(event.target.value)}
+              disabled={!canWriteManualOverrides}
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
               placeholder="Orn: Saglik raporu / Sistem arizasi"
             />
@@ -1089,7 +1129,7 @@ export function EmployeeMonthlyReportPage() {
           <div className="flex flex-wrap gap-2">
             <button
               type="submit"
-              disabled={upsertOverrideMutation.isPending}
+              disabled={!canWriteManualOverrides || upsertOverrideMutation.isPending}
               className="btn-primary rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
             >
               {upsertOverrideMutation.isPending ? (
@@ -1105,7 +1145,7 @@ export function EmployeeMonthlyReportPage() {
               <button
                 type="button"
                 onClick={() => deleteOverrideMutation.mutate(editOverrideId)}
-                disabled={deleteOverrideMutation.isPending}
+                disabled={!canWriteManualOverrides || deleteOverrideMutation.isPending}
                 className="btn-danger rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
               >
                 {deleteOverrideMutation.isPending ? (

@@ -34,6 +34,7 @@ import {
   systemStatusClass,
   systemStatusLabel,
 } from '../components/management-console/utils'
+import { useAuth } from '../hooks/useAuth'
 import { useToast } from '../hooks/useToast'
 
 const inviteSchema = z.object({
@@ -66,7 +67,11 @@ function copyWithFallback(text: string): Promise<void> {
     document.body.appendChild(textarea)
     textarea.select()
     try {
-      document.execCommand('copy') ? resolve() : reject(new Error('copy-failed'))
+      if (document.execCommand('copy')) {
+        resolve()
+      } else {
+        reject(new Error('copy-failed'))
+      }
     } catch (error) {
       reject(error)
     } finally {
@@ -76,6 +81,7 @@ function copyWithFallback(text: string): Promise<void> {
 }
 
 export function ControlRoomPage() {
+  const { hasPermission } = useAuth()
   const { pushToast } = useToast()
   const [filterForm, setFilterForm] = useState<FilterFormState>(defaultFilters())
   const [appliedFilters, setAppliedFilters] = useState<FilterFormState>(defaultFilters())
@@ -87,12 +93,36 @@ export function ControlRoomPage() {
   const [expiresInMinutes, setExpiresInMinutes] = useState('30')
   const [inviteResult, setInviteResult] = useState<{ token: string; invite_url: string; expires_at: string } | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const canViewRegions = hasPermission('regions') || hasPermission('log')
+  const canViewDepartments = hasPermission('departments') || hasPermission('log')
+  const canViewSnapshot = hasPermission('reports')
+  const canViewDevices = hasPermission('devices')
+  const canViewLeaves = hasPermission('leaves')
+  const canViewNotifications = hasPermission('notifications')
+  const canWriteDevices = hasPermission('devices', 'write')
+  const canWriteAudit = hasPermission('audit', 'write')
 
-  const regionsQuery = useQuery({ queryKey: ['regions', 'management-console'], queryFn: () => getRegions() })
-  const departmentsQuery = useQuery({ queryKey: ['departments', 'management-console'], queryFn: () => getDepartments() })
+  const regionsQuery = useQuery({
+    queryKey: ['regions', 'management-console'],
+    queryFn: () => getRegions(),
+    enabled: canViewRegions,
+  })
+  const departmentsQuery = useQuery({
+    queryKey: ['departments', 'management-console'],
+    queryFn: () => getDepartments(),
+    enabled: canViewDepartments,
+  })
   const employeesQuery = useQuery({ queryKey: ['employees', 'management-console'], queryFn: () => getEmployees({ status: 'all' }) })
-  const devicesQuery = useQuery({ queryKey: ['devices', 'management-console'], queryFn: getDevices })
-  const leavesQuery = useQuery({ queryKey: ['leaves', 'management-console'], queryFn: () => getLeaves({}) })
+  const devicesQuery = useQuery({
+    queryKey: ['devices', 'management-console'],
+    queryFn: getDevices,
+    enabled: canViewDevices,
+  })
+  const leavesQuery = useQuery({
+    queryKey: ['leaves', 'management-console'],
+    queryFn: () => getLeaves({}),
+    enabled: canViewLeaves,
+  })
 
   const overviewParams = useMemo(() => toOverviewParams(appliedFilters, page), [appliedFilters, page])
   const overviewQuery = useQuery({
@@ -102,7 +132,7 @@ export function ControlRoomPage() {
   const snapshotQuery = useQuery({
     queryKey: ['dashboard-employee-snapshot', employeeTargetId],
     queryFn: () => getDashboardEmployeeSnapshot({ employee_id: Number(employeeTargetId) }),
-    enabled: Boolean(employeeTargetId),
+    enabled: Boolean(employeeTargetId) && canViewSnapshot,
     staleTime: 20_000,
   })
 
@@ -129,10 +159,12 @@ export function ControlRoomPage() {
     const next = { ...filterForm }
     setAppliedFilters(next)
     setPage(1)
-    filterAuditMutation.mutate({
-      filters: { ...toOverviewParams(next, 1) } as Record<string, unknown>,
-      total_results: overviewQuery.data?.total,
-    })
+    if (canWriteAudit) {
+      filterAuditMutation.mutate({
+        filters: { ...toOverviewParams(next, 1) } as Record<string, unknown>,
+        total_results: overviewQuery.data?.total,
+      })
+    }
   }
 
   const resetFilters = () => {
@@ -149,13 +181,19 @@ export function ControlRoomPage() {
     setFilterForm(next)
     setAppliedFilters(next)
     setPage(1)
-    filterAuditMutation.mutate({
-      filters: { ...toOverviewParams(next, 1) } as Record<string, unknown>,
-      total_results: overviewQuery.data?.total,
-    })
+    if (canWriteAudit) {
+      filterAuditMutation.mutate({
+        filters: { ...toOverviewParams(next, 1) } as Record<string, unknown>,
+        total_results: overviewQuery.data?.total,
+      })
+    }
   }
 
   const createInvite = () => {
+    if (!canWriteDevices) {
+      setActionError('Claim token olusturmak icin cihaz yazma yetkisi gerekir.')
+      return
+    }
     setInviteResult(null)
     setActionError(null)
     const parsed = inviteSchema.safeParse({ employee_id: employeeTargetId, expires_in_minutes: expiresInMinutes })
@@ -180,22 +218,22 @@ export function ControlRoomPage() {
   }
 
   if (
-    regionsQuery.isLoading ||
-    departmentsQuery.isLoading ||
+    (canViewRegions && regionsQuery.isLoading) ||
+    (canViewDepartments && departmentsQuery.isLoading) ||
     employeesQuery.isLoading ||
-    devicesQuery.isLoading ||
-    leavesQuery.isLoading ||
+    (canViewDevices && devicesQuery.isLoading) ||
+    (canViewLeaves && leavesQuery.isLoading) ||
     overviewQuery.isLoading
   ) {
     return <LoadingBlock label="ERP paneli yükleniyor..." />
   }
 
   if (
-    regionsQuery.isError ||
-    departmentsQuery.isError ||
+    (canViewRegions && regionsQuery.isError) ||
+    (canViewDepartments && departmentsQuery.isError) ||
     employeesQuery.isError ||
-    devicesQuery.isError ||
-    leavesQuery.isError ||
+    (canViewDevices && devicesQuery.isError) ||
+    (canViewLeaves && leavesQuery.isError) ||
     overviewQuery.isError ||
     !overviewQuery.data
   ) {
@@ -203,8 +241,8 @@ export function ControlRoomPage() {
   }
 
   const employees = employeesQuery.data ?? []
-  const devices = devicesQuery.data ?? []
-  const leaves = leavesQuery.data ?? []
+  const devices = canViewDevices ? devicesQuery.data ?? [] : []
+  const leaves = canViewLeaves ? leavesQuery.data ?? [] : []
   const summary = overviewQuery.data.summary
   const totalPages = Math.max(
     1,
@@ -267,8 +305,8 @@ export function ControlRoomPage() {
 
         <ManagementConsoleFilters
           filterForm={filterForm}
-          regions={regionsQuery.data ?? []}
-          departments={departmentsQuery.data ?? []}
+          regions={canViewRegions ? regionsQuery.data ?? [] : []}
+          departments={canViewDepartments ? departmentsQuery.data ?? [] : []}
           activeFilterEntries={activeFilterEntries}
           onChange={setFilterForm}
           onApply={applyFilters}
@@ -360,116 +398,122 @@ export function ControlRoomPage() {
                   ) : null}
                 </section>
 
-                {employeeTargetId && snapshotQuery.isLoading ? (
-                  <LoadingBlock label="Personel özeti yükleniyor..." />
-                ) : null}
-                {employeeTargetId && snapshotQuery.isError ? (
-                  <ErrorBlock message="Personel özeti alınamadı." />
-                ) : null}
+                {canViewSnapshot ? (
+                  <>
+                    {employeeTargetId && snapshotQuery.isLoading ? (
+                      <LoadingBlock label="Personel özeti yükleniyor..." />
+                    ) : null}
+                    {employeeTargetId && snapshotQuery.isError ? (
+                      <ErrorBlock message="Personel özeti alınamadı." />
+                    ) : null}
 
-                {snapshotQuery.data ? (
-                  <div className="mc-focus-support">
-                    <article className="mc-panel mc-panel--subtle">
-                      <div className="mc-panel__head mc-panel__head--tight">
-                        <div>
-                          <p className="mc-kicker">AYLIK RİTİM</p>
-                          <h3 className="mc-panel__title">
-                            {monthLabel(
-                              snapshotQuery.data.current_month.year,
-                              snapshotQuery.data.current_month.month,
-                            )}
-                          </h3>
-                        </div>
-                      </div>
-                      <div className="mc-focus-data-list">
-                        <div className="mc-focus-data-row">
-                          <span>Bu ay net</span>
-                          <strong>
-                            <MinuteDisplay minutes={snapshotQuery.data.current_month.worked_minutes} />
-                          </strong>
-                        </div>
-                        <div className="mc-focus-data-row">
-                          <span>Plan üstü</span>
-                          <strong>
-                            <MinuteDisplay minutes={snapshotQuery.data.current_month.plan_overtime_minutes} />
-                          </strong>
-                        </div>
-                        <div className="mc-focus-data-row">
-                          <span>Yasal mesai</span>
-                          <strong>
-                            <MinuteDisplay minutes={snapshotQuery.data.current_month.overtime_minutes} />
-                          </strong>
-                        </div>
-                        <div className="mc-focus-data-row">
-                          <span>Eksik gün</span>
-                          <strong>{snapshotQuery.data.current_month.incomplete_days}</strong>
-                        </div>
-                      </div>
-                    </article>
+                    {snapshotQuery.data ? (
+                      <div className="mc-focus-support">
+                        <article className="mc-panel mc-panel--subtle">
+                          <div className="mc-panel__head mc-panel__head--tight">
+                            <div>
+                              <p className="mc-kicker">AYLIK RİTİM</p>
+                              <h3 className="mc-panel__title">
+                                {monthLabel(
+                                  snapshotQuery.data.current_month.year,
+                                  snapshotQuery.data.current_month.month,
+                                )}
+                              </h3>
+                            </div>
+                          </div>
+                          <div className="mc-focus-data-list">
+                            <div className="mc-focus-data-row">
+                              <span>Bu ay net</span>
+                              <strong>
+                                <MinuteDisplay minutes={snapshotQuery.data.current_month.worked_minutes} />
+                              </strong>
+                            </div>
+                            <div className="mc-focus-data-row">
+                              <span>Plan üstü</span>
+                              <strong>
+                                <MinuteDisplay minutes={snapshotQuery.data.current_month.plan_overtime_minutes} />
+                              </strong>
+                            </div>
+                            <div className="mc-focus-data-row">
+                              <span>Yasal mesai</span>
+                              <strong>
+                                <MinuteDisplay minutes={snapshotQuery.data.current_month.overtime_minutes} />
+                              </strong>
+                            </div>
+                            <div className="mc-focus-data-row">
+                              <span>Eksik gün</span>
+                              <strong>{snapshotQuery.data.current_month.incomplete_days}</strong>
+                            </div>
+                          </div>
+                        </article>
 
-                    <article className="mc-panel mc-panel--subtle">
-                      <div className="mc-panel__head mc-panel__head--tight">
-                        <div>
-                          <p className="mc-kicker">SON SİNYAL</p>
-                          <h3 className="mc-panel__title">Puantaj ve cihaz görünümü</h3>
-                        </div>
-                      </div>
-                      <div className="mc-focus-data-list">
-                        <div className="mc-focus-data-row">
-                          <span>Son puantaj</span>
-                          <strong>
-                            {snapshotQuery.data.last_event
-                              ? `${attendanceTypeLabel(snapshotQuery.data.last_event.event_type)} · ${formatDateTime(snapshotQuery.data.last_event.ts_utc)}`
-                              : 'Kayıt yok'}
-                          </strong>
-                        </div>
-                        <div className="mc-focus-data-row">
-                          <span>Cihaz</span>
-                          <strong>
-                            {snapshotQuery.data.last_event ? `#${snapshotQuery.data.last_event.device_id}` : '-'}
-                          </strong>
-                        </div>
-                        <div className="mc-focus-data-row">
-                          <span>Portal izi</span>
-                          <strong>{formatDateTime(focusEmployee.last_portal_seen_utc)}</strong>
-                        </div>
-                        <div className="mc-focus-data-row">
-                          <span>Takip ekranı</span>
-                          <strong>Log</strong>
-                        </div>
-                      </div>
-                    </article>
+                        <article className="mc-panel mc-panel--subtle">
+                          <div className="mc-panel__head mc-panel__head--tight">
+                            <div>
+                              <p className="mc-kicker">SON SİNYAL</p>
+                              <h3 className="mc-panel__title">Puantaj ve cihaz görünümü</h3>
+                            </div>
+                          </div>
+                          <div className="mc-focus-data-list">
+                            <div className="mc-focus-data-row">
+                              <span>Son puantaj</span>
+                              <strong>
+                                {snapshotQuery.data.last_event
+                                  ? `${attendanceTypeLabel(snapshotQuery.data.last_event.event_type)} · ${formatDateTime(snapshotQuery.data.last_event.ts_utc)}`
+                                  : 'Kayıt yok'}
+                              </strong>
+                            </div>
+                            <div className="mc-focus-data-row">
+                              <span>Cihaz</span>
+                              <strong>
+                                {snapshotQuery.data.last_event ? `#${snapshotQuery.data.last_event.device_id}` : '-'}
+                              </strong>
+                            </div>
+                            <div className="mc-focus-data-row">
+                              <span>Portal izi</span>
+                              <strong>{formatDateTime(focusEmployee.last_portal_seen_utc)}</strong>
+                            </div>
+                            <div className="mc-focus-data-row">
+                              <span>Takip ekranı</span>
+                              <strong>Log</strong>
+                            </div>
+                          </div>
+                        </article>
 
-                    <article className="mc-panel mc-panel--subtle">
-                      <div className="mc-panel__head mc-panel__head--tight">
-                        <div>
-                          <p className="mc-kicker">CİHAZ AYAK İZİ</p>
-                          <h3 className="mc-panel__title">Portal ve cihaz parkuru</h3>
-                        </div>
+                        <article className="mc-panel mc-panel--subtle">
+                          <div className="mc-panel__head mc-panel__head--tight">
+                            <div>
+                              <p className="mc-kicker">CİHAZ AYAK İZİ</p>
+                              <h3 className="mc-panel__title">Portal ve cihaz parkuru</h3>
+                            </div>
+                          </div>
+                          <div className="mc-focus-data-list">
+                            <div className="mc-focus-data-row">
+                              <span>Aktif cihaz</span>
+                              <strong>
+                                {snapshotQuery.data.active_devices}/{snapshotQuery.data.total_devices}
+                              </strong>
+                            </div>
+                            <div className="mc-focus-data-row">
+                              <span>Portal izi</span>
+                              <strong>{formatDateTime(focusEmployee.last_portal_seen_utc)}</strong>
+                            </div>
+                            <div className="mc-focus-data-row">
+                              <span>İlk cihaz izi</span>
+                              <strong>
+                                {snapshotQuery.data.devices[0]
+                                  ? shortFingerprint(snapshotQuery.data.devices[0].device_fingerprint)
+                                  : 'Cihaz yok'}
+                              </strong>
+                            </div>
+                          </div>
+                        </article>
                       </div>
-                      <div className="mc-focus-data-list">
-                        <div className="mc-focus-data-row">
-                          <span>Aktif cihaz</span>
-                          <strong>
-                            {snapshotQuery.data.active_devices}/{snapshotQuery.data.total_devices}
-                          </strong>
-                        </div>
-                        <div className="mc-focus-data-row">
-                          <span>Portal izi</span>
-                          <strong>{formatDateTime(focusEmployee.last_portal_seen_utc)}</strong>
-                        </div>
-                        <div className="mc-focus-data-row">
-                          <span>İlk cihaz izi</span>
-                          <strong>
-                            {snapshotQuery.data.devices[0]
-                              ? shortFingerprint(snapshotQuery.data.devices[0].device_fingerprint)
-                              : 'Cihaz yok'}
-                          </strong>
-                        </div>
-                      </div>
-                    </article>
-                  </div>
-                ) : null}
+                    ) : null}
+                  </>
+                ) : (
+                  <div className="mc-empty-state">Personel özetini görmek için reports yetkisi gerekir.</div>
+                )}
               </>
             ) : (
               <div className="mc-empty-state">Odak kartı için matriste bir personel seçin.</div>
@@ -498,16 +542,20 @@ export function ControlRoomPage() {
                   value={expiresInMinutes}
                   onChange={(event) => setExpiresInMinutes(event.target.value)}
                   placeholder="30"
+                  disabled={!canWriteDevices}
                 />
               </label>
               <button
                 type="button"
                 className="mc-button mc-button--primary"
-                disabled={inviteMutation.isPending || !employeeTargetId}
+                disabled={inviteMutation.isPending || !employeeTargetId || !canWriteDevices}
                 onClick={createInvite}
               >
                 {inviteMutation.isPending ? 'Oluşturuluyor...' : 'Claim token oluştur'}
               </button>
+              {!canWriteDevices ? (
+                <div className="mc-inline-note">Cihaz daveti oluşturmak için devices yazma yetkisi gerekir.</div>
+              ) : null}
               {inviteResult ? (
                 <div className="mc-utility-copy-stack">
                   <CopyField label="Token" value={inviteResult.token} onCopy={(value) => void copyText(value)} />
@@ -551,24 +599,28 @@ export function ControlRoomPage() {
                   <p className="mc-kicker">İZİN RADARI</p>
                   <h3 className="mc-panel__title">Bekleyen ve son açılan izinler</h3>
                 </div>
-                <span className="mc-status-pill is-watch">{pendingLeaveCount} bekleyen</span>
+                {canViewLeaves ? <span className="mc-status-pill is-watch">{pendingLeaveCount} bekleyen</span> : null}
               </div>
-              <div className="mc-utility-list">
-                {recentLeaves.slice(0, 3).map((leave) => (
-                  <article key={leave.id} className="mc-utility-list__row">
-                    <div>
-                      <strong>Personel #{leave.employee_id}</strong>
-                      <p>
-                        {leave.start_date} - {leave.end_date}
-                      </p>
-                    </div>
-                    <div className="mc-utility-list__meta">
-                      <span className={leaveClass(leave.status)}>{leaveLabel(leave.status)}</span>
-                      <small>{formatDateTime(leave.created_at)}</small>
-                    </div>
-                  </article>
-                ))}
-              </div>
+              {canViewLeaves ? (
+                <div className="mc-utility-list">
+                  {recentLeaves.slice(0, 3).map((leave) => (
+                    <article key={leave.id} className="mc-utility-list__row">
+                      <div>
+                        <strong>Personel #{leave.employee_id}</strong>
+                        <p>
+                          {leave.start_date} - {leave.end_date}
+                        </p>
+                      </div>
+                      <div className="mc-utility-list__meta">
+                        <span className={leaveClass(leave.status)}>{leaveLabel(leave.status)}</span>
+                        <small>{formatDateTime(leave.created_at)}</small>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="mc-empty-state">Izin verilerini gormek icin leaves yetkisi gerekir.</div>
+              )}
             </section>
           </aside>
         </section>
@@ -660,7 +712,7 @@ export function ControlRoomPage() {
                     <h3 className="mc-panel__title">Operasyon ve vardiya disiplini görünümü</h3>
                   </div>
                   <span className="mc-chip">
-                    {activeDeviceCount}/{devices.length} aktif cihaz
+                    {canViewDevices ? `${activeDeviceCount}/${devices.length} aktif cihaz` : 'Cihaz verisi yok'}
                   </span>
                 </div>
                 <div className="mc-erp-department-list">
@@ -686,12 +738,24 @@ export function ControlRoomPage() {
 
           {!sideRailCollapsed ? (
             <aside className="mc-layout__rail mc-layout__rail--control-room">
-              <ManagementConsoleNotificationPanel
-                selectedEmployeeId={selectedEmployeeId}
-                startDate={appliedFilters.start_date}
-                endDate={appliedFilters.end_date}
-                onOpenEmployee={openEmployee}
-              />
+              {canViewNotifications ? (
+                <ManagementConsoleNotificationPanel
+                  selectedEmployeeId={selectedEmployeeId}
+                  startDate={appliedFilters.start_date}
+                  endDate={appliedFilters.end_date}
+                  onOpenEmployee={openEmployee}
+                />
+              ) : (
+                <section className="mc-panel">
+                  <div className="mc-panel__head">
+                    <div>
+                      <p className="mc-kicker">BİLDİRİM AKIŞI</p>
+                      <h3 className="mc-panel__title">Bildirim akışı</h3>
+                    </div>
+                  </div>
+                  <div className="mc-empty-state">Bildirim akışını görmek için notifications yetkisi gerekir.</div>
+                </section>
+              )}
             </aside>
           ) : null}
         </div>

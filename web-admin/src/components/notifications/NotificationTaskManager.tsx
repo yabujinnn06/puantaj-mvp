@@ -12,7 +12,11 @@ import { parseApiError } from '../../api/error'
 import { Panel } from '../Panel'
 import { TableSearchInput } from '../TableSearchInput'
 import { useToast } from '../../hooks/useToast'
-import type { AdminUser, Employee, ScheduledNotificationTask } from '../../types/api'
+import type {
+  AdminUser,
+  Employee,
+  ScheduledNotificationTask,
+} from '../../types/api'
 
 type TaskFormState = {
   id: number | null
@@ -59,7 +63,10 @@ function defaultFormState(): TaskFormState {
 
 function dt(value: string | null | undefined): string {
   if (!value) return '-'
-  return new Intl.DateTimeFormat('tr-TR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value))
+  return new Intl.DateTimeFormat('tr-TR', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(new Date(value))
 }
 
 function targetLabel(task: ScheduledNotificationTask): string {
@@ -107,8 +114,14 @@ function buildPayload(form: TaskFormState): ScheduledNotificationTaskPayload {
     target: form.target,
     employee_scope: form.target !== 'admins' ? form.employee_scope : null,
     admin_scope: form.target !== 'employees' ? form.admin_scope : null,
-    employee_ids: form.target !== 'admins' && form.employee_scope === 'selected' ? form.employee_ids : [],
-    admin_user_ids: form.target !== 'employees' && form.admin_scope === 'selected' ? form.admin_user_ids : [],
+    employee_ids:
+      form.target !== 'admins' && form.employee_scope === 'selected'
+        ? form.employee_ids
+        : [],
+    admin_user_ids:
+      form.target !== 'employees' && form.admin_scope === 'selected'
+        ? form.admin_user_ids
+        : [],
     schedule_kind: form.schedule_kind,
     run_date_local: form.schedule_kind === 'once' ? form.run_date_local : null,
     run_time_local: form.run_time_local,
@@ -149,7 +162,11 @@ export function NotificationTaskManager({
     const normalized = employeeSearch.trim().toLocaleLowerCase('tr-TR')
     if (!normalized) return employees.slice(0, 120)
     return employees
-      .filter((item) => `${item.full_name} ${item.id}`.toLocaleLowerCase('tr-TR').includes(normalized))
+      .filter((item) =>
+        `${item.full_name} ${item.id}`
+          .toLocaleLowerCase('tr-TR')
+          .includes(normalized),
+      )
       .slice(0, 120)
   }, [employeeSearch, employees])
 
@@ -157,7 +174,11 @@ export function NotificationTaskManager({
     const normalized = adminSearch.trim().toLocaleLowerCase('tr-TR')
     if (!normalized) return admins.slice(0, 80)
     return admins
-      .filter((item) => `${item.username} ${item.id}`.toLocaleLowerCase('tr-TR').includes(normalized))
+      .filter((item) =>
+        `${item.username} ${item.id}`
+          .toLocaleLowerCase('tr-TR')
+          .includes(normalized),
+      )
       .slice(0, 80)
   }, [adminSearch, admins])
 
@@ -178,30 +199,48 @@ export function NotificationTaskManager({
       setForm(defaultFormState())
       setEmployeeSearch('')
       setAdminSearch('')
-      void queryClient.invalidateQueries({ queryKey: ['scheduled-notification-tasks'] })
+      void queryClient.invalidateQueries({
+        queryKey: ['scheduled-notification-tasks'],
+      })
     },
     onError: (error) => {
       const parsed = parseApiError(error, 'Görev kaydedilemedi.')
-      pushToast({ variant: 'error', title: 'Görev hatası', description: parsed.message })
+      pushToast({
+        variant: 'error',
+        title: 'Görev hatası',
+        description: parsed.message,
+      })
     },
   })
 
   const deleteMutation = useMutation({
     mutationFn: deleteScheduledNotificationTask,
     onSuccess: () => {
-      pushToast({ variant: 'success', title: 'Görev silindi', description: 'Zamanlanmış görev kaldırıldı.' })
+      pushToast({
+        variant: 'success',
+        title: 'Görev silindi',
+        description: 'Zamanlanmış görev kaldırıldı.',
+      })
       if (form.id != null) {
         setForm(defaultFormState())
       }
-      void queryClient.invalidateQueries({ queryKey: ['scheduled-notification-tasks'] })
+      void queryClient.invalidateQueries({
+        queryKey: ['scheduled-notification-tasks'],
+      })
     },
     onError: (error) => {
       const parsed = parseApiError(error, 'Görev silinemedi.')
-      pushToast({ variant: 'error', title: 'Silme hatası', description: parsed.message })
+      pushToast({
+        variant: 'error',
+        title: 'Silme hatası',
+        description: parsed.message,
+      })
     },
   })
 
   const taskRows = tasksQuery.data?.items ?? []
+  const activeTaskCount = taskRows.filter((task) => task.is_active).length
+  const inactiveTaskCount = Math.max(0, taskRows.length - activeTaskCount)
 
   return (
     <>
@@ -215,9 +254,12 @@ export function NotificationTaskManager({
         >
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h4 className="text-base font-semibold text-slate-900">Zamanlanmış Bildirim Görevleri</h4>
+              <h4 className="text-base font-semibold text-slate-900">
+                Zamanlanmış Bildirim Görevleri
+              </h4>
               <p className="mt-1 text-sm text-slate-500">
-                Tek seferlik veya her gün tekrarlayan görev tanımlayın. Tüm çalışanlar, tek kişi veya seçili liste için kullanılabilir.
+                Tek seferlik veya her gün tekrarlayan görev tanımlayın. Tüm
+                çalışanlar, tek kişi veya seçili liste için kullanılabilir.
               </p>
             </div>
             {form.id != null ? (
@@ -231,12 +273,32 @@ export function NotificationTaskManager({
             ) : null}
           </div>
 
+          <div className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600 md:grid-cols-3">
+            <div>
+              <strong className="block text-slate-900">Toplam gorev</strong>
+              {taskRows.length}
+            </div>
+            <div>
+              <strong className="block text-slate-900">Aktif</strong>
+              {activeTaskCount}
+            </div>
+            <div>
+              <strong className="block text-slate-900">Pasif</strong>
+              {inactiveTaskCount}
+            </div>
+          </div>
+
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <label className="text-sm text-slate-700">
               Görev adı
               <input
                 value={form.name}
-                onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    name: event.target.value,
+                  }))
+                }
                 className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
                 placeholder="Örn: Sabah bilgilendirmesi"
               />
@@ -245,7 +307,12 @@ export function NotificationTaskManager({
               Bildirim başlığı
               <input
                 value={form.title}
-                onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    title: event.target.value,
+                  }))
+                }
                 className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
                 placeholder="Başlık"
               />
@@ -271,7 +338,12 @@ export function NotificationTaskManager({
               <input
                 type="checkbox"
                 checked={form.is_active}
-                onChange={(event) => setForm((current) => ({ ...current, is_active: event.target.checked }))}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    is_active: event.target.checked,
+                  }))
+                }
               />
               Aktif görev
             </label>
@@ -281,7 +353,12 @@ export function NotificationTaskManager({
             Bildirim mesajı
             <textarea
               value={form.message}
-              onChange={(event) => setForm((current) => ({ ...current, message: event.target.value }))}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  message: event.target.value,
+                }))
+              }
               rows={4}
               className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
               placeholder="Gönderilecek mesaj"
@@ -296,7 +373,8 @@ export function NotificationTaskManager({
                 onChange={(event) =>
                   setForm((current) => ({
                     ...current,
-                    schedule_kind: event.target.value as TaskFormState['schedule_kind'],
+                    schedule_kind: event.target
+                      .value as TaskFormState['schedule_kind'],
                   }))
                 }
                 className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
@@ -311,7 +389,12 @@ export function NotificationTaskManager({
                 <input
                   type="date"
                   value={form.run_date_local}
-                  onChange={(event) => setForm((current) => ({ ...current, run_date_local: event.target.value }))}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      run_date_local: event.target.value,
+                    }))
+                  }
                   className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
                 />
               </label>
@@ -325,7 +408,12 @@ export function NotificationTaskManager({
               <input
                 type="time"
                 value={form.run_time_local}
-                onChange={(event) => setForm((current) => ({ ...current, run_time_local: event.target.value }))}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    run_time_local: event.target.value,
+                  }))
+                }
                 className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
               />
             </label>
@@ -335,16 +423,25 @@ export function NotificationTaskManager({
             <div className="rounded-lg border border-slate-200 p-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h5 className="text-sm font-semibold text-slate-900">Çalışan hedefi</h5>
-                  <p className="text-xs text-slate-500">Tek çalışan için bir kişi, seçili grup için birden fazla kişi işaretleyin.</p>
+                  <h5 className="text-sm font-semibold text-slate-900">
+                    Çalışan hedefi
+                  </h5>
+                  <p className="text-xs text-slate-500">
+                    Tek çalışan için bir kişi, seçili grup için birden fazla
+                    kişi işaretleyin.
+                  </p>
                 </div>
                 <select
                   value={form.employee_scope}
                   onChange={(event) =>
                     setForm((current) => ({
                       ...current,
-                      employee_scope: event.target.value as TaskFormState['employee_scope'],
-                      employee_ids: event.target.value === 'all' ? [] : current.employee_ids,
+                      employee_scope: event.target
+                        .value as TaskFormState['employee_scope'],
+                      employee_ids:
+                        event.target.value === 'all'
+                          ? []
+                          : current.employee_ids,
                     }))
                   }
                   className="rounded border border-slate-300 px-3 py-2 text-sm"
@@ -356,19 +453,32 @@ export function NotificationTaskManager({
 
               {form.employee_scope === 'selected' ? (
                 <div className="mt-3">
-                  <TableSearchInput value={employeeSearch} onChange={setEmployeeSearch} placeholder="Çalışan ara..." />
+                  <TableSearchInput
+                    value={employeeSearch}
+                    onChange={setEmployeeSearch}
+                    placeholder="Çalışan ara..."
+                  />
                   <div className="mt-2 max-h-40 overflow-y-auto rounded border border-slate-200 p-2 text-sm">
                     {filteredEmployees.map((employee) => (
-                      <label key={employee.id} className="flex items-center justify-between gap-3 py-1">
-                        <span>#{employee.id} - {employee.full_name}</span>
+                      <label
+                        key={employee.id}
+                        className="flex items-center justify-between gap-3 py-1"
+                      >
+                        <span>
+                          #{employee.id} - {employee.full_name}
+                        </span>
                         <input
                           type="checkbox"
                           checked={form.employee_ids.includes(employee.id)}
                           onChange={() =>
                             setForm((current) => ({
                               ...current,
-                              employee_ids: current.employee_ids.includes(employee.id)
-                                ? current.employee_ids.filter((value) => value !== employee.id)
+                              employee_ids: current.employee_ids.includes(
+                                employee.id,
+                              )
+                                ? current.employee_ids.filter(
+                                    (value) => value !== employee.id,
+                                  )
                                 : [...current.employee_ids, employee.id],
                             }))
                           }
@@ -376,7 +486,9 @@ export function NotificationTaskManager({
                       </label>
                     ))}
                   </div>
-                  <p className="mt-2 text-xs text-slate-500">Seçili çalışan sayısı: {form.employee_ids.length}</p>
+                  <p className="mt-2 text-xs text-slate-500">
+                    Seçili çalışan sayısı: {form.employee_ids.length}
+                  </p>
                 </div>
               ) : null}
             </div>
@@ -386,16 +498,25 @@ export function NotificationTaskManager({
             <div className="rounded-lg border border-slate-200 p-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h5 className="text-sm font-semibold text-slate-900">Admin hedefi</h5>
-                  <p className="text-xs text-slate-500">İsterseniz tüm adminlere, isterseniz seçili adminlere görev oluşturabilirsiniz.</p>
+                  <h5 className="text-sm font-semibold text-slate-900">
+                    Admin hedefi
+                  </h5>
+                  <p className="text-xs text-slate-500">
+                    İsterseniz tüm adminlere, isterseniz seçili adminlere görev
+                    oluşturabilirsiniz.
+                  </p>
                 </div>
                 <select
                   value={form.admin_scope}
                   onChange={(event) =>
                     setForm((current) => ({
                       ...current,
-                      admin_scope: event.target.value as TaskFormState['admin_scope'],
-                      admin_user_ids: event.target.value === 'all' ? [] : current.admin_user_ids,
+                      admin_scope: event.target
+                        .value as TaskFormState['admin_scope'],
+                      admin_user_ids:
+                        event.target.value === 'all'
+                          ? []
+                          : current.admin_user_ids,
                     }))
                   }
                   className="rounded border border-slate-300 px-3 py-2 text-sm"
@@ -407,19 +528,32 @@ export function NotificationTaskManager({
 
               {form.admin_scope === 'selected' ? (
                 <div className="mt-3">
-                  <TableSearchInput value={adminSearch} onChange={setAdminSearch} placeholder="Admin ara..." />
+                  <TableSearchInput
+                    value={adminSearch}
+                    onChange={setAdminSearch}
+                    placeholder="Admin ara..."
+                  />
                   <div className="mt-2 max-h-40 overflow-y-auto rounded border border-slate-200 p-2 text-sm">
                     {filteredAdmins.map((admin) => (
-                      <label key={admin.id} className="flex items-center justify-between gap-3 py-1">
-                        <span>#{admin.id} - {admin.username}</span>
+                      <label
+                        key={admin.id}
+                        className="flex items-center justify-between gap-3 py-1"
+                      >
+                        <span>
+                          #{admin.id} - {admin.username}
+                        </span>
                         <input
                           type="checkbox"
                           checked={form.admin_user_ids.includes(admin.id)}
                           onChange={() =>
                             setForm((current) => ({
                               ...current,
-                              admin_user_ids: current.admin_user_ids.includes(admin.id)
-                                ? current.admin_user_ids.filter((value) => value !== admin.id)
+                              admin_user_ids: current.admin_user_ids.includes(
+                                admin.id,
+                              )
+                                ? current.admin_user_ids.filter(
+                                    (value) => value !== admin.id,
+                                  )
                                 : [...current.admin_user_ids, admin.id],
                             }))
                           }
@@ -427,7 +561,9 @@ export function NotificationTaskManager({
                       </label>
                     ))}
                   </div>
-                  <p className="mt-2 text-xs text-slate-500">Seçili admin sayısı: {form.admin_user_ids.length}</p>
+                  <p className="mt-2 text-xs text-slate-500">
+                    Seçili admin sayısı: {form.admin_user_ids.length}
+                  </p>
                 </div>
               ) : null}
             </div>
@@ -439,10 +575,15 @@ export function NotificationTaskManager({
               disabled={saveMutation.isPending}
               className="rounded bg-brand-600 px-4 py-2 text-sm font-semibold text-white"
             >
-              {saveMutation.isPending ? 'Kaydediliyor...' : form.id != null ? 'Görevi güncelle' : 'Görev oluştur'}
+              {saveMutation.isPending
+                ? 'Kaydediliyor...'
+                : form.id != null
+                  ? 'Görevi güncelle'
+                  : 'Görev oluştur'}
             </button>
             <span className="text-xs text-slate-500">
-              Bugün herkese gönderim için: Tek sefer + bugünün tarihi + tüm çalışanlar.
+              Bugün herkese gönderim için: Tek sefer + bugünün tarihi + tüm
+              çalışanlar.
             </span>
           </div>
         </form>
@@ -451,14 +592,25 @@ export function NotificationTaskManager({
       <Panel>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h4 className="text-base font-semibold text-slate-900">Kayıtlı görevler</h4>
+            <h4 className="text-base font-semibold text-slate-900">
+              Kayıtlı görevler
+            </h4>
             <p className="mt-1 text-sm text-slate-500">
-              Sisteme tanımlanan bildirim görevleri burada görünür. Worker zamanı geldiğinde bunları otomatik kuyruğa alır.
+              Sisteme tanımlanan bildirim görevleri burada görünür. Worker
+              zamanı geldiğinde bunları otomatik kuyruğa alır.
             </p>
           </div>
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
-            Toplam: {tasksQuery.data?.total ?? 0}
-          </span>
+          <div className="flex flex-wrap gap-2 text-xs">
+            <span className="rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-600">
+              Toplam: {tasksQuery.data?.total ?? 0}
+            </span>
+            <span className="rounded-full bg-emerald-50 px-3 py-1 font-medium text-emerald-700">
+              Aktif: {activeTaskCount}
+            </span>
+            <span className="rounded-full bg-slate-200 px-3 py-1 font-medium text-slate-700">
+              Pasif: {inactiveTaskCount}
+            </span>
+          </div>
         </div>
 
         {tasksQuery.isLoading ? (
@@ -476,20 +628,31 @@ export function NotificationTaskManager({
                 .slice(0, 3)
 
               return (
-                <article key={task.id} className="rounded-xl border border-slate-200 p-4">
+                <article
+                  key={task.id}
+                  className="rounded-xl border border-slate-200 p-4"
+                >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <h5 className="text-sm font-semibold text-slate-900">{task.name}</h5>
-                        <span className={`rounded-full px-2 py-1 text-xs font-medium ${task.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}>
+                        <h5 className="text-sm font-semibold text-slate-900">
+                          {task.name}
+                        </h5>
+                        <span
+                          className={`rounded-full px-2 py-1 text-xs font-medium ${task.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}
+                        >
                           {task.is_active ? 'Aktif' : 'Pasif'}
                         </span>
                         <span className="rounded-full bg-sky-100 px-2 py-1 text-xs font-medium text-sky-700">
                           {targetLabel(task)}
                         </span>
                       </div>
-                      <p className="mt-1 text-sm text-slate-700">{task.title}</p>
-                      <p className="mt-1 text-sm text-slate-500">{task.message}</p>
+                      <p className="mt-1 text-sm text-slate-700">
+                        {task.title}
+                      </p>
+                      <p className="mt-1 text-sm text-slate-500">
+                        {task.message}
+                      </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <button
@@ -504,7 +667,11 @@ export function NotificationTaskManager({
                         disabled={deleteMutation.isPending}
                         className="rounded border border-rose-300 px-3 py-2 text-sm font-semibold text-rose-700"
                         onClick={() => {
-                          if (window.confirm(`"${task.name}" görevini silmek istiyor musunuz?`)) {
+                          if (
+                            window.confirm(
+                              `"${task.name}" görevini silmek istiyor musunuz?`,
+                            )
+                          ) {
                             void deleteMutation.mutateAsync(task.id)
                           }
                         }}
@@ -520,34 +687,49 @@ export function NotificationTaskManager({
                       {scheduleLabel(task)}
                     </div>
                     <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                      <strong className="block text-slate-900">Sonraki çalışma</strong>
+                      <strong className="block text-slate-900">
+                        Sonraki çalışma
+                      </strong>
                       {dt(task.next_run_at_utc)}
                     </div>
                     <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                      <strong className="block text-slate-900">Çalışan hedefi</strong>
+                      <strong className="block text-slate-900">
+                        Çalışan hedefi
+                      </strong>
                       {scopeLabel(task.employee_scope, 'çalışan')}
                       {selectedEmployeeNames.length ? (
-                        <div className="mt-1 text-xs text-slate-500">{selectedEmployeeNames.join(', ')}</div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          {selectedEmployeeNames.join(', ')}
+                        </div>
                       ) : null}
                     </div>
                     <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                      <strong className="block text-slate-900">Admin hedefi</strong>
+                      <strong className="block text-slate-900">
+                        Admin hedefi
+                      </strong>
                       {scopeLabel(task.admin_scope, 'admin')}
                       {selectedAdminNames.length ? (
-                        <div className="mt-1 text-xs text-slate-500">{selectedAdminNames.join(', ')}</div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          {selectedAdminNames.join(', ')}
+                        </div>
                       ) : null}
                     </div>
                   </div>
 
                   <div className="mt-3 text-xs text-slate-500">
-                    Son kuyruk tarihi: {task.last_enqueued_at_utc ? dt(task.last_enqueued_at_utc) : '-'}
+                    Son kuyruk tarihi:{' '}
+                    {task.last_enqueued_at_utc
+                      ? dt(task.last_enqueued_at_utc)
+                      : '-'}
                   </div>
                 </article>
               )
             })}
           </div>
         ) : (
-          <p className="mt-4 text-sm text-slate-500">Henüz kayıtlı görev bulunmuyor.</p>
+          <p className="mt-4 text-sm text-slate-500">
+            Henüz kayıtlı görev bulunmuyor.
+          </p>
         )}
       </Panel>
     </>
