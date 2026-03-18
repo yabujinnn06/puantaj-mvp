@@ -229,6 +229,24 @@ function todayStatusHint(status: TodayStatus): string {
   return 'QR ile giriş yaparak mesaiyi başlatın.'
 }
 
+function sanitizeEmployeeActionMessage(parsed: ParsedApiError, fallback: string): string {
+  if (parsed.code === 'QR_POINT_OUT_OF_RANGE' || parsed.code === 'QR_CODE_HAS_NO_ACTIVE_POINTS') {
+    return 'Bu QR adımı şu anda kullanıma uygun değil. Lütfen ilgili noktada tekrar deneyin.'
+  }
+
+  const normalized = parsed.message.toLocaleLowerCase('tr-TR')
+  if (
+    normalized.includes('konum')
+    || normalized.includes('location')
+    || normalized.includes('home_location')
+    || normalized.includes('qr point')
+  ) {
+    return fallback
+  }
+
+  return parsed.message
+}
+
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
   const base64 = `${base64String}${padding}`.replace(/-/g, '+').replace(/_/g, '/')
@@ -1083,10 +1101,10 @@ export function HomePage() {
   const canCheckout = Boolean(deviceFingerprint) && !isSubmitting && hasOpenShift
   const canDemoMark = Boolean(deviceFingerprint) && !isSubmitting
   const isDemoActive = Boolean(statusSnapshot?.demo_active)
-  const demoButtonLabel = isDemoActive ? 'Demo Bitti' : 'Demo Basladi'
+  const demoButtonLabel = isDemoActive ? 'Demo Bitti' : 'Demo Başladı'
   const demoButtonHint = isDemoActive
-    ? 'Demodan ayrildiysaniz bitis kaydini tamamlayin.'
-    : 'Musteri veya demo noktasina vardiginizda baslangici kaydedin.'
+    ? 'Gün içindeki demo kapanışını tek dokunuşla tamamlayın.'
+    : 'Gün içindeki demo başlangıcını tek dokunuşla kaydedin.'
 
   const currentHour = new Date().getHours()
   const shouldShowEveningReminder = useMemo(() => {
@@ -1736,7 +1754,7 @@ export function HomePage() {
       if (!locationResult.location) {
         setErrorMessage(
           locationResult.warning ??
-            'QR okutma işlemi için konum izni gereklidir. Lütfen konumu açıp tekrar deneyin.',
+            'QR işlemi için gerekli cihaz hazırlığı tamamlanamadı. Ayarları kontrol edip tekrar deneyin.',
         )
         return
       }
@@ -1773,7 +1791,12 @@ export function HomePage() {
     } catch (error) {
       const parsed = parseApiError(error, 'QR işlemi tamamlanamadı.')
       handleDeviceNotClaimed(parsed)
-      setErrorMessage(parsed.message)
+      setErrorMessage(
+        sanitizeEmployeeActionMessage(
+          parsed,
+          'QR işlemi için gerekli cihaz hazırlığı tamamlanamadı. Ayarları kontrol edip tekrar deneyin.',
+        ),
+      )
       setRequestId(parsed.requestId ?? null)
     } finally {
       setIsSubmitting(false)
@@ -1829,7 +1852,12 @@ export function HomePage() {
     } catch (error) {
       const parsed = parseApiError(error, 'Mesai bitiş kaydı oluşturulamadı.')
       handleDeviceNotClaimed(parsed)
-      setErrorMessage(parsed.message)
+      setErrorMessage(
+        sanitizeEmployeeActionMessage(
+          parsed,
+          'Mesai bitişi için gerekli cihaz hazırlığı tamamlanamadı. Ayarları kontrol edip tekrar deneyin.',
+        ),
+      )
       setRequestId(parsed.requestId ?? null)
     } finally {
       setIsSubmitting(false)
@@ -1866,7 +1894,7 @@ export function HomePage() {
       const locationResult = await getCurrentLocation()
       if (!locationResult.location) {
         setIsDemoLocationPromptOpen(true)
-        setErrorMessage('Demo kaydi icin konumu acip tekrar deneyin.')
+        setErrorMessage('Demo kaydı için gerekli cihaz hazırlığı tamamlanamadı. Ayarları kontrol edip tekrar deneyin.')
         return
       }
 
@@ -1900,9 +1928,14 @@ export function HomePage() {
       )
       triggerScanSuccessFx()
     } catch (error) {
-      const parsed = parseApiError(error, 'Demo kaydi alinamadi.')
+      const parsed = parseApiError(error, 'Demo kaydı alınamadı.')
       handleDeviceNotClaimed(parsed)
-      setErrorMessage(parsed.message)
+      setErrorMessage(
+        sanitizeEmployeeActionMessage(
+          parsed,
+          'Demo kaydı için gerekli cihaz hazırlığı tamamlanamadı. Ayarları kontrol edip tekrar deneyin.',
+        ),
+      )
       setRequestId(parsed.requestId ?? null)
     } finally {
       setIsSubmitting(false)
@@ -2009,13 +2042,13 @@ export function HomePage() {
         {showInstallPromotions ? (
           <aside className="promo-rail promo-rail-left" aria-label="Uygulama indirme paneli">
             <p className="promo-rail-kicker">YABUJIN EMPLOYEE APP</p>
-            <h2 className="promo-rail-title">Cepte kur, mesaiyi tek dokunuşla yönet.</h2>
+            <h2 className="promo-rail-title">Cepte kur, günü tek dokunuşla yönet.</h2>
             <p className="promo-rail-text">
-              Kurulumdan sonra QR, bildirim ve güvenlik adımları daha stabil ve hızlı çalışır.
+              Kurulumdan sonra QR, bildirim ve güvenlik adımları daha stabil ve daha akıcı çalışır.
             </p>
             <ul className="promo-rail-list">
-              <li>QR tarama ve işlem akışı daha akıcı</li>
-              <li>Push bildirim gecikmeleri azaltılır</li>
+              <li>QR tarama ve işlem akışı daha akıcı olur</li>
+              <li>Push bildirim gecikmeleri azalır</li>
               <li>Passkey kurtarma daha kısa sürer</li>
             </ul>
             <button
@@ -2026,7 +2059,7 @@ export function HomePage() {
             >
               {installRailPrimaryLabel}
             </button>
-            <p className="promo-rail-note">Desteklenen cihazlarda buton kurulum penceresini direkt açar.</p>
+            <p className="promo-rail-note">Desteklenen cihazlarda buton kurulum penceresini doğrudan açar.</p>
           </aside>
         ) : null}
 
@@ -2450,11 +2483,11 @@ export function HomePage() {
             <section className={`demo-visit-card ${isDemoActive ? 'is-live' : 'is-idle'}`}>
               <div className="demo-visit-head">
                 <div>
-                  <p className="demo-visit-kicker">SAHA DEMO</p>
+                  <p className="demo-visit-kicker">GÜN İÇİ DEMO</p>
                   <h3 className="demo-visit-title">{demoButtonLabel}</h3>
                 </div>
                 <span className={`demo-visit-state ${isDemoActive ? 'state-live' : 'state-ready'}`}>
-                  {isDemoActive ? 'AKTIF' : 'HAZIR'}
+                    {isDemoActive ? 'AKTİF' : 'HAZIR'}
                 </span>
               </div>
               <p className="demo-visit-copy">{demoButtonHint}</p>
@@ -2790,8 +2823,8 @@ export function HomePage() {
                   </h2>
                   <p id="demo-confirm-description">
                     {isDemoActive
-                      ? 'Bu islem aktif demo kaydini kapatir. Devam etmek istiyor musunuz?'
-                      : 'Bu islem gun icindeki ziyaretiniz icin yeni bir demo baslangici kaydi olusturur. Devam etmek istiyor musunuz?'}
+                      ? 'Bu işlem aktif demo kaydını kapatır. Devam etmek istiyor musunuz?'
+                      : 'Bu işlem gün içindeki demo başlangıç kaydını oluşturur. Devam etmek istiyor musunuz?'}
                   </p>
                   <div className="stack">
                     <button
@@ -2821,8 +2854,8 @@ export function HomePage() {
         {isDemoLocationPromptOpen ? (
           <div className="modal-backdrop" role="dialog" aria-modal="true">
             <div className="help-modal">
-              <h2>Konumu Acin</h2>
-              <p>Demo kaydini tamamlamak icin cihazinizda konum acik olmali. Konumu actiktan sonra tekrar deneyin.</p>
+              <h2>Cihaz Hazırlığını Tamamlayın</h2>
+              <p>Demo kaydını tamamlamak için gerekli cihaz erişimi hazır olmalı. Ayarları kontrol ettikten sonra tekrar deneyin.</p>
               <div className="stack">
                 <button
                   type="button"
@@ -2922,7 +2955,7 @@ export function HomePage() {
         {showInstallPromotions ? (
           <aside className="promo-rail promo-rail-right" aria-label="Kurumsal tanitim paneli">
             <p className="promo-rail-kicker">KURUMSAL VERİMLİLİK</p>
-            <h2 className="promo-rail-title">Sahada hız, merkezde kontrol.</h2>
+            <h2 className="promo-rail-title">Hızlı kayıt, net takip.</h2>
             <p className="promo-rail-text">
               Çalışan uygulamasını indirerek tek ekran üzerinden puantaj, güvenlik ve bildirim akışını yönetin.
             </p>
