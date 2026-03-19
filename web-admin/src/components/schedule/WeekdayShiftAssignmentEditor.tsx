@@ -34,6 +34,13 @@ export function WeekdayShiftAssignmentEditor({
 }: Props) {
   const [drafts, setDrafts] = useState<Record<number, string[]>>({})
 
+  const updateWeekdayDraft = (weekday: number, nextShiftIds: string[]) => {
+    setDrafts((prev) => ({
+      ...prev,
+      [weekday]: nextShiftIds,
+    }))
+  }
+
   const activeShifts = useMemo(
     () =>
       shifts
@@ -105,10 +112,7 @@ export function WeekdayShiftAssignmentEditor({
                     value={selectedShiftIds}
                     onChange={(event) => {
                       const nextShiftIds = Array.from(event.target.selectedOptions).map((option) => option.value)
-                      setDrafts((prev) => ({
-                        ...prev,
-                        [weekday.value]: nextShiftIds,
-                      }))
+                      updateWeekdayDraft(weekday.value, nextShiftIds)
                     }}
                     className="min-h-28 w-full rounded-lg border border-slate-300 px-3 py-2"
                   >
@@ -125,13 +129,24 @@ export function WeekdayShiftAssignmentEditor({
                 <td className="py-2 min-w-72">
                   {selectedLabels.length > 0 ? (
                     <div className="flex flex-wrap gap-2">
-                      {selectedLabels.map((label) => (
-                        <span
-                          key={label}
-                          className="rounded-full bg-brand-50 px-3 py-1 text-xs font-medium text-brand-700"
+                      {selectedShiftIds.map((shiftId, index) => (
+                        <button
+                          key={`${weekday.value}-${shiftId}-${index}`}
+                          type="button"
+                          onClick={() =>
+                            updateWeekdayDraft(
+                              weekday.value,
+                              selectedShiftIds.filter((value, valueIndex) => !(value === shiftId && valueIndex === index)),
+                            )
+                          }
+                          className="inline-flex items-center gap-2 rounded-full border border-brand-200 bg-brand-50 px-3 py-1 text-xs font-medium text-brand-700 hover:bg-brand-100"
+                          title="Bu vardiyayi kaldir"
                         >
-                          {label}
-                        </span>
+                          <span>{shiftLabelById.get(Number(shiftId)) ?? `#${shiftId}`}</span>
+                          <span aria-hidden="true" className="text-[11px] font-black leading-none">
+                            ×
+                          </span>
+                        </button>
                       ))}
                     </div>
                   ) : (
@@ -141,21 +156,31 @@ export function WeekdayShiftAssignmentEditor({
                   )}
                 </td>
                 <td className="py-2 text-right">
-                  <button
-                    type="button"
-                    disabled={isSaving}
-                    onClick={() =>
-                      onSave(
-                        weekday.value,
-                        selectedShiftIds
-                          .map((value) => Number(value))
-                          .filter((value) => Number.isFinite(value) && value > 0),
-                      )
-                    }
-                    className="rounded-lg bg-brand-600 px-3 py-2 text-xs font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    Kaydet
-                  </button>
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      disabled={isSaving || selectedShiftIds.length === 0}
+                      onClick={() => updateWeekdayDraft(weekday.value, [])}
+                      className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Temizle
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isSaving}
+                      onClick={() =>
+                        onSave(
+                          weekday.value,
+                          selectedShiftIds
+                            .map((value) => Number(value))
+                            .filter((value) => Number.isFinite(value) && value > 0),
+                        )
+                      }
+                      className="rounded-lg bg-brand-600 px-3 py-2 text-xs font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Kaydet
+                    </button>
+                  </div>
                 </td>
               </tr>
             )
