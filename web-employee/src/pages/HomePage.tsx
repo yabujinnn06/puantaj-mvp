@@ -1908,7 +1908,7 @@ export function HomePage() {
       const locationResult = await getCurrentLocation()
       if (!locationResult.location) {
         setIsDemoLocationPromptOpen(true)
-        setErrorMessage('Demo kaydı için gerekli cihaz hazırlığı tamamlanamadı. Ayarları kontrol edip tekrar deneyin.')
+        setErrorMessage('Demo kaydi icin konumu acip tekrar deneyin.')
         return
       }
 
@@ -2050,6 +2050,32 @@ export function HomePage() {
     return 'Atanmamış'
   }, [statusSnapshot?.shift_end_local, statusSnapshot?.shift_name, statusSnapshot?.shift_start_local])
 
+  const employeeHeroMeta = useMemo(() => {
+    if (!deviceFingerprint) {
+      return 'Bu cihaz henüz hesaba bağlanmadı.'
+    }
+    if (hasOpenShift && openShiftCheckinTime) {
+      return `Açık vardiya aktif · Son giriş ${formatTs(openShiftCheckinTime)}`
+    }
+    if (statusSnapshot?.last_out_ts) {
+      return `Son çıkış ${formatTs(statusSnapshot.last_out_ts)}`
+    }
+    if (statusSnapshot?.last_in_ts) {
+      return `Son giriş ${formatTs(statusSnapshot.last_in_ts)}`
+    }
+    return 'Bugünkü işlem durumunuz burada canlı görünür.'
+  }, [deviceFingerprint, hasOpenShift, openShiftCheckinTime, statusSnapshot?.last_in_ts, statusSnapshot?.last_out_ts])
+
+  const employeeHeroFocus = useMemo(() => {
+    if (!deviceFingerprint) {
+      return 'Önce cihaz bağlantısını tamamlayın.'
+    }
+    if (hasOpenShift) {
+      return 'Sıradaki işlem: mesaiyi güvenli şekilde bitir.'
+    }
+    return 'Sıradaki işlem: QR ile bugünkü kaydı başlat.'
+  }, [deviceFingerprint, hasOpenShift])
+
   return (
     <main className="phone-shell employee-shell">
       <div className="employee-layout">
@@ -2180,11 +2206,16 @@ export function HomePage() {
           <section className="employee-command-surface">
             <div className="employee-hero">
               <div className="employee-hero-copy">
-                <p className="employee-hero-kicker">Günlük Çalışma Ekranı</p>
+                <p className="employee-hero-kicker">{employeeDisplayName}</p>
                 <h2 className="employee-hero-title">{todayStatusLabel(todayStatus)}</h2>
                 <p className="employee-hero-subtitle">{todayStatusHint(todayStatus)}</p>
+                <div className="employee-hero-meta">
+                  <span className="employee-hero-meta-pill">{employeeShiftSummary}</span>
+                  <span className="employee-hero-meta-text">{employeeHeroMeta}</span>
+                </div>
+                <p className="employee-hero-focus">{employeeHeroFocus}</p>
               </div>
-              <span className={`employee-hero-indicator ${todayStatusClass}`}>Canlı</span>
+              <span className={`employee-hero-indicator ${todayStatusClass}`}>{todayStatusLabel(todayStatus)}</span>
             </div>
 
             <section className="employee-profile-card" aria-label="Çalışan kimlik bilgileri">
@@ -2910,8 +2941,8 @@ export function HomePage() {
         {isDemoLocationPromptOpen ? (
           <div className="modal-backdrop" role="dialog" aria-modal="true">
             <div className="help-modal">
-              <h2>Cihaz Hazırlığını Tamamlayın</h2>
-              <p>Demo kaydını tamamlamak için gerekli cihaz erişimi hazır olmalı. Ayarları kontrol ettikten sonra tekrar deneyin.</p>
+              <h2>Konumu Acin</h2>
+              <p>Demo kaydini tamamlamak icin cihazinizda konum acik olmali. Konumu actiktan sonra tekrar deneyin.</p>
               <div className="stack">
                 <button
                   type="button"
