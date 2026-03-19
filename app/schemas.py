@@ -1860,6 +1860,22 @@ class EmployeeStatusResponse(BaseModel):
     last_demo_ended_at_utc: datetime | None = None
 
 
+class EmployeeDemoSessionResponse(BaseModel):
+    started_at_utc: datetime
+    ended_at_utc: datetime | None = None
+    duration_minutes: int = 0
+    is_active: bool = False
+
+
+class EmployeeDemoDayResponse(BaseModel):
+    employee_id: int
+    day_local: date
+    session_count: int = 0
+    active_session_count: int = 0
+    total_minutes: int = 0
+    sessions: list[EmployeeDemoSessionResponse] = Field(default_factory=list)
+
+
 class EmployeeAppPresencePingRequest(BaseModel):
     device_fingerprint: str
     source: Literal["APP_OPEN", "APP_CLOSE", "DEMO_START", "DEMO_END", "DEMO_MARK"] = "APP_OPEN"

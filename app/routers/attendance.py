@@ -20,6 +20,7 @@ from app.schemas import (
     AttendanceEventRead,
     DeviceClaimRequest,
     DeviceClaimResponse,
+    EmployeeDemoDayResponse,
     EmployeeAppPresencePingRequest,
     EmployeeAppPresencePingResponse,
     EmployeeHomeLocationSetRequest,
@@ -69,6 +70,7 @@ from app.services.attendance import (
     create_employee_qr_scan_event,
     create_checkin_event,
     create_checkout_event,
+    get_employee_demo_day_history_by_device,
     get_employee_status_by_device,
 )
 from app.services.passkeys import (
@@ -877,6 +879,22 @@ def employee_status(
     request.state.location_status = last_location_status.value if last_location_status else None
     request.state.flags = status_data["last_flags"]
     return EmployeeStatusResponse(**status_data)
+
+
+@router.get("/api/employee/demo-history", response_model=EmployeeDemoDayResponse)
+def employee_demo_history(
+    device_fingerprint: str,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> EmployeeDemoDayResponse:
+    request.state.actor = "employee"
+    demo_data = get_employee_demo_day_history_by_device(db, device_fingerprint=device_fingerprint)
+    request.state.employee_id = demo_data["employee_id"]
+    request.state.flags = {
+        "session_count": demo_data["session_count"],
+        "active_session_count": demo_data["active_session_count"],
+    }
+    return EmployeeDemoDayResponse(**demo_data)
 
 
 @router.post("/api/employee/app-presence/ping", response_model=EmployeeAppPresencePingResponse)

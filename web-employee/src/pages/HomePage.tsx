@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 
 import {
   checkout,
+  getEmployeeDemoHistory,
   getEmployeePushConfig,
   getRecoveryCodeStatus,
   getEmployeeStatus,
@@ -19,7 +20,11 @@ import {
   type ParsedApiError,
 } from '../api/attendance'
 import { BrandSignature } from '../components/BrandSignature'
-import type { AttendanceActionResponse, EmployeeStatusResponse } from '../types/api'
+import type {
+  AttendanceActionResponse,
+  EmployeeDemoDayResponse,
+  EmployeeStatusResponse,
+} from '../types/api'
 import {
   flagLabel,
   formatTs,
@@ -90,6 +95,11 @@ interface IosBrowserContext {
   browserLabel: string
 }
 
+const demoTimeFormatter = new Intl.DateTimeFormat('tr-TR', {
+  hour: '2-digit',
+  minute: '2-digit',
+})
+
 const EMPTY_INSTALL_FUNNEL_SNAPSHOT: InstallFunnelSnapshot = {
   firstSeenAt: null,
   lastEventAt: null,
@@ -121,6 +131,17 @@ function finiteTimestampOrNull(value: unknown): number | null {
     return null
   }
   return value
+}
+
+function formatDemoTime(value: string | null | undefined): string {
+  if (!value) {
+    return '--:--'
+  }
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    return '--:--'
+  }
+  return demoTimeFormatter.format(parsed)
 }
 
 function loadInstallFunnelSnapshot(): InstallFunnelSnapshot {
@@ -586,6 +607,9 @@ export function HomePage() {
   const [actionNotice, setActionNotice] = useState<{ tone: 'success' | 'warning'; text: string } | null>(null)
   const [todayStatus, setTodayStatus] = useState<TodayStatus>('NOT_STARTED')
   const [statusSnapshot, setStatusSnapshot] = useState<EmployeeStatusResponse | null>(null)
+  const [demoHistory, setDemoHistory] = useState<EmployeeDemoDayResponse | null>(null)
+  const [isDemoHistoryLoading, setIsDemoHistoryLoading] = useState(false)
+  const [isDemoHistoryReady, setIsDemoHistoryReady] = useState(false)
   const [isHelpOpen, setIsHelpOpen] = useState(false)
   const [isCheckoutConfirmOpen, setIsCheckoutConfirmOpen] = useState(false)
   const [isDemoConfirmOpen, setIsDemoConfirmOpen] = useState(false)
@@ -714,10 +738,12 @@ export function HomePage() {
     if (parsed.code !== 'DEVICE_NOT_CLAIMED') {
       return false
     }
-    clearStoredDeviceFingerprint()
-    setDeviceFingerprint(null)
-    setStatusSnapshot(null)
-    setTodayStatus('NOT_STARTED')
+      clearStoredDeviceFingerprint()
+      setDeviceFingerprint(null)
+      setStatusSnapshot(null)
+      setDemoHistory(null)
+      setIsDemoHistoryReady(false)
+      setTodayStatus('NOT_STARTED')
     setPushRegistered(false)
     setPushNeedsResubscribe(false)
     setPushSecondChanceOpen(false)
@@ -903,6 +929,9 @@ export function HomePage() {
     if (!deviceFingerprint) {
       setTodayStatus('NOT_STARTED')
       setStatusSnapshot(null)
+      setDemoHistory(null)
+      setIsDemoHistoryLoading(false)
+      setIsDemoHistoryReady(false)
       return
     }
 
@@ -927,6 +956,49 @@ export function HomePage() {
       cancelled = true
     }
   }, [deviceFingerprint, handleDeviceNotClaimed, lastAction?.response.event_id])
+
+  useEffect(() => {
+    if (!deviceFingerprint) {
+      setDemoHistory(null)
+      setIsDemoHistoryLoading(false)
+      setIsDemoHistoryReady(false)
+      return
+    }
+
+    let cancelled = false
+    setIsDemoHistoryLoading(true)
+    const loadDemoHistory = async () => {
+      try {
+        const historyData = await getEmployeeDemoHistory(deviceFingerprint)
+        if (!cancelled) {
+          setDemoHistory(historyData)
+          setIsDemoHistoryReady(true)
+        }
+      } catch (error) {
+        const parsed = parseApiError(error, 'Demo listesi alinamadi.')
+        if (!cancelled) {
+          if (!handleDeviceNotClaimed(parsed)) {
+            setDemoHistory(null)
+            setIsDemoHistoryReady(false)
+          }
+        }
+      } finally {
+        if (!cancelled) {
+          setIsDemoHistoryLoading(false)
+        }
+      }
+    }
+
+    void loadDemoHistory()
+    return () => {
+      cancelled = true
+    }
+  }, [
+    deviceFingerprint,
+    handleDeviceNotClaimed,
+    statusSnapshot?.last_demo_started_at_utc,
+    statusSnapshot?.last_demo_ended_at_utc,
+  ])
 
   useEffect(() => {
     if (!deviceFingerprint) {
@@ -1107,6 +1179,10 @@ export function HomePage() {
   const demoButtonHint = isDemoActive
     ? 'Gün içindeki demo kapanışını tek dokunuşla tamamlayın.'
     : 'Gün içindeki demo başlangıcını tek dokunuşla kaydedin.'
+  const demoSessions = demoHistory?.sessions ?? []
+  const visibleDemoSessions = demoSessions.slice(0, 4)
+  const hiddenDemoSessionCount = Math.max(0, demoSessions.length - visibleDemoSessions.length)
+  const demoHistorySummary = demoHistory ? `${demoHistory.session_count} kayit` : 'Bugun'
 
   const currentHour = new Date().getHours()
   const shouldShowEveningReminder = useMemo(() => {
@@ -2552,6 +2628,49 @@ export function HomePage() {
                 )}
               </button>
             </section>
+
+            {deviceFingerprint ? (
+              <section className="demo-history-card" aria-labelledby="demo-history-title">
+                <div className="demo-history-head">
+                  <div>
+                    <p className="demo-history-kicker">GUNLUK OZET</p>
+                    <h3 id="demo-history-title" className="demo-history-title">
+                      Bugunun Demolari
+                    </h3>
+                  </div>
+                  <span className="demo-history-count">{demoHistorySummary}</span>
+                </div>
+
+                {isDemoHistoryLoading && !isDemoHistoryReady ? (
+                  <p className="demo-history-empty">Liste hazirlaniyor...</p>
+                ) : visibleDemoSessions.length > 0 ? (
+                  <>
+                    <ol className="demo-history-list">
+                      {visibleDemoSessions.map((session, index) => (
+                        <li
+                          key={`${session.started_at_utc}-${session.ended_at_utc ?? 'active'}-${index}`}
+                          className={`demo-history-item ${session.is_active ? 'is-active' : ''}`}
+                        >
+                          <div className="demo-history-range">
+                            <strong>{formatDemoTime(session.started_at_utc)}</strong>
+                            <span className="demo-history-separator">-</span>
+                            <strong>{session.ended_at_utc ? formatDemoTime(session.ended_at_utc) : 'Devam ediyor'}</strong>
+                          </div>
+                          <span className="demo-history-meta">
+                            {session.is_active ? 'AKTIF' : `${session.duration_minutes} dk`}
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                    {hiddenDemoSessionCount > 0 ? (
+                      <p className="demo-history-footnote">+{hiddenDemoSessionCount} kayit daha var.</p>
+                    ) : null}
+                  </>
+                ) : (
+                  <p className="demo-history-empty">Bugun demo kaydi yok.</p>
+                )}
+              </section>
+            ) : null}
           </section>
         </div>
 

@@ -8,6 +8,7 @@ import type {
   AttendanceCheckoutRequest,
   DeviceClaimRequest,
   DeviceClaimResponse,
+  EmployeeDemoDayResponse,
   EmployeeAppPresencePingRequest,
   EmployeeAppPresencePingResponse,
   EmployeeInstallFunnelEventRequest,
@@ -192,6 +193,13 @@ export async function setEmployeeHomeLocation(
 
 export async function getEmployeeStatus(deviceFingerprint: string): Promise<EmployeeStatusResponse> {
   const response = await apiClient.get<EmployeeStatusResponse>('/api/employee/status', {
+    params: { device_fingerprint: deviceFingerprint },
+  })
+  return response.data
+}
+
+export async function getEmployeeDemoHistory(deviceFingerprint: string): Promise<EmployeeDemoDayResponse> {
+  const response = await apiClient.get<EmployeeDemoDayResponse>('/api/employee/demo-history', {
     params: { device_fingerprint: deviceFingerprint },
   })
   return response.data

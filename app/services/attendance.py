@@ -138,8 +138,39 @@ def _resolve_demo_status_for_employee(
     employee_id: int,
     reference_ts_utc: datetime,
 ) -> tuple[bool, datetime | None, datetime | None]:
+    demo_logs = _load_demo_logs_for_employee_day(
+        db,
+        employee_id=employee_id,
+        reference_ts_utc=reference_ts_utc,
+    )
+
+    last_demo_started_at_utc: datetime | None = None
+    last_demo_ended_at_utc: datetime | None = None
+    for log_item in demo_logs:
+        event_type = str(log_item.event_type or "").strip().lower()
+        if event_type in {EVENT_APP_DEMO_START, EVENT_APP_DEMO_MARK}:
+            last_demo_started_at_utc = _normalize_ts(log_item.ts_utc)
+        elif event_type == EVENT_APP_DEMO_END:
+            last_demo_ended_at_utc = _normalize_ts(log_item.ts_utc)
+
+    demo_active = bool(
+        last_demo_started_at_utc is not None
+        and (
+            last_demo_ended_at_utc is None
+            or last_demo_started_at_utc > last_demo_ended_at_utc
+        )
+    )
+    return demo_active, last_demo_started_at_utc, last_demo_ended_at_utc
+
+
+def _load_demo_logs_for_employee_day(
+    db: Session,
+    *,
+    employee_id: int,
+    reference_ts_utc: datetime,
+) -> list[AuditLog]:
     day_start_utc, day_end_utc = _local_day_bounds_utc(reference_ts_utc)
-    demo_logs = list(
+    return list(
         db.scalars(
             select(AuditLog)
             .where(
@@ -160,23 +191,92 @@ def _resolve_demo_status_for_employee(
         ).all()
     )
 
-    last_demo_started_at_utc: datetime | None = None
-    last_demo_ended_at_utc: datetime | None = None
+
+def _build_demo_sessions_from_logs(
+    demo_logs: list[AuditLog],
+    *,
+    reference_ts_utc: datetime,
+) -> list[dict[str, Any]]:
+    sessions: list[dict[str, Any]] = []
+    active_started_at_utc: datetime | None = None
+    normalized_now_utc = _normalize_ts(reference_ts_utc)
+
     for log_item in demo_logs:
         event_type = str(log_item.event_type or "").strip().lower()
-        if event_type in {EVENT_APP_DEMO_START, EVENT_APP_DEMO_MARK}:
-            last_demo_started_at_utc = _normalize_ts(log_item.ts_utc)
-        elif event_type == EVENT_APP_DEMO_END:
-            last_demo_ended_at_utc = _normalize_ts(log_item.ts_utc)
+        logged_at_utc = _normalize_ts(log_item.ts_utc)
 
-    demo_active = bool(
-        last_demo_started_at_utc is not None
-        and (
-            last_demo_ended_at_utc is None
-            or last_demo_started_at_utc > last_demo_ended_at_utc
+        if event_type in {EVENT_APP_DEMO_START, EVENT_APP_DEMO_MARK}:
+            if active_started_at_utc is None:
+                active_started_at_utc = logged_at_utc
+            continue
+
+        if event_type == EVENT_APP_DEMO_END and active_started_at_utc is not None:
+            ended_at_utc = logged_at_utc if logged_at_utc >= active_started_at_utc else active_started_at_utc
+            duration_minutes = max(0, int((ended_at_utc - active_started_at_utc).total_seconds() // 60))
+            sessions.append(
+                {
+                    "started_at_utc": active_started_at_utc,
+                    "ended_at_utc": ended_at_utc,
+                    "duration_minutes": duration_minutes,
+                    "is_active": False,
+                }
+            )
+            active_started_at_utc = None
+
+    if active_started_at_utc is not None:
+        duration_minutes = max(0, int((normalized_now_utc - active_started_at_utc).total_seconds() // 60))
+        sessions.append(
+            {
+                "started_at_utc": active_started_at_utc,
+                "ended_at_utc": None,
+                "duration_minutes": duration_minutes,
+                "is_active": True,
+            }
         )
+
+    return sessions
+
+
+def get_employee_demo_day_history_by_device(
+    db: Session,
+    *,
+    device_fingerprint: str,
+    reference_ts_utc: datetime | None = None,
+) -> dict[str, Any]:
+    device = _resolve_active_device(db, device_fingerprint=device_fingerprint)
+    employee = device.employee
+    if employee is None:
+        raise ApiError(
+            status_code=404,
+            code="EMPLOYEE_NOT_FOUND",
+            message="Employee not found for this device.",
+        )
+    if not employee.is_active:
+        raise ApiError(
+            status_code=403,
+            code="EMPLOYEE_INACTIVE",
+            message="Inactive employee cannot access demo history.",
+        )
+
+    normalized_reference_utc = _normalize_ts(reference_ts_utc)
+    demo_logs = _load_demo_logs_for_employee_day(
+        db,
+        employee_id=employee.id,
+        reference_ts_utc=normalized_reference_utc,
     )
-    return demo_active, last_demo_started_at_utc, last_demo_ended_at_utc
+    sessions = _build_demo_sessions_from_logs(demo_logs, reference_ts_utc=normalized_reference_utc)
+    total_minutes = sum(int(session.get("duration_minutes", 0) or 0) for session in sessions)
+    active_session_count = sum(1 for session in sessions if bool(session.get("is_active")))
+    local_day = normalized_reference_utc.astimezone(_attendance_timezone()).date()
+
+    return {
+        "employee_id": employee.id,
+        "day_local": local_day,
+        "session_count": len(sessions),
+        "active_session_count": active_session_count,
+        "total_minutes": total_minutes,
+        "sessions": sessions,
+    }
 
 
 class QRScanDeniedError(Exception):

@@ -93,6 +93,22 @@ export interface EmployeeStatusResponse {
   last_demo_ended_at_utc?: string | null
 }
 
+export interface EmployeeDemoSessionResponse {
+  started_at_utc: string
+  ended_at_utc?: string | null
+  duration_minutes: number
+  is_active: boolean
+}
+
+export interface EmployeeDemoDayResponse {
+  employee_id: number
+  day_local: string
+  session_count: number
+  active_session_count: number
+  total_minutes: number
+  sessions: EmployeeDemoSessionResponse[]
+}
+
 export interface EmployeeAppPresencePingRequest {
   device_fingerprint: string
   source?: 'APP_OPEN' | 'APP_CLOSE' | 'DEMO_START' | 'DEMO_END' | 'DEMO_MARK'
