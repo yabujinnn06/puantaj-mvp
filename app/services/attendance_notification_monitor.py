@@ -270,6 +270,7 @@ def _resolve_shift_for_day(
         or plan.daily_minutes_planned is not None
         or plan.break_minutes is not None
         or plan.grace_minutes is not None
+        or plan.early_arrival_tolerance_minutes is not None
         or plan.overtime_grace_minutes is not None
         or plan.off_shift_tolerance_minutes is not None
         or bool((plan.note or "").strip())

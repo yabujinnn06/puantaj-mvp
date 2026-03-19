@@ -7,9 +7,9 @@ import type {
 
 const WEEKDAYS = [
   { value: 0, label: 'Pazartesi' },
-  { value: 1, label: 'Salı' },
-  { value: 2, label: 'Çarşamba' },
-  { value: 3, label: 'Perşembe' },
+  { value: 1, label: 'Sali' },
+  { value: 2, label: 'Carsamba' },
+  { value: 3, label: 'Persembe' },
   { value: 4, label: 'Cuma' },
   { value: 5, label: 'Cumartesi' },
   { value: 6, label: 'Pazar' },
@@ -24,6 +24,12 @@ type Props = {
   emptyMessage: string
 }
 
+function normalizeShiftIds(shiftIds: string[]) {
+  return shiftIds
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value) && value > 0)
+}
+
 export function WeekdayShiftAssignmentEditor({
   departmentId,
   shifts,
@@ -33,44 +39,6 @@ export function WeekdayShiftAssignmentEditor({
   emptyMessage,
 }: Props) {
   const [drafts, setDrafts] = useState<Record<number, string[]>>({})
-
-  const updateWeekdayDraft = (weekday: number, nextShiftIds: string[]) => {
-    setDrafts((prev) => ({
-      ...prev,
-      [weekday]: nextShiftIds,
-    }))
-  }
-
-  const normalizeShiftIds = (shiftIds: string[]) =>
-    shiftIds
-      .map((value) => Number(value))
-      .filter((value) => Number.isFinite(value) && value > 0)
-
-  const saveWeekdayDraft = (weekday: number, nextShiftIds: string[]) => {
-    onSave(weekday, normalizeShiftIds(nextShiftIds))
-  }
-
-  const addAssignedShift = (weekday: number, selectedShiftIds: string[], shiftId: string) => {
-    if (selectedShiftIds.includes(shiftId)) {
-      return
-    }
-    const nextShiftIds = [...selectedShiftIds, shiftId]
-    updateWeekdayDraft(weekday, nextShiftIds)
-    saveWeekdayDraft(weekday, nextShiftIds)
-  }
-
-  const removeAssignedShift = (
-    weekday: number,
-    selectedShiftIds: string[],
-    shiftId: string,
-    index: number,
-  ) => {
-    const nextShiftIds = selectedShiftIds.filter(
-      (value, valueIndex) => !(value === shiftId && valueIndex === index),
-    )
-    updateWeekdayDraft(weekday, nextShiftIds)
-    saveWeekdayDraft(weekday, nextShiftIds)
-  }
 
   const activeShifts = useMemo(
     () =>
@@ -112,6 +80,14 @@ export function WeekdayShiftAssignmentEditor({
     setDrafts(nextDrafts)
   }, [assignments, departmentId])
 
+  const saveWeekdayDraft = (weekday: number, nextShiftIds: string[]) => {
+    setDrafts((prev) => ({
+      ...prev,
+      [weekday]: nextShiftIds,
+    }))
+    onSave(weekday, normalizeShiftIds(nextShiftIds))
+  }
+
   if (!departmentId) {
     return <p className="mt-3 text-sm text-slate-500">{emptyMessage}</p>
   }
@@ -121,28 +97,27 @@ export function WeekdayShiftAssignmentEditor({
       <table className="min-w-full text-left text-sm">
         <thead className="text-xs uppercase text-slate-500">
           <tr>
-            <th className="py-2">Gün</th>
-            <th className="py-2">Seçilebilir aktif vardiyalar</th>
-            <th className="py-2">Bu güne atanan vardiyalar</th>
-            <th className="py-2 text-right">İşlem</th>
+            <th className="py-2">Gun</th>
+            <th className="py-2">Eklenebilir vardiyalar</th>
+            <th className="py-2">Bu gune atanan vardiyalar</th>
+            <th className="py-2 text-right">Islem</th>
           </tr>
         </thead>
         <tbody>
           {WEEKDAYS.map((weekday) => {
             const selectedShiftIds = drafts[weekday.value] ?? []
-            const selectedLabels = selectedShiftIds
-              .map((shiftId) => shiftLabelById.get(Number(shiftId)) ?? `#${shiftId}`)
-              .filter(Boolean)
+            const addableShifts = activeShifts.filter(
+              (shift) => !selectedShiftIds.includes(String(shift.id)),
+            )
 
             return (
               <tr key={weekday.value} className="border-t border-slate-100 align-top">
                 <td className="py-2 font-medium text-slate-800">{weekday.label}</td>
-                <td className="py-2 min-w-72">
-                  {activeShifts.length > 0 ? (
+                <td className="min-w-72 py-2">
+                  {addableShifts.length > 0 ? (
                     <div className="grid gap-2">
-                      {activeShifts.map((shift) => {
+                      {addableShifts.map((shift) => {
                         const shiftId = String(shift.id)
-                        const isAssigned = selectedShiftIds.includes(shiftId)
                         return (
                           <div
                             key={`${weekday.value}-pool-${shift.id}`}
@@ -154,46 +129,52 @@ export function WeekdayShiftAssignmentEditor({
                                 {shift.start_time_local} - {shift.end_time_local}
                               </div>
                             </div>
-                            {isAssigned ? (
-                              <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-700">
-                                Bu günde
-                              </span>
-                            ) : (
-                              <button
-                                type="button"
-                                disabled={isSaving}
-                                onClick={() => addAssignedShift(weekday.value, selectedShiftIds, shiftId)}
-                                className="rounded-lg border border-brand-300 bg-white px-3 py-1 text-[11px] font-semibold text-brand-700 hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                Ekle
-                              </button>
-                            )}
+                            <button
+                              type="button"
+                              disabled={isSaving}
+                              onClick={() =>
+                                saveWeekdayDraft(weekday.value, [...selectedShiftIds, shiftId])
+                              }
+                              className="rounded-lg border border-brand-300 bg-white px-3 py-1 text-[11px] font-semibold text-brand-700 hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              Ekle
+                            </button>
                           </div>
                         )
                       })}
                     </div>
                   ) : (
                     <span className="text-xs text-slate-500">
-                      Bu departman için aktif vardiya yok.
+                      Bu gun icin eklenebilir baska aktif vardiya yok.
                     </span>
                   )}
                   <span className="mt-1 block text-xs text-slate-500">
-                    Sol taraf departmandaki aktif vardiya havuzudur. Sağ taraf sadece bu günün atamalarını gösterir.
+                    Sol taraf sadece henuz bu gune eklenmemis aktif vardiyalari gosterir.
                   </span>
                 </td>
-                <td className="py-2 min-w-72">
-                  {selectedLabels.length > 0 ? (
+                <td className="min-w-72 py-2">
+                  {selectedShiftIds.length > 0 ? (
                     <div className="grid gap-2">
                       {selectedShiftIds.map((shiftId, index) => (
                         <div
                           key={`${weekday.value}-${shiftId}-${index}`}
                           className="flex items-center justify-between gap-3 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-xs font-medium text-brand-700"
                         >
-                          <span className="min-w-0 flex-1">{shiftLabelById.get(Number(shiftId)) ?? `#${shiftId}`}</span>
+                          <span className="min-w-0 flex-1">
+                            {shiftLabelById.get(Number(shiftId)) ?? `#${shiftId}`}
+                          </span>
                           <button
                             type="button"
                             disabled={isSaving}
-                            onClick={() => removeAssignedShift(weekday.value, selectedShiftIds, shiftId, index)}
+                            onClick={() =>
+                              saveWeekdayDraft(
+                                weekday.value,
+                                selectedShiftIds.filter(
+                                  (value, valueIndex) =>
+                                    !(value === shiftId && valueIndex === index),
+                                ),
+                              )
+                            }
                             className="rounded-lg border border-rose-300 bg-white px-3 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             Kaldir
@@ -203,7 +184,7 @@ export function WeekdayShiftAssignmentEditor({
                     </div>
                   ) : (
                     <span className="text-xs text-slate-500">
-                      Atama yok. Bu gün için sistem fallback kurallarına döner.
+                      Atama yok. Bu gun icin sistem fallback kurallarina doner.
                     </span>
                   )}
                 </td>
@@ -212,10 +193,7 @@ export function WeekdayShiftAssignmentEditor({
                     <button
                       type="button"
                       disabled={isSaving || selectedShiftIds.length === 0}
-                      onClick={() => {
-                        updateWeekdayDraft(weekday.value, [])
-                        saveWeekdayDraft(weekday.value, [])
-                      }}
+                      onClick={() => saveWeekdayDraft(weekday.value, [])}
                       className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       Gunu temizle

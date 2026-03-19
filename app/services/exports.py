@@ -29,6 +29,7 @@ RangeSheetMode = Literal["consolidated", "employee_sheets", "department_sheets"]
 
 DEFAULT_DAILY_MINUTES_PLANNED = 540
 DEFAULT_BREAK_MINUTES = 60
+DEFAULT_EARLY_ARRIVAL_TOLERANCE_MINUTES = 0
 DEFAULT_OVERTIME_GRACE_MINUTES = 0
 DURATION_NUMBER_FORMAT = "[h]:mm"
 
@@ -647,8 +648,8 @@ def _apply_conditional_formatting(
 def _work_rule_minutes(
     db: Session,
     department_id: int | None,
-    cache: dict[int | None, tuple[int, int, int]],
-) -> tuple[int, int, int]:
+    cache: dict[int | None, tuple[int, int, int, int]],
+) -> tuple[int, int, int, int]:
     if department_id in cache:
         return cache[department_id]
 
@@ -656,6 +657,7 @@ def _work_rule_minutes(
         cache[department_id] = (
             DEFAULT_DAILY_MINUTES_PLANNED,
             DEFAULT_BREAK_MINUTES,
+            DEFAULT_EARLY_ARRIVAL_TOLERANCE_MINUTES,
             DEFAULT_OVERTIME_GRACE_MINUTES,
         )
         return cache[department_id]
@@ -665,6 +667,7 @@ def _work_rule_minutes(
         cache[department_id] = (
             DEFAULT_DAILY_MINUTES_PLANNED,
             DEFAULT_BREAK_MINUTES,
+            DEFAULT_EARLY_ARRIVAL_TOLERANCE_MINUTES,
             DEFAULT_OVERTIME_GRACE_MINUTES,
         )
         return cache[department_id]
@@ -672,6 +675,7 @@ def _work_rule_minutes(
     cache[department_id] = (
         rule.daily_minutes_planned,
         rule.break_minutes,
+        max(0, int(rule.early_arrival_tolerance_minutes or 0)),
         max(0, int(rule.overtime_grace_minutes or 0)),
     )
     return cache[department_id]
@@ -1913,7 +1917,7 @@ def _build_date_range_export(
         if not isinstance(employee_ref, Employee):
             continue
 
-        planned_minutes, break_minutes, overtime_grace_minutes = _work_rule_minutes(
+        planned_minutes, break_minutes, early_arrival_tolerance_minutes, overtime_grace_minutes = _work_rule_minutes(
             db,
             bucket["department_id"],
             work_rule_cache,
@@ -1923,6 +1927,7 @@ def _build_date_range_export(
             last_out_ts=last_out,
             planned_minutes=planned_minutes,
             break_minutes=break_minutes,
+            early_arrival_tolerance_minutes=early_arrival_tolerance_minutes,
             overtime_grace_minutes=overtime_grace_minutes,
         )
         plan_overtime_minutes = max(0, int(calculated_plan_overtime_minutes))

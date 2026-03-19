@@ -70,6 +70,7 @@ def calculate_day_metrics(
     last_out_ts: datetime | None,
     planned_minutes: int,
     break_minutes: int,
+    early_arrival_tolerance_minutes: int = 0,
     overtime_grace_minutes: int = 0,
     daily_max_minutes: int,
     night_work_max_minutes: int,
@@ -102,7 +103,11 @@ def calculate_day_metrics(
     min_break_not_met = enforce_min_break and configured_break < legal_break and gross_minutes > 0
 
     worked_minutes_net = max(0, gross_minutes - effective_break)
-    overtime_basis_minutes = max(0, worked_minutes_net - min(worked_minutes_net, early_arrival_minutes))
+    early_arrival_minutes_ignored = min(
+        max(0, early_arrival_minutes),
+        max(0, early_arrival_tolerance_minutes),
+    )
+    overtime_basis_minutes = max(0, worked_minutes_net - early_arrival_minutes_ignored)
     overtime_minutes = max(
         0,
         overtime_basis_minutes - max(0, planned_minutes) - max(0, overtime_grace_minutes),
@@ -130,6 +135,7 @@ def calculate_work_and_overtime(
     last_out_ts: datetime | None,
     planned_minutes: int,
     break_minutes: int,
+    early_arrival_tolerance_minutes: int = 0,
     overtime_grace_minutes: int = 0,
     shift_start_ts: datetime | None = None,
 ) -> tuple[str, int, int]:
@@ -138,6 +144,7 @@ def calculate_work_and_overtime(
         last_out_ts=last_out_ts,
         planned_minutes=planned_minutes,
         break_minutes=break_minutes,
+        early_arrival_tolerance_minutes=early_arrival_tolerance_minutes,
         overtime_grace_minutes=overtime_grace_minutes,
         daily_max_minutes=24 * 60,
         night_work_max_minutes=24 * 60,

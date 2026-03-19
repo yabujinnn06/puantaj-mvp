@@ -32,6 +32,7 @@ const workRuleSchema = z.object({
   daily_minutes_planned: z.coerce.number().int().nonnegative(),
   break_minutes: z.coerce.number().int().nonnegative(),
   grace_minutes: z.coerce.number().int().nonnegative(),
+  early_arrival_tolerance_minutes: z.coerce.number().int().nonnegative(),
   overtime_grace_minutes: z.coerce.number().int().nonnegative(),
   off_shift_tolerance_minutes: z.coerce.number().int().nonnegative(),
 })
@@ -82,6 +83,7 @@ function planToPayload(plan: SchedulePlan, isActive: boolean) {
     daily_minutes_planned: plan.daily_minutes_planned,
     break_minutes: plan.break_minutes,
     grace_minutes: plan.grace_minutes,
+    early_arrival_tolerance_minutes: plan.early_arrival_tolerance_minutes,
     overtime_grace_minutes: plan.overtime_grace_minutes,
     off_shift_tolerance_minutes: plan.off_shift_tolerance_minutes,
     start_date: plan.start_date,
@@ -100,6 +102,7 @@ export function WorkRulesPage() {
   const [dailyMinutesPlanned, setDailyMinutesPlanned] = useState('540')
   const [breakMinutes, setBreakMinutes] = useState('60')
   const [graceMinutes, setGraceMinutes] = useState('5')
+  const [earlyArrivalToleranceMinutes, setEarlyArrivalToleranceMinutes] = useState('0')
   const [overtimeGraceMinutes, setOvertimeGraceMinutes] = useState('0')
   const [offShiftToleranceMinutes, setOffShiftToleranceMinutes] = useState('0')
 
@@ -122,6 +125,7 @@ export function WorkRulesPage() {
   const [planDailyMinutes, setPlanDailyMinutes] = useState('')
   const [planBreakMinutes, setPlanBreakMinutes] = useState('')
   const [planGraceMinutes, setPlanGraceMinutes] = useState('')
+  const [planEarlyArrivalToleranceMinutes, setPlanEarlyArrivalToleranceMinutes] = useState('')
   const [planOvertimeGraceMinutes, setPlanOvertimeGraceMinutes] = useState('')
   const [planOffShiftToleranceMinutes, setPlanOffShiftToleranceMinutes] = useState('')
   const [planStartDate, setPlanStartDate] = useState(new Date().toISOString().slice(0, 10))
@@ -258,6 +262,7 @@ export function WorkRulesPage() {
       setPlanDailyMinutes('')
       setPlanBreakMinutes('')
       setPlanGraceMinutes('')
+      setPlanEarlyArrivalToleranceMinutes('')
       setPlanOvertimeGraceMinutes('')
       setPlanOffShiftToleranceMinutes('')
       setPlanIsLocked(false)
@@ -303,16 +308,18 @@ export function WorkRulesPage() {
     const daily = Number(dailyMinutesPlanned)
     const breakValue = Number(breakMinutes)
     const grace = Number(graceMinutes)
+    const earlyArrivalTolerance = Number(earlyArrivalToleranceMinutes)
     const overtimeGrace = Number(overtimeGraceMinutes)
     const offShift = Number(offShiftToleranceMinutes)
     return {
       daily: formatMinutesForHr(daily),
       breakValue: formatMinutesForHr(breakValue),
       grace: formatMinutesForHr(grace),
+      earlyArrivalTolerance: formatMinutesForHr(earlyArrivalTolerance),
       overtimeGrace: formatMinutesForHr(overtimeGrace),
       offShift: formatMinutesForHr(offShift),
     }
-  }, [dailyMinutesPlanned, breakMinutes, graceMinutes, overtimeGraceMinutes, offShiftToleranceMinutes])
+  }, [dailyMinutesPlanned, breakMinutes, graceMinutes, earlyArrivalToleranceMinutes, overtimeGraceMinutes, offShiftToleranceMinutes])
 
   if (
     departmentsQuery.isLoading ||
@@ -383,6 +390,7 @@ export function WorkRulesPage() {
     setPlanDailyMinutes('')
     setPlanBreakMinutes('')
     setPlanGraceMinutes('')
+    setPlanEarlyArrivalToleranceMinutes('')
     setPlanOvertimeGraceMinutes('')
     setPlanOffShiftToleranceMinutes('')
     setPlanStartDate(new Date().toISOString().slice(0, 10))
@@ -408,6 +416,9 @@ export function WorkRulesPage() {
     setPlanDailyMinutes(plan.daily_minutes_planned !== null ? String(plan.daily_minutes_planned) : '')
     setPlanBreakMinutes(plan.break_minutes !== null ? String(plan.break_minutes) : '')
     setPlanGraceMinutes(plan.grace_minutes !== null ? String(plan.grace_minutes) : '')
+    setPlanEarlyArrivalToleranceMinutes(
+      plan.early_arrival_tolerance_minutes !== null ? String(plan.early_arrival_tolerance_minutes) : '',
+    )
     setPlanOvertimeGraceMinutes(
       plan.overtime_grace_minutes !== null ? String(plan.overtime_grace_minutes) : '',
     )
@@ -430,6 +441,7 @@ export function WorkRulesPage() {
       daily_minutes_planned: dailyMinutesPlanned,
       break_minutes: breakMinutes,
       grace_minutes: graceMinutes,
+      early_arrival_tolerance_minutes: earlyArrivalToleranceMinutes,
       overtime_grace_minutes: overtimeGraceMinutes,
       off_shift_tolerance_minutes: offShiftToleranceMinutes,
     })
@@ -530,6 +542,7 @@ export function WorkRulesPage() {
     const daily = parseOptionalMinutes(planDailyMinutes)
     const planBreak = parseOptionalMinutes(planBreakMinutes)
     const grace = parseOptionalMinutes(planGraceMinutes)
+    const earlyArrivalTolerance = parseOptionalMinutes(planEarlyArrivalToleranceMinutes)
     const overtimeGrace = parseOptionalMinutes(planOvertimeGraceMinutes)
     const offShiftTolerance = parseOptionalMinutes(planOffShiftToleranceMinutes)
 
@@ -538,6 +551,7 @@ export function WorkRulesPage() {
       && daily === null
       && planBreak === null
       && grace === null
+      && earlyArrivalTolerance === null
       && overtimeGrace === null
       && offShiftTolerance === null
     ) {
@@ -555,6 +569,7 @@ export function WorkRulesPage() {
       daily_minutes_planned: daily,
       break_minutes: planBreak,
       grace_minutes: grace,
+      early_arrival_tolerance_minutes: earlyArrivalTolerance,
       overtime_grace_minutes: overtimeGrace,
       off_shift_tolerance_minutes: offShiftTolerance,
       start_date: planStartDate,
@@ -574,7 +589,7 @@ export function WorkRulesPage() {
 
       <Panel>
         <h4 className="text-base font-semibold text-slate-900">Temel Departman Kurali</h4>
-        <form onSubmit={onSubmitWorkRule} className="mt-3 grid gap-3 md:grid-cols-5">
+        <form onSubmit={onSubmitWorkRule} className="mt-3 grid gap-3 md:grid-cols-6">
           <label className="text-sm text-slate-700">
             Departman
             <select
@@ -619,6 +634,15 @@ export function WorkRulesPage() {
           </label>
 
           <label className="text-sm text-slate-700">
+            Erken Gelis Toleransi (Dakika)
+            <input
+              value={earlyArrivalToleranceMinutes}
+              onChange={(event) => setEarlyArrivalToleranceMinutes(event.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+            />
+          </label>
+
+          <label className="text-sm text-slate-700">
             Fazla Mesai Toleransi (Dakika)
             <input
               value={overtimeGraceMinutes}
@@ -636,11 +660,11 @@ export function WorkRulesPage() {
             />
           </label>
 
-          <div className="md:col-span-5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-            Onizleme: Planlanan {livePreview.daily} | Mola {livePreview.breakValue} | Gec giris toleransi {livePreview.grace} | Fazla mesai toleransi {livePreview.overtimeGrace} | Vardiya disi tolerans {livePreview.offShift}
+          <div className="md:col-span-6 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            Onizleme: Planlanan {livePreview.daily} | Mola {livePreview.breakValue} | Gec giris toleransi {livePreview.grace} | Erken gelis toleransi {livePreview.earlyArrivalTolerance} | Fazla mesai toleransi {livePreview.overtimeGrace} | Vardiya disi tolerans {livePreview.offShift}
           </div>
 
-          <div className="md:col-span-5">
+          <div className="md:col-span-6">
             <button
               type="submit"
               disabled={createWorkRuleMutation.isPending}
@@ -960,6 +984,10 @@ export function WorkRulesPage() {
             <input value={planGraceMinutes} onChange={(event) => setPlanGraceMinutes(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" />
           </label>
 
+          <label className="text-sm text-slate-700">Erken Gelis Toleransi (ops.)
+            <input value={planEarlyArrivalToleranceMinutes} onChange={(event) => setPlanEarlyArrivalToleranceMinutes(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" />
+          </label>
+
           <label className="text-sm text-slate-700">Fazla Mesai Toleransi (ops.)
             <input value={planOvertimeGraceMinutes} onChange={(event) => setPlanOvertimeGraceMinutes(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" />
           </label>
@@ -1043,6 +1071,7 @@ export function WorkRulesPage() {
                       <div>Plan: {plan.daily_minutes_planned !== null ? `${plan.daily_minutes_planned} dk` : '-'}</div>
                       <div>Mola: {plan.break_minutes !== null ? `${plan.break_minutes} dk` : '-'}</div>
                       <div>Gec giris toleransi: {plan.grace_minutes !== null ? `${plan.grace_minutes} dk` : '-'}</div>
+                      <div>Erken gelis toleransi: {plan.early_arrival_tolerance_minutes !== null ? `${plan.early_arrival_tolerance_minutes} dk` : '-'}</div>
                       <div>Fazla mesai toleransi: {plan.overtime_grace_minutes !== null ? `${plan.overtime_grace_minutes} dk` : '-'}</div>
                       <div>Vardiya disi tolerans: {plan.off_shift_tolerance_minutes !== null ? `${plan.off_shift_tolerance_minutes} dk` : '-'}</div>
                     </td>
@@ -1077,6 +1106,7 @@ export function WorkRulesPage() {
                 <th className="py-2">Planlanan Gunluk Sure</th>
                 <th className="py-2">Mola Suresi</th>
                 <th className="py-2">Gec Giris Toleransi</th>
+                <th className="py-2">Erken Gelis Toleransi</th>
                 <th className="py-2">Fazla Mesai Toleransi</th>
                 <th className="py-2">Vardiya Disi Tolerans</th>
               </tr>
@@ -1088,6 +1118,7 @@ export function WorkRulesPage() {
                   <td className="py-2"><MinuteDisplay minutes={rule.daily_minutes_planned} /></td>
                   <td className="py-2"><MinuteDisplay minutes={rule.break_minutes} /></td>
                   <td className="py-2"><MinuteDisplay minutes={rule.grace_minutes} /></td>
+                  <td className="py-2"><MinuteDisplay minutes={rule.early_arrival_tolerance_minutes} /></td>
                   <td className="py-2"><MinuteDisplay minutes={rule.overtime_grace_minutes} /></td>
                   <td className="py-2"><MinuteDisplay minutes={rule.off_shift_tolerance_minutes} /></td>
                 </tr>

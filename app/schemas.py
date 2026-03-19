@@ -1065,6 +1065,7 @@ class WorkRuleUpsert(BaseModel):
     daily_minutes_planned: int = Field(default=540, ge=0)
     break_minutes: int = Field(default=60, ge=0)
     grace_minutes: int = Field(default=5, ge=0)
+    early_arrival_tolerance_minutes: int = Field(default=0, ge=0)
     overtime_grace_minutes: int = Field(default=0, ge=0)
     off_shift_tolerance_minutes: int = Field(default=0, ge=0)
 
@@ -1075,6 +1076,7 @@ class WorkRuleRead(BaseModel):
     daily_minutes_planned: int
     break_minutes: int
     grace_minutes: int
+    early_arrival_tolerance_minutes: int
     overtime_grace_minutes: int
     off_shift_tolerance_minutes: int
 
@@ -1221,6 +1223,7 @@ class SchedulePlanUpsertRequest(BaseModel):
     daily_minutes_planned: int | None = Field(default=None, ge=0)
     break_minutes: int | None = Field(default=None, ge=0)
     grace_minutes: int | None = Field(default=None, ge=0)
+    early_arrival_tolerance_minutes: int | None = Field(default=None, ge=0)
     overtime_grace_minutes: int | None = Field(default=None, ge=0)
     off_shift_tolerance_minutes: int | None = Field(default=None, ge=0)
     start_date: date
@@ -1240,6 +1243,7 @@ class SchedulePlanRead(BaseModel):
     daily_minutes_planned: int | None
     break_minutes: int | None
     grace_minutes: int | None
+    early_arrival_tolerance_minutes: int | None
     overtime_grace_minutes: int | None
     off_shift_tolerance_minutes: int | None
     start_date: date

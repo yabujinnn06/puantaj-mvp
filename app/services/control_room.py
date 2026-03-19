@@ -109,6 +109,7 @@ class ScheduleContext:
         planned_minutes: int,
         break_minutes: int,
         grace_minutes: int,
+        early_arrival_tolerance_minutes: int,
         overtime_grace_minutes: int,
         off_shift_tolerance_minutes: int,
         is_workday: bool,
@@ -120,6 +121,7 @@ class ScheduleContext:
         self.planned_minutes = planned_minutes
         self.break_minutes = break_minutes
         self.grace_minutes = grace_minutes
+        self.early_arrival_tolerance_minutes = early_arrival_tolerance_minutes
         self.overtime_grace_minutes = overtime_grace_minutes
         self.off_shift_tolerance_minutes = off_shift_tolerance_minutes
         self.is_workday = is_workday
@@ -422,6 +424,11 @@ def _resolve_shift_context(*, employee: Employee, day_date: date, work_rule_map:
     if shift is None:
         shift = employee.shift
     grace_minutes = max(0, int(department_work_rule.grace_minutes)) if department_work_rule is not None else 5
+    early_arrival_tolerance_minutes = (
+        max(0, int(department_work_rule.early_arrival_tolerance_minutes or 0))
+        if department_work_rule is not None
+        else 0
+    )
     overtime_grace_minutes = (
         max(0, int(department_work_rule.overtime_grace_minutes or 0))
         if department_work_rule is not None
@@ -434,6 +441,8 @@ def _resolve_shift_context(*, employee: Employee, day_date: date, work_rule_map:
     )
     if effective_plan is not None and effective_plan.grace_minutes is not None:
         grace_minutes = max(0, int(effective_plan.grace_minutes))
+    if effective_plan is not None and effective_plan.early_arrival_tolerance_minutes is not None:
+        early_arrival_tolerance_minutes = max(0, int(effective_plan.early_arrival_tolerance_minutes))
     if effective_plan is not None and effective_plan.overtime_grace_minutes is not None:
         overtime_grace_minutes = max(0, int(effective_plan.overtime_grace_minutes))
     if effective_plan is not None and effective_plan.off_shift_tolerance_minutes is not None:
@@ -477,6 +486,7 @@ def _resolve_shift_context(*, employee: Employee, day_date: date, work_rule_map:
         planned_minutes=planned_minutes,
         break_minutes=break_minutes,
         grace_minutes=grace_minutes,
+        early_arrival_tolerance_minutes=early_arrival_tolerance_minutes,
         overtime_grace_minutes=overtime_grace_minutes,
         off_shift_tolerance_minutes=off_shift_tolerance_minutes,
         is_workday=is_workday,

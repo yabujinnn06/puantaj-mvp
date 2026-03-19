@@ -4032,6 +4032,7 @@ def upsert_work_rule(payload: WorkRuleUpsert, db: Session = Depends(get_db)) -> 
             daily_minutes_planned=payload.daily_minutes_planned,
             break_minutes=payload.break_minutes,
             grace_minutes=payload.grace_minutes,
+            early_arrival_tolerance_minutes=payload.early_arrival_tolerance_minutes,
             overtime_grace_minutes=payload.overtime_grace_minutes,
             off_shift_tolerance_minutes=payload.off_shift_tolerance_minutes,
         )
@@ -4040,6 +4041,7 @@ def upsert_work_rule(payload: WorkRuleUpsert, db: Session = Depends(get_db)) -> 
         rule.daily_minutes_planned = payload.daily_minutes_planned
         rule.break_minutes = payload.break_minutes
         rule.grace_minutes = payload.grace_minutes
+        rule.early_arrival_tolerance_minutes = payload.early_arrival_tolerance_minutes
         rule.overtime_grace_minutes = payload.overtime_grace_minutes
         rule.off_shift_tolerance_minutes = payload.off_shift_tolerance_minutes
 
@@ -4376,6 +4378,7 @@ def _schedule_plan_to_read(plan: DepartmentSchedulePlan) -> SchedulePlanRead:
         daily_minutes_planned=plan.daily_minutes_planned,
         break_minutes=plan.break_minutes,
         grace_minutes=plan.grace_minutes,
+        early_arrival_tolerance_minutes=plan.early_arrival_tolerance_minutes,
         overtime_grace_minutes=plan.overtime_grace_minutes,
         off_shift_tolerance_minutes=plan.off_shift_tolerance_minutes,
         start_date=plan.start_date,
@@ -4400,6 +4403,7 @@ def _validate_schedule_plan_payload(
         and payload.daily_minutes_planned is None
         and payload.break_minutes is None
         and payload.grace_minutes is None
+        and payload.early_arrival_tolerance_minutes is None
         and payload.overtime_grace_minutes is None
         and payload.off_shift_tolerance_minutes is None
     ):
@@ -5037,6 +5041,7 @@ def upsert_schedule_plan(
             daily_minutes_planned=payload.daily_minutes_planned,
             break_minutes=payload.break_minutes,
             grace_minutes=payload.grace_minutes,
+            early_arrival_tolerance_minutes=payload.early_arrival_tolerance_minutes,
             overtime_grace_minutes=payload.overtime_grace_minutes,
             off_shift_tolerance_minutes=payload.off_shift_tolerance_minutes,
             start_date=payload.start_date,
@@ -5062,6 +5067,7 @@ def upsert_schedule_plan(
         plan.daily_minutes_planned = payload.daily_minutes_planned
         plan.break_minutes = payload.break_minutes
         plan.grace_minutes = payload.grace_minutes
+        plan.early_arrival_tolerance_minutes = payload.early_arrival_tolerance_minutes
         plan.overtime_grace_minutes = payload.overtime_grace_minutes
         plan.off_shift_tolerance_minutes = payload.off_shift_tolerance_minutes
         plan.start_date = payload.start_date
