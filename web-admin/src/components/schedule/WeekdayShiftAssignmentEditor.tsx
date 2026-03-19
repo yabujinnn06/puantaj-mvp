@@ -50,6 +50,15 @@ export function WeekdayShiftAssignmentEditor({
     onSave(weekday, normalizeShiftIds(nextShiftIds))
   }
 
+  const addAssignedShift = (weekday: number, selectedShiftIds: string[], shiftId: string) => {
+    if (selectedShiftIds.includes(shiftId)) {
+      return
+    }
+    const nextShiftIds = [...selectedShiftIds, shiftId]
+    updateWeekdayDraft(weekday, nextShiftIds)
+    saveWeekdayDraft(weekday, nextShiftIds)
+  }
+
   const removeAssignedShift = (
     weekday: number,
     selectedShiftIds: string[],
@@ -113,8 +122,8 @@ export function WeekdayShiftAssignmentEditor({
         <thead className="text-xs uppercase text-slate-500">
           <tr>
             <th className="py-2">Gün</th>
-            <th className="py-2">Aktif vardiyalar</th>
-            <th className="py-2">Atanan vardiyalar</th>
+            <th className="py-2">Seçilebilir aktif vardiyalar</th>
+            <th className="py-2">Bu güne atanan vardiyalar</th>
             <th className="py-2 text-right">İşlem</th>
           </tr>
         </thead>
@@ -129,23 +138,47 @@ export function WeekdayShiftAssignmentEditor({
               <tr key={weekday.value} className="border-t border-slate-100 align-top">
                 <td className="py-2 font-medium text-slate-800">{weekday.label}</td>
                 <td className="py-2 min-w-72">
-                  <select
-                    multiple
-                    value={selectedShiftIds}
-                    onChange={(event) => {
-                      const nextShiftIds = Array.from(event.target.selectedOptions).map((option) => option.value)
-                      updateWeekdayDraft(weekday.value, nextShiftIds)
-                    }}
-                    className="min-h-28 w-full rounded-lg border border-slate-300 px-3 py-2"
-                  >
-                    {activeShifts.map((shift) => (
-                      <option key={shift.id} value={shift.id}>
-                        {shift.name} ({shift.start_time_local} - {shift.end_time_local})
-                      </option>
-                    ))}
-                  </select>
+                  {activeShifts.length > 0 ? (
+                    <div className="grid gap-2">
+                      {activeShifts.map((shift) => {
+                        const shiftId = String(shift.id)
+                        const isAssigned = selectedShiftIds.includes(shiftId)
+                        return (
+                          <div
+                            key={`${weekday.value}-pool-${shift.id}`}
+                            className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2"
+                          >
+                            <div className="min-w-0 flex-1 text-slate-700">
+                              <div className="truncate text-sm font-medium">{shift.name}</div>
+                              <div className="text-xs text-slate-500">
+                                {shift.start_time_local} - {shift.end_time_local}
+                              </div>
+                            </div>
+                            {isAssigned ? (
+                              <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-700">
+                                Bu günde
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={isSaving}
+                                onClick={() => addAssignedShift(weekday.value, selectedShiftIds, shiftId)}
+                                className="rounded-lg border border-brand-300 bg-white px-3 py-1 text-[11px] font-semibold text-brand-700 hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                Ekle
+                              </button>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-slate-500">
+                      Bu departman için aktif vardiya yok.
+                    </span>
+                  )}
                   <span className="mt-1 block text-xs text-slate-500">
-                    Ekleme veya degistirme icin soldan secip Kaydet'e basin.
+                    Sol taraf departmandaki aktif vardiya havuzudur. Sağ taraf sadece bu günün atamalarını gösterir.
                   </span>
                 </td>
                 <td className="py-2 min-w-72">
@@ -186,14 +219,6 @@ export function WeekdayShiftAssignmentEditor({
                       className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       Gunu temizle
-                    </button>
-                    <button
-                      type="button"
-                      disabled={isSaving}
-                      onClick={() => saveWeekdayDraft(weekday.value, selectedShiftIds)}
-                      className="rounded-lg bg-brand-600 px-3 py-2 text-xs font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      Kaydet
                     </button>
                   </div>
                 </td>
