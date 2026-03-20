@@ -19,7 +19,6 @@ import { EmployeesPage } from './pages/EmployeesPage'
 import { LeavesPage } from './pages/LeavesPage'
 import { LoginPage } from './pages/LoginPage'
 import { LocationMonitorPage } from './pages/LocationMonitorPage'
-import { ManagementConsolePage } from './pages/ManagementConsolePage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { PuantajExportPage } from './pages/PuantajExportPage'
 import { QrCodesPage } from './pages/QrCodesPage'
@@ -43,14 +42,7 @@ function App() {
       <Route element={<AuthGuard />}>
         <Route element={<AppLayout />}>
           <Route path="/" element={<DefaultAdminRoute />} />
-          <Route
-            path="/management-console"
-            element={
-              <PermissionRoute permission="employees">
-                <ManagementConsolePage />
-              </PermissionRoute>
-            }
-          />
+          <Route path="/management-console" element={<Navigate to="/log" replace />} />
           <Route
             path="/log"
             element={
@@ -60,8 +52,8 @@ function App() {
             }
           />
           <Route path="/location-monitor" element={<Navigate to="/log" replace />} />
-          <Route path="/control-room" element={<Navigate to="/management-console?focus=matrix" replace />} />
-          <Route path="/dashboard" element={<Navigate to="/management-console" replace />} />
+          <Route path="/control-room" element={<Navigate to="/log" replace />} />
+          <Route path="/dashboard" element={<Navigate to="/log" replace />} />
           <Route
             path="/regions"
             element={

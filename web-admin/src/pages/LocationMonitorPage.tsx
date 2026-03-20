@@ -15,7 +15,6 @@ import { ErrorBlock } from '../components/ErrorBlock'
 import { LoadingBlock } from '../components/LoadingBlock'
 import { MinuteDisplay } from '../components/MinuteDisplay'
 import { LocationMonitorMap } from '../components/location-monitor/LocationMonitorMap'
-import { dateValue } from '../components/management-console/types'
 import type {
   Department,
   Employee,
@@ -29,6 +28,7 @@ import type {
   LocationTrustStatus,
   Region,
 } from '../types/api'
+import { dateValue } from '../utils/dateValue'
 
 const LazyLocationMonitor3DView = lazy(async () => {
   const module = await import('../components/location-monitor/LocationMonitor3DView')

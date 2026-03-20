@@ -63,18 +63,11 @@ export const adminPermissionModules: Array<{
 
 export const adminNavItems: AdminNavItem[] = [
   {
-    to: '/management-console',
-    label: 'Ana Panel',
-    permission: 'employees',
-    section: 'overview',
-    aliases: ['/control-room', '/dashboard'],
-  },
-  {
     to: '/log',
     label: 'Log',
     permission: 'log',
     section: 'overview',
-    aliases: ['/location-monitor'],
+    aliases: ['/location-monitor', '/management-console', '/control-room', '/dashboard'],
   },
   {
     to: '/regions',
@@ -191,11 +184,11 @@ export const adminNavSections: AdminNavSection[] = adminNavSectionLabels.map(
 )
 
 export const adminPageTitles: Record<string, string> = {
-  '/management-console': 'Ana Panel',
+  '/management-console': 'Log',
   '/log': 'Log',
   '/location-monitor': 'Log',
-  '/control-room': 'Ana Panel',
-  '/dashboard': 'Ana Panel',
+  '/control-room': 'Log',
+  '/dashboard': 'Log',
   '/regions': 'Bolgeler',
   '/departments': 'Departmanlar',
   '/employees': 'Calisanlar',

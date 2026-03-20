@@ -56,7 +56,7 @@ export function LoginPage() {
   const target = useMemo(() => {
     const stateTarget = (location.state as { from?: string } | undefined)?.from
     const searchTarget = new URLSearchParams(location.search).get('redirect')
-    return stateTarget ?? searchTarget ?? '/management-console'
+    return stateTarget ?? searchTarget ?? '/log'
   }, [location.search, location.state])
 
   const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
