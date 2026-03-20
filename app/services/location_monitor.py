@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
@@ -38,6 +39,7 @@ from app.services.location import distance_m, location_status_needs_attention
 from app.services.location_events import hydrate_location_events_for_range
 from app.services.monthly import calculate_employee_monthly
 
+logger = logging.getLogger(__name__)
 
 MAP_POINT_SOURCES = {
     LocationEventSource.CHECKIN: "CHECKIN",
@@ -69,6 +71,52 @@ class LocationVisibilityPolicy:
     exact_coordinates: bool = True
     ip_visible: bool = True
     device_visible: bool = True
+
+
+def _safe_location_status(value: Any) -> LocationStatus | None:
+    if isinstance(value, LocationStatus):
+        return value
+    if value is None:
+        return None
+    try:
+        return LocationStatus(str(value).strip().upper())
+    except ValueError:
+        return None
+
+
+def _safe_geofence_status(value: Any) -> GeofenceStatus | None:
+    if isinstance(value, GeofenceStatus):
+        return value
+    if value is None:
+        return None
+    try:
+        return GeofenceStatus(str(value).strip().upper())
+    except ValueError:
+        return None
+
+
+def _safe_trust_status(value: Any) -> Any:
+    from app.models import LocationTrustStatus
+
+    if isinstance(value, LocationTrustStatus):
+        return value
+    if value is None:
+        return None
+    try:
+        return LocationTrustStatus(str(value).strip().upper())
+    except ValueError:
+        return None
+
+
+def _safe_location_source(value: Any) -> LocationEventSource | None:
+    if isinstance(value, LocationEventSource):
+        return value
+    if value is None:
+        return None
+    try:
+        return LocationEventSource(str(value).strip().upper())
+    except ValueError:
+        return None
 
 
 def _safe_float(value: Any) -> float | None:
@@ -149,7 +197,10 @@ def _event_to_map_point(
 ) -> LocationMonitorMapPointRead | None:
     lat = _safe_float(event.lat)
     lon = _safe_float(event.lon)
+    source = _safe_location_source(event.source)
     if lat is None or lon is None:
+        return None
+    if source is None:
         return None
     point_day = _local_day(event.ts_utc)
     if point_day is None:
@@ -157,17 +208,17 @@ def _event_to_map_point(
     return LocationMonitorMapPointRead(
         id=f"location-event-{event.id}",
         day=point_day,
-        source=_summary_point_source(event.source),  # type: ignore[arg-type]
+        source=_summary_point_source(source),  # type: ignore[arg-type]
         lat=_apply_coordinate_visibility(lat, exact=visibility.exact_coordinates),
         lon=_apply_coordinate_visibility(lon, exact=visibility.exact_coordinates),
         accuracy_m=_safe_float(event.accuracy_m),
         ts_utc=event.ts_utc,
-        label=_point_label(event.source),
-        location_status=event.location_status,
+        label=_point_label(source),
+        location_status=_safe_location_status(event.location_status),
         device_id=event.device_id if visibility.device_visible else None,
         ip=event.ip if visibility.ip_visible else _mask_ip(event.ip),
-        geofence_status=event.geofence_status,
-        trust_status=event.trust_status,
+        geofence_status=_safe_geofence_status(event.geofence_status),
+        trust_status=_safe_trust_status(event.trust_status),
         trust_score=_safe_int(event.trust_score),
         provider=event.provider,
         speed_mps=_safe_float(event.speed_mps),
@@ -187,18 +238,19 @@ def _event_to_timeline_event(
 ) -> LocationMonitorTimelineEventRead:
     lat = _safe_float(event.lat)
     lon = _safe_float(event.lon)
+    source = _safe_location_source(event.source) or LocationEventSource.LOCATION_PING
     return LocationMonitorTimelineEventRead(
         id=f"location-event-{event.id}",
         ts_utc=event.ts_utc,
         day=_local_day(event.ts_utc) or event.ts_utc.astimezone(_attendance_timezone()).date(),
-        source=event.source,
-        label=_point_label(event.source),
+        source=source,
+        label=_point_label(source),
         lat=_apply_coordinate_visibility(lat, exact=visibility.exact_coordinates) if lat is not None else None,
         lon=_apply_coordinate_visibility(lon, exact=visibility.exact_coordinates) if lon is not None else None,
         accuracy_m=_safe_float(event.accuracy_m),
-        location_status=event.location_status,
-        geofence_status=event.geofence_status,
-        trust_status=event.trust_status,
+        location_status=_safe_location_status(event.location_status),
+        geofence_status=_safe_geofence_status(event.geofence_status),
+        trust_status=_safe_trust_status(event.trust_status),
         trust_score=_safe_int(event.trust_score),
         device_id=event.device_id if visibility.device_visible else None,
         ip=event.ip if visibility.ip_visible else _mask_ip(event.ip),
@@ -214,7 +266,11 @@ def _event_to_timeline_event(
 
 
 def _route_points(events: Iterable[EmployeeLocationEvent]) -> list[EmployeeLocationEvent]:
-    return [event for event in events if _has_valid_coordinates(event)]
+    return [
+        event
+        for event in events
+        if _has_valid_coordinates(event) and _safe_location_source(event.source) is not None
+    ]
 
 
 def _movement_distance(points: list[EmployeeLocationEvent]) -> float:
@@ -356,11 +412,15 @@ def _location_insights(
             )
         ]
 
-    low_accuracy_count = sum(1 for item in events if (item.accuracy_m or 0) >= LOW_ACCURACY_THRESHOLD_M)
-    outside_geofence_count = sum(1 for item in events if item.geofence_status == GeofenceStatus.OUTSIDE)
+    low_accuracy_count = sum(1 for item in events if (_safe_float(item.accuracy_m) or 0) >= LOW_ACCURACY_THRESHOLD_M)
+    outside_geofence_count = sum(1 for item in events if _safe_geofence_status(item.geofence_status) == GeofenceStatus.OUTSIDE)
     suspicious_jump_count = _suspicious_jump_count(_route_points(events))
     unique_devices = len({item.device_id for item in events if item.device_id is not None})
-    demo_count = sum(1 for item in events if item.source in {LocationEventSource.DEMO_START, LocationEventSource.DEMO_END})
+    demo_count = sum(
+        1
+        for item in events
+        if _safe_location_source(item.source) in {LocationEventSource.DEMO_START, LocationEventSource.DEMO_END}
+    )
     missing_location_attendance_days = sum(
         1 for item in day_records if (item.check_in or item.check_out) and item.last_location_point is None
     )
@@ -449,8 +509,8 @@ def _geofence_read(employee_location: EmployeeLocation | None, latest_event: Emp
     if employee_location is None and latest_event is None:
         return None
     status_value = (
-        latest_event.geofence_status
-        if latest_event is not None and latest_event.geofence_status is not None
+        _safe_geofence_status(latest_event.geofence_status)
+        if latest_event is not None and _safe_geofence_status(latest_event.geofence_status) is not None
         else (GeofenceStatus.NOT_CONFIGURED if employee_location is None else GeofenceStatus.UNKNOWN)
     )
     return LocationMonitorGeofenceRead(
@@ -469,22 +529,45 @@ def _query_employee_location_events(
     start_utc: datetime,
     end_utc: datetime,
 ) -> list[EmployeeLocationEvent]:
-    hydrate_location_events_for_range(db, employee_id=employee_id, start_utc=start_utc, end_utc=end_utc)
-    return list(
-        db.scalars(
-            select(EmployeeLocationEvent)
-            .options(
-                selectinload(EmployeeLocationEvent.attendance_event),
-                selectinload(EmployeeLocationEvent.audit_log),
-            )
-            .where(
-                EmployeeLocationEvent.employee_id == employee_id,
-                EmployeeLocationEvent.ts_utc >= start_utc,
-                EmployeeLocationEvent.ts_utc < end_utc,
-            )
-            .order_by(EmployeeLocationEvent.ts_utc.asc(), EmployeeLocationEvent.id.asc())
-        ).all()
-    )
+    try:
+        hydrate_location_events_for_range(db, employee_id=employee_id, start_utc=start_utc, end_utc=end_utc)
+    except Exception:
+        logger.exception(
+            "location monitor hydration failed",
+            extra={
+                "employee_id": employee_id,
+                "start_utc": start_utc.isoformat(),
+                "end_utc": end_utc.isoformat(),
+            },
+        )
+        db.rollback()
+    try:
+        return list(
+            db.scalars(
+                select(EmployeeLocationEvent)
+                .options(
+                    selectinload(EmployeeLocationEvent.attendance_event),
+                    selectinload(EmployeeLocationEvent.audit_log),
+                )
+                .where(
+                    EmployeeLocationEvent.employee_id == employee_id,
+                    EmployeeLocationEvent.ts_utc >= start_utc,
+                    EmployeeLocationEvent.ts_utc < end_utc,
+                )
+                .order_by(EmployeeLocationEvent.ts_utc.asc(), EmployeeLocationEvent.id.asc())
+            ).all()
+        )
+    except Exception:
+        logger.exception(
+            "location monitor event query failed",
+            extra={
+                "employee_id": employee_id,
+                "start_utc": start_utc.isoformat(),
+                "end_utc": end_utc.isoformat(),
+            },
+        )
+        db.rollback()
+        return []
 
 
 def _month_range_totals(
@@ -536,11 +619,13 @@ def _summary_from_events(
     latest_map_point = _event_to_map_point(latest_event, visibility=visibility, marker_kind="LAST") if latest_event else None
     last_by_source: dict[LocationEventSource, EmployeeLocationEvent] = {}
     for event in events:
-        last_by_source[event.source] = event
+        source = _safe_location_source(event.source)
+        if source is not None:
+            last_by_source[source] = event
     last_activity = max((event.ts_utc for event in events), default=None)
     today_events = [event for event in events if _local_day(event.ts_utc) == datetime.now(timezone.utc).astimezone(_attendance_timezone()).date()]
-    has_checkin = any(event.source == LocationEventSource.CHECKIN for event in today_events)
-    has_checkout = any(event.source == LocationEventSource.CHECKOUT for event in today_events)
+    has_checkin = any(_safe_location_source(event.source) == LocationEventSource.CHECKIN for event in today_events)
+    has_checkout = any(_safe_location_source(event.source) == LocationEventSource.CHECKOUT for event in today_events)
     today_status = "IN_PROGRESS" if has_checkin and not has_checkout else ("FINISHED" if has_checkout else "NOT_STARTED")
     return LocationMonitorEmployeeSummaryRead(
         employee=EmployeeRead.model_validate(employee),
@@ -555,7 +640,11 @@ def _summary_from_events(
         recent_ip=latest_event.ip if latest_event is not None and visibility.ip_visible else _mask_ip(latest_event.ip if latest_event else None),
         last_activity_utc=last_activity,
         last_portal_seen_utc=max(
-            [item.ts_utc for item in events if item.source in {LocationEventSource.APP_OPEN, LocationEventSource.APP_CLOSE}],
+            [
+                item.ts_utc
+                for item in events
+                if _safe_location_source(item.source) in {LocationEventSource.APP_OPEN, LocationEventSource.APP_CLOSE}
+            ],
             default=None,
         ),
         last_checkin_utc=last_by_source.get(LocationEventSource.CHECKIN).ts_utc if last_by_source.get(LocationEventSource.CHECKIN) else None,
@@ -566,9 +655,9 @@ def _summary_from_events(
         last_demo_end_utc=last_by_source.get(LocationEventSource.DEMO_END).ts_utc if last_by_source.get(LocationEventSource.DEMO_END) else None,
         location_label=latest_map_point.label if latest_map_point is not None else None,
         latest_location=latest_map_point,
-        last_location_status=latest_event.location_status if latest_event is not None else None,
-        last_geofence_status=latest_event.geofence_status if latest_event is not None else None,
-        last_trust_status=latest_event.trust_status if latest_event is not None else None,
+        last_location_status=_safe_location_status(latest_event.location_status) if latest_event is not None else None,
+        last_geofence_status=_safe_geofence_status(latest_event.geofence_status) if latest_event is not None else None,
+        last_trust_status=_safe_trust_status(latest_event.trust_status) if latest_event is not None else None,
         last_trust_score=latest_event.trust_score if latest_event is not None else None,
         last_accuracy_m=latest_event.accuracy_m if latest_event is not None else None,
         last_device_id=latest_event.device_id if latest_event is not None and visibility.device_visible else None,
@@ -602,12 +691,26 @@ def build_location_monitor_payloads(
     now_utc = datetime.now(timezone.utc)
     start_utc = datetime.combine(start_date, time.min, tzinfo=tz).astimezone(timezone.utc)
     end_utc = datetime.combine(end_date + timedelta(days=1), time.min, tzinfo=tz).astimezone(timezone.utc)
-    monthly_days_map, totals, worked_today_minutes, weekly_total_minutes = _month_range_totals(
-        db,
-        employee_id=employee_id,
-        start_date=start_date,
-        end_date=end_date,
-    )
+    try:
+        monthly_days_map, totals, worked_today_minutes, weekly_total_minutes = _month_range_totals(
+            db,
+            employee_id=employee_id,
+            start_date=start_date,
+            end_date=end_date,
+        )
+    except Exception:
+        logger.exception(
+            "location monitor monthly totals failed",
+            extra={
+                "employee_id": employee_id,
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+            },
+        )
+        monthly_days_map = {}
+        totals = LocationMonitorRangeTotalsRead()
+        worked_today_minutes = 0
+        weekly_total_minutes = 0
     all_events = _query_employee_location_events(db, employee_id=employee_id, start_utc=start_utc, end_utc=end_utc)
     events = [event for event in all_events if event.attendance_event is None or event.attendance_event.deleted_at is None]
     route_events = _route_points(events)
@@ -635,13 +738,24 @@ def build_location_monitor_payloads(
     simplified_route = _simplify_points(route_events_for_map)
     repeated_groups = _repeated_groups(route_events_for_map, visibility=visibility)
 
-    summary = _summary_from_events(
-        employee=employee,
-        events=events,
-        worked_today_minutes=worked_today_minutes,
-        weekly_total_minutes=weekly_total_minutes,
-        visibility=visibility,
-    )
+    try:
+        summary = _summary_from_events(
+            employee=employee,
+            events=events,
+            worked_today_minutes=worked_today_minutes,
+            weekly_total_minutes=weekly_total_minutes,
+            visibility=visibility,
+        )
+    except Exception:
+        logger.exception("location monitor summary build failed", extra={"employee_id": employee_id})
+        summary = LocationMonitorEmployeeSummaryRead(
+            employee=EmployeeRead.model_validate(employee),
+            department_name=employee.department.name if employee.department is not None else None,
+            region_name=employee.region.name if employee.region is not None else None,
+            shift_name=employee.shift.name if employee.shift is not None else None,
+            active_devices=sum(1 for item in list(employee.devices or []) if item.is_active),
+            total_devices=len(list(employee.devices or [])),
+        )
 
     day_events_map: dict[date, list[EmployeeLocationEvent]] = defaultdict(list)
     for event in events:
@@ -655,39 +769,45 @@ def build_location_monitor_payloads(
         day_events = day_events_map.get(day_key, [])
         checkin = next((item for item in day_events if item.source == LocationEventSource.CHECKIN), None)
         checkout = next((item for item in reversed(day_events) if item.source == LocationEventSource.CHECKOUT), None)
-        first_app_open = next((item for item in day_events if item.source == LocationEventSource.APP_OPEN), None)
-        last_app_close = next((item for item in reversed(day_events) if item.source == LocationEventSource.APP_CLOSE), None)
-        first_demo_start = next((item for item in day_events if item.source == LocationEventSource.DEMO_START), None)
-        last_demo_end = next((item for item in reversed(day_events) if item.source == LocationEventSource.DEMO_END), None)
+        first_app_open = next((item for item in day_events if _safe_location_source(item.source) == LocationEventSource.APP_OPEN), None)
+        last_app_close = next((item for item in reversed(day_events) if _safe_location_source(item.source) == LocationEventSource.APP_CLOSE), None)
+        first_demo_start = next((item for item in day_events if _safe_location_source(item.source) == LocationEventSource.DEMO_START), None)
+        last_demo_end = next((item for item in reversed(day_events) if _safe_location_source(item.source) == LocationEventSource.DEMO_END), None)
         last_location = next((item for item in reversed(day_events) if item.lat is not None and item.lon is not None), None)
 
-        day_records.append(
-            LocationMonitorDayRecordRead(
-                date=day_item.date,
-                status=day_item.status,
-                check_in=day_item.check_in,
-                check_out=day_item.check_out,
-                worked_minutes=day_item.worked_minutes,
-                overtime_minutes=day_item.overtime_minutes,
-                plan_overtime_minutes=day_item.plan_overtime_minutes,
-                legal_overtime_minutes=day_item.legal_overtime_minutes,
-                first_app_open_utc=first_app_open.ts_utc if first_app_open is not None else None,
-                last_app_close_utc=last_app_close.ts_utc if last_app_close is not None else None,
-                first_demo_start_utc=first_demo_start.ts_utc if first_demo_start is not None else None,
-                last_demo_end_utc=last_demo_end.ts_utc if last_demo_end is not None else None,
-                check_in_point=_event_to_map_point(checkin, visibility=visibility, marker_kind="START") if checkin else None,
-                check_out_point=_event_to_map_point(checkout, visibility=visibility, marker_kind="END") if checkout else None,
-                first_app_open_point=_event_to_map_point(first_app_open, visibility=visibility) if first_app_open else None,
-                last_app_close_point=_event_to_map_point(last_app_close, visibility=visibility) if last_app_close else None,
-                first_demo_start_point=_event_to_map_point(first_demo_start, visibility=visibility) if first_demo_start else None,
-                last_demo_end_point=_event_to_map_point(last_demo_end, visibility=visibility) if last_demo_end else None,
-                last_location_point=_event_to_map_point(last_location, visibility=visibility, marker_kind="LAST") if last_location else None,
-                suspicious_jump_count=sum(1 for item in day_events if item.location_status == LocationStatus.SUSPICIOUS_JUMP),
-                low_accuracy_count=sum(1 for item in day_events if item.location_status == LocationStatus.LOW_ACCURACY),
-                outside_geofence_count=sum(1 for item in day_events if item.geofence_status == GeofenceStatus.OUTSIDE),
-                event_count=len(day_events),
+        try:
+            day_records.append(
+                LocationMonitorDayRecordRead(
+                    date=day_item.date,
+                    status=day_item.status,
+                    check_in=day_item.check_in,
+                    check_out=day_item.check_out,
+                    worked_minutes=day_item.worked_minutes,
+                    overtime_minutes=day_item.overtime_minutes,
+                    plan_overtime_minutes=day_item.plan_overtime_minutes,
+                    legal_overtime_minutes=day_item.legal_overtime_minutes,
+                    first_app_open_utc=first_app_open.ts_utc if first_app_open is not None else None,
+                    last_app_close_utc=last_app_close.ts_utc if last_app_close is not None else None,
+                    first_demo_start_utc=first_demo_start.ts_utc if first_demo_start is not None else None,
+                    last_demo_end_utc=last_demo_end.ts_utc if last_demo_end is not None else None,
+                    check_in_point=_event_to_map_point(checkin, visibility=visibility, marker_kind="START") if checkin else None,
+                    check_out_point=_event_to_map_point(checkout, visibility=visibility, marker_kind="END") if checkout else None,
+                    first_app_open_point=_event_to_map_point(first_app_open, visibility=visibility) if first_app_open else None,
+                    last_app_close_point=_event_to_map_point(last_app_close, visibility=visibility) if last_app_close else None,
+                    first_demo_start_point=_event_to_map_point(first_demo_start, visibility=visibility) if first_demo_start else None,
+                    last_demo_end_point=_event_to_map_point(last_demo_end, visibility=visibility) if last_demo_end else None,
+                    last_location_point=_event_to_map_point(last_location, visibility=visibility, marker_kind="LAST") if last_location else None,
+                    suspicious_jump_count=sum(1 for item in day_events if _safe_location_status(item.location_status) == LocationStatus.SUSPICIOUS_JUMP),
+                    low_accuracy_count=sum(1 for item in day_events if _safe_location_status(item.location_status) == LocationStatus.LOW_ACCURACY),
+                    outside_geofence_count=sum(1 for item in day_events if _safe_geofence_status(item.geofence_status) == GeofenceStatus.OUTSIDE),
+                    event_count=len(day_events),
+                )
             )
-        )
+        except Exception:
+            logger.exception(
+                "location monitor day record build failed",
+                extra={"employee_id": employee_id, "day": day_key.isoformat()},
+            )
 
     total_distance_m = _movement_distance(route_events)
     visible_distance_m = _movement_distance(route_events_for_map)
@@ -702,21 +822,25 @@ def build_location_monitor_payloads(
         simplified_point_count=len(simplified_route),
         repeated_group_count=len(repeated_groups),
         suspicious_jump_count=_suspicious_jump_count(route_events_for_map),
-        low_accuracy_event_count=sum(1 for item in events_for_map if (item.accuracy_m or 0) >= LOW_ACCURACY_THRESHOLD_M),
+        low_accuracy_event_count=sum(1 for item in events_for_map if (_safe_float(item.accuracy_m) or 0) >= LOW_ACCURACY_THRESHOLD_M),
         dwell_stop_count=len(repeated_groups),
     )
     insights = _location_insights(events=events, day_records=day_records, total_distance_m=total_distance_m)
     geofence = _geofence_read(employee.location, latest_event)
     privacy = _privacy_read(visibility)
 
-    map_points = [
-        _event_to_map_point(
-            event,
-            visibility=visibility,
-            marker_kind="JUMP" if event.location_status == LocationStatus.SUSPICIOUS_JUMP else "EVENT",
-        )
-        for event in route_events_for_map
-    ]
+    map_points = []
+    for event in route_events_for_map:
+        try:
+            map_points.append(
+                _event_to_map_point(
+                    event,
+                    visibility=visibility,
+                    marker_kind="JUMP" if _safe_location_status(event.location_status) == LocationStatus.SUSPICIOUS_JUMP else "EVENT",
+                )
+            )
+        except Exception:
+            logger.exception("location monitor map point build failed", extra={"employee_id": employee_id, "event_id": event.id})
     map_points = [item for item in map_points if item is not None]
     if map_points:
         map_points[0].marker_kind = "START"
@@ -725,14 +849,18 @@ def build_location_monitor_payloads(
             "LAST" if latest_event is not None and last_route_event is not None and last_route_event.id == latest_event.id else "END"
         )
 
-    simplified_map_points = [
-        _event_to_map_point(
-            event,
-            visibility=visibility,
-            marker_kind="JUMP" if event.location_status == LocationStatus.SUSPICIOUS_JUMP else "EVENT",
-        )
-        for event in simplified_route
-    ]
+    simplified_map_points = []
+    for event in simplified_route:
+        try:
+            simplified_map_points.append(
+                _event_to_map_point(
+                    event,
+                    visibility=visibility,
+                    marker_kind="JUMP" if _safe_location_status(event.location_status) == LocationStatus.SUSPICIOUS_JUMP else "EVENT",
+                )
+            )
+        except Exception:
+            logger.exception("location monitor simplified point build failed", extra={"employee_id": employee_id, "event_id": event.id})
     simplified_map_points = [item for item in simplified_map_points if item is not None]
     if simplified_map_points:
         simplified_map_points[0].marker_kind = "START"
@@ -740,7 +868,12 @@ def build_location_monitor_payloads(
             "LAST" if latest_event is not None and simplified_route and simplified_route[-1].id == latest_event.id else "END"
         )
 
-    timeline_events = [_event_to_timeline_event(event, visibility=visibility) for event in focus_day_events]
+    timeline_events = []
+    for event in focus_day_events:
+        try:
+            timeline_events.append(_event_to_timeline_event(event, visibility=visibility))
+        except Exception:
+            logger.exception("location monitor timeline event build failed", extra={"employee_id": employee_id, "event_id": event.id})
 
     summary_response = LocationMonitorSummaryResponse(
         generated_at_utc=now_utc,
