@@ -350,10 +350,12 @@ export function ManagementConsoleEmployeeDetailModal({
   employeeId,
   open,
   onClose,
+  placement = 'center',
 }: {
   employeeId: number | null
   open: boolean
   onClose: () => void
+  placement?: 'center' | 'right'
 }) {
   const queryClient = useQueryClient()
   const { hasPermission } = useAuth()
@@ -505,7 +507,7 @@ export function ManagementConsoleEmployeeDetailModal({
         )
       }
       onClose={onClose}
-      placement="center"
+      placement={placement}
       maxWidthClass="max-w-none"
       panelClassName="mc-modal__panel--detail"
     >
