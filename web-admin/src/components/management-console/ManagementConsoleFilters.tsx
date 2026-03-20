@@ -1,9 +1,11 @@
-import type { Department, Region } from '../../types/api'
+import { EmployeeAutocompleteField } from '../EmployeeAutocompleteField'
+import type { Department, Employee, Region } from '../../types/api'
 import type { FilterFormState, SortField } from './types'
 import { LIMIT_OPTIONS, SORT_OPTIONS } from './types'
 
 export function ManagementConsoleFilters({
   filterForm,
+  employees,
   regions,
   departments,
   activeFilterEntries,
@@ -12,6 +14,7 @@ export function ManagementConsoleFilters({
   onReset,
 }: {
   filterForm: FilterFormState
+  employees: Employee[]
   regions: Region[]
   departments: Department[]
   activeFilterEntries: string[]
@@ -23,32 +26,62 @@ export function ManagementConsoleFilters({
     <section className="mc-panel mc-panel--filters mc-panel--form-first">
       <div className="mc-panel__head mc-panel__head--tight">
         <div>
-          <p className="mc-kicker">FİLTRE MERKEZİ</p>
-          <h3 className="mc-panel__title">Analiz kapsamı ve görünüm davranışı</h3>
+          <p className="mc-kicker">FILTRE MERKEZI</p>
+          <h3 className="mc-panel__title">Analiz kapsami ve gorunum davranisi</h3>
         </div>
         <div className="mc-meta">
           <span>{activeFilterEntries.length} aktif filtre</span>
-          <span>Form öncelikli görünüm</span>
+          <span>Form oncelikli gorunum</span>
         </div>
       </div>
 
       <div className="mc-filter-stack">
         <div className="mc-filter-grid mc-filter-grid--primary">
+          <EmployeeAutocompleteField
+            className="mc-field"
+            label="Personel sec"
+            employees={employees}
+            value={filterForm.employee_id}
+            onChange={(value) =>
+              onChange({
+                ...filterForm,
+                employee_id: value,
+                q: value ? '' : filterForm.q,
+              })
+            }
+            placeholder="Ad soyad veya #ID ile sec"
+            emptyLabel="Tum personeller"
+            helperText="Secili personel overview sorgusunu ID bazli daraltir."
+            labelClassName="grid gap-[0.45rem] text-sm text-[var(--mc-text)]"
+            labelTextClassName="text-[0.78rem] font-bold uppercase tracking-[0.08em] text-[var(--mc-text-soft)]"
+            inputClassName="w-full rounded-[14px] border border-[var(--mc-border-strong)] bg-white px-3 py-2.5 text-sm text-[var(--mc-text)]"
+            clearButtonClassName="absolute right-2 top-1/2 -translate-y-1/2 rounded-md px-2 py-1 text-[11px] font-semibold text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+            menuClassName="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-lg"
+            optionClassName="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-50"
+            emptyOptionClassName="flex w-full items-center justify-between border-b border-slate-100 px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50"
+            helperTextClassName="text-xs text-slate-500"
+          />
           <label className="mc-field">
-            <span>Personel / ID</span>
+            <span>Arama / ID</span>
             <input
               value={filterForm.q}
-              onChange={(event) => onChange({ ...filterForm, q: event.target.value })}
-              placeholder="Ad, soyad veya #ID"
+              onChange={(event) =>
+                onChange({
+                  ...filterForm,
+                  q: event.target.value,
+                  employee_id: event.target.value.trim() ? '' : filterForm.employee_id,
+                })
+              }
+              placeholder="Ad, soyad veya serbest arama"
             />
           </label>
           <label className="mc-field">
-            <span>Bölge</span>
+            <span>Bolge</span>
             <select
               value={filterForm.region_id}
               onChange={(event) => onChange({ ...filterForm, region_id: event.target.value })}
             >
-              <option value="">Tüm bölgeler</option>
+              <option value="">Tum bolgeler</option>
               {regions.map((region) => (
                 <option key={region.id} value={region.id}>
                   {region.name}
@@ -62,7 +95,7 @@ export function ManagementConsoleFilters({
               value={filterForm.department_id}
               onChange={(event) => onChange({ ...filterForm, department_id: event.target.value })}
             >
-              <option value="">Tüm departmanlar</option>
+              <option value="">Tum departmanlar</option>
               {departments.map((department) => (
                 <option key={department.id} value={department.id}>
                   {department.name}
@@ -71,7 +104,7 @@ export function ManagementConsoleFilters({
             </select>
           </label>
           <label className="mc-field">
-            <span>Başlangıç</span>
+            <span>Baslangic</span>
             <input
               type="date"
               value={filterForm.start_date}
@@ -79,7 +112,7 @@ export function ManagementConsoleFilters({
             />
           </label>
           <label className="mc-field">
-            <span>Bitiş</span>
+            <span>Bitis</span>
             <input
               type="date"
               value={filterForm.end_date}
@@ -91,7 +124,7 @@ export function ManagementConsoleFilters({
 
         <div className="mc-filter-grid mc-filter-grid--secondary">
           <label className="mc-field">
-            <span>Risk alt sınır</span>
+            <span>Risk alt sinir</span>
             <input
               type="number"
               min={0}
@@ -102,7 +135,7 @@ export function ManagementConsoleFilters({
             />
           </label>
           <label className="mc-field">
-            <span>Risk üst sınır</span>
+            <span>Risk ust sinir</span>
             <input
               type="number"
               min={0}
@@ -123,14 +156,14 @@ export function ManagementConsoleFilters({
                 })
               }
             >
-              <option value="">Tüm seviyeler</option>
+              <option value="">Tum seviyeler</option>
               <option value="NORMAL">Normal</option>
-              <option value="WATCH">İzlemeli</option>
+              <option value="WATCH">Izlemeli</option>
               <option value="CRITICAL">Kritik</option>
             </select>
           </label>
           <label className="mc-field">
-            <span>Sıralama</span>
+            <span>Siralama</span>
             <select
               value={filterForm.sort_by}
               onChange={(event) => onChange({ ...filterForm, sort_by: event.target.value as SortField })}
@@ -143,7 +176,7 @@ export function ManagementConsoleFilters({
             </select>
           </label>
           <label className="mc-field">
-            <span>Yön</span>
+            <span>Yon</span>
             <select
               value={filterForm.sort_dir}
               onChange={(event) =>
@@ -184,7 +217,7 @@ export function ManagementConsoleFilters({
         </label>
         <div className="mc-filter-footer__actions">
           <button type="button" className="mc-button mc-button--ghost" onClick={onReset}>
-            Sıfırla
+            Sifirla
           </button>
           <button type="button" className="mc-button mc-button--primary" onClick={onApply}>
             Uygula

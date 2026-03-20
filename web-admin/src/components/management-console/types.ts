@@ -21,6 +21,7 @@ export const SORT_OPTIONS = [
 export type SortField = (typeof SORT_OPTIONS)[number]['value']
 
 export type FilterFormState = {
+  employee_id: string
   q: string
   region_id: string
   department_id: string
@@ -55,6 +56,7 @@ export function dateValue(offsetDays = 0): string {
 
 export function defaultFilters(): FilterFormState {
   return {
+    employee_id: '',
     q: '',
     region_id: '',
     department_id: '',
@@ -79,8 +81,11 @@ export function parseNumber(value: string): number | undefined {
 }
 
 export function toOverviewParams(filters: FilterFormState, page: number): ControlRoomOverviewParams {
+  const employeeId = parseNumber(filters.employee_id)
+  const q = employeeId != null ? String(employeeId) : filters.q.trim() || undefined
+
   return {
-    q: filters.q.trim() || undefined,
+    q,
     region_id: parseNumber(filters.region_id),
     department_id: parseNumber(filters.department_id),
     start_date: filters.start_date || undefined,

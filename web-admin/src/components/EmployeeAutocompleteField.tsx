@@ -12,6 +12,14 @@ interface EmployeeAutocompleteFieldProps {
   helperText?: string
   disabled?: boolean
   className?: string
+  labelClassName?: string
+  labelTextClassName?: string
+  inputClassName?: string
+  clearButtonClassName?: string
+  menuClassName?: string
+  optionClassName?: string
+  emptyOptionClassName?: string
+  helperTextClassName?: string
 }
 
 function employeeLabel(employee: Employee): string {
@@ -28,6 +36,14 @@ export function EmployeeAutocompleteField({
   helperText,
   disabled = false,
   className = '',
+  labelClassName = 'text-sm text-slate-700',
+  labelTextClassName = '',
+  inputClassName = 'w-full rounded-lg border border-slate-300 px-3 py-2',
+  clearButtonClassName = 'absolute right-2 top-1/2 -translate-y-1/2 rounded px-1 text-xs text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50',
+  menuClassName = 'absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg',
+  optionClassName = 'flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-50',
+  emptyOptionClassName = 'flex w-full items-center justify-between border-b border-slate-100 px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50',
+  helperTextClassName = 'mt-1 text-xs text-slate-500',
 }: EmployeeAutocompleteFieldProps) {
   const selectedEmployee = useMemo(
     () => employees.find((item) => String(item.id) === value),
@@ -66,8 +82,8 @@ export function EmployeeAutocompleteField({
 
   return (
     <div className={className}>
-      <label className="text-sm text-slate-700">
-        {label}
+      <label className={labelClassName}>
+        <span className={labelTextClassName}>{label}</span>
         <div className="relative mt-1">
           <input
             type="text"
@@ -87,7 +103,7 @@ export function EmployeeAutocompleteField({
               window.setTimeout(() => setIsOpen(false), 120)
             }}
             placeholder={placeholder}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2"
+            className={inputClassName}
           />
           <button
             type="button"
@@ -97,13 +113,13 @@ export function EmployeeAutocompleteField({
               setQuery('')
               setIsOpen(false)
             }}
-            className="absolute right-2 top-1/2 -translate-y-1/2 rounded px-1 text-xs text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+            className={clearButtonClassName}
           >
             Temizle
           </button>
 
           {isOpen ? (
-            <div className="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg">
+            <div className={menuClassName}>
               <button
                 type="button"
                 onMouseDown={(event) => event.preventDefault()}
@@ -112,7 +128,7 @@ export function EmployeeAutocompleteField({
                   setQuery('')
                   setIsOpen(false)
                 }}
-                className="flex w-full items-center justify-between border-b border-slate-100 px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50"
+                className={emptyOptionClassName}
               >
                 <span>{emptyLabel}</span>
               </button>
@@ -122,7 +138,7 @@ export function EmployeeAutocompleteField({
                   type="button"
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => handlePick(employee)}
-                  className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-50"
+                  className={optionClassName}
                 >
                   <span>{employeeLabel(employee)}</span>
                   {!employee.is_active ? (
@@ -139,7 +155,7 @@ export function EmployeeAutocompleteField({
           ) : null}
         </div>
       </label>
-      {helperText ? <p className="mt-1 text-xs text-slate-500">{helperText}</p> : null}
+      {helperText ? <p className={helperTextClassName}>{helperText}</p> : null}
     </div>
   )
 }

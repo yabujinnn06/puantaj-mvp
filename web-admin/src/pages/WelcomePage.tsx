@@ -1,0 +1,524 @@
+import { useEffect, useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+
+import { getControlRoomOverview, getDepartments, getEmployees, getRegions } from '../api/admin'
+import { EmployeeAutocompleteField } from '../components/EmployeeAutocompleteField'
+import { ErrorBlock } from '../components/ErrorBlock'
+import { LoadingBlock } from '../components/LoadingBlock'
+import { MinuteDisplay } from '../components/MinuteDisplay'
+import { PageHeader } from '../components/PageHeader'
+import { Panel } from '../components/Panel'
+import { controlRoomQueryKeys } from '../components/control-room/queryKeys'
+import { formatDateTime, todayStatusLabel } from '../components/control-room/utils'
+import type { ControlRoomEmployeeState } from '../types/api'
+
+type WelcomeSortField =
+  | 'employee_name'
+  | 'worked_today'
+  | 'weekly_total'
+  | 'overtime'
+  | 'plan_overtime'
+  | 'extra_work'
+
+type EmploymentFilter = 'all' | 'active' | 'inactive'
+
+type WelcomeTableRow = {
+  id: number
+  fullName: string
+  regionId: number | null
+  regionName: string
+  departmentId: number | null
+  departmentName: string
+  isActive: boolean
+  todayStatus: ControlRoomEmployeeState['today_status']
+  workedTodayMinutes: number
+  weeklyTotalMinutes: number
+  overtimeMinutes: number
+  planOvertimeMinutes: number
+  extraWorkMinutes: number
+}
+
+const WELCOME_PAGE_SIZES = [12, 24, 48]
+
+function compareRows(
+  left: WelcomeTableRow,
+  right: WelcomeTableRow,
+  field: WelcomeSortField,
+  direction: 'asc' | 'desc',
+): number {
+  const multiplier = direction === 'asc' ? 1 : -1
+
+  if (field === 'employee_name') {
+    return left.fullName.localeCompare(right.fullName, 'tr') * multiplier
+  }
+
+  const leftValue =
+    field === 'worked_today'
+      ? left.workedTodayMinutes
+      : field === 'weekly_total'
+        ? left.weeklyTotalMinutes
+        : field === 'plan_overtime'
+          ? left.planOvertimeMinutes
+          : field === 'extra_work'
+            ? left.extraWorkMinutes
+            : left.overtimeMinutes
+
+  const rightValue =
+    field === 'worked_today'
+      ? right.workedTodayMinutes
+      : field === 'weekly_total'
+        ? right.weeklyTotalMinutes
+        : field === 'plan_overtime'
+          ? right.planOvertimeMinutes
+          : field === 'extra_work'
+            ? right.extraWorkMinutes
+            : right.overtimeMinutes
+
+  if (leftValue === rightValue) {
+    return left.fullName.localeCompare(right.fullName, 'tr')
+  }
+
+  return (leftValue - rightValue) * multiplier
+}
+
+function sortIndicator(field: WelcomeSortField, activeField: WelcomeSortField, direction: 'asc' | 'desc') {
+  if (field !== activeField) return null
+  return direction === 'asc' ? '↑' : '↓'
+}
+
+function statusTone(value: ControlRoomEmployeeState['today_status']): string {
+  if (value === 'IN_PROGRESS') return 'is-live'
+  if (value === 'FINISHED') return 'is-finished'
+  return 'is-waiting'
+}
+
+export function WelcomePage() {
+  const [employeeId, setEmployeeId] = useState('')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [regionId, setRegionId] = useState('')
+  const [departmentId, setDepartmentId] = useState('')
+  const [employmentFilter, setEmploymentFilter] = useState<EmploymentFilter>('all')
+  const [pageSize, setPageSize] = useState(24)
+  const [page, setPage] = useState(1)
+  const [sortField, setSortField] = useState<WelcomeSortField>('overtime')
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
+
+  const employeesQuery = useQuery({
+    queryKey: controlRoomQueryKeys.employees,
+    queryFn: () => getEmployees({ include_inactive: true, status: 'all' }),
+    staleTime: 5 * 60_000,
+  })
+
+  const regionsQuery = useQuery({
+    queryKey: controlRoomQueryKeys.regions,
+    queryFn: () => getRegions({ include_inactive: true }),
+    staleTime: 5 * 60_000,
+  })
+
+  const departmentsQuery = useQuery({
+    queryKey: controlRoomQueryKeys.departments,
+    queryFn: () => getDepartments(),
+    staleTime: 5 * 60_000,
+  })
+
+  const overviewLimit = Math.max(100, employeesQuery.data?.length ?? 0)
+
+  const overviewQuery = useQuery({
+    enabled: employeesQuery.isSuccess,
+    queryKey: ['welcome', 'overtime-overview', overviewLimit],
+    queryFn: () =>
+      getControlRoomOverview({
+        include_inactive: true,
+        limit: overviewLimit,
+        offset: 0,
+        sort_by: 'employee_name',
+        sort_dir: 'asc',
+      }),
+    staleTime: 60_000,
+  })
+
+  useEffect(() => {
+    setPage(1)
+  }, [departmentId, employeeId, employmentFilter, pageSize, regionId, searchTerm, sortDirection, sortField])
+
+  const employees = employeesQuery.data ?? []
+  const departments = departmentsQuery.data ?? []
+  const overviewItems = overviewQuery.data?.items ?? []
+
+  const stateByEmployeeId = useMemo(
+    () => new Map(overviewItems.map((item) => [item.employee.id, item])),
+    [overviewItems],
+  )
+
+  const departmentById = useMemo(
+    () => new Map(departments.map((department) => [department.id, department.name])),
+    [departments],
+  )
+
+  const filteredDepartments = useMemo(() => {
+    if (!regionId) return departments
+    return departments.filter((department) => String(department.region_id) === regionId)
+  }, [departments, regionId])
+
+  useEffect(() => {
+    if (!departmentId) return
+    if (filteredDepartments.some((department) => String(department.id) === departmentId)) return
+    setDepartmentId('')
+  }, [departmentId, filteredDepartments])
+
+  const rows = useMemo<WelcomeTableRow[]>(() => {
+    return employees.map((employee) => {
+      const state = stateByEmployeeId.get(employee.id)
+
+      return {
+        id: employee.id,
+        fullName: employee.full_name,
+        regionId: state?.employee.region_id ?? employee.region_id ?? null,
+        regionName: state?.employee.region_name ?? employee.region_name ?? '-',
+        departmentId: state?.employee.department_id ?? employee.department_id ?? null,
+        departmentName:
+          state?.department_name ??
+          (employee.department_id != null ? (departmentById.get(employee.department_id) ?? '-') : '-'),
+        isActive: employee.is_active,
+        todayStatus: state?.today_status ?? 'NOT_STARTED',
+        workedTodayMinutes: state?.worked_today_minutes ?? 0,
+        weeklyTotalMinutes: state?.weekly_total_minutes ?? 0,
+        overtimeMinutes: state?.current_month.overtime_minutes ?? 0,
+        planOvertimeMinutes: state?.current_month.plan_overtime_minutes ?? 0,
+        extraWorkMinutes: state?.current_month.extra_work_minutes ?? 0,
+      }
+    })
+  }, [departmentById, employees, stateByEmployeeId])
+
+  const filteredRows = useMemo(() => {
+    const normalizedSearch = searchTerm.trim().toLowerCase()
+
+    return rows.filter((row) => {
+      if (employeeId && String(row.id) !== employeeId) return false
+      if (regionId && String(row.regionId ?? '') !== regionId) return false
+      if (departmentId && String(row.departmentId ?? '') !== departmentId) return false
+      if (employmentFilter === 'active' && !row.isActive) return false
+      if (employmentFilter === 'inactive' && row.isActive) return false
+      if (!normalizedSearch) return true
+
+      return (
+        row.fullName.toLowerCase().includes(normalizedSearch) ||
+        String(row.id).includes(normalizedSearch.replace('#', ''))
+      )
+    })
+  }, [departmentId, employeeId, employmentFilter, regionId, rows, searchTerm])
+
+  const sortedRows = useMemo(
+    () => [...filteredRows].sort((left, right) => compareRows(left, right, sortField, sortDirection)),
+    [filteredRows, sortDirection, sortField],
+  )
+
+  const totalPages = Math.max(1, Math.ceil(sortedRows.length / pageSize))
+  const safePage = Math.min(page, totalPages)
+  const pageStart = (safePage - 1) * pageSize
+  const pagedRows = sortedRows.slice(pageStart, pageStart + pageSize)
+  const rangeStart = sortedRows.length === 0 ? 0 : pageStart + 1
+  const rangeEnd = sortedRows.length === 0 ? 0 : Math.min(pageStart + pageSize, sortedRows.length)
+
+  const summary = useMemo(() => {
+    return filteredRows.reduce(
+      (acc, row) => {
+        acc.total += 1
+        acc.active += Number(row.isActive)
+        acc.overtime += row.overtimeMinutes
+        acc.planOvertime += row.planOvertimeMinutes
+        acc.extraWork += row.extraWorkMinutes
+        return acc
+      },
+      {
+        total: 0,
+        active: 0,
+        overtime: 0,
+        planOvertime: 0,
+        extraWork: 0,
+      },
+    )
+  }, [filteredRows])
+
+  const handleSort = (field: WelcomeSortField) => {
+    if (field === sortField) {
+      setSortDirection((current) => (current === 'asc' ? 'desc' : 'asc'))
+      return
+    }
+
+    setSortField(field)
+    setSortDirection(field === 'employee_name' ? 'asc' : 'desc')
+  }
+
+  if (employeesQuery.isPending || regionsQuery.isPending || departmentsQuery.isPending || overviewQuery.isPending) {
+    return <LoadingBlock label="Hosgeldiniz ozeti ve mesai tablosu hazirlaniyor..." />
+  }
+
+  if (employeesQuery.isError || regionsQuery.isError || departmentsQuery.isError || overviewQuery.isError) {
+    return <ErrorBlock message="Hosgeldiniz sayfasi verileri yuklenemedi." />
+  }
+
+  return (
+    <div className="welcome-page">
+      <PageHeader
+        title="Hosgeldiniz"
+        description="Konum yerine mesai yogunlugunu, ekip dagilimini ve fazla mesai tablosunu ilk ekranda toparlayan calisan odakli giris sayfasi."
+      />
+
+      <Panel className="welcome-hero">
+        <div className="welcome-hero__grid">
+          <div className="welcome-hero__content">
+            <p className="welcome-hero__eyebrow">MESAI OPERASYON OZETI</p>
+            <h2>Bugunun fazla mesai tablosu tek bakista hazir.</h2>
+            <p className="welcome-hero__lead">
+              Bu ekran bilerek saha veya konum ayrintisi gostermez. İlk bakista kimlerin yogun calistigini,
+              hangi ekiplerin yuk topladigini ve toplam ek mesainin nereye aktigini gormeniz icin tasarlandi.
+            </p>
+
+            <div className="welcome-summary-grid">
+              <article className="welcome-summary-card">
+                <span>Kapsamdaki personel</span>
+                <strong>{summary.total}</strong>
+                <small>{summary.active} aktif personel</small>
+              </article>
+              <article className="welcome-summary-card">
+                <span>Aylik fazla mesai</span>
+                <strong><MinuteDisplay minutes={summary.overtime} /></strong>
+                <small>Filtreli gorunum toplami</small>
+              </article>
+              <article className="welcome-summary-card">
+                <span>Planlanan fazla</span>
+                <strong><MinuteDisplay minutes={summary.planOvertime} /></strong>
+                <small>Plan fazi mesai yukleri</small>
+              </article>
+              <article className="welcome-summary-card">
+                <span>Ek calisma</span>
+                <strong><MinuteDisplay minutes={summary.extraWork} /></strong>
+                <small>Ilave calisma hacmi</small>
+              </article>
+            </div>
+          </div>
+
+          <div className="welcome-hero__visual">
+            <div className="welcome-logo" aria-hidden="true">
+              <span className="welcome-logo__ring" />
+              <span className="welcome-logo__ring is-secondary" />
+              <span className="welcome-logo__glow" />
+              <div className="welcome-logo__core">
+                <img src={`${import.meta.env.BASE_URL}admin-logo.svg`} alt="" />
+              </div>
+            </div>
+
+            <div className="welcome-hero__meta">
+              <span>Son guncelleme {overviewQuery.data?.generated_at_utc ? formatDateTime(overviewQuery.data.generated_at_utc) : '-'}</span>
+              <span>{sortedRows.length} kayit tabloda gorunuyor</span>
+              <span>Konum verisi bu sayfada kasitli olarak kapali</span>
+            </div>
+          </div>
+        </div>
+      </Panel>
+
+      <Panel className="welcome-table-panel">
+        <div className="welcome-table-panel__head">
+          <div>
+            <p className="welcome-panel-kicker">FILTRELI TABLO</p>
+            <h3>Calisan bazli fazla mesai listesi</h3>
+            <p>Arama, personel secimi, bolge ve departman filtreleriyle tabloyu daraltin.</p>
+          </div>
+
+          <div className="welcome-table-panel__meta">
+            <span>{sortedRows.length} satir</span>
+            <label className="welcome-inline-field">
+              <span>Sayfa boyutu</span>
+              <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
+                {WELCOME_PAGE_SIZES.map((size) => (
+                  <option key={size} value={size}>
+                    {size}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <div className="welcome-filters">
+          <EmployeeAutocompleteField
+            className="welcome-filter"
+            label="Personel sec"
+            employees={employees}
+            value={employeeId}
+            onChange={(value) => {
+              setEmployeeId(value)
+              if (value) setSearchTerm('')
+            }}
+            placeholder="Ad soyad veya #ID ile sec"
+            emptyLabel="Tum personeller"
+            labelClassName="grid gap-2 text-sm text-slate-700"
+            labelTextClassName="welcome-filter__label"
+            inputClassName="welcome-filter__control"
+            clearButtonClassName="absolute right-2 top-1/2 -translate-y-1/2 rounded-md px-2 py-1 text-[11px] font-semibold text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+            menuClassName="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-lg"
+            optionClassName="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-50"
+            emptyOptionClassName="flex w-full items-center justify-between border-b border-slate-100 px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50"
+            helperText="Secili personel tabloyu tek kisiye indirir."
+            helperTextClassName="text-xs text-slate-500"
+          />
+
+          <label className="welcome-filter">
+            <span className="welcome-filter__label">Arama</span>
+            <input
+              className="welcome-filter__control"
+              value={searchTerm}
+              onChange={(event) => {
+                setSearchTerm(event.target.value)
+                if (event.target.value.trim()) {
+                  setEmployeeId('')
+                }
+              }}
+              placeholder="Ad, soyad veya #ID ara"
+            />
+          </label>
+
+          <label className="welcome-filter">
+            <span className="welcome-filter__label">Bolge</span>
+            <select className="welcome-filter__control" value={regionId} onChange={(event) => setRegionId(event.target.value)}>
+              <option value="">Tum bolgeler</option>
+              {(regionsQuery.data ?? []).map((region) => (
+                <option key={region.id} value={region.id}>
+                  {region.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="welcome-filter">
+            <span className="welcome-filter__label">Departman</span>
+            <select
+              className="welcome-filter__control"
+              value={departmentId}
+              onChange={(event) => setDepartmentId(event.target.value)}
+            >
+              <option value="">Tum departmanlar</option>
+              {filteredDepartments.map((department) => (
+                <option key={department.id} value={department.id}>
+                  {department.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="welcome-filter">
+            <span className="welcome-filter__label">Personel durumu</span>
+            <select
+              className="welcome-filter__control"
+              value={employmentFilter}
+              onChange={(event) => setEmploymentFilter(event.target.value as EmploymentFilter)}
+            >
+              <option value="all">Tum durumlar</option>
+              <option value="active">Sadece aktif</option>
+              <option value="inactive">Sadece pasif</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="welcome-table-shell">
+          <table className="welcome-table">
+            <thead>
+              <tr>
+                <th>
+                  <button type="button" onClick={() => handleSort('employee_name')}>
+                    Calisan {sortIndicator('employee_name', sortField, sortDirection)}
+                  </button>
+                </th>
+                <th>Bolge</th>
+                <th>Departman</th>
+                <th>Durum</th>
+                <th>
+                  <button type="button" onClick={() => handleSort('worked_today')}>
+                    Bugun {sortIndicator('worked_today', sortField, sortDirection)}
+                  </button>
+                </th>
+                <th>
+                  <button type="button" onClick={() => handleSort('weekly_total')}>
+                    Hafta {sortIndicator('weekly_total', sortField, sortDirection)}
+                  </button>
+                </th>
+                <th>
+                  <button type="button" onClick={() => handleSort('overtime')}>
+                    Aylik fazla {sortIndicator('overtime', sortField, sortDirection)}
+                  </button>
+                </th>
+                <th>
+                  <button type="button" onClick={() => handleSort('plan_overtime')}>
+                    Plan {sortIndicator('plan_overtime', sortField, sortDirection)}
+                  </button>
+                </th>
+                <th>
+                  <button type="button" onClick={() => handleSort('extra_work')}>
+                    Ek calisma {sortIndicator('extra_work', sortField, sortDirection)}
+                  </button>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {pagedRows.length ? (
+                pagedRows.map((row) => (
+                  <tr key={row.id}>
+                    <td>
+                      <div className="welcome-employee-cell">
+                        <strong>{row.fullName}</strong>
+                        <span>#{row.id}</span>
+                      </div>
+                    </td>
+                    <td>{row.regionName}</td>
+                    <td>{row.departmentName}</td>
+                    <td>
+                      <div className="welcome-status-stack">
+                        <span className={`welcome-status ${statusTone(row.todayStatus)}`}>
+                          {todayStatusLabel(row.todayStatus)}
+                        </span>
+                        <span className={`welcome-status ${row.isActive ? 'is-verified' : 'is-muted'}`}>
+                          {row.isActive ? 'Aktif' : 'Pasif'}
+                        </span>
+                      </div>
+                    </td>
+                    <td><MinuteDisplay minutes={row.workedTodayMinutes} /></td>
+                    <td><MinuteDisplay minutes={row.weeklyTotalMinutes} /></td>
+                    <td><MinuteDisplay minutes={row.overtimeMinutes} /></td>
+                    <td><MinuteDisplay minutes={row.planOvertimeMinutes} /></td>
+                    <td><MinuteDisplay minutes={row.extraWorkMinutes} /></td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={9}>
+                    <div className="welcome-empty">Secili filtreler icin uygun fazla mesai kaydi bulunamadi.</div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="welcome-pagination">
+          <p>
+            {rangeStart}-{rangeEnd} / {sortedRows.length} satir gosteriliyor
+          </p>
+          <div className="welcome-pagination__actions">
+            <button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={safePage <= 1}>
+              Geri
+            </button>
+            <span>Sayfa {safePage} / {totalPages}</span>
+            <button
+              type="button"
+              onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+              disabled={safePage >= totalPages}
+            >
+              Ileri
+            </button>
+          </div>
+        </div>
+      </Panel>
+    </div>
+  )
+}

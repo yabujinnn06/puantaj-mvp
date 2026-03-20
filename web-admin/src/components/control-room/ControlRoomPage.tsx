@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useReducer, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
-import { getControlRoomOverview, getDepartments, getRegions } from '../../api/admin'
+import { getControlRoomOverview, getDepartments, getEmployees, getRegions } from '../../api/admin'
 import { ErrorBlock } from '../ErrorBlock'
 import { LoadingBlock } from '../LoadingBlock'
 import { MinuteDisplay } from '../MinuteDisplay'
@@ -164,8 +164,17 @@ function useIsMobile(breakpoint = 1024): boolean {
   return isMobile
 }
 
-function activeFilterEntries(filters: FilterFormState, quickFilters: ControlRoomQuickFilter[]): string[] {
+function activeFilterEntries(
+  filters: FilterFormState,
+  quickFilters: ControlRoomQuickFilter[],
+  employeeNames: Map<number, string>,
+): string[] {
   const entries: string[] = []
+  if (filters.employee_id) {
+    const employeeId = Number(filters.employee_id)
+    const employeeLabel = employeeNames.get(employeeId)
+    entries.push(employeeLabel ? `Personel: ${employeeLabel}` : `Personel #${filters.employee_id}`)
+  }
   if (filters.q.trim()) entries.push(`Arama: ${filters.q.trim()}`)
   if (filters.region_id) entries.push(`Bolge #${filters.region_id}`)
   if (filters.department_id) entries.push(`Departman #${filters.department_id}`)
@@ -311,7 +320,18 @@ export function ControlRoomPage() {
     staleTime: 5 * 60_000,
   })
 
+  const employeesQuery = useQuery({
+    queryKey: controlRoomQueryKeys.employees,
+    queryFn: () => getEmployees({ include_inactive: true, status: 'all' }),
+    staleTime: 5 * 60_000,
+  })
+
   const overview = overviewQuery.data ?? null
+  const employees = employeesQuery.data ?? []
+  const employeeNames = useMemo(
+    () => new Map(employees.map((employee) => [employee.id, employee.full_name])),
+    [employees],
+  )
 
   const employeeStateMap = useMemo(
     () => new Map((overview?.items ?? []).map((item) => [item.employee.id, item])),
@@ -360,8 +380,8 @@ export function ControlRoomPage() {
   const hasOverviewData = Boolean(overview)
   const showFocusMode = uiState.screenMode === 'focus' && uiState.selectedEmployeeId != null
   const filterTags = useMemo(
-    () => activeFilterEntries(appliedFilters, uiState.quickFilters),
-    [appliedFilters, uiState.quickFilters],
+    () => activeFilterEntries(appliedFilters, uiState.quickFilters, employeeNames),
+    [appliedFilters, employeeNames, uiState.quickFilters],
   )
 
   useEffect(() => {
@@ -491,6 +511,9 @@ export function ControlRoomPage() {
           events={recentEvents}
           employeeStates={employeeStateMap}
           selectedEventId={uiState.selectedEventId}
+          initialVisibleCount={14}
+          incrementCount={10}
+          scrollable
           onSelectEvent={(employeeId, eventId) =>
             dispatch({
               type: 'focusEmployee',
@@ -635,6 +658,9 @@ export function ControlRoomPage() {
           events={recentEvents}
           employeeStates={employeeStateMap}
           selectedEventId={uiState.selectedEventId}
+          initialVisibleCount={10}
+          incrementCount={8}
+          scrollable
           onSelectEvent={(employeeId, eventId) =>
             dispatch({
               type: 'focusEmployee',
@@ -726,10 +752,36 @@ export function ControlRoomPage() {
 
         <div className="cr-ops-command-bar__filters">
           <label className="cr-ops-field">
+            <span>Personel</span>
+            <select
+              value={draftFilters.employee_id}
+              onChange={(event) =>
+                setDraftFilters((current) => ({
+                  ...current,
+                  employee_id: event.target.value,
+                  q: event.target.value ? '' : current.q,
+                }))
+              }
+            >
+              <option value="">Tum personeller</option>
+              {employees.map((employee) => (
+                <option key={employee.id} value={employee.id}>
+                  {`#${employee.id} - ${employee.full_name}`}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="cr-ops-field">
             <span>Arama</span>
             <input
               value={draftFilters.q}
-              onChange={(event) => setDraftFilters((current) => ({ ...current, q: event.target.value }))}
+              onChange={(event) =>
+                setDraftFilters((current) => ({
+                  ...current,
+                  q: event.target.value,
+                  employee_id: event.target.value.trim() ? '' : current.employee_id,
+                }))
+              }
               placeholder="Ad, soyad veya #ID"
             />
           </label>
@@ -857,6 +909,7 @@ export function ControlRoomPage() {
           {filtersOpen ? (
             <ManagementConsoleFilters
               filterForm={draftFilters}
+              employees={employees}
               regions={regionsQuery.data ?? []}
               departments={departmentsQuery.data ?? []}
               activeFilterEntries={filterTags}
@@ -874,6 +927,7 @@ export function ControlRoomPage() {
         >
           <ManagementConsoleFilters
             filterForm={draftFilters}
+            employees={employees}
             regions={regionsQuery.data ?? []}
             departments={departmentsQuery.data ?? []}
             activeFilterEntries={filterTags}

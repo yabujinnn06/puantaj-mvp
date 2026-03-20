@@ -26,6 +26,7 @@ import { QuickSetupPage } from './pages/QuickSetupPage'
 import { RegionsPage } from './pages/RegionsPage'
 import { NotificationsPage } from './pages/NotificationsPage'
 import { SystemLogsPage } from './pages/SystemLogsPage'
+import { WelcomePage } from './pages/WelcomePage'
 import { WorkRulesPage } from './pages/WorkRulesPage'
 
 function App() {
@@ -42,6 +43,7 @@ function App() {
       <Route element={<AuthGuard />}>
         <Route element={<AppLayout />}>
           <Route path="/" element={<DefaultAdminRoute />} />
+          <Route path="/welcome" element={<WelcomePage />} />
           <Route path="/management-console" element={<Navigate to="/log" replace />} />
           <Route
             path="/log"
@@ -53,7 +55,7 @@ function App() {
           />
           <Route path="/location-monitor" element={<Navigate to="/log" replace />} />
           <Route path="/control-room" element={<Navigate to="/log" replace />} />
-          <Route path="/dashboard" element={<Navigate to="/log" replace />} />
+          <Route path="/dashboard" element={<Navigate to="/welcome" replace />} />
           <Route
             path="/regions"
             element={

@@ -1,3 +1,5 @@
+import { useEffect, useMemo, useState } from 'react'
+
 import type { ControlRoomEmployeeState, ControlRoomRecentEvent } from '../../types/api'
 import {
   controlRoomLocationLabel,
@@ -23,6 +25,9 @@ export function ControlRoomEventFeed({
   onSelectEvent,
   onPinToMap,
   onOpenEmployeeDetail,
+  initialVisibleCount,
+  incrementCount = 10,
+  scrollable = false,
 }: {
   events: ControlRoomRecentEvent[]
   employeeStates: Map<number, ControlRoomEmployeeState>
@@ -30,7 +35,21 @@ export function ControlRoomEventFeed({
   onSelectEvent: (employeeId: number, eventId: number) => void
   onPinToMap: (employeeId: number, eventId: number) => void
   onOpenEmployeeDetail: (employeeId: number) => void
+  initialVisibleCount?: number
+  incrementCount?: number
+  scrollable?: boolean
 }) {
+  const [visibleCount, setVisibleCount] = useState(initialVisibleCount ?? events.length)
+
+  useEffect(() => {
+    setVisibleCount(initialVisibleCount ?? events.length)
+  }, [events, initialVisibleCount])
+
+  const visibleEvents = useMemo(
+    () => events.slice(0, visibleCount),
+    [events, visibleCount],
+  )
+
   return (
     <section className="cr-feed-panel">
       <header className="cr-feed-panel__header">
@@ -38,12 +57,14 @@ export function ControlRoomEventFeed({
           <p className="cr-ops-kicker">Canli olay akisi</p>
           <h3>Event feed</h3>
         </div>
-        <span className="cr-feed-panel__count">{events.length} kayit</span>
+        <span className="cr-feed-panel__count">
+          {visibleEvents.length === events.length ? events.length : `${visibleEvents.length} / ${events.length}`} kayit
+        </span>
       </header>
 
-      <div className="cr-feed-list">
-        {events.length ? (
-          events.map((event) => {
+      <div className={`cr-feed-list ${scrollable ? 'is-scrollable' : ''}`}>
+        {visibleEvents.length ? (
+          visibleEvents.map((event) => {
             const employeeState = employeeStates.get(event.employee_id) ?? null
             const severity = eventSeverity(event, employeeState)
 
@@ -98,6 +119,18 @@ export function ControlRoomEventFeed({
           <div className="cr-feed-empty">Secili kapsam icin yeni event yok.</div>
         )}
       </div>
+
+      {events.length > visibleEvents.length ? (
+        <div className="cr-feed-panel__footer">
+          <button
+            type="button"
+            className="cr-feed-panel__more"
+            onClick={() => setVisibleCount((current) => Math.min(events.length, current + incrementCount))}
+          >
+            Daha fazla olay goster
+          </button>
+        </div>
+      ) : null}
     </section>
   )
 }
