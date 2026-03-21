@@ -287,6 +287,7 @@ export function ControlRoomPage() {
   const isMobile = useIsMobile()
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null)
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null)
   const [mapMode, setMapMode] = useState<MapMode>('fleet')
   const [mobileView, setMobileView] = useState<MobileView>('days')
   const [draftFilters, setDraftFilters] = useState<FilterFormState>(() => defaultFilters())
@@ -469,6 +470,7 @@ export function ControlRoomPage() {
     if (employeeStateMap.has(selectedEmployeeId)) return
     setSelectedEmployeeId(null)
     setSelectedDay(null)
+    setSelectedEventId(null)
     setMapMode('fleet')
   }, [employeeStateMap, selectedEmployeeId])
 
@@ -477,6 +479,7 @@ export function ControlRoomPage() {
     if (dailyRows.some((row) => row.employeeId === selectedEmployeeId && row.date === selectedDay)) return
     if (dailyRowsLoading) return
     setSelectedDay(null)
+    setSelectedEventId(null)
     setMapMode('fleet')
   }, [dailyRows, dailyRowsLoading, selectedDay, selectedEmployeeId])
 
@@ -526,6 +529,33 @@ export function ControlRoomPage() {
     placeholderData: (previousData) => previousData,
   })
 
+  const selectedDayEvents = useMemo(() => {
+    const events = selectedDayTimelineQuery.data?.events ?? []
+    return [...events].sort((left, right) => new Date(right.ts_utc).getTime() - new Date(left.ts_utc).getTime())
+  }, [selectedDayTimelineQuery.data?.events])
+
+  useEffect(() => {
+    if (mapMode !== 'employeeDay') {
+      if (selectedEventId != null) {
+        setSelectedEventId(null)
+      }
+      return
+    }
+
+    if (!selectedDayEvents.length) {
+      if (!selectedDayTimelineQuery.isFetching && selectedEventId != null) {
+        setSelectedEventId(null)
+      }
+      return
+    }
+
+    if (selectedEventId && selectedDayEvents.some((event) => event.id === selectedEventId)) {
+      return
+    }
+
+    setSelectedEventId(selectedDayEvents[0].id)
+  }, [mapMode, selectedDayEvents, selectedDayTimelineQuery.isFetching, selectedEventId])
+
   const appliedDayRange = dayCountForRange(appliedFilters.start_date, appliedFilters.end_date)
   const filterTags = useMemo(
     () => activeFilterEntries(appliedFilters, employeeNames),
@@ -535,6 +565,7 @@ export function ControlRoomPage() {
   const handleApplyFilters = () => {
     setAppliedFilters(draftFilters)
     setSelectedDay(null)
+    setSelectedEventId(null)
     setMapMode('fleet')
   }
 
@@ -544,18 +575,21 @@ export function ControlRoomPage() {
     setAppliedFilters(next)
     setSelectedEmployeeId(null)
     setSelectedDay(null)
+    setSelectedEventId(null)
     setMapMode('fleet')
   }
 
   const handleSelectEmployee = (employeeId: number) => {
     setSelectedEmployeeId(employeeId)
     setSelectedDay(null)
+    setSelectedEventId(null)
     setMapMode('fleet')
   }
 
   const handleSelectRow = (employeeId: number, day: string) => {
     setSelectedEmployeeId(employeeId)
     setSelectedDay(day)
+    setSelectedEventId(null)
     setMapMode('employeeDay')
     if (isMobile) {
       setMobileView('map')
@@ -564,6 +598,7 @@ export function ControlRoomPage() {
 
   const handleCloseDayView = () => {
     setSelectedDay(null)
+    setSelectedEventId(null)
     setMapMode('fleet')
     if (isMobile) {
       setMobileView('days')
@@ -625,6 +660,7 @@ export function ControlRoomPage() {
                 onClick={() => {
                   setSelectedEmployeeId(null)
                   setSelectedDay(null)
+                  setSelectedEventId(null)
                   setMapMode('fleet')
                 }}
               >
@@ -731,6 +767,7 @@ export function ControlRoomPage() {
                   onClearEmployee={() => {
                     setSelectedEmployeeId(null)
                     setSelectedDay(null)
+                    setSelectedEventId(null)
                     setMapMode('fleet')
                   }}
                 />
@@ -746,9 +783,14 @@ export function ControlRoomPage() {
                     selectedDay={selectedDay}
                     overviewPoints={mapPoints}
                     dayMapData={selectedDayMapQuery.data ?? null}
+                    dayEvents={selectedDayEvents}
                     dayLoading={selectedDayMapQuery.isFetching}
                     dayError={selectedDayMapQuery.isError}
+                    dayEventsLoading={selectedDayTimelineQuery.isFetching}
+                    dayEventsError={selectedDayTimelineQuery.isError}
+                    selectedEventId={selectedEventId}
                     onSelectEmployee={handleSelectEmployee}
+                    onSelectEvent={setSelectedEventId}
                   />
                 </section>
               </article>
@@ -764,6 +806,7 @@ export function ControlRoomPage() {
               onClearEmployee={() => {
                 setSelectedEmployeeId(null)
                 setSelectedDay(null)
+                setSelectedEventId(null)
                 setMapMode('fleet')
               }}
             />
@@ -777,9 +820,14 @@ export function ControlRoomPage() {
                 selectedDay={selectedDay}
                 overviewPoints={mapPoints}
                 dayMapData={selectedDayMapQuery.data ?? null}
+                dayEvents={selectedDayEvents}
                 dayLoading={selectedDayMapQuery.isFetching}
                 dayError={selectedDayMapQuery.isError}
+                dayEventsLoading={selectedDayTimelineQuery.isFetching}
+                dayEventsError={selectedDayTimelineQuery.isError}
+                selectedEventId={selectedEventId}
                 onSelectEmployee={handleSelectEmployee}
+                onSelectEvent={setSelectedEventId}
               />
             </section>
           )}
