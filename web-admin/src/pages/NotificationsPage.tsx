@@ -105,7 +105,7 @@ function timelineEventLabel(event: AttendanceEvent): string {
     typeof event.flags?.SHIFT_NAME === 'string' ? event.flags.SHIFT_NAME : null
   const source =
     event.source === 'MANUAL' || event.created_by_admin ? 'Manuel' : 'Cihaz'
-  const typeLabel = event.type === 'IN' ? 'Giris' : 'Cikis'
+  const typeLabel = event.type === 'IN' ? 'Giriş' : 'Çıkış'
   return rawShiftName
     ? `${typeLabel} • ${source} • ${rawShiftName}`
     : `${typeLabel} • ${source}`
@@ -113,12 +113,12 @@ function timelineEventLabel(event: AttendanceEvent): string {
 
 function dailyReportAlarmLabel(value: string): string {
   if (value === 'DAILY_REPORT_JOB_MISSING') return 'Job olusmamis'
-  if (value === 'DAILY_REPORT_ARCHIVE_MISSING') return 'Arsiv olusmamis'
+  if (value === 'DAILY_REPORT_ARCHIVE_MISSING') return 'Arşiv olusmamis'
   if (value === 'DAILY_REPORT_JOB_STUCK') return 'Job takilmis'
   if (value === 'DAILY_REPORT_JOB_FAILED') return 'Job hatali'
   if (value === 'DAILY_REPORT_DELIVERY_EMPTY') return 'Teslimat bos'
   if (value === 'DAILY_REPORT_TARGET_ZERO') return 'Hedef 0'
-  if (value === 'DAILY_REPORT_ARCHIVE_MISMATCH') return 'Arsiv eslesmiyor'
+  if (value === 'DAILY_REPORT_ARCHIVE_MISMATCH') return 'Arşiv eslesmiyor'
   if (value === 'DAILY_REPORT_HEALTH_QUERY_FAILED')
     return 'Health sorgusu hatali'
   return value
@@ -187,7 +187,7 @@ async function ensureAdminPushSubscription(
   vapidPublicKey: string,
 ): Promise<PushSubscription> {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-    throw new Error('Bu tarayici push bildirimlerini desteklemiyor.')
+    throw new Error('Bu tarayıcı push bildirimlerini desteklemiyor.')
   }
 
   const permission =
@@ -559,26 +559,26 @@ export function NotificationsPage() {
       {
         key: 'overview' as const,
         label: 'Genel Durum',
-        description: 'Saglik ozeti, abonelik ve hizli yonlendirmeler',
+        description: 'Saglik özeti, abonelik ve hızlı yonlendirmeler',
         meta: `${dailyReportAlarmCount > 0 ? `${dailyReportAlarmCount} alarm` : 'Sistem sakin'}`,
       },
       {
         key: 'send' as const,
         label: 'Gonder',
         description: 'Manuel push akislari',
-        meta: `${target === 'both' ? 'Cift hedef' : target === 'admins' ? 'Admin hedefi' : 'Calisan hedefi'}`,
+        meta: `${target === 'both' ? 'Çift hedef' : target === 'admins' ? 'Admin hedefi' : 'Çalışan hedefi'}`,
       },
       {
         key: 'tasks' as const,
         label: 'Planli Gorevler',
         description: 'Tekrarlayan ve tek seferlik scheduler',
-        meta: `${employeesQuery.data?.length ?? 0} calisan / ${adminsQuery.data?.length ?? 0} admin havuzu`,
+        meta: `${employeesQuery.data?.length ?? 0} çalışan / ${adminsQuery.data?.length ?? 0} admin havuzu`,
       },
       {
         key: 'jobs' as const,
         label: 'Is Kuyrugu',
         description: 'Notification job listesi ve detaylari',
-        meta: `${jobsTotal} kayit`,
+        meta: `${jobsTotal} kayıt`,
       },
       {
         key: 'delivery' as const,
@@ -600,9 +600,9 @@ export function NotificationsPage() {
       },
       {
         key: 'archives' as const,
-        label: 'Arsivler',
-        description: 'Gunluk Excel arsivi ve gece job sagligi',
-        meta: `${archiveTotal} arsiv`,
+        label: 'Arşivler',
+        description: 'Günlük Excel arşivi ve gece job sagligi',
+        meta: `${archiveTotal} arşiv`,
       },
     ],
     [
@@ -633,7 +633,7 @@ export function NotificationsPage() {
       setCreatedInvite(res)
       pushToast({
         variant: 'success',
-        title: 'Davet hazir',
+        title: 'Davet hazır',
         description: 'Link admin cihaza gonderildi.',
       })
       void navigator.clipboard.writeText(res.invite_url)
@@ -641,8 +641,8 @@ export function NotificationsPage() {
     onError: (e) =>
       pushToast({
         variant: 'error',
-        title: 'Davet hatasi',
-        description: parseApiError(e, 'Davet olusturulamadi').message,
+        title: 'Davet hatası',
+        description: parseApiError(e, 'Davet oluşturulamadı').message,
       }),
   })
 
@@ -652,14 +652,14 @@ export function NotificationsPage() {
       if (result.total_targets <= 0 || result.sent <= 0) {
         pushToast({
           variant: 'error',
-          title: 'Self-test basarisiz',
-          description: `Hedef: ${result.total_targets} | Gonderilen: ${result.sent} | Hata: ${result.failed}`,
+          title: 'Self-test başarısız',
+          description: `Hedef: ${result.total_targets} | Gönderilen: ${result.sent} | Hata: ${result.failed}`,
         })
       } else {
         pushToast({
           variant: 'success',
           title: 'Self-test bildirimi gonderildi',
-          description: `Hedef: ${result.total_targets} | Gonderilen: ${result.sent}`,
+          description: `Hedef: ${result.total_targets} | Gönderilen: ${result.sent}`,
         })
       }
       void queryClient.invalidateQueries({
@@ -673,7 +673,7 @@ export function NotificationsPage() {
       const parsed = parseApiError(error, 'Self-test bildirimi gonderilemedi.')
       pushToast({
         variant: 'error',
-        title: 'Self-test hatasi',
+        title: 'Self-test hatası',
         description: parsed.message,
       })
     },
@@ -720,15 +720,15 @@ export function NotificationsPage() {
       if (error instanceof Error && !('response' in error)) {
         pushToast({
           variant: 'error',
-          title: 'Heal hatasi',
+          title: 'Heal hatası',
           description: error.message,
         })
         return
       }
-      const parsed = parseApiError(error, 'Cihaz heal islemi basarisiz oldu.')
+      const parsed = parseApiError(error, 'Cihaz heal işlemi başarısız oldu.')
       pushToast({
         variant: 'error',
-        title: 'Heal hatasi',
+        title: 'Heal hatası',
         description: parsed.message,
       })
     },
@@ -751,7 +751,7 @@ export function NotificationsPage() {
       setEmailTargetsText((result.active_recipients ?? []).join('\n'))
       pushToast({
         variant: 'success',
-        title: 'Mail alicilari guncellendi',
+        title: 'Mail alicilari güncellendi',
         description: `Aktif alici: ${result.active_count}`,
       })
       void queryClient.invalidateQueries({
@@ -762,7 +762,7 @@ export function NotificationsPage() {
       const parsed = parseApiError(error, 'Mail alicilari kaydedilemedi.')
       pushToast({
         variant: 'error',
-        title: 'Kayit hatasi',
+        title: 'Kayıt hatası',
         description: parsed.message,
       })
     },
@@ -796,7 +796,7 @@ export function NotificationsPage() {
       const parsed = parseApiError(error, 'Test mail gonderilemedi.')
       pushToast({
         variant: 'error',
-        title: 'Test mail hatasi',
+        title: 'Test mail hatası',
         description: parsed.message,
       })
     },
@@ -811,26 +811,26 @@ export function NotificationsPage() {
         pushToast({
           variant: 'error',
           title: 'Bildirim gonderilemedi',
-          description: 'Hedef 0. Aktif abonelik yok; once cihaz claim edin.',
+          description: 'Hedef 0. Aktif abonelik yok; önce cihaz claim edin.',
         })
       } else if (res.sent <= 0) {
         pushToast({
           variant: 'error',
           title: 'Bildirim gonderilemedi',
-          description: `Hedef: ${res.total_targets} / Gonderilen: ${res.sent} / Hata: ${res.failed}`,
+          description: `Hedef: ${res.total_targets} / Gönderilen: ${res.sent} / Hata: ${res.failed}`,
         })
       } else {
         pushToast({
           variant: 'success',
           title: 'Bildirim gonderildi',
-          description: `Hedef: ${res.total_targets} / Gonderilen: ${res.sent}`,
+          description: `Hedef: ${res.total_targets} / Gönderilen: ${res.sent}`,
         })
         if (adminTargetRequested && !currentAdminHasActiveClaim) {
           pushToast({
             variant: 'error',
             title: 'Bu hesapta claim eksik',
             description:
-              'Admin hedefli gonderim yapildi ancak bu hesapta aktif claim olmadigi icin sana dusmeyebilir.',
+              'Admin hedefli gönderim yapildi ancak bu hesapta aktif claim olmadığı için sana dusmeyebilir.',
           })
         }
       }
@@ -839,7 +839,7 @@ export function NotificationsPage() {
           variant: 'error',
           title: 'Admin hedefi 0',
           description:
-            'Calisan bildirimi gitmis olabilir ama admin hedefinde aktif abonelik yok. Admin claim zorunlu.',
+            'Çalışan bildirimi gitmiş olabilir ama admin hedefinde aktif abonelik yok. Admin claim zorunlu.',
         })
       }
       void queryClient.invalidateQueries({ queryKey: ['notification-jobs'] })
@@ -853,7 +853,7 @@ export function NotificationsPage() {
     onError: (e) =>
       pushToast({
         variant: 'error',
-        title: 'Gonderim hatasi',
+        title: 'Gönderim hatası',
         description: parseApiError(e, 'Bildirim gonderilemedi').message,
       }),
   })
@@ -871,7 +871,7 @@ export function NotificationsPage() {
       pushToast({
         variant: 'success',
         title: 'Bildirim notu kaydedildi',
-        description: 'Admin aciklamasi guncellendi.',
+        description: 'Admin aciklamasi güncellendi.',
       })
       void queryClient.invalidateQueries({ queryKey: ['notification-jobs'] })
     },
@@ -879,7 +879,7 @@ export function NotificationsPage() {
       const parsed = parseApiError(error, 'Bildirim notu kaydedilemedi.')
       pushToast({
         variant: 'error',
-        title: 'Not kayit hatasi',
+        title: 'Not kayıt hatası',
         description: parsed.message,
       })
     },
@@ -889,7 +889,7 @@ export function NotificationsPage() {
     mutationFn: downloadDailyReportArchive,
     onSuccess: (blob, id) => {
       const item = (archivesQuery.data?.items ?? []).find((x) => x.id === id)
-      downloadBlob(blob, item?.file_name ?? `arsiv-${id}.xlsx`)
+      downloadBlob(blob, item?.file_name ?? `arşiv-${id}.xlsx`)
     },
   })
 
@@ -899,21 +899,21 @@ export function NotificationsPage() {
       if (result.total_targets <= 0 || result.sent <= 0) {
         pushToast({
           variant: 'error',
-          title: 'Arsiv bildirimi gonderilemedi',
-          description: `Hedef: ${result.total_targets} | Gonderilen: ${result.sent} | Hata: ${result.failed}. Aktif admin cihazi claim edilmeli.`,
+          title: 'Arşiv bildirimi gonderilemedi',
+          description: `Hedef: ${result.total_targets} | Gönderilen: ${result.sent} | Hata: ${result.failed}. Aktif admin cihazi claim edilmeli.`,
         })
       } else {
         pushToast({
           variant: 'success',
-          title: 'Arsiv bildirimi gonderildi',
-          description: `Hedef: ${result.total_targets} | Gonderilen: ${result.sent} | Hata: ${result.failed}`,
+          title: 'Arşiv bildirimi gonderildi',
+          description: `Hedef: ${result.total_targets} | Gönderilen: ${result.sent} | Hata: ${result.failed}`,
         })
         if (!currentAdminHasActiveClaim) {
           pushToast({
             variant: 'error',
             title: 'Bu hesapta claim eksik',
             description:
-              'Bildirim gitti ama bu admin hesabinda aktif cihaz claim olmadigi icin sana dusmeyebilir.',
+              'Bildirim gitti ama bu admin hesabinda aktif cihaz claim olmadığı için sana dusmeyebilir.',
           })
         }
       }
@@ -923,18 +923,18 @@ export function NotificationsPage() {
       })
     },
     onError: (error) => {
-      const parsed = parseApiError(error, 'Arsiv bildirimi gonderilemedi.')
+      const parsed = parseApiError(error, 'Arşiv bildirimi gonderilemedi.')
       if (parsed.code === 'ADMIN_PUSH_SUBSCRIPTION_REQUIRED') {
         pushToast({
           variant: 'error',
           title: 'Admin hedefi 0',
           description:
-            'Aktif admin push aboneligi yok. Once admin cihazini claim edip tekrar deneyin.',
+            'Aktif admin push aboneligi yok. Önce admin cihazini claim edip tekrar deneyin.',
         })
       } else {
         pushToast({
           variant: 'error',
-          title: 'Arsiv bildirimi basarisiz',
+          title: 'Arşiv bildirimi başarısız',
           description: parsed.message,
         })
       }
@@ -1000,7 +1000,7 @@ export function NotificationsPage() {
     <div className="space-y-4">
       <PageHeader
         title="Bildirim Merkezi"
-        description="Push, claim daveti, job yonetimi ve gunluk Excel arsivi."
+        description="Push, claim daveti, job yönetimi ve günlük Excel arşivi."
       />
 
       <Panel>
@@ -1010,8 +1010,8 @@ export function NotificationsPage() {
               Calisma alani
             </h3>
             <p className="mt-1 text-sm text-slate-500">
-              Bildirim operasyonlarini gorevlere ayirarak yonetin. Her sekme
-              ayni backend akislarini kullanir; sadece gosterim ve odak alanini
+              Bildirim operasyonlarini görevlere ayirarak yonetin. Her sekme
+              aynı backend akislarini kullanir; sadece gosterim ve odak alanini
               sadeleştirir.
             </p>
           </div>
@@ -1083,17 +1083,17 @@ export function NotificationsPage() {
               </div>
               <div className="mt-1 text-xs text-slate-500">
                 {currentAdminHasActiveClaim
-                  ? 'Bu hesap aktif claim goruyor'
-                  : 'Bu hesap icin claim eksik'}
+                  ? 'Bu hesap aktif claim görüyor'
+                  : 'Bu hesap için claim eksik'}
               </div>
             </div>
             <div className="rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700">
-              Email dagitimi
+              Email dağıtımı
               <div className="mt-1 text-lg font-semibold text-slate-900">
                 {configuredEmailTargetCount}
               </div>
               <div className="mt-1 text-xs text-slate-500">
-                Arsiv sayisi: {archiveTotal}
+                Arşiv sayisi: {archiveTotal}
               </div>
             </div>
           </div>
@@ -1109,7 +1109,7 @@ export function NotificationsPage() {
         <Panel>
           <div className="flex flex-wrap items-end gap-3">
             <label className="text-sm text-slate-700">
-              Admin davet suresi (dk)
+              Admin davet süresi (dk)
               <input
                 type="number"
                 min={1}
@@ -1133,7 +1133,7 @@ export function NotificationsPage() {
             </span>
           </div>
           <p className="mt-2 text-xs text-slate-500">
-            Link otomatik kopyalanir. Guvenlik icin kisa sure onerilir (ornegin
+            Link otomatik kopyalanır. Guvenlik için kisa sure önerilir (ornegin
             10-30 dk). Ekran: /admin-panel/device-claim?token=...
           </p>
           {createdInvite ? (
@@ -1192,7 +1192,7 @@ export function NotificationsPage() {
                 }
                 className="rounded border border-slate-300 px-3 py-2"
               >
-                <option value="employees">Calisanlara</option>
+                <option value="employees">Çalışanlara</option>
                 <option value="admins">Adminlere</option>
                 <option value="both">Her ikisine</option>
               </select>
@@ -1210,7 +1210,7 @@ export function NotificationsPage() {
                 <TableSearchInput
                   value={searchEmployee}
                   onChange={setSearchEmployee}
-                  placeholder="Calisan filtrele..."
+                  placeholder="Çalışan filtrele..."
                 />
                 <div className="mt-2 max-h-36 overflow-y-auto rounded border border-slate-200 p-2 text-sm">
                   {filteredEmployees.map((item) => (
@@ -1302,7 +1302,7 @@ export function NotificationsPage() {
               }}
               className="rounded border border-slate-300 px-3 py-2 text-sm"
             >
-              <option value="">Durum: Tumu</option>
+              <option value="">Durum: Tümü</option>
               <option value="PENDING">PENDING</option>
               <option value="SENDING">SENDING</option>
               <option value="SENT">SENT</option>
@@ -1328,7 +1328,7 @@ export function NotificationsPage() {
               }}
               className="rounded border border-slate-300 px-3 py-2 text-sm"
             >
-              <option value="">Risk: Tumu</option>
+              <option value="">Risk: Tümü</option>
               <option value="Bilgi">Bilgi</option>
               <option value="Uyari">Uyari</option>
               <option value="Kritik">Kritik</option>
@@ -1341,8 +1341,8 @@ export function NotificationsPage() {
               }}
               className="rounded border border-slate-300 px-3 py-2 text-sm"
             >
-              <option value="">Hedef: Tumu</option>
-              <option value="employee">Calisan</option>
+              <option value="">Hedef: Tümü</option>
+              <option value="employee">Çalışan</option>
               <option value="admin">Admin</option>
             </select>
             <input
@@ -1380,14 +1380,14 @@ export function NotificationsPage() {
               className="rounded border border-slate-300 px-3 py-2 text-sm"
             />
           </div>
-          {jobsQuery.isLoading ? <LoadingBlock label="Yukleniyor..." /> : null}
+          {jobsQuery.isLoading ? <LoadingBlock label="Yükleniyor..." /> : null}
           {jobsQuery.isError ? (
-            <ErrorBlock message="Job listesi alinamadi." />
+            <ErrorBlock message="Job listesi alınamadı." />
           ) : null}
           {!jobsQuery.isLoading && !jobsQuery.isError ? (
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
               <span>
-                Gosterilen satir: {jobsRangeStart}-{jobsRangeEnd} / {jobsTotal}
+                Gösterilen satir: {jobsRangeStart}-{jobsRangeEnd} / {jobsTotal}
               </span>
               <div className="flex items-center gap-2">
                 <button
@@ -1502,11 +1502,11 @@ export function NotificationsPage() {
 
             <aside className="rounded-xl border border-slate-200 bg-slate-50 p-3">
               <h5 className="text-sm font-semibold text-slate-900">
-                Secili bildirim detayi
+                Seçili bildirim detayı
               </h5>
               {selectedJob === null ? (
                 <p className="mt-3 text-sm text-slate-600">
-                  Listeden bir bildirim secin.
+                  Listeden bir bildirim seçin.
                 </p>
               ) : (
                 <div className="mt-3 space-y-3">
@@ -1523,7 +1523,7 @@ export function NotificationsPage() {
                       ) ?? '-'}
                     </p>
                     <p>
-                      <span className="font-semibold">Bolge:</span>{' '}
+                      <span className="font-semibold">Bölge:</span>{' '}
                       {payloadString(selectedJob.payload, 'region_name') ?? '-'}
                     </p>
                     <p>
@@ -1540,7 +1540,7 @@ export function NotificationsPage() {
                       {selectedJob.description ?? '-'}
                     </p>
                     <p>
-                      <span className="font-semibold">Olay Zamani:</span>{' '}
+                      <span className="font-semibold">Olay Zamanı:</span>{' '}
                       {selectedJob.event_ts_utc
                         ? dt(selectedJob.event_ts_utc)
                         : '-'}
@@ -1569,11 +1569,11 @@ export function NotificationsPage() {
                       <p>
                         <span className="font-semibold">Gec kalma serisi:</span>{' '}
                         {payloadNumber(selectedJob.payload, 'late_streak_days')}{' '}
-                        gun
+                        gün
                       </p>
                     ) : null}
                     <p>
-                      <span className="font-semibold">Islem Onerisi:</span>{' '}
+                      <span className="font-semibold">İşlem Onerisi:</span>{' '}
                       {selectedJob.suggested_action ?? '-'}
                     </p>
                     <p>
@@ -1599,29 +1599,29 @@ export function NotificationsPage() {
                   <div className="rounded-lg border border-slate-200 bg-white p-3">
                     <div className="flex items-center justify-between gap-2">
                       <h6 className="text-sm font-semibold text-slate-900">
-                        Gun timeline'i
+                        Gün timeline'i
                       </h6>
                       {selectedJob.employee_id && selectedJob.local_day ? (
                         <Link
                           to={`/attendance-events?employee_id=${selectedJob.employee_id}&start_date=${selectedJob.local_day}&end_date=${selectedJob.local_day}`}
                           className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700"
                         >
-                          Manuel duzeltme ekranini ac
+                          Manuel düzeltme ekranini ac
                         </Link>
                       ) : null}
                     </div>
                     {selectedJobTimelineQuery.isLoading ? (
-                      <LoadingBlock label="Timeline yukleniyor..." />
+                      <LoadingBlock label="Timeline yükleniyor..." />
                     ) : null}
                     {selectedJobTimelineQuery.isError ? (
-                      <ErrorBlock message="Timeline alinamadi." />
+                      <ErrorBlock message="Timeline alınamadı." />
                     ) : null}
                     {!selectedJobTimelineQuery.isLoading &&
                     !selectedJobTimelineQuery.isError ? (
                       <div className="mt-2 space-y-2">
                         {(selectedJobTimelineQuery.data ?? []).length === 0 ? (
                           <p className="text-sm text-slate-500">
-                            Bu gun icin timeline kaydi bulunamadi.
+                            Bu gün için timeline kaydı bulunamadı.
                           </p>
                         ) : (
                           (selectedJobTimelineQuery.data ?? []).map((event) => (
@@ -1682,7 +1682,7 @@ export function NotificationsPage() {
           </div>
           {!jobsQuery.isLoading && !jobsQuery.isError && jobsTotal === 0 ? (
             <p className="mt-3 text-sm text-slate-500">
-              Filtreye uygun bildirim isi bulunamadi.
+              Filtreye uygun bildirim işi bulunamadı.
             </p>
           ) : null}
         </Panel>
@@ -1691,17 +1691,17 @@ export function NotificationsPage() {
       {activeSection === 'overview' ? (
         <Panel>
           <h4 className="text-base font-semibold text-slate-900">
-            Abonelik Ozeti
+            Abonelik Özeti
           </h4>
           <div className="grid gap-2 md:grid-cols-4">
             <div className="rounded border border-slate-200 p-3 text-sm">
-              Calisan abonelik: {(employeeSubsQuery.data ?? []).length}
+              Çalışan abonelik: {(employeeSubsQuery.data ?? []).length}
             </div>
             <div className="rounded border border-slate-200 p-3 text-sm">
               Admin abonelik: {(adminSubsQuery.data ?? []).length}
             </div>
             <div className="rounded border border-slate-200 p-3 text-sm">
-              Arsiv dosyasi: {archiveTotal}
+              Arşiv dosyasi: {archiveTotal}
             </div>
             <div className="rounded border border-slate-200 p-3 text-sm">
               Teslimat log satiri: {deliveryTotal}
@@ -1833,7 +1833,7 @@ export function NotificationsPage() {
               {effectiveSelfCheckData?.last_self_test_total_targets ?? '-'}
             </strong>
             {' | '}
-            Gonderilen:{' '}
+            Gönderilen:{' '}
             <strong>
               {effectiveSelfCheckData?.last_self_test_sent ?? '-'}
             </strong>
@@ -1845,7 +1845,7 @@ export function NotificationsPage() {
           </div>
           {adminSelfCheckQuery.isError ? (
             <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              Self-check verisi alinamadi. Fallback olarak abonelik listesi
+              Self-check verisi alınamadı. Fallback olarak abonelik listesi
               kullaniliyor.
             </p>
           ) : null}
@@ -1858,13 +1858,13 @@ export function NotificationsPage() {
           ) : null}
           {!currentAdminHasActiveClaim ? (
             <p className="mt-2 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
-              Bu admin hesabinda aktif cihaz claim gorunmuyor. Bildirim almak
-              icin telefonda claim linkini acip izin adimini tamamla.
+              Bu admin hesabinda aktif cihaz claim görünmüyor. Bildirim almak
+              için telefonda claim linkini açıp izin adimini tamamla.
             </p>
           ) : null}
           {effectiveSelfCheckData?.latest_claim_error ? (
             <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              Son claim hatasi: {effectiveSelfCheckData.latest_claim_error}
+              Son claim hatası: {effectiveSelfCheckData.latest_claim_error}
             </p>
           ) : null}
         </Panel>
@@ -1876,8 +1876,8 @@ export function NotificationsPage() {
             Mail Bildirim Ayarlari
           </h4>
           <p className="mt-1 text-xs text-slate-500">
-            Gece gunluk Excel arsiv job&apos;unda mail gonderimi best-effort
-            calisir; push teslimati onceliklidir.
+            Gece günlük Excel arşiv job&apos;unda mail gonderimi best-effort
+            calisir; push teslimatı önceliklidir.
           </p>
 
           <div className="mt-3 grid gap-2 md:grid-cols-3">
@@ -1899,7 +1899,7 @@ export function NotificationsPage() {
 
           {emailTargetsQuery.isError ? (
             <p className="mt-2 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
-              Mail hedefleri yuklenemedi.
+              Mail hedefleri yüklenemedi.
             </p>
           ) : null}
           {configuredEmailTargetCount <= 0 ? (
@@ -1946,7 +1946,7 @@ export function NotificationsPage() {
               Test mail gonder
             </h5>
             <p className="mt-1 text-xs text-slate-600">
-              Alici bos birakilirsa kayitli tum aktif adreslere test mail
+              Alici bos birakilirsa kayıtlı tüm aktif adreslere test mail
               gonderilir.
             </p>
             <div className="mt-2 grid gap-2 md:grid-cols-3">
@@ -2035,7 +2035,7 @@ export function NotificationsPage() {
           {!deliveryLogsQuery.isLoading && !deliveryLogsQuery.isError ? (
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
               <span>
-                Gosterilen satir: {deliveryRangeStart}-{deliveryRangeEnd} /{' '}
+                Gösterilen satir: {deliveryRangeStart}-{deliveryRangeEnd} /{' '}
                 {deliveryTotal}
               </span>
               <div className="flex items-center gap-2">
@@ -2069,10 +2069,10 @@ export function NotificationsPage() {
           ) : null}
 
           {deliveryLogsQuery.isLoading ? (
-            <LoadingBlock label="Teslimat logu yukleniyor..." />
+            <LoadingBlock label="Teslimat logu yükleniyor..." />
           ) : null}
           {deliveryLogsQuery.isError ? (
-            <ErrorBlock message="Teslimat logu alinamadi." />
+            <ErrorBlock message="Teslimat logu alınamadı." />
           ) : null}
           {!deliveryLogsQuery.isLoading && !deliveryLogsQuery.isError ? (
             <div className="mt-3 grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -2166,7 +2166,7 @@ export function NotificationsPage() {
                   </table>
                   {filteredDeliveryLogs.length === 0 ? (
                     <p className="px-3 py-3 text-sm text-amber-300">
-                      Filtreye uygun teslimat kaydi bulunamadi.
+                      Filtreye uygun teslimat kaydı bulunamadı.
                     </p>
                   ) : null}
                 </div>
@@ -2174,11 +2174,11 @@ export function NotificationsPage() {
 
               <aside className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                 <h5 className="text-sm font-semibold text-slate-900">
-                  Secili teslimat detayi
+                  Seçili teslimat detayı
                 </h5>
                 {selectedDeliveryLog === null ? (
                   <p className="mt-3 text-sm text-slate-600">
-                    Listeden bir kayit secin.
+                    Listeden bir kayıt seçin.
                   </p>
                 ) : (
                   <div className="mt-3 space-y-3">
@@ -2263,7 +2263,7 @@ export function NotificationsPage() {
       {activeSection === 'archives' ? (
         <Panel>
           <h4 className="text-base font-semibold text-slate-900">
-            Gunluk Excel Arsivi
+            Günlük Excel Arşivi
           </h4>
           <div className="mt-2 grid gap-2 md:grid-cols-4">
             <div
@@ -2293,14 +2293,14 @@ export function NotificationsPage() {
               </div>
             </div>
             <div className="rounded border border-slate-200 p-3 text-sm">
-              Arsiv:{' '}
+              Arşiv:{' '}
               <strong>
                 {dailyReportHealth?.archive_exists
                   ? `#${dailyReportHealth.archive_id}`
                   : 'YOK'}
               </strong>
               <div className="mt-1 text-xs text-slate-600">
-                Calisan: {dailyReportHealth?.archive_employee_count ?? 0} |
+                Çalışan: {dailyReportHealth?.archive_employee_count ?? 0} |
                 Boyut:{' '}
                 {(
                   (dailyReportHealth?.archive_file_size_bytes ?? 0) / 1024
@@ -2311,7 +2311,7 @@ export function NotificationsPage() {
           </div>
           {dailyReportHealthQuery.isError ? (
             <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              Gece 00:00 job health verisi alinamadi.
+              Gece 00:00 job health verisi alınamadı.
             </p>
           ) : null}
           {!dailyReportHealthQuery.isError && dailyReportHealth ? (
@@ -2329,25 +2329,25 @@ export function NotificationsPage() {
                 </div>
               ) : (
                 <span className="text-emerald-700">
-                  Alarm yok. Gece arsiv job durumu saglikli.
+                  Alarm yok. Gece arşiv job durumu saglikli.
                 </span>
               )}
             </div>
           ) : null}
           {dailyReportHealth?.target_zero ? (
             <p className="mt-2 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
-              Gece job hedefi 0 gorunuyor. Push claim veya mail alici listesi
+              Gece job hedefi 0 görünüyor. Push claim veya mail alici listesi
               bos olabilir.
             </p>
           ) : null}
           {dailyReportHealth?.last_error ? (
             <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              Son job hatasi: {dailyReportHealth.last_error}
+              Son job hatası: {dailyReportHealth.last_error}
             </p>
           ) : null}
           {dailyReportHealth && dailyReportIsHealthy ? (
             <p className="mt-2 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-              Gece 00:00 job olustu, teslimat yapildi ve alarm bulunmuyor.
+              Gece 00:00 job oluştu, teslimat yapildi ve alarm bulunmuyor.
             </p>
           ) : null}
           <div className="mt-3 grid gap-2 md:grid-cols-4">
@@ -2376,7 +2376,7 @@ export function NotificationsPage() {
               />
             </label>
             <label className="text-xs text-slate-600">
-              Calisan icerigi
+              Çalışan icerigi
               <input
                 value={archiveEmployeeQuery}
                 onChange={(event) => {
@@ -2393,21 +2393,21 @@ export function NotificationsPage() {
                 onClick={() => void archivesQuery.refetch()}
                 className="rounded border border-slate-300 px-3 py-2 text-sm"
               >
-                Arsivi yenile
+                Arşivi yenile
               </button>
             </div>
           </div>
 
           {archivesQuery.isLoading ? (
-            <LoadingBlock label="Arsiv yukleniyor..." />
+            <LoadingBlock label="Arşiv yükleniyor..." />
           ) : null}
           {archivesQuery.isError ? (
-            <ErrorBlock message="Arsiv listesi alinamadi." />
+            <ErrorBlock message="Arşiv listesi alınamadı." />
           ) : null}
           {!archivesQuery.isLoading && !archivesQuery.isError ? (
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
               <span>
-                Gosterilen satir: {archiveRangeStart}-{archiveRangeEnd} /{' '}
+                Gösterilen satir: {archiveRangeStart}-{archiveRangeEnd} /{' '}
                 {archiveTotal}
               </span>
               <div className="flex items-center gap-2">
@@ -2448,9 +2448,9 @@ export function NotificationsPage() {
                   <th className="px-2 py-2">ID</th>
                   <th className="px-2 py-2">Tarih</th>
                   <th className="px-2 py-2">Dosya</th>
-                  <th className="px-2 py-2">Calisan</th>
+                  <th className="px-2 py-2">Çalışan</th>
                   <th className="px-2 py-2">Boyut</th>
-                  <th className="px-2 py-2">Islem</th>
+                  <th className="px-2 py-2">İşlem</th>
                 </tr>
               </thead>
               <tbody>
@@ -2501,7 +2501,7 @@ export function NotificationsPage() {
           !archivesQuery.isError &&
           archiveTotal === 0 ? (
             <p className="mt-3 text-sm text-slate-500">
-              Filtreye uygun arsiv kaydi bulunamadi.
+              Filtreye uygun arşiv kaydı bulunamadı.
             </p>
           ) : null}
         </Panel>

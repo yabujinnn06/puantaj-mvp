@@ -37,31 +37,31 @@ function eventStatusLabel(event: LocationMonitorTimelineEvent): string {
   if (event.geofence_status === 'INSIDE') return 'Geofence ici'
   if (event.trust_status === 'HIGH') return 'Guvenilir'
   if (event.trust_status === 'MEDIUM') return 'Izleniyor'
-  if (event.trust_status === 'LOW' || event.trust_status === 'SUSPICIOUS') return 'Supheli'
+  if (event.trust_status === 'LOW' || event.trust_status === 'SUSPICIOUS') return 'Şüpheli'
   return pointSourceLabel(event.source)
 }
 
 function eventSummary(event: LocationMonitorTimelineEvent): string {
   if (event.location_status === 'SUSPICIOUS_JUMP') {
-    return 'Supheli sicrama deseni kaydedildi.'
+    return 'Şüpheli sicrama deseni kaydedildi.'
   }
   if (event.location_status === 'MOCK_GPS_SUSPECTED') {
-    return 'Konum kaynagi manipule gorunuyor.'
+    return 'Konum kaynagi manipule görünüyor.'
   }
   if (event.location_status === 'OUTSIDE_GEOFENCE' || event.geofence_status === 'OUTSIDE') {
-    return 'Beklenen alan disinda sinyal alindi.'
+    return 'Beklenen alan disinda sinyal alındı.'
   }
   if (event.location_status === 'LOW_ACCURACY') {
-    return 'Konum kalitesi dusuk oldugu icin kontrol edilmeli.'
+    return 'Konum kalitesi düşük oldugu için kontrol edilmeli.'
   }
   if (event.location_status === 'STALE_LOCATION') {
-    return 'Konum sinyali gecikmeli ulasmis gorunuyor.'
+    return 'Konum sinyali gecikmeli ulasmis görünüyor.'
   }
   if (event.source === 'CHECKIN') {
-    return 'Mesai baslangici kaydi olustu.'
+    return 'Mesai baslangici kaydı oluştu.'
   }
   if (event.source === 'CHECKOUT') {
-    return 'Mesai bitisi kaydi olustu.'
+    return 'Mesai bitisi kaydı oluştu.'
   }
   if (event.source === 'APP_OPEN') {
     return 'Uygulama oturumu acildi.'
@@ -75,7 +75,7 @@ function eventSummary(event: LocationMonitorTimelineEvent): string {
   if (event.source === 'DEMO_END') {
     return 'Demo sureci tamamladi.'
   }
-  return 'Rota akisini suren guncel konum kaydi.'
+  return 'Rota akisini suren güncel konum kaydı.'
 }
 
 export function EmployeeDayEventMiniList({
@@ -92,17 +92,17 @@ export function EmployeeDayEventMiniList({
   onSelectEvent: (eventId: string) => void
 }) {
   return (
-    <section className="cr-day-event-mini" aria-label="Secili gun olay listesi">
+    <section className="cr-day-event-mini" aria-label="Seçili gün olay listesi">
       <header className="cr-day-event-mini__header">
         <div>
-          <p className="cr-ops-kicker">Gun olaylari</p>
+          <p className="cr-ops-kicker">Gün olaylari</p>
           <h4>Harita ile senkron mini akis</h4>
         </div>
         <span className="cr-day-event-mini__count">{events.length}</span>
       </header>
 
-      {loading && !events.length ? <div className="cr-feed-empty">Olaylar yukleniyor...</div> : null}
-      {error && !events.length ? <div className="cr-feed-empty">Gun olaylari alinmadi.</div> : null}
+      {loading && !events.length ? <div className="cr-feed-empty">Olaylar yükleniyor...</div> : null}
+      {error && !events.length ? <div className="cr-feed-empty">Gün olaylari alinmadi.</div> : null}
 
       <div className="cr-day-event-mini__list">
         {events.length ? (
@@ -126,7 +126,7 @@ export function EmployeeDayEventMiniList({
             )
           })
         ) : (
-          !loading && <div className="cr-feed-empty">Secili gun icin olay kaydi bulunmuyor.</div>
+          !loading && <div className="cr-feed-empty">Seçili gün için olay kaydı bulunmuyor.</div>
         )}
       </div>
     </section>

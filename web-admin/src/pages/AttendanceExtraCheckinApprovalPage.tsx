@@ -11,8 +11,8 @@ import type { AttendanceExtraCheckinApproval } from '../types/api'
 import { UI_BRANDING } from '../config/ui'
 
 const approvalFormSchema = z.object({
-  username: z.string().min(1, 'Kullanici adi gerekli.'),
-  password: z.string().min(1, 'Sifre gerekli.'),
+  username: z.string().min(1, 'Kullanıcı adi gerekli.'),
+  password: z.string().min(1, 'Şifre gerekli.'),
 })
 
 function formatDateTime(value: string | null): string {
@@ -34,7 +34,7 @@ function statusText(status: AttendanceExtraCheckinApproval['status']): string {
   if (status === 'PENDING') return 'Onay Bekliyor'
   if (status === 'APPROVED') return 'Onaylandi'
   if (status === 'CONSUMED') return 'Kullanildi'
-  return 'Suresi Doldu'
+  return 'Süresi Doldu'
 }
 
 function statusClass(status: AttendanceExtraCheckinApproval['status']): string {
@@ -45,11 +45,11 @@ function statusClass(status: AttendanceExtraCheckinApproval['status']): string {
 }
 
 function getErrorTitle(error: ParsedApiError): string {
-  if (error.code === 'INVALID_CREDENTIALS') return 'Sifre dogrulanamadi'
-  if (error.code === 'TOO_MANY_ATTEMPTS') return 'Cok fazla deneme'
-  if (error.code === 'EXTRA_CHECKIN_APPROVAL_EXPIRED') return 'Talep suresi dolmus'
-  if (error.code === 'EXTRA_CHECKIN_APPROVAL_NOT_FOUND') return 'Talep bulunamadi'
-  return 'Onay islemi basarisiz'
+  if (error.code === 'INVALID_CREDENTIALS') return 'Şifre doğrulanamadı'
+  if (error.code === 'TOO_MANY_ATTEMPTS') return 'Çok fazla deneme'
+  if (error.code === 'EXTRA_CHECKIN_APPROVAL_EXPIRED') return 'Talep süresi dolmuş'
+  if (error.code === 'EXTRA_CHECKIN_APPROVAL_NOT_FOUND') return 'Talep bulunamadı'
+  return 'Onay işlemi başarısız'
 }
 
 export function AttendanceExtraCheckinApprovalPage() {
@@ -67,7 +67,7 @@ export function AttendanceExtraCheckinApprovalPage() {
 
   useEffect(() => {
     if (!token) {
-      setLoadError({ message: 'Onay tokeni bulunamadi.' })
+      setLoadError({ message: 'Onay tokeni bulunamadı.' })
       setApproval(null)
       return
     }
@@ -82,7 +82,7 @@ export function AttendanceExtraCheckinApprovalPage() {
         }
       } catch (error) {
         if (!cancelled) {
-          setLoadError(parseApiError(error, 'Onay talebi yuklenemedi.'))
+          setLoadError(parseApiError(error, 'Onay talebi yüklenemedi.'))
           setApproval(null)
         }
       } finally {
@@ -124,11 +124,11 @@ export function AttendanceExtraCheckinApprovalPage() {
       setPassword('')
       setSuccessMessage(
         result.already_processed
-          ? 'Talep daha once islenmis. Calisan tekrar giris deneyebilir.'
-          : 'Onay verildi. Calisan ikinci giris islemini tekrar deneyebilir.',
+          ? 'Talep daha önce işlenmiş. Çalışan tekrar giriş deneyebilir.'
+          : 'Onay verildi. Çalışan ikinci giriş işlemini tekrar deneyebilir.',
       )
     } catch (error) {
-      setSubmitError(parseApiError(error, 'Onay islemi tamamlanamadi.'))
+      setSubmitError(parseApiError(error, 'Onay işlemi tamamlanamadı.'))
     } finally {
       setIsSubmitting(false)
     }
@@ -137,20 +137,20 @@ export function AttendanceExtraCheckinApprovalPage() {
   return (
     <div className="admin-auth-screen flex min-h-screen items-center justify-center px-4">
       <div className="admin-auth-card w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-8 shadow-panel">
-        <h1 className="text-2xl font-bold text-slate-900">Ek Giris Admin Onayi</h1>
+        <h1 className="text-2xl font-bold text-slate-900">Ek Giriş Admin Onayi</h1>
         <p className="mt-2 text-sm text-slate-600">
-          Gunluk mesai tamamlama sonrasi ikinci giris denemesi icin sifre dogrulayarak onay verin.
+          Günlük mesai tamamlama sonrası ikinci giriş denemesi için şifre doğrulayarak onay verin.
         </p>
 
         {!token ? (
           <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-3 text-sm text-rose-700">
-            Gecerli bir token olmadan onay islemi baslatilamaz.
+            Geçerli bir token olmadan onay işlemi başlatılamaz.
           </div>
         ) : null}
 
         {isLoading ? (
           <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
-            Talep yukleniyor...
+            Talep yükleniyor...
           </div>
         ) : null}
 
@@ -176,16 +176,16 @@ export function AttendanceExtraCheckinApprovalPage() {
             </div>
 
             <div className="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-2">
-              <p>Mesai gunu: {approval.local_day}</p>
-              <p>Istenen cihaz ID: {approval.device_id ?? '-'}</p>
-              <p>Talep zamani: {formatDateTime(approval.requested_at)}</p>
-              <p>Son gecerlilik: {formatDateTime(approval.expires_at)}</p>
+              <p>Mesai günü: {approval.local_day}</p>
+              <p>İstenen cihaz ID: {approval.device_id ?? '-'}</p>
+              <p>Talep zamanı: {formatDateTime(approval.requested_at)}</p>
+              <p>Son geçerlilik: {formatDateTime(approval.expires_at)}</p>
               <p>Onaylayan: {approval.approved_by_username ?? '-'}</p>
-              <p>Kullanilma zamani: {formatDateTime(approval.consumed_at)}</p>
+              <p>Kullanılma zamanı: {formatDateTime(approval.consumed_at)}</p>
             </div>
 
             <div className="mt-2 text-xs text-slate-500">
-              Push dagitimi: hedef {approval.push_total_targets} | gonderilen {approval.push_sent} | hata {approval.push_failed}
+              Push dağıtımı: hedef {approval.push_total_targets} | gönderilen {approval.push_sent} | hata {approval.push_failed}
             </div>
           </section>
         ) : null}
@@ -199,7 +199,7 @@ export function AttendanceExtraCheckinApprovalPage() {
         {approval?.status === 'PENDING' ? (
           <form onSubmit={onSubmit} className="mt-5 space-y-4">
             <label className="block">
-              <span className="mb-1 block text-sm font-medium text-slate-700">Kullanici Adi</span>
+              <span className="mb-1 block text-sm font-medium text-slate-700">Kullanıcı Adi</span>
               <input
                 value={username}
                 onChange={(event) => setUsername(event.target.value)}
@@ -209,7 +209,7 @@ export function AttendanceExtraCheckinApprovalPage() {
             </label>
 
             <label className="block">
-              <span className="mb-1 block text-sm font-medium text-slate-700">Sifre (MFA gerektirmez)</span>
+              <span className="mb-1 block text-sm font-medium text-slate-700">Şifre (MFA gerektirmez)</span>
               <input
                 type="password"
                 value={password}
@@ -240,7 +240,7 @@ export function AttendanceExtraCheckinApprovalPage() {
                   Onay veriliyor...
                 </>
               ) : (
-                'Evet, 2. Girisi Onayla'
+                'Evet, 2. Girişi Onayla'
               )}
             </button>
           </form>

@@ -1,7 +1,7 @@
 export function TableSearchInput({
   value,
   onChange,
-  placeholder = 'Isme gore ara...',
+  placeholder = 'İsme göre ara...',
 }: {
   value: string
   onChange: (value: string) => void

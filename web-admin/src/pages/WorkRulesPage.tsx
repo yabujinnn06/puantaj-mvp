@@ -47,15 +47,15 @@ const shiftSchema = z.object({
 })
 
 const PLAN_TARGET_OPTIONS: Array<{ value: SchedulePlanTargetType; label: string }> = [
-  { value: 'DEPARTMENT', label: 'Tum departman' },
-  { value: 'DEPARTMENT_EXCEPT_EMPLOYEE', label: 'Departman (calisan haric)' },
-  { value: 'ONLY_EMPLOYEE', label: 'Sadece secili calisan' },
+  { value: 'DEPARTMENT', label: 'Tüm departman' },
+  { value: 'DEPARTMENT_EXCEPT_EMPLOYEE', label: 'Departman (çalışan haric)' },
+  { value: 'ONLY_EMPLOYEE', label: 'Sadece seçili çalışan' },
 ]
 
 const PLAN_TARGET_LABELS: Record<SchedulePlanTargetType, string> = {
   DEPARTMENT: 'Departman geneli',
   DEPARTMENT_EXCEPT_EMPLOYEE: 'Departman (haric)',
-  ONLY_EMPLOYEE: 'Sadece calisan',
+  ONLY_EMPLOYEE: 'Sadece çalışan',
 }
 
 function parseOptionalMinutes(value: string): number | null {
@@ -189,7 +189,7 @@ export function WorkRulesPage() {
       setShiftEnd('18:00')
       setShiftBreakMinutes('60')
       setShiftIsActive(true)
-      pushToast({ variant: 'success', title: 'Vardiya kaydedildi', description: 'Departman vardiyasi guncellendi.' })
+      pushToast({ variant: 'success', title: 'Vardiya kaydedildi', description: 'Departman vardiyasi güncellendi.' })
       void queryClient.invalidateQueries({ queryKey: ['department-shifts'] })
     },
     onError: (error) => {
@@ -211,13 +211,13 @@ export function WorkRulesPage() {
         setShiftBreakMinutes('60')
         setShiftIsActive(true)
       }
-      pushToast({ variant: 'success', title: 'Vardiya pasife alindi', description: 'Vardiya kaydi pasif duruma getirildi.' })
+      pushToast({ variant: 'success', title: 'Vardiya pasife alındı', description: 'Vardiya kaydı pasif duruma getirildi.' })
       void queryClient.invalidateQueries({ queryKey: ['department-shifts'] })
     },
     onError: (error) => {
-      const parsed = parseApiError(error, 'Vardiya pasife alinamadi.')
+      const parsed = parseApiError(error, 'Vardiya pasife alınamadı.')
       setFormError(parsed.message)
-      pushToast({ variant: 'error', title: 'Vardiya pasife alinamadi', description: parsed.message })
+      pushToast({ variant: 'error', title: 'Vardiya pasife alınamadı', description: parsed.message })
     },
   })
 
@@ -236,17 +236,17 @@ export function WorkRulesPage() {
       setFormError(null)
       pushToast({
         variant: 'success',
-        title: variables.nextActive ? 'Vardiya aktif edildi' : 'Vardiya pasife alindi',
+        title: variables.nextActive ? 'Vardiya aktif edildi' : 'Vardiya pasife alındı',
         description: variables.nextActive
           ? 'Vardiya tekrar kullanilabilir duruma getirildi.'
-          : 'Vardiya kaydi pasif duruma getirildi.',
+          : 'Vardiya kaydı pasif duruma getirildi.',
       })
       void queryClient.invalidateQueries({ queryKey: ['department-shifts'] })
     },
     onError: (error) => {
-      const parsed = parseApiError(error, 'Vardiya durumu guncellenemedi.')
+      const parsed = parseApiError(error, 'Vardiya durumu güncellenemedi.')
       setFormError(parsed.message)
-      pushToast({ variant: 'error', title: 'Vardiya durumu guncellenemedi', description: parsed.message })
+      pushToast({ variant: 'error', title: 'Vardiya durumu güncellenemedi', description: parsed.message })
     },
   })
 
@@ -254,7 +254,7 @@ export function WorkRulesPage() {
     mutationFn: upsertSchedulePlan,
     onSuccess: () => {
       setFormError(null)
-      pushToast({ variant: 'success', title: 'Planlama kaydedildi', description: 'Departman/calisan plani kaydedildi.' })
+      pushToast({ variant: 'success', title: 'Planlama kaydedildi', description: 'Departman/çalışan plani kaydedildi.' })
       void queryClient.invalidateQueries({ queryKey: ['schedule-plans'] })
       setPlanId(null)
       setPlanTargetEmployeeIds([])
@@ -280,7 +280,7 @@ export function WorkRulesPage() {
     mutationFn: cancelSchedulePlan,
     onSuccess: () => {
       setFormError(null)
-      pushToast({ variant: 'success', title: 'Planlama iptal edildi', description: 'Plan pasife alindi.' })
+      pushToast({ variant: 'success', title: 'Planlama iptal edildi', description: 'Plan pasife alındı.' })
       void queryClient.invalidateQueries({ queryKey: ['schedule-plans'] })
     },
     onError: (error) => {
@@ -340,7 +340,7 @@ export function WorkRulesPage() {
     shiftsQuery.isError ||
     schedulePlansQuery.isError
   ) {
-    return <ErrorBlock message="Mesai kurali verileri alinamadi." />
+    return <ErrorBlock message="Mesai kurali verileri alınamadı." />
   }
 
   const departments = departmentsQuery.data ?? []
@@ -449,7 +449,7 @@ export function WorkRulesPage() {
     if (!parsed.success) {
       const message = parsed.error.issues[0]?.message ?? 'Mesai kurali formunu kontrol edin.'
       setFormError(message)
-      pushToast({ variant: 'error', title: 'Form hatasi', description: message })
+      pushToast({ variant: 'error', title: 'Form hatası', description: message })
       return
     }
 
@@ -484,7 +484,7 @@ export function WorkRulesPage() {
     if (!parsed.success) {
       const message = parsed.error.issues[0]?.message ?? 'Vardiya formunu kontrol edin.'
       setFormError(message)
-      pushToast({ variant: 'error', title: 'Form hatasi', description: message })
+      pushToast({ variant: 'error', title: 'Form hatası', description: message })
       return
     }
     upsertShiftMutation.mutate({
@@ -520,7 +520,7 @@ export function WorkRulesPage() {
 
     const parsedDepartmentId = Number(planDepartmentId)
     if (!Number.isFinite(parsedDepartmentId) || parsedDepartmentId <= 0) {
-      setFormError('Planlama icin departman secmelisiniz.')
+      setFormError('Planlama için departman seçmelisiniz.')
       return
     }
     if (!planStartDate || !planEndDate) {
@@ -534,7 +534,7 @@ export function WorkRulesPage() {
 
     const parsedTargetEmployeeIds = planTargetType === 'DEPARTMENT' ? [] : [...planTargetEmployeeIds]
     if (planTargetType !== 'DEPARTMENT' && parsedTargetEmployeeIds.length === 0) {
-      setFormError('Secilen hedef tipi icin en az bir calisan secmelisiniz.')
+      setFormError('Seçilen hedef tipi için en az bir çalışan seçmelisiniz.')
       return
     }
 
@@ -584,7 +584,7 @@ export function WorkRulesPage() {
     <div className="space-y-4">
       <PageHeader
         title="Mesai Kurallari"
-        description="Departman bazinda gunluk plan, haftalik gun davranisi ve coklu vardiya tanimlarini yonetin."
+        description="Departman bazinda günlük plan, haftalık gün davranisi ve çoklu vardiya tanimlarini yonetin."
       />
 
       <Panel>
@@ -597,7 +597,7 @@ export function WorkRulesPage() {
               onChange={(event) => setDepartmentId(event.target.value)}
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
             >
-              <option value="">Seciniz</option>
+              <option value="">Seçiniz</option>
               {departments.map((department) => (
                 <option key={department.id} value={department.id}>
                   {department.name}
@@ -607,7 +607,7 @@ export function WorkRulesPage() {
           </label>
 
           <label className="text-sm text-slate-700">
-            Planlanan Gunluk Dakika
+            Planlanan Günlük Dakika
             <input
               value={dailyMinutesPlanned}
               onChange={(event) => setDailyMinutesPlanned(event.target.value)}
@@ -625,7 +625,7 @@ export function WorkRulesPage() {
           </label>
 
           <label className="text-sm text-slate-700">
-            Gec Giris Toleransi (Dakika)
+            Gec Giriş Toleransi (Dakika)
             <input
               value={graceMinutes}
               onChange={(event) => setGraceMinutes(event.target.value)}
@@ -661,7 +661,7 @@ export function WorkRulesPage() {
           </label>
 
           <div className="md:col-span-6 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-            Onizleme: Planlanan {livePreview.daily} | Mola {livePreview.breakValue} | Gec giris toleransi {livePreview.grace} | Erken gelis toleransi {livePreview.earlyArrivalTolerance} | Fazla mesai toleransi {livePreview.overtimeGrace} | Vardiya disi tolerans {livePreview.offShift}
+            Onizleme: Planlanan {livePreview.daily} | Mola {livePreview.breakValue} | Gec giriş toleransi {livePreview.grace} | Erken gelis toleransi {livePreview.earlyArrivalTolerance} | Fazla mesai toleransi {livePreview.overtimeGrace} | Vardiya disi tolerans {livePreview.offShift}
           </div>
 
           <div className="md:col-span-6">
@@ -719,9 +719,9 @@ export function WorkRulesPage() {
       </Panel>
 
       <Panel>
-        <h4 className="text-base font-semibold text-slate-900">Departman Vardiyalari</h4>
+        <h4 className="text-base font-semibold text-slate-900">Departman Vardiyaları</h4>
         <p className="mt-1 text-xs text-slate-500">
-          Ornek: Stant icin 10:00-18:00 ve 14:00-22:00 vardiyalarini ayri ayri tanimlayabilirsiniz.
+          Ornek: Stant için 10:00-18:00 ve 14:00-22:00 vardiyalarini ayri ayri tanimlayabilirsiniz.
         </p>
         {shiftEditingId ? (
           <p className="mt-2 text-xs font-medium text-brand-700">Duzenleme modu: #{shiftEditingId}</p>
@@ -734,7 +734,7 @@ export function WorkRulesPage() {
               onChange={(event) => setShiftDepartmentId(event.target.value)}
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
             >
-              <option value="">Seciniz</option>
+              <option value="">Seçiniz</option>
               {departments.map((department) => (
                 <option key={department.id} value={department.id}>
                   {department.name}
@@ -801,7 +801,7 @@ export function WorkRulesPage() {
                 {upsertShiftMutation.isPending
                   ? 'Kaydediliyor...'
                   : shiftEditingId
-                    ? 'Vardiya Guncelle'
+                    ? 'Vardiya Güncelle'
                     : 'Vardiya Kaydet'}
               </button>
               {shiftEditingId ? (
@@ -882,14 +882,14 @@ export function WorkRulesPage() {
       <Panel>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h4 className="text-base font-semibold text-slate-900">Ileri Planlama (Departman/Calisan)</h4>
+            <h4 className="text-base font-semibold text-slate-900">İleri Planlama (Departman/Çalışan)</h4>
             <p className="mt-1 text-xs text-slate-500">
               Gelecek tarihli vardiya ve sure kurali tanimlayin. Planlar duzenlenebilir, iptal edilebilir, tekrar aktif edilebilir.
             </p>
           </div>
           <label className="inline-flex items-center gap-2 text-sm text-slate-700">
             <input type="checkbox" checked={showInactivePlans} onChange={(event) => setShowInactivePlans(event.target.checked)} />
-            Pasif planlari goster
+            Pasif planlari göster
           </label>
         </div>
 
@@ -905,7 +905,7 @@ export function WorkRulesPage() {
               }}
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
             >
-              <option value="">Seciniz</option>
+              <option value="">Seçiniz</option>
               {departments.map((department) => (
                 <option key={department.id} value={department.id}>
                   {department.name}
@@ -934,13 +934,13 @@ export function WorkRulesPage() {
           </label>
 
           <label className="text-sm text-slate-700">
-            Calisanlar (gerekliyse)
+            Çalışanlar (gerekliyse)
             <input
               type="text"
               value={planTargetSearch}
               onChange={(event) => setPlanTargetSearch(event.target.value)}
               disabled={planTargetType === 'DEPARTMENT'}
-              placeholder="Calisan adi veya ID ile ara..."
+              placeholder="Çalışan adi veya ID ile ara..."
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100"
             />
             <select
@@ -958,21 +958,21 @@ export function WorkRulesPage() {
               ))}
             </select>
             <span className="mt-1 block text-xs text-slate-500">
-              Ctrl/Cmd ile birden fazla calisan secilebilir. Binlerce kayitta once arama yapin.
+              Ctrl/Cmd ile birden fazla çalışan seçilebilir. Binlerce kayıtta önce arama yapın.
             </span>
           </label>
 
           <label className="text-sm text-slate-700">
             Vardiya (opsiyonel)
             <select value={planShiftId} onChange={(event) => setPlanShiftId(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
-              <option value="">Seciniz</option>
+              <option value="">Seçiniz</option>
               {planDepartmentShifts.map((shift) => (
                 <option key={shift.id} value={shift.id}>{shift.name} ({shift.start_time_local} - {shift.end_time_local})</option>
               ))}
             </select>
           </label>
 
-          <label className="text-sm text-slate-700">Gunluk Dakika (ops.)
+          <label className="text-sm text-slate-700">Günlük Dakika (ops.)
             <input value={planDailyMinutes} onChange={(event) => setPlanDailyMinutes(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" />
           </label>
 
@@ -980,7 +980,7 @@ export function WorkRulesPage() {
             <input value={planBreakMinutes} onChange={(event) => setPlanBreakMinutes(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" />
           </label>
 
-          <label className="text-sm text-slate-700">Gec Giris Toleransi (ops.)
+          <label className="text-sm text-slate-700">Gec Giriş Toleransi (ops.)
             <input value={planGraceMinutes} onChange={(event) => setPlanGraceMinutes(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" />
           </label>
 
@@ -1021,7 +1021,7 @@ export function WorkRulesPage() {
 
           <div className="md:col-span-4 flex flex-wrap gap-2">
             <button type="submit" disabled={upsertSchedulePlanMutation.isPending} className="btn-primary rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60">
-              {upsertSchedulePlanMutation.isPending ? 'Kaydediliyor...' : planId ? 'Plani Guncelle' : 'Plan Olustur'}
+              {upsertSchedulePlanMutation.isPending ? 'Kaydediliyor...' : planId ? 'Plani Güncelle' : 'Plan Oluştur'}
             </button>
             <button type="button" onClick={resetSchedulePlanForm} className="btn-secondary rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
               Formu Temizle
@@ -1070,7 +1070,7 @@ export function WorkRulesPage() {
                     <td className="py-2 text-xs text-slate-700">
                       <div>Plan: {plan.daily_minutes_planned !== null ? `${plan.daily_minutes_planned} dk` : '-'}</div>
                       <div>Mola: {plan.break_minutes !== null ? `${plan.break_minutes} dk` : '-'}</div>
-                      <div>Gec giris toleransi: {plan.grace_minutes !== null ? `${plan.grace_minutes} dk` : '-'}</div>
+                      <div>Gec giriş toleransi: {plan.grace_minutes !== null ? `${plan.grace_minutes} dk` : '-'}</div>
                       <div>Erken gelis toleransi: {plan.early_arrival_tolerance_minutes !== null ? `${plan.early_arrival_tolerance_minutes} dk` : '-'}</div>
                       <div>Fazla mesai toleransi: {plan.overtime_grace_minutes !== null ? `${plan.overtime_grace_minutes} dk` : '-'}</div>
                       <div>Vardiya disi tolerans: {plan.off_shift_tolerance_minutes !== null ? `${plan.off_shift_tolerance_minutes} dk` : '-'}</div>
@@ -1103,9 +1103,9 @@ export function WorkRulesPage() {
             <thead className="text-xs uppercase text-slate-500">
               <tr>
                 <th className="py-2">Departman</th>
-                <th className="py-2">Planlanan Gunluk Sure</th>
-                <th className="py-2">Mola Suresi</th>
-                <th className="py-2">Gec Giris Toleransi</th>
+                <th className="py-2">Planlanan Günlük Sure</th>
+                <th className="py-2">Mola Süresi</th>
+                <th className="py-2">Gec Giriş Toleransi</th>
                 <th className="py-2">Erken Gelis Toleransi</th>
                 <th className="py-2">Fazla Mesai Toleransi</th>
                 <th className="py-2">Vardiya Disi Tolerans</th>

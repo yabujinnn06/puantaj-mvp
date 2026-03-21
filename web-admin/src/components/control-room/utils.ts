@@ -74,8 +74,8 @@ export const QUICK_FILTER_OPTIONS: Array<{
   },
   {
     key: 'live',
-    label: 'Canli',
-    description: 'Canli veya yeni konum sinyali olanlari gosterir.',
+    label: 'Canlı',
+    description: 'Canlı veya yeni konum sinyali olanları gösterir.',
   },
   {
     key: 'active-shift',
@@ -88,10 +88,10 @@ export const DATE_PRESET_OPTIONS: Array<{
   key: Exclude<FocusDatePresetKey, 'CUSTOM'>
   label: string
 }> = [
-  { key: 'TODAY', label: 'Bugun' },
+  { key: 'TODAY', label: 'Bugün' },
   { key: 'YESTERDAY', label: 'Dun' },
-  { key: 'LAST_3_DAYS', label: 'Son 3 gun' },
-  { key: 'LAST_7_DAYS', label: 'Son 7 gun' },
+  { key: 'LAST_3_DAYS', label: 'Son 3 gün' },
+  { key: 'LAST_7_DAYS', label: 'Son 7 gün' },
   { key: 'THIS_WEEK', label: 'Bu hafta' },
   { key: 'THIS_MONTH', label: 'Bu ay' },
 ]
@@ -99,8 +99,8 @@ export const DATE_PRESET_OPTIONS: Array<{
 export const SOURCE_OPTIONS: Array<{ value: LocationMonitorPointSource; label: string }> = [
   { value: 'CHECKIN', label: 'Mesai' },
   { value: 'CHECKOUT', label: 'Mesai bitis' },
-  { value: 'APP_OPEN', label: 'App giris' },
-  { value: 'APP_CLOSE', label: 'App cikis' },
+  { value: 'APP_OPEN', label: 'App giriş' },
+  { value: 'APP_CLOSE', label: 'App çıkış' },
   { value: 'DEMO_START', label: 'Demo baslangic' },
   { value: 'DEMO_END', label: 'Demo bitis' },
   { value: 'LOCATION_PING', label: 'Ping' },
@@ -221,10 +221,10 @@ export function formatRelative(value: string | null | undefined): string {
   if (!Number.isFinite(diffMs)) return '-'
   const minutes = Math.max(0, Math.round(diffMs / 60000))
   if (minutes < 1) return 'Simdi'
-  if (minutes < 60) return `${minutes} dk once`
+  if (minutes < 60) return `${minutes} dk önce`
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours} sa once`
-  return `${Math.floor(hours / 24)} gun once`
+  if (hours < 24) return `${hours} sa önce`
+  return `${Math.floor(hours / 24)} gün önce`
 }
 
 export function formatDistance(meters: number | null | undefined): string {
@@ -240,9 +240,9 @@ export function formatCoordinates(lat: number | null | undefined, lon: number | 
 export function pointSourceLabel(
   value: LocationMonitorMapPoint['source'] | LocationMonitorTimelineEvent['source'],
 ): string {
-  if (value === 'CHECKIN') return 'Mesai girisi'
+  if (value === 'CHECKIN') return 'Mesai girişi'
   if (value === 'CHECKOUT') return 'Mesai cikisi'
-  if (value === 'APP_OPEN') return 'Uygulama girisi'
+  if (value === 'APP_OPEN') return 'Uygulama girişi'
   if (value === 'APP_CLOSE') return 'Uygulama cikisi'
   if (value === 'DEMO_START') return 'Demo baslangici'
   if (value === 'DEMO_END') return 'Demo bitisi'
@@ -257,7 +257,7 @@ export function controlRoomRiskLabel(value: ControlRoomRiskStatus): string {
 }
 
 export function controlRoomLocationLabel(value: ControlRoomLocationState): string {
-  if (value === 'LIVE') return 'Canli'
+  if (value === 'LIVE') return 'Canlı'
   if (value === 'STALE') return 'Yakin'
   if (value === 'DORMANT') return 'Bayat'
   return 'Veri yok'
@@ -267,24 +267,24 @@ export function locationStatusLabel(value: LocationStatus | null | undefined): s
   if (value === 'VERIFIED' || value === 'VERIFIED_HOME') return 'Dogrulandi'
   if (value === 'INSIDE_GEOFENCE') return 'Geofence ici'
   if (value === 'OUTSIDE_GEOFENCE') return 'Geofence disi'
-  if (value === 'UNVERIFIED_LOCATION') return 'Supheli lokasyon'
-  if (value === 'LOW_ACCURACY') return 'Dusuk dogruluk'
+  if (value === 'UNVERIFIED_LOCATION') return 'Şüpheli lokasyon'
+  if (value === 'LOW_ACCURACY') return 'Düşük doğruluk'
   if (value === 'STALE_LOCATION') return 'Bayat konum'
-  if (value === 'SUSPICIOUS_JUMP') return 'Supheli sicrama'
-  if (value === 'MOCK_GPS_SUSPECTED') return 'Mock GPS supheli'
+  if (value === 'SUSPICIOUS_JUMP') return 'Şüpheli sicrama'
+  if (value === 'MOCK_GPS_SUSPECTED') return 'Mock GPS şüpheli'
   return 'Konum yok'
 }
 
 export function todayStatusLabel(value: ControlRoomEmployeeState['today_status']): string {
   if (value === 'IN_PROGRESS') return 'Aktif vardiya'
-  if (value === 'FINISHED') return 'Gun tamamladi'
-  return 'Giris bekleniyor'
+  if (value === 'FINISHED') return 'Gün tamamladi'
+  return 'Giriş bekleniyor'
 }
 
 export function dayStatusLabel(value: LocationMonitorDayRecord['status']): string {
   if (value === 'OK') return 'Tamamlandi'
   if (value === 'INCOMPLETE') return 'Eksik'
-  if (value === 'LEAVE') return 'Izin'
+  if (value === 'LEAVE') return 'İzin'
   return 'Bos'
 }
 
@@ -367,11 +367,11 @@ export function eventSeverity(
 export function eventSeverityLabel(value: 'critical' | 'watch' | 'info'): string {
   if (value === 'critical') return 'Kritik'
   if (value === 'watch') return 'Izlemeli'
-  return 'Canli'
+  return 'Canlı'
 }
 
 export function eventSignalLabel(event: ControlRoomRecentEvent): string {
-  const prefix = event.event_type === 'IN' ? 'Giris' : 'Cikis'
+  const prefix = event.event_type === 'IN' ? 'Giriş' : 'Çıkış'
   return `${prefix} / ${locationStatusLabel(event.location_status)}`
 }
 
@@ -386,24 +386,24 @@ export function eventWhyImportant(
     return 'Konum kaynaginda manipulasyon supheleri var.'
   }
   if (event.location_status === 'OUTSIDE_GEOFENCE') {
-    return 'Beklenen geofence disinda yeni bir sinyal olustu.'
+    return 'Beklenen geofence disinda yeni bir sinyal oluştu.'
   }
   if (employeeState?.active_measure?.label) {
-    return `${employeeState.active_measure.label} etkisi altinda yeni olay kaydi geldi.`
+    return `${employeeState.active_measure.label} etkisi altinda yeni olay kaydı geldi.`
   }
   if (employeeState?.attention_flags[0]?.label) {
-    return `${employeeState.attention_flags[0].label} sonrasi en guncel saha kaydi bu olay.`
+    return `${employeeState.attention_flags[0].label} sonrası en güncel saha kaydı bu olay.`
   }
   if (event.location_status === 'LOW_ACCURACY') {
-    return 'Konum kalitesi dusuk; karar vermeden once rota detayi kontrol edilmeli.'
+    return 'Konum kalitesi düşük; karar vermeden önce rota detayı kontrol edilmeli.'
   }
-  return 'Son saha sinyali operasyon akisinda guncel durumun ana gostergesi.'
+  return 'Son saha sinyali operasyon akisinda güncel durumun ana gostergesi.'
 }
 
 export function queueReason(state: ControlRoomEmployeeState): string {
   if (state.active_measure?.label) return state.active_measure.label
   if (state.attention_flags[0]?.label) return state.attention_flags[0].label
-  if (state.location_state === 'LIVE') return 'Canli saha hareketi'
+  if (state.location_state === 'LIVE') return 'Canlı saha hareketi'
   if (state.last_activity_utc) return `Son aktivite ${formatRelative(state.last_activity_utc)}`
   return state.shift_window_label ?? 'Plan bilgisi bekleniyor'
 }

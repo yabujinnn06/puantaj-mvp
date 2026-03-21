@@ -57,11 +57,11 @@ export function ControlRoomEventFeed({
       {!hideHeader ? (
         <header className="cr-feed-panel__header">
           <div>
-            <p className="cr-ops-kicker">Canli olay akisi</p>
+            <p className="cr-ops-kicker">Canlı olay akisi</p>
             <h3>Event feed</h3>
           </div>
           <span className="cr-feed-panel__count">
-            {visibleEvents.length === events.length ? events.length : `${visibleEvents.length} / ${events.length}`} kayit
+            {visibleEvents.length === events.length ? events.length : `${visibleEvents.length} / ${events.length}`} kayıt
           </span>
         </header>
       ) : null}
@@ -120,7 +120,7 @@ export function ControlRoomEventFeed({
             )
           })
         ) : (
-          <div className="cr-feed-empty">Secili kapsam icin yeni event yok.</div>
+          <div className="cr-feed-empty">Seçili kapsam için yeni event yok.</div>
         )}
       </div>
 
@@ -131,7 +131,7 @@ export function ControlRoomEventFeed({
             className="cr-feed-panel__more"
             onClick={() => setVisibleCount((current) => Math.min(events.length, current + incrementCount))}
           >
-            Daha fazla olay goster
+            Daha fazla olay göster
           </button>
         </div>
       ) : null}

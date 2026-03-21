@@ -1,6 +1,6 @@
 export function SuspiciousBadge({
   suspicious,
-  label = 'Supheli',
+  label = 'Şüpheli',
   tooltip,
 }: {
   suspicious: boolean

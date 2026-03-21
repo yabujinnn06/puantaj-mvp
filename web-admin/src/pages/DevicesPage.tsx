@@ -22,7 +22,7 @@ function formatDateTime(value: string | null | undefined): string {
 }
 
 function recoveryCodeStatusLabel(value: 'ACTIVE' | 'USED_OR_EXPIRED'): string {
-  return value === 'ACTIVE' ? 'Aktif' : 'Kullanildi/Suresi Doldu'
+  return value === 'ACTIVE' ? 'Aktif' : 'Kullanildi/Süresi Doldu'
 }
 
 export function DevicesPage() {
@@ -113,7 +113,7 @@ export function DevicesPage() {
       pushToast({
         variant: 'success',
         title: 'Cihaz kalici olarak silindi',
-        description: `Arsivli cihaz #${deletedDeviceId} sistemden kaldirildi.`,
+        description: `Arşivli cihaz #${deletedDeviceId} sistemden kaldirildi.`,
       })
       if (selectedDeviceDetail?.id === deletedDeviceId) {
         setSelectedDeviceDetail(null)
@@ -125,7 +125,7 @@ export function DevicesPage() {
       pushToast({
         variant: 'error',
         title: 'Cihaz silinemedi',
-        description: parseApiError(error, 'Kalici silme basarisiz.').message,
+        description: parseApiError(error, 'Kalici silme başarısız.').message,
       })
     },
   })
@@ -150,7 +150,7 @@ export function DevicesPage() {
     return <ErrorBlock message={parseApiError(employeesQuery.error, 'Çalışan listesi alınamadı.').message} />
   }
   if (regionsQuery.isError) {
-    return <ErrorBlock message={parseApiError(regionsQuery.error, 'Bolge listesi alinamadi.').message} />
+    return <ErrorBlock message={parseApiError(regionsQuery.error, 'Bölge listesi alınamadı.').message} />
   }
 
   return (
@@ -205,7 +205,7 @@ export function DevicesPage() {
             </select>
           </label>
           <label className="text-sm text-slate-700">
-            Bolge filtresi
+            Bölge filtresi
             <select
               value={regionFilterId}
               onChange={(event) => {
@@ -215,7 +215,7 @@ export function DevicesPage() {
               }}
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
             >
-              <option value="">Tum bolgeler</option>
+              <option value="">Tüm bolgeler</option>
               {regions.map((region) => (
                 <option key={region.id} value={region.id}>
                   {region.name}
@@ -344,7 +344,7 @@ export function DevicesPage() {
                                       <td className="py-2 text-[11px] text-slate-700">
                                         {device.recovery_ready ? (
                                           <span className="rounded-full bg-emerald-100 px-2 py-1 font-semibold text-emerald-700">
-                                            Hazir ({device.recovery_code_active_count})
+                                            Hazır ({device.recovery_code_active_count})
                                           </span>
                                         ) : (
                                           <span className="rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-700">
@@ -385,7 +385,7 @@ export function DevicesPage() {
                                               disabled={deleteDeviceMutation.isPending}
                                               onClick={() => {
                                                 const confirmed = window.confirm(
-                                                  `Cihaz #${device.id} kalici olarak silinsin mi? Bu islem bu cihaza bagli eski puantaj zincirini de kaldirabilir.`,
+                                                  `Cihaz #${device.id} kalici olarak silinsin mi? Bu işlem bu cihaza bağlı eski puantaj zincirini de kaldirabilir.`,
                                                 )
                                                 if (!confirmed) {
                                                   return
@@ -432,7 +432,7 @@ export function DevicesPage() {
 
       <Modal
         open={selectedDeviceDetail !== null}
-        title={selectedDeviceDetail ? `Cihaz #${selectedDeviceDetail.id} Recovery Detayi` : 'Recovery Detayi'}
+        title={selectedDeviceDetail ? `Cihaz #${selectedDeviceDetail.id} Recovery Detayı` : 'Recovery Detayı'}
         onClose={() => setSelectedDeviceDetail(null)}
       >
         {selectedDeviceDetail ? (
@@ -448,7 +448,7 @@ export function DevicesPage() {
               <div>
                 <p className="text-xs uppercase tracking-wide text-slate-500">Recovery Durumu</p>
                 <p className="mt-1 font-semibold text-slate-900">
-                  {selectedDeviceDetail.recovery_ready ? 'Hazir' : 'Kurulu Degil'}
+                  {selectedDeviceDetail.recovery_ready ? 'Hazır' : 'Kurulu Degil'}
                 </p>
               </div>
               <div>
@@ -456,11 +456,11 @@ export function DevicesPage() {
                 <p className="mt-1 font-semibold text-slate-900">{selectedDeviceDetail.recovery_code_active_count}</p>
               </div>
               <div>
-                <p className="text-xs uppercase tracking-wide text-slate-500">PIN Son Guncelleme</p>
+                <p className="text-xs uppercase tracking-wide text-slate-500">PIN Son Güncelleme</p>
                 <p className="mt-1 text-slate-800">{formatDateTime(selectedDeviceDetail.recovery_pin_updated_at)}</p>
               </div>
               <div>
-                <p className="text-xs uppercase tracking-wide text-slate-500">Kod Son Gecerlilik</p>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Kod Son Geçerlilik</p>
                 <p className="mt-1 text-slate-800">{formatDateTime(selectedDeviceDetail.recovery_expires_at)}</p>
               </div>
             </div>
@@ -496,7 +496,7 @@ export function DevicesPage() {
                 </div>
               </div>
             ) : (
-              <p className="text-xs text-slate-500">Bu cihaz icin kayitli recovery kodu bulunamadi.</p>
+              <p className="text-xs text-slate-500">Bu cihaz için kayıtlı recovery kodu bulunamadı.</p>
             )}
           </div>
         ) : null}

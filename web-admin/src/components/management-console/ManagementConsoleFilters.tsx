@@ -27,11 +27,11 @@ export function ManagementConsoleFilters({
       <div className="mc-panel__head mc-panel__head--tight">
         <div>
           <p className="mc-kicker">FILTRE MERKEZI</p>
-          <h3 className="mc-panel__title">Analiz kapsami ve gorunum davranisi</h3>
+          <h3 className="mc-panel__title">Analiz kapsami ve görünüm davranisi</h3>
         </div>
         <div className="mc-meta">
           <span>{activeFilterEntries.length} aktif filtre</span>
-          <span>Form oncelikli gorunum</span>
+          <span>Form öncelikli görünüm</span>
         </div>
       </div>
 
@@ -50,8 +50,8 @@ export function ManagementConsoleFilters({
               })
             }
             placeholder="Ad soyad veya #ID ile sec"
-            emptyLabel="Tum personeller"
-            helperText="Secili personel overview sorgusunu ID bazli daraltir."
+            emptyLabel="Tüm personeller"
+            helperText="Seçili personel overview sorgusunu ID bazlı daraltir."
             labelClassName="grid gap-[0.45rem] text-sm text-[var(--mc-text)]"
             labelTextClassName="text-[0.78rem] font-bold uppercase tracking-[0.08em] text-[var(--mc-text-soft)]"
             inputClassName="w-full rounded-[14px] border border-[var(--mc-border-strong)] bg-white px-3 py-2.5 text-sm text-[var(--mc-text)]"
@@ -76,12 +76,12 @@ export function ManagementConsoleFilters({
             />
           </label>
           <label className="mc-field">
-            <span>Bolge</span>
+            <span>Bölge</span>
             <select
               value={filterForm.region_id}
               onChange={(event) => onChange({ ...filterForm, region_id: event.target.value })}
             >
-              <option value="">Tum bolgeler</option>
+              <option value="">Tüm bolgeler</option>
               {regions.map((region) => (
                 <option key={region.id} value={region.id}>
                   {region.name}
@@ -95,7 +95,7 @@ export function ManagementConsoleFilters({
               value={filterForm.department_id}
               onChange={(event) => onChange({ ...filterForm, department_id: event.target.value })}
             >
-              <option value="">Tum departmanlar</option>
+              <option value="">Tüm departmanlar</option>
               {departments.map((department) => (
                 <option key={department.id} value={department.id}>
                   {department.name}
@@ -156,14 +156,14 @@ export function ManagementConsoleFilters({
                 })
               }
             >
-              <option value="">Tum seviyeler</option>
+              <option value="">Tüm seviyeler</option>
               <option value="NORMAL">Normal</option>
               <option value="WATCH">Izlemeli</option>
               <option value="CRITICAL">Kritik</option>
             </select>
           </label>
           <label className="mc-field">
-            <span>Siralama</span>
+            <span>Sıralama</span>
             <select
               value={filterForm.sort_by}
               onChange={(event) => onChange({ ...filterForm, sort_by: event.target.value as SortField })}
@@ -217,7 +217,7 @@ export function ManagementConsoleFilters({
         </label>
         <div className="mc-filter-footer__actions">
           <button type="button" className="mc-button mc-button--ghost" onClick={onReset}>
-            Sifirla
+            Sıfırla
           </button>
           <button type="button" className="mc-button mc-button--primary" onClick={onApply}>
             Uygula

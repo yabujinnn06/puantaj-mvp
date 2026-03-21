@@ -33,7 +33,7 @@ export function PermissionRoute({
 
   return (
     <div className="rounded-3xl border border-amber-200 bg-amber-50 px-6 py-6 text-sm text-amber-900 shadow-sm">
-      Bu sayfayi gormek icin gerekli admin yetkisi bulunamadi.
+      Bu sayfayı görmek için gerekli admin yetkisi bulunamadı.
     </div>
   )
 }

@@ -14,15 +14,15 @@ import { TableSearchInput } from '../components/TableSearchInput'
 import { useToast } from '../hooks/useToast'
 
 const regionSchema = z.object({
-  name: z.string().min(2, 'Bolge adi en az 2 karakter olmali.').max(255),
+  name: z.string().min(2, 'Bölge adi en az 2 karakter olmali.').max(255),
   is_active: z.boolean(),
 })
 
 function buildRegionErrorMessage(error: unknown): string {
   if (axios.isAxiosError(error) && error.response?.status === 409) {
-    return 'Bu bolge adi zaten mevcut. Farkli bir ad girin.'
+    return 'Bu bölge adi zaten mevcut. Farkli bir ad girin.'
   }
-  return parseApiError(error, 'Bolge islemi basarisiz.').message
+  return parseApiError(error, 'Bölge işlemi başarısız.').message
 }
 
 export function RegionsPage() {
@@ -51,7 +51,7 @@ export function RegionsPage() {
       setError(null)
       pushToast({
         variant: 'success',
-        title: 'Bolge olusturuldu',
+        title: 'Bölge oluşturuldu',
         description: `${region.name} basariyla eklendi.`,
       })
       void queryClient.invalidateQueries({ queryKey: ['regions'] })
@@ -59,7 +59,7 @@ export function RegionsPage() {
     onError: (mutationError) => {
       const message = buildRegionErrorMessage(mutationError)
       setError(message)
-      pushToast({ variant: 'error', title: 'Bolge olusturulamadi', description: message })
+      pushToast({ variant: 'error', title: 'Bölge oluşturulamadı', description: message })
     },
   })
 
@@ -78,15 +78,15 @@ export function RegionsPage() {
       setEditingIsActive(true)
       pushToast({
         variant: 'success',
-        title: 'Bolge guncellendi',
-        description: `${region.name} guncellendi.`,
+        title: 'Bölge güncellendi',
+        description: `${region.name} güncellendi.`,
       })
       void queryClient.invalidateQueries({ queryKey: ['regions'] })
     },
     onError: (mutationError) => {
       const message = buildRegionErrorMessage(mutationError)
       setError(message)
-      pushToast({ variant: 'error', title: 'Bolge guncellenemedi', description: message })
+      pushToast({ variant: 'error', title: 'Bölge güncellenemedi', description: message })
     },
   })
 
@@ -95,7 +95,7 @@ export function RegionsPage() {
     setError(null)
     const parsed = regionSchema.safeParse({ name, is_active: isActive })
     if (!parsed.success) {
-      const message = parsed.error.issues[0]?.message ?? 'Bolge formunu kontrol edin.'
+      const message = parsed.error.issues[0]?.message ?? 'Bölge formunu kontrol edin.'
       setError(message)
       return
     }
@@ -110,7 +110,7 @@ export function RegionsPage() {
     }
     const parsed = regionSchema.safeParse({ name: editingName, is_active: editingIsActive })
     if (!parsed.success) {
-      const message = parsed.error.issues[0]?.message ?? 'Bolge formunu kontrol edin.'
+      const message = parsed.error.issues[0]?.message ?? 'Bölge formunu kontrol edin.'
       setError(message)
       return
     }
@@ -129,14 +129,14 @@ export function RegionsPage() {
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Bolgeler"
-        description="Sube/sehir bazli yonetim icin bolge kayitlarini yonetin."
+        title="Bölgeler"
+        description="Şube/şehir bazlı yönetim için bölge kayitlarini yonetin."
       />
 
       <Panel>
         <form onSubmit={onSubmit} className="grid gap-3 md:grid-cols-4">
           <label className="text-sm text-slate-700 md:col-span-2">
-            Bolge adi
+            Bölge adi
             <input
               value={name}
               onChange={(event) => setName(event.target.value)}
@@ -158,7 +158,7 @@ export function RegionsPage() {
               disabled={createMutation.isPending}
               className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
             >
-              {createMutation.isPending ? 'Kaydediliyor...' : 'Bolge Ekle'}
+              {createMutation.isPending ? 'Kaydediliyor...' : 'Bölge Ekle'}
             </button>
           </div>
         </form>
@@ -169,7 +169,7 @@ export function RegionsPage() {
         <Panel>
           <form onSubmit={onEditSubmit} className="grid gap-3 md:grid-cols-4">
             <label className="text-sm text-slate-700 md:col-span-2">
-              Bolge adi
+              Bölge adi
               <input
                 value={editingName}
                 onChange={(event) => setEditingName(event.target.value)}
@@ -190,7 +190,7 @@ export function RegionsPage() {
                 disabled={updateMutation.isPending}
                 className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
               >
-                {updateMutation.isPending ? 'Guncelleniyor...' : 'Kaydet'}
+                {updateMutation.isPending ? 'Güncelleniyor...' : 'Kaydet'}
               </button>
               <button
                 type="button"
@@ -211,19 +211,19 @@ export function RegionsPage() {
       ) : null}
 
       {regionsQuery.isLoading ? <LoadingBlock /> : null}
-      {regionsQuery.isError ? <ErrorBlock message="Bolge listesi alinamadi." /> : null}
+      {regionsQuery.isError ? <ErrorBlock message="Bölge listesi alınamadı." /> : null}
 
       {!regionsQuery.isLoading && !regionsQuery.isError ? (
         <Panel>
           <div className="mb-4 grid gap-3 md:grid-cols-3 md:items-end">
-            <TableSearchInput value={searchTerm} onChange={setSearchTerm} placeholder="Bolge adina gore ara..." />
+            <TableSearchInput value={searchTerm} onChange={setSearchTerm} placeholder="Bölge adına göre ara..." />
             <label className="inline-flex items-center gap-2 text-sm text-slate-700">
               <input
                 type="checkbox"
                 checked={showInactive}
                 onChange={(event) => setShowInactive(event.target.checked)}
               />
-              Pasif bolgeleri goster
+              Pasif bolgeleri göster
             </label>
           </div>
 
@@ -231,10 +231,10 @@ export function RegionsPage() {
             <table className="min-w-full text-left text-sm">
               <thead className="text-xs uppercase text-slate-500">
                 <tr>
-                  <th className="py-2">Bolge ID</th>
-                  <th className="py-2">Bolge Adi</th>
+                  <th className="py-2">Bölge ID</th>
+                  <th className="py-2">Bölge Adi</th>
                   <th className="py-2">Durum</th>
-                  <th className="py-2">Islem</th>
+                  <th className="py-2">İşlem</th>
                 </tr>
               </thead>
               <tbody>
@@ -265,7 +265,7 @@ export function RegionsPage() {
             </table>
           </div>
           {rows.length === 0 ? (
-            <p className="mt-3 text-sm text-slate-500">Arama kriterine uygun bolge bulunamadi.</p>
+            <p className="mt-3 text-sm text-slate-500">Arama kriterine uygun bölge bulunamadı.</p>
           ) : null}
         </Panel>
       ) : null}

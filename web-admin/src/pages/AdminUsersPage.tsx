@@ -91,7 +91,7 @@ function PermissionEditor({
         <thead className="bg-slate-50 text-xs uppercase text-slate-500">
           <tr>
             <th className="px-3 py-2">Modul</th>
-            <th className="px-3 py-2">Goruntule</th>
+            <th className="px-3 py-2">Görüntüle</th>
             <th className="px-3 py-2">Duzenle</th>
           </tr>
         </thead>
@@ -229,19 +229,19 @@ export function AdminUsersPage() {
     onSuccess: (_row, variables) => {
       pushToast({
         variant: 'success',
-        title: variables.nextActive ? 'Claim aktif edildi' : 'Claim pasife alindi',
+        title: variables.nextActive ? 'Claim aktif edildi' : 'Claim pasife alındı',
         description: variables.nextActive
           ? 'Admin cihazi yeniden aktif edildi.'
-          : 'Admin cihazi manuel olarak pasife alindi.',
+          : 'Admin cihazi manuel olarak pasife alındı.',
       })
       void queryClient.invalidateQueries({ queryKey: ['admin-user-claim-detail', variables.adminUserId] })
       void queryClient.invalidateQueries({ queryKey: ['admin-users'] })
     },
     onError: (error) => {
-      const parsed = parseApiError(error, 'Claim durumu guncellenemedi.')
+      const parsed = parseApiError(error, 'Claim durumu güncellenemedi.')
       pushToast({
         variant: 'error',
-        title: 'Claim guncelleme hatasi',
+        title: 'Claim güncelleme hatası',
         description: parsed.message,
       })
     },
@@ -252,17 +252,17 @@ export function AdminUsersPage() {
     onSuccess: () => {
       pushToast({
         variant: 'success',
-        title: 'Admin kullanici olusturuldu',
+        title: 'Admin kullanıcı oluşturuldu',
         description: 'Yeni admin hesabi kaydedildi.',
       })
       setCreateForm(buildCreateFormState())
       void queryClient.invalidateQueries({ queryKey: ['admin-users'] })
     },
     onError: (error) => {
-      const parsed = parseApiError(error, 'Admin kullanici olusturulamadi.')
+      const parsed = parseApiError(error, 'Admin kullanıcı oluşturulamadı.')
       pushToast({
         variant: 'error',
-        title: 'Kayit basarisiz',
+        title: 'Kayıt başarısız',
         description: parsed.message,
       })
     },
@@ -274,18 +274,18 @@ export function AdminUsersPage() {
     onSuccess: () => {
       pushToast({
         variant: 'success',
-        title: 'Admin kullanici guncellendi',
-        description: 'Kullanici yetkileri guncellendi.',
+        title: 'Admin kullanıcı güncellendi',
+        description: 'Kullanıcı yetkileri güncellendi.',
       })
       setEditingUser(null)
       setEditPassword('')
       void queryClient.invalidateQueries({ queryKey: ['admin-users'] })
     },
     onError: (error) => {
-      const parsed = parseApiError(error, 'Admin kullanici guncellenemedi.')
+      const parsed = parseApiError(error, 'Admin kullanıcı güncellenemedi.')
       pushToast({
         variant: 'error',
-        title: 'Guncelleme basarisiz',
+        title: 'Güncelleme başarısız',
         description: parsed.message,
       })
     },
@@ -296,16 +296,16 @@ export function AdminUsersPage() {
     onSuccess: () => {
       pushToast({
         variant: 'success',
-        title: 'Admin kullanici silindi',
-        description: 'Kullanici kaydi sistemden kaldirildi.',
+        title: 'Admin kullanıcı silindi',
+        description: 'Kullanıcı kaydı sistemden kaldirildi.',
       })
       void queryClient.invalidateQueries({ queryKey: ['admin-users'] })
     },
     onError: (error) => {
-      const parsed = parseApiError(error, 'Admin kullanici silinemedi.')
+      const parsed = parseApiError(error, 'Admin kullanıcı silinemedi.')
       pushToast({
         variant: 'error',
-        title: 'Silme basarisiz',
+        title: 'Silme başarısız',
         description: parsed.message,
       })
     },
@@ -329,7 +329,7 @@ export function AdminUsersPage() {
       const parsed = parseApiError(error, 'MFA kurulumu baslatilamadi.')
       pushToast({
         variant: 'error',
-        title: 'MFA kurulum hatasi',
+        title: 'MFA kurulum hatası',
         description: parsed.message,
       })
     },
@@ -348,14 +348,14 @@ export function AdminUsersPage() {
       pushToast({
         variant: 'success',
         title: 'MFA aktif edildi',
-        description: 'Recovery kodlari olusturuldu.',
+        description: 'Recovery kodlari oluşturuldu.',
       })
     },
     onError: (error) => {
-      const parsed = parseApiError(error, 'MFA kodu dogrulanamadi.')
+      const parsed = parseApiError(error, 'MFA kodu doğrulanamadı.')
       pushToast({
         variant: 'error',
-        title: 'MFA onay hatasi',
+        title: 'MFA onay hatası',
         description: parsed.message,
       })
     },
@@ -379,7 +379,7 @@ export function AdminUsersPage() {
       const parsed = parseApiError(error, 'Recovery kodlari yenilenemedi.')
       pushToast({
         variant: 'error',
-        title: 'Yenileme hatasi',
+        title: 'Yenileme hatası',
         description: parsed.message,
       })
     },
@@ -399,15 +399,15 @@ export function AdminUsersPage() {
       void mfaStatusQuery.refetch()
       pushToast({
         variant: 'success',
-        title: 'MFA sifirlandi',
-        description: 'Kullanici tekrar MFA kurabilir.',
+        title: 'MFA sıfırlandı',
+        description: 'Kullanıcı tekrar MFA kurabilir.',
       })
     },
     onError: (error) => {
-      const parsed = parseApiError(error, 'MFA sifirlanamadi.')
+      const parsed = parseApiError(error, 'MFA sıfırlanamadı.')
       pushToast({
         variant: 'error',
-        title: 'Sifirlama hatasi',
+        title: 'Sifirlama hatası',
         description: parsed.message,
       })
     },
@@ -446,11 +446,11 @@ export function AdminUsersPage() {
   }
 
   if (usersQuery.isLoading) {
-    return <LoadingBlock label="Admin kullanicilar yukleniyor..." />
+    return <LoadingBlock label="Admin kullanicilar yükleniyor..." />
   }
 
   if (usersQuery.isError) {
-    return <ErrorBlock message="Admin kullanici listesi alinamadi." />
+    return <ErrorBlock message="Admin kullanıcı listesi alınamadı." />
   }
 
   const submitCreate = (event: React.FormEvent<HTMLFormElement>) => {
@@ -462,15 +462,15 @@ export function AdminUsersPage() {
       pushToast({
         variant: 'info',
         title: 'Yetki siniri',
-        description: 'Sadece super admin yeni admin kullanici olusturabilir.',
+        description: 'Sadece super admin yeni admin kullanıcı olusturabilir.',
       })
       return
     }
     if (createForm.password.length < 8) {
       pushToast({
         variant: 'error',
-        title: 'Kayit basarisiz',
-        description: 'Sifre alani en az 8 karakter olmali.',
+        title: 'Kayıt başarısız',
+        description: 'Şifre alani en az 8 karakter olmali.',
       })
       return
     }
@@ -530,8 +530,8 @@ export function AdminUsersPage() {
     if (editPassword.trim() && editPassword.trim().length < 8) {
       pushToast({
         variant: 'error',
-        title: 'Guncelleme basarisiz',
-        description: 'Yeni sifre en az 8 karakter olmali.',
+        title: 'Güncelleme başarısız',
+        description: 'Yeni şifre en az 8 karakter olmali.',
       })
       return
     }
@@ -562,12 +562,12 @@ export function AdminUsersPage() {
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Admin Kullanici ve Yetki Yonetimi"
+        title="Admin Kullanıcı ve Yetki Yönetimi"
         description="Belirli modullere erisebilen read-only veya tam yetkili admin hesaplari olusturun."
       />
 
       <Panel>
-        <h4 className="mb-3 text-base font-semibold text-slate-900">Yeni Admin Kullanici</h4>
+        <h4 className="mb-3 text-base font-semibold text-slate-900">Yeni Admin Kullanıcı</h4>
         <p className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
           Sistem super admin hesabi: <strong>admin</strong> (env). Bu hesap her zaman tam yetkilidir.
         </p>
@@ -579,7 +579,7 @@ export function AdminUsersPage() {
         <form onSubmit={submitCreate} className="space-y-4">
           <div className="grid gap-3 md:grid-cols-2">
             <label className="text-sm text-slate-700">
-              Kullanici Adi
+              Kullanıcı Adi
               <input
                 value={createForm.username}
                 onChange={(event) => setCreateForm((prev) => ({ ...prev, username: event.target.value }))}
@@ -599,7 +599,7 @@ export function AdminUsersPage() {
               />
             </label>
             <label className="text-sm text-slate-700 md:col-span-2">
-              Sifre
+              Şifre
               <input
                 type="password"
                 value={createForm.password}
@@ -641,7 +641,7 @@ export function AdminUsersPage() {
             />
           ) : (
             <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-              Super admin secili oldugu icin tum modullerde tam yetki verilecektir.
+              Super admin seçili oldugu için tüm modullerde tam yetki verilecektir.
             </p>
           )}
 
@@ -650,7 +650,7 @@ export function AdminUsersPage() {
             disabled={!canWrite || !isSuperAdmin || createMutation.isPending}
             className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
           >
-            {createMutation.isPending ? 'Kaydediliyor...' : 'Kullanici Olustur'}
+            {createMutation.isPending ? 'Kaydediliyor...' : 'Kullanıcı Oluştur'}
           </button>
         </form>
       </Panel>
@@ -662,13 +662,13 @@ export function AdminUsersPage() {
             <thead className="text-xs uppercase text-slate-500">
               <tr>
                 <th className="py-2">ID</th>
-                <th className="py-2">Kullanici</th>
+                <th className="py-2">Kullanıcı</th>
                 <th className="py-2">Ad Soyad</th>
                 <th className="py-2">Durum</th>
                 <th className="py-2">Rol</th>
-                <th className="py-2">Bagli Cihaz</th>
+                <th className="py-2">Bağlı Cihaz</th>
                 <th className="py-2">MFA</th>
-                <th className="py-2">Islem</th>
+                <th className="py-2">İşlem</th>
               </tr>
             </thead>
             <tbody>
@@ -705,7 +705,7 @@ export function AdminUsersPage() {
                             : 'bg-slate-100 text-slate-700'
                       }`}
                     >
-                      {user.mfa_enabled ? 'Aktif' : user.mfa_secret_configured ? 'Kurulum Bekliyor' : 'Kapali'}
+                      {user.mfa_enabled ? 'Aktif' : user.mfa_secret_configured ? 'Kurulum Bekliyor' : 'Kapalı'}
                     </span>
                   </td>
                   <td className="py-2">
@@ -757,7 +757,7 @@ export function AdminUsersPage() {
           </table>
         </div>
         {sortedUsers.length === 0 ? (
-          <p className="mt-3 text-sm text-slate-500">Kayitli admin kullanici bulunamadi.</p>
+          <p className="mt-3 text-sm text-slate-500">Kayıtlı admin kullanıcı bulunamadı.</p>
         ) : null}
       </Panel>
 
@@ -769,10 +769,10 @@ export function AdminUsersPage() {
         {detailUser ? (
           <div className="space-y-4">
             {detailQuery.isLoading ? (
-              <p className="text-sm text-slate-500">Detay yukleniyor...</p>
+              <p className="text-sm text-slate-500">Detay yükleniyor...</p>
             ) : null}
             {detailQuery.isError ? (
-              <ErrorBlock message="Admin claim detayi alinamadi." />
+              <ErrorBlock message="Admin claim detayı alınamadı." />
             ) : null}
             {detailQuery.data ? (
               <>
@@ -792,7 +792,7 @@ export function AdminUsersPage() {
                 </div>
 
                 <section>
-                  <h5 className="text-sm font-semibold text-slate-900">Bagli Cihaz / Claim Listesi</h5>
+                  <h5 className="text-sm font-semibold text-slate-900">Bağlı Cihaz / Claim Listesi</h5>
                   <div className="mt-2 max-h-60 overflow-auto rounded-lg border border-slate-200">
                     <table className="min-w-full text-left text-xs">
                       <thead className="sticky top-0 bg-slate-50 uppercase text-slate-500">
@@ -802,9 +802,9 @@ export function AdminUsersPage() {
                           <th className="px-2 py-2">Fingerprint</th>
                           <th className="px-2 py-2">Son Gorulme</th>
                           <th className="px-2 py-2">Hata</th>
-                          <th className="px-2 py-2">Tarayici</th>
+                          <th className="px-2 py-2">Tarayıcı</th>
                           <th className="px-2 py-2">Endpoint</th>
-                          <th className="px-2 py-2">Islem</th>
+                          <th className="px-2 py-2">İşlem</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -871,13 +871,13 @@ export function AdminUsersPage() {
                       </tbody>
                     </table>
                     {detailQuery.data.claims.length === 0 ? (
-                      <p className="px-2 py-2 text-sm text-slate-500">Bu kullanici icin claim kaydi yok.</p>
+                      <p className="px-2 py-2 text-sm text-slate-500">Bu kullanıcı için claim kaydı yok.</p>
                     ) : null}
                   </div>
                 </section>
 
                 <section>
-                  <h5 className="text-sm font-semibold text-slate-900">Olusturulan Claim Davetleri</h5>
+                  <h5 className="text-sm font-semibold text-slate-900">Oluşturulan Claim Davetleri</h5>
                   <div className="mt-2 max-h-40 overflow-auto rounded-lg border border-slate-200">
                     <table className="min-w-full text-left text-xs">
                       <thead className="sticky top-0 bg-slate-50 uppercase text-slate-500">
@@ -904,7 +904,7 @@ export function AdminUsersPage() {
                       </tbody>
                     </table>
                     {detailQuery.data.created_invites.length === 0 ? (
-                      <p className="px-2 py-2 text-sm text-slate-500">Kayit yok.</p>
+                      <p className="px-2 py-2 text-sm text-slate-500">Kayıt yok.</p>
                     ) : null}
                   </div>
                 </section>
@@ -917,7 +917,7 @@ export function AdminUsersPage() {
                         <tr>
                           <th className="px-2 py-2">ID</th>
                           <th className="px-2 py-2">Durum</th>
-                          <th className="px-2 py-2">Olusturan</th>
+                          <th className="px-2 py-2">Oluşturan</th>
                           <th className="px-2 py-2">Kullanilan Zaman</th>
                         </tr>
                       </thead>
@@ -933,7 +933,7 @@ export function AdminUsersPage() {
                       </tbody>
                     </table>
                     {detailQuery.data.used_invites.length === 0 ? (
-                      <p className="px-2 py-2 text-sm text-slate-500">Kayit yok.</p>
+                      <p className="px-2 py-2 text-sm text-slate-500">Kayıt yok.</p>
                     ) : null}
                   </div>
                 </section>
@@ -945,7 +945,7 @@ export function AdminUsersPage() {
 
       <Modal
         open={Boolean(editingUser)}
-        title="Admin Kullanici Duzenle"
+        title="Admin Kullanıcı Duzenle"
         onClose={() => {
           setEditingUser(null)
           setEditPassword('')
@@ -955,7 +955,7 @@ export function AdminUsersPage() {
           <form onSubmit={submitUpdate} className="space-y-4">
             <div className="grid gap-3 md:grid-cols-2">
               <label className="text-sm text-slate-700">
-                Kullanici Adi
+                Kullanıcı Adi
                 <input
                   value={editUsername}
                   onChange={(event) => setEditUsername(event.target.value)}
@@ -973,7 +973,7 @@ export function AdminUsersPage() {
                 />
               </label>
               <label className="text-sm text-slate-700 md:col-span-2">
-                Yeni Sifre (bos birakilirsa degismez)
+                Yeni Şifre (bos birakilirsa degismez)
                 <input
                   type="password"
                   value={editPassword}
@@ -1015,7 +1015,7 @@ export function AdminUsersPage() {
               />
             ) : (
               <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-                Super admin secili oldugu icin tum modullerde tam yetki verilecektir.
+                Super admin seçili oldugu için tüm modullerde tam yetki verilecektir.
               </p>
             )}
 
@@ -1035,7 +1035,7 @@ export function AdminUsersPage() {
                 disabled={!canWrite || !isSuperAdmin || updateMutation.isPending}
                 className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
               >
-                {updateMutation.isPending ? 'Kaydediliyor...' : 'Guncelle'}
+                {updateMutation.isPending ? 'Kaydediliyor...' : 'Güncelle'}
               </button>
             </div>
           </form>
@@ -1044,27 +1044,27 @@ export function AdminUsersPage() {
 
       <Modal
         open={Boolean(mfaUser)}
-        title={mfaUser ? `MFA Yonetimi: ${mfaUser.username}` : 'MFA Yonetimi'}
+        title={mfaUser ? `MFA Yönetimi: ${mfaUser.username}` : 'MFA Yönetimi'}
         onClose={closeMfaModal}
       >
         {mfaUser ? (
           <div className="space-y-4">
             {mfaStatusQuery.isLoading ? (
-              <p className="text-sm text-slate-500">MFA durumu yukleniyor...</p>
+              <p className="text-sm text-slate-500">MFA durumu yükleniyor...</p>
             ) : null}
             {mfaStatus ? (
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
                 <p>
                   Durum:{' '}
-                  <strong>{mfaStatus.mfa_enabled ? 'MFA aktif' : mfaStatus.has_secret ? 'Kurulum bekliyor' : 'Kapali'}</strong>
+                  <strong>{mfaStatus.mfa_enabled ? 'MFA aktif' : mfaStatus.has_secret ? 'Kurulum bekliyor' : 'Kapalı'}</strong>
                 </p>
                 <p>Aktif recovery kodu: {mfaStatus.recovery_code_active_count}</p>
                 <p>
-                  Son guncelleme:{' '}
+                  Son güncelleme:{' '}
                   {mfaStatus.updated_at ? new Date(mfaStatus.updated_at).toLocaleString('tr-TR') : '-'}
                 </p>
                 <p>
-                  Kod son gecerlilik:{' '}
+                  Kod son geçerlilik:{' '}
                   {mfaStatus.recovery_code_expires_at
                     ? new Date(mfaStatus.recovery_code_expires_at).toLocaleDateString('tr-TR')
                     : '-'}
@@ -1089,7 +1089,7 @@ export function AdminUsersPage() {
                 {mfaQrDataUrl ? (
                   <img src={mfaQrDataUrl} alt="MFA QR" className="h-44 w-44 rounded-lg border border-brand-200 bg-white p-2" />
                 ) : (
-                  <p className="text-xs text-slate-600">QR olusturulamadi. Asagidaki anahtari manuel girin.</p>
+                  <p className="text-xs text-slate-600">QR oluşturulamadı. Asagidaki anahtari manuel girin.</p>
                 )}
                 <p className="text-xs text-slate-700">Secret: <code>{mfaSetupDraft.secret_key}</code></p>
                 <p className="text-xs text-slate-600 break-all">{mfaSetupDraft.otpauth_uri}</p>
@@ -1151,7 +1151,7 @@ export function AdminUsersPage() {
                   type="button"
                   disabled={resetMfaMutation.isPending || !criticalActionPassword.trim()}
                   onClick={() => {
-                    const confirmed = window.confirm(`${mfaUser.username} icin MFA sifirlansin mi?`)
+                    const confirmed = window.confirm(`${mfaUser.username} için MFA sıfırlansın mı?`)
                     if (!confirmed || !criticalActionPassword.trim()) {
                       return
                     }
@@ -1162,7 +1162,7 @@ export function AdminUsersPage() {
                   }}
                   className="rounded-lg border border-rose-300 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60"
                 >
-                  {resetMfaMutation.isPending ? 'Sifirlaniyor...' : 'MFA Sifirla'}
+                  {resetMfaMutation.isPending ? 'Sifirlaniyor...' : 'MFA Sıfırla'}
                 </button>
               </div>
             </div>
@@ -1171,7 +1171,7 @@ export function AdminUsersPage() {
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
                 <p className="font-semibold">Recovery kodlari (tek seferlik gosterim)</p>
                 <p className="mt-1 text-xs">
-                  Gecerlilik:{' '}
+                  Geçerlilik:{' '}
                   {latestRecoveryExpiresAt ? new Date(latestRecoveryExpiresAt).toLocaleDateString('tr-TR') : '-'}
                 </p>
                 <div className="mt-2 grid grid-cols-2 gap-2 text-xs">

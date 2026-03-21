@@ -38,21 +38,21 @@ type RuleSourceOverride = 'AUTO' | 'SHIFT' | 'WEEKLY' | 'WORK_RULE'
 
 const statusLabels: Record<ManualDayStatus, string> = {
   NORMAL: 'Normal',
-  IZINLI: 'Izinli',
+  IZINLI: 'İzinli',
   RESMI_TATIL: 'Resmi Tatil',
   CALISMADI: 'Calismadi',
 }
 
 const ruleSourceLabels: Record<'SHIFT' | 'WEEKLY' | 'WORK_RULE', string> = {
   SHIFT: 'Vardiya',
-  WEEKLY: 'Haftalik Kural',
+  WEEKLY: 'Haftalık Kural',
   WORK_RULE: 'Temel Kural',
 }
 
 const ruleSourceOverrideLabels: Record<RuleSourceOverride, string> = {
-  AUTO: 'Otomatik (Oncelik: Vardiya > Haftalik > Temel)',
+  AUTO: 'Otomatik (Oncelik: Vardiya > Haftalık > Temel)',
   SHIFT: 'Vardiya',
-  WEEKLY: 'Haftalik Kural',
+  WEEKLY: 'Haftalık Kural',
   WORK_RULE: 'Temel Kural',
 }
 
@@ -77,7 +77,7 @@ function buildSuspicionTooltip(reasons: string[]): string | undefined {
     const meta = getFlagMeta(code)
     return `${index + 1}. ${meta.label}: ${meta.description}`
   })
-  return `Supheli nedenleri:\n${lines.join('\n')}`
+  return `Şüpheli nedenleri:\n${lines.join('\n')}`
 }
 
 function isoToHHMM(value: string | null): string {
@@ -274,8 +274,8 @@ export function EmployeeMonthlyReportPage() {
     onSuccess: () => {
       pushToast({
         variant: 'success',
-        title: 'Manuel duzeltme kaydedildi',
-        description: 'Gunluk puantaj kaydi guncellendi.',
+        title: 'Manuel düzeltme kaydedildi',
+        description: 'Günlük puantaj kaydı güncellendi.',
       })
       setManualModalOpen(false)
       setManualFormWarning(null)
@@ -286,8 +286,8 @@ export function EmployeeMonthlyReportPage() {
     onError: (error) => {
       pushToast({
         variant: 'error',
-        title: 'Duzeltme kaydedilemedi',
-        description: parseApiError(error, 'Islem basarisiz.').message,
+        title: 'Düzeltme kaydedilemedi',
+        description: parseApiError(error, 'İşlem başarısız.').message,
       })
     },
   })
@@ -297,8 +297,8 @@ export function EmployeeMonthlyReportPage() {
     onSuccess: () => {
       pushToast({
         variant: 'success',
-        title: 'Manuel duzeltme kaldirildi',
-        description: 'Secili gun icin manuel override silindi.',
+        title: 'Manuel düzeltme kaldirildi',
+        description: 'Seçili gün için manuel override silindi.',
       })
       setManualModalOpen(false)
       setManualFormWarning(null)
@@ -308,8 +308,8 @@ export function EmployeeMonthlyReportPage() {
     onError: (error) => {
       pushToast({
         variant: 'error',
-        title: 'Silme islemi basarisiz',
-        description: parseApiError(error, 'Islem basarisiz.').message,
+        title: 'Silme işlemi başarısız',
+        description: parseApiError(error, 'İşlem başarısız.').message,
       })
     },
   })
@@ -409,10 +409,10 @@ export function EmployeeMonthlyReportPage() {
 
   const activeFilterLabels = useMemo(() => {
     const labels: string[] = []
-    if (appliedFilters.employeeId) labels.push(`Calisan: ${appliedFilters.employeeId}`)
+    if (appliedFilters.employeeId) labels.push(`Çalışan: ${appliedFilters.employeeId}`)
     labels.push(`Yil: ${appliedFilters.year}`)
     labels.push(`Ay: ${appliedFilters.month}`)
-    if (showSuspiciousOnly) labels.push('Sadece supheli gunler')
+    if (showSuspiciousOnly) labels.push('Sadece şüpheli günler')
     if (selectedConflictFlag) labels.push(`Cakisma: ${getFlagMeta(selectedConflictFlag).label}`)
     return labels
   }, [appliedFilters, selectedConflictFlag, showSuspiciousOnly])
@@ -429,8 +429,8 @@ export function EmployeeMonthlyReportPage() {
     if (!reportEnabled) {
       pushToast({
         variant: 'error',
-        title: 'Filtre hatasi',
-        description: 'Excel indirmek icin calisan, yil ve ay secin.',
+        title: 'Filtre hatası',
+        description: 'Excel indirmek için çalışan, yil ve ay seçin.',
       })
       return
     }
@@ -454,7 +454,7 @@ export function EmployeeMonthlyReportPage() {
       pushToast({
         variant: 'error',
         title: 'Excel indirilemedi',
-        description: parseApiError(error, 'Dosya olusturulamadi.').message,
+        description: parseApiError(error, 'Dosya oluşturulamadı.').message,
       })
     } finally {
       setIsDownloading(false)
@@ -493,7 +493,7 @@ export function EmployeeMonthlyReportPage() {
       pushToast({
         variant: 'error',
         title: 'Rapor verisi yok',
-        description: 'Once calisan, yil ve ay secip raporu yukleyin.',
+        description: 'Once çalışan, yil ve ay seçip raporu yükleyin.',
       })
       return
     }
@@ -504,22 +504,22 @@ export function EmployeeMonthlyReportPage() {
     setManualFormWarning(null)
 
     if (!editingDay) {
-      setManualFormWarning('Duzeltme icin tarih secmelisiniz.')
+      setManualFormWarning('Düzeltme için tarih seçmelisiniz.')
       return false
     }
 
     if (editStatus === 'NORMAL') {
       if (!editInTime && !editOutTime) {
-        setManualFormWarning('Normal gun icin en az bir saat bilgisi girin.')
+        setManualFormWarning('Normal gün için en az bir saat bilgisi girin.')
         return false
       }
       if (editInTime && editOutTime && editOutTime < editInTime) {
-        setManualFormWarning('Cikis saati giris saatinden kucuk olamaz.')
+        setManualFormWarning('Çıkış saati giriş saatinden kucuk olamaz.')
         return false
       }
     }
     if (editRuleSource === 'SHIFT' && !editRuleShiftId) {
-      setManualFormWarning('Vardiya kurali icin bir vardiya secmelisiniz.')
+      setManualFormWarning('Vardiya kurali için bir vardiya seçmelisiniz.')
       return false
     }
     return true
@@ -547,7 +547,7 @@ export function EmployeeMonthlyReportPage() {
   }
 
   if (employeesQuery.isError) {
-    return <ErrorBlock message="Calisan listesi alinamadi." />
+    return <ErrorBlock message="Çalışan listesi alınamadı." />
   }
 
   const employees = employeesQuery.data ?? []
@@ -555,8 +555,8 @@ export function EmployeeMonthlyReportPage() {
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Aylik Calisan Puantaj Raporu"
-        description="Gunluk giris/cikis ve fazla mesai bilgilerini inceleyin, HR icin manuel duzeltme yapin."
+        title="Aylık Çalışan Puantaj Raporu"
+        description="Günlük giriş/çıkış ve fazla mesai bilgilerini inceleyin, HR için manuel düzeltme yapın."
         action={
           <div className="flex gap-2">
             <button
@@ -565,7 +565,7 @@ export function EmployeeMonthlyReportPage() {
               disabled={!canWriteManualOverrides || !reportEnabled}
               className="btn-secondary rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
             >
-              Manuel Duzeltme
+              Manuel Düzeltme
             </button>
             <button
               type="button"
@@ -576,7 +576,7 @@ export function EmployeeMonthlyReportPage() {
               {isDownloading ? (
                 <>
                   <span className="inline-spinner inline-spinner-dark" aria-hidden="true" />
-                  Hazirlaniyor...
+                  Hazırlanıyor...
                 </>
               ) : (
                 'Excel Indir'
@@ -596,14 +596,14 @@ export function EmployeeMonthlyReportPage() {
         <h4 className="text-base font-semibold text-slate-900">Filtreler</h4>
         <div className="mt-3 grid gap-3 md:grid-cols-4">
           <EmployeeAutocompleteField
-            label="Calisan"
+            label="Çalışan"
             employees={employees}
             value={draftFilters.employeeId}
             onChange={(employeeId) =>
               setDraftFilters((prev) => ({ ...prev, employeeId }))
             }
-            emptyLabel="Seciniz"
-            helperText="Calisan adini veya ID bilgisini yazabilirsiniz."
+            emptyLabel="Seçiniz"
+            helperText="Çalışan adini veya ID bilgisini yazabilirsiniz."
             className="md:col-span-2"
           />
 
@@ -639,7 +639,7 @@ export function EmployeeMonthlyReportPage() {
               checked={showSuspiciousOnly}
               onChange={(event) => setShowSuspiciousOnly(event.target.checked)}
             />
-            Sadece supheli gunleri goster
+            Sadece şüpheli günleri göster
           </label>
         </div>
 
@@ -672,10 +672,10 @@ export function EmployeeMonthlyReportPage() {
         </div>
       </Panel>
 
-      {!reportEnabled ? <ErrorBlock message="Rapor icin calisan, yil ve ay secmelisiniz." /> : null}
+      {!reportEnabled ? <ErrorBlock message="Rapor için çalışan, yil ve ay seçmelisiniz." /> : null}
       {reportQuery.isLoading ? <LoadingBlock /> : null}
       {reportQuery.isError ? (
-        <ErrorBlock message={parseApiError(reportQuery.error, 'Aylik rapor alinamadi.').message} />
+        <ErrorBlock message={parseApiError(reportQuery.error, 'Aylık rapor alınamadı.').message} />
       ) : null}
 
       {reportQuery.data ? (
@@ -760,7 +760,7 @@ export function EmployeeMonthlyReportPage() {
                 <p className="text-lg font-semibold">
                   <MinuteDisplay minutes={reportQuery.data.totals.early_arrival_minutes} />
                 </p>
-                <p className="text-xs text-slate-500">{earlyArrivalDayCount} gun</p>
+                <p className="text-xs text-slate-500">{earlyArrivalDayCount} gün</p>
               </div>
             </div>
           </Panel>
@@ -775,19 +775,19 @@ export function EmployeeMonthlyReportPage() {
                 </p>
               </div>
               <div className="rounded-lg border border-slate-200 p-3">
-                <p className="text-xs text-slate-500">Yillik Fazla Mesai Kullanim</p>
+                <p className="text-xs text-slate-500">Yıllık Fazla Mesai Kullanim</p>
                 <p className="text-lg font-semibold">
                   <MinuteDisplay minutes={reportQuery.data.annual_overtime_used_minutes} />
                 </p>
               </div>
               <div className="rounded-lg border border-slate-200 p-3">
-                <p className="text-xs text-slate-500">Yillik Kalan Fazla Mesai</p>
+                <p className="text-xs text-slate-500">Yıllık Kalan Fazla Mesai</p>
                 <p className="text-lg font-semibold">
                   <MinuteDisplay minutes={reportQuery.data.annual_overtime_remaining_minutes} />
                 </p>
               </div>
               <div className="rounded-lg border border-slate-200 p-3">
-                <p className="text-xs text-slate-500">Yillik Limit Durumu</p>
+                <p className="text-xs text-slate-500">Yıllık Limit Durumu</p>
                 <p
                   className={`text-sm font-semibold ${
                     reportQuery.data.annual_overtime_cap_exceeded ? 'text-rose-700' : 'text-emerald-700'
@@ -816,7 +816,7 @@ export function EmployeeMonthlyReportPage() {
           <Panel>
             <h4 className="text-base font-semibold text-slate-900">Cakisma Analizi</h4>
             <p className="mt-1 text-xs text-slate-500">
-              Vardiya, haftalik kural ve event siralamasi arasinda tutarsiz gorunen gunlerin ozeti.
+              Vardiya, haftalık kural ve event sıralaması arasında tutarsız görünen günlerin özeti.
             </p>
             {selectedConflictFlag ? (
               <button
@@ -853,7 +853,7 @@ export function EmployeeMonthlyReportPage() {
 
           {shownDays.length === 0 ? (
             <Panel>
-              <p className="text-sm text-slate-600">Secilen filtreye uygun gunluk kayit bulunamadi.</p>
+              <p className="text-sm text-slate-600">Seçilen filtreye uygun günlük kayıt bulunamadı.</p>
             </Panel>
           ) : (
             <Panel>
@@ -872,8 +872,8 @@ export function EmployeeMonthlyReportPage() {
                       <th className="py-2">Tarih</th>
                       <th className="py-2">Gün</th>
                       <th className="py-2">Durum</th>
-                      <th className="py-2">Giris</th>
-                      <th className="py-2">Cikis</th>
+                      <th className="py-2">Giriş</th>
+                      <th className="py-2">Çıkış</th>
                       <th className="py-2">Calisma</th>
                       <th className="py-2">Erken Gelis</th>
                       <th className="py-2">Plan Ustu</th>
@@ -882,8 +882,8 @@ export function EmployeeMonthlyReportPage() {
                       <th className="py-2">Eksik Sure</th>
                       <th className="py-2">Kural Kaynagi</th>
                       <th className="py-2">Vardiya</th>
-                      <th className="py-2">Izin</th>
-                      <th className="py-2">Supheli Neden</th>
+                      <th className="py-2">İzin</th>
+                      <th className="py-2">Şüpheli Neden</th>
                       <th className="py-2">Aksiyon</th>
                     </tr>
                   </thead>
@@ -953,7 +953,7 @@ export function EmployeeMonthlyReportPage() {
                           <td className="py-2">
                             <span
                               className="inline-flex rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700"
-                              title={`Oncelik: Vardiya > Haftalik > Temel | Plan: ${day.applied_planned_minutes} dk | Mola: ${day.applied_break_minutes} dk`}
+                              title={`Oncelik: Vardiya > Haftalık > Temel | Plan: ${day.applied_planned_minutes} dk | Mola: ${day.applied_break_minutes} dk`}
                             >
                               {ruleSourceLabels[day.rule_source]}
                             </span>
@@ -989,7 +989,7 @@ export function EmployeeMonthlyReportPage() {
 
       <Modal
         open={isManualModalOpen}
-        title={editingDay ? `${editingDay} - Manuel Duzeltme` : 'Manuel Duzeltme'}
+        title={editingDay ? `${editingDay} - Manuel Düzeltme` : 'Manuel Düzeltme'}
         onClose={() => setManualModalOpen(false)}
         placement="right"
         maxWidthClass="max-w-2xl"
@@ -997,7 +997,7 @@ export function EmployeeMonthlyReportPage() {
         <form onSubmit={onSaveManual} className="space-y-3">
           {!canWriteManualOverrides ? (
             <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-              Manuel duzeltme verisini goruntuleyebilirsiniz, ancak kaydetme icin yazma yetkisi gerekir.
+              Manuel düzeltme verisini görüntüleyebilirsiniz, ancak kaydetme için yazma yetkisi gerekir.
             </p>
           ) : null}
 
@@ -1013,7 +1013,7 @@ export function EmployeeMonthlyReportPage() {
           </label>
 
           <label className="text-sm text-slate-700">
-            Gun Durumu
+            Gün Durumu
             <select
               value={editStatus}
               onChange={(event) => setEditStatus(event.target.value as ManualDayStatus)}
@@ -1021,7 +1021,7 @@ export function EmployeeMonthlyReportPage() {
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
             >
               <option value="NORMAL">Normal</option>
-              <option value="IZINLI">Izinli</option>
+              <option value="IZINLI">İzinli</option>
               <option value="RESMI_TATIL">Resmi Tatil</option>
               <option value="CALISMADI">Calismadi</option>
             </select>
@@ -1052,7 +1052,7 @@ export function EmployeeMonthlyReportPage() {
 
           {canWriteManualOverrides && !hasPermission('schedule') ? (
             <p className="text-xs text-slate-500">
-              Vardiya bazli duzeltme icin schedule yetkisi gerekir; bu nedenle vardiya secimi gizlendi.
+              Vardiya bazlı düzeltme için schedule yetkisi gerekir; bu nedenle vardiya seçimi gizlendi.
             </p>
           ) : null}
 
@@ -1065,7 +1065,7 @@ export function EmployeeMonthlyReportPage() {
                 disabled={!canWriteManualOverrides || !canUseManualShiftRules}
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
               >
-                <option value="">Vardiya seciniz</option>
+                <option value="">Vardiya seçiniz</option>
                 {(shiftsQuery.data ?? []).map((shift) => (
                   <option key={shift.id} value={shift.id}>
                     {shift.name} ({shift.start_time_local} - {shift.end_time_local})
@@ -1077,7 +1077,7 @@ export function EmployeeMonthlyReportPage() {
 
           <div className="grid gap-3 md:grid-cols-2">
             <label className="text-sm text-slate-700">
-              Giris Saati
+              Giriş Saati
               <input
                 type="time"
                 value={editInTime}
@@ -1087,7 +1087,7 @@ export function EmployeeMonthlyReportPage() {
               />
             </label>
             <label className="text-sm text-slate-700">
-              Cikis Saati
+              Çıkış Saati
               <input
                 type="time"
                 value={editOutTime}
@@ -1100,11 +1100,11 @@ export function EmployeeMonthlyReportPage() {
 
           {editStatus === 'NORMAL' ? (
             <p className="text-xs text-slate-500">
-              Uyari: Cikis saati giris saatinden kucuk olamaz.
+              Uyari: Çıkış saati giriş saatinden kucuk olamaz.
             </p>
           ) : (
             <p className="text-xs text-slate-500">
-              Bu secim gunu calisilmadi olarak isaretler; giris/cikis saatleri devre disi kalir.
+              Bu secim günü calisilmadi olarak isaretler; giriş/çıkış saatleri devre disi kalir.
             </p>
           )}
 
@@ -1154,7 +1154,7 @@ export function EmployeeMonthlyReportPage() {
                     Siliniyor...
                   </>
                 ) : (
-                  'Manuel Kaydi Sil'
+                  'Manuel Kaydı Sil'
                 )}
               </button>
             ) : null}

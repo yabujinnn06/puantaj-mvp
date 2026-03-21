@@ -9,7 +9,7 @@ export function ControlRoomQuickFilters({
   onToggle: (value: ControlRoomQuickFilter) => void
 }) {
   return (
-    <div className="cr-ops-quick-filters" aria-label="Hizli filtreler">
+    <div className="cr-ops-quick-filters" aria-label="Hızlı filtreler">
       {QUICK_FILTER_OPTIONS.map((filter) => {
         const active = activeFilters.includes(filter.key)
         return (

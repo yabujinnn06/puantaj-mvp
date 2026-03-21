@@ -33,10 +33,10 @@ export function formatRelative(value: string | null | undefined): string {
   if (!Number.isFinite(diffMs)) return '-'
   const minutes = Math.max(0, Math.round(diffMs / 60000))
   if (minutes < 1) return 'Simdi'
-  if (minutes < 60) return `${minutes} dk once`
+  if (minutes < 60) return `${minutes} dk önce`
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours} sa once`
-  return `${Math.floor(hours / 24)} gun once`
+  if (hours < 24) return `${hours} sa önce`
+  return `${Math.floor(hours / 24)} gün önce`
 }
 
 export function formatClockMinutes(value: number | null | undefined): string {
@@ -53,24 +53,24 @@ export function riskStatusLabel(value: ControlRoomRiskStatus): string {
 
 export function todayStatusLabel(value: ControlRoomEmployeeState['today_status']): string {
   if (value === 'IN_PROGRESS') return 'Aktif vardiya'
-  if (value === 'FINISHED') return 'Gun kapandi'
-  return 'Giris yok'
+  if (value === 'FINISHED') return 'Gün kapandi'
+  return 'Giriş yok'
 }
 
 export function locationStatusLabel(value: LocationStatus): string {
   if (value === 'VERIFIED_HOME' || value === 'VERIFIED') return 'Dogrulandi'
   if (value === 'UNVERIFIED_LOCATION') return 'Sapma'
-  if (value === 'LOW_ACCURACY') return 'Dusuk dogruluk'
+  if (value === 'LOW_ACCURACY') return 'Düşük doğruluk'
   if (value === 'STALE_LOCATION') return 'Bayat konum'
   if (value === 'OUTSIDE_GEOFENCE') return 'Geofence disi'
   if (value === 'INSIDE_GEOFENCE') return 'Geofence ici'
-  if (value === 'SUSPICIOUS_JUMP') return 'Supheli sicrama'
-  if (value === 'MOCK_GPS_SUSPECTED') return 'Mock GPS supheli'
+  if (value === 'SUSPICIOUS_JUMP') return 'Şüpheli sicrama'
+  if (value === 'MOCK_GPS_SUSPECTED') return 'Mock GPS şüpheli'
   return 'Konum yok'
 }
 
 export function locationStateLabel(value: ControlRoomEmployeeState['location_state']): string {
-  if (value === 'LIVE') return 'Canli'
+  if (value === 'LIVE') return 'Canlı'
   if (value === 'STALE') return 'Yakin'
   if (value === 'DORMANT') return 'Eski'
   return 'Veri yok'
@@ -100,7 +100,7 @@ export function sortIcon(active: boolean, dir: 'asc' | 'desc'): string {
 }
 
 export function eventTypeLabel(value: AttendanceEvent['type']): string {
-  return value === 'IN' ? 'Giris' : 'Cikis'
+  return value === 'IN' ? 'Giriş' : 'Çıkış'
 }
 
 export function eventSourceLabel(value: AttendanceEvent['source']): string {
@@ -108,8 +108,8 @@ export function eventSourceLabel(value: AttendanceEvent['source']): string {
 }
 
 export function notificationAudienceLabel(value: NotificationAudience | null | undefined): string {
-  if (value === 'admin') return 'Yonetim'
-  if (value === 'employee') return 'Calisan'
+  if (value === 'admin') return 'Yönetim'
+  if (value === 'employee') return 'Çalışan'
   return 'Belirtilmedi'
 }
 

@@ -55,9 +55,9 @@ function markerStyle(
 }
 
 function pointSourceLabel(value: LocationMonitorMapPoint['source']): string {
-  if (value === 'CHECKIN') return 'Mesai girisi'
+  if (value === 'CHECKIN') return 'Mesai girişi'
   if (value === 'CHECKOUT') return 'Mesai cikisi'
-  if (value === 'APP_OPEN') return 'Uygulama girisi'
+  if (value === 'APP_OPEN') return 'Uygulama girişi'
   if (value === 'APP_CLOSE') return 'Uygulama cikisi'
   if (value === 'DEMO_START') return 'Demo baslangici'
   if (value === 'DEMO_END') return 'Demo bitisi'
@@ -77,7 +77,7 @@ function pointPopup(point: LocationMonitorMapPoint): string {
     `<div><strong>Tip:</strong> ${pointSourceLabel(point.source)}</div>`,
     `<div><strong>Zaman:</strong> ${timestamp}</div>`,
     `<div><strong>Konum:</strong> ${point.lat.toFixed(6)}, ${point.lon.toFixed(6)}</div>`,
-    `<div><strong>Dogruluk:</strong> ${accuracy}</div>`,
+    `<div><strong>Doğruluk:</strong> ${accuracy}</div>`,
     `<div><strong>Trust:</strong> ${trust}</div>`,
     `<div><strong>Geofence:</strong> ${geofence}</div>`,
     `<div><strong>Cihaz:</strong> ${point.device_id == null ? '-' : `#${point.device_id}`}</div>`,

@@ -354,9 +354,9 @@ function pointColor(point: Pick<LocationMonitorMapPoint, 'source'>): string {
 }
 
 function pointSourceLabel(source: LocationMonitorMapPoint['source']): string {
-  if (source === 'CHECKIN') return 'Mesai girisi'
+  if (source === 'CHECKIN') return 'Mesai girişi'
   if (source === 'CHECKOUT') return 'Mesai cikisi'
-  if (source === 'APP_OPEN') return 'Uygulama girisi'
+  if (source === 'APP_OPEN') return 'Uygulama girişi'
   if (source === 'APP_CLOSE') return 'Uygulama cikisi'
   if (source === 'DEMO_START') return 'Demo baslangici'
   if (source === 'DEMO_END') return 'Demo bitisi'
@@ -940,7 +940,7 @@ function popupHtml(feature: MapGeoJSONFeature): string {
     `<div><strong>Zaman:</strong> ${timestamp}</div>`,
     `<div><strong>Onceki gecis:</strong> ${prevGapLabel} / ${prevDistanceLabel}</div>`,
     `<div><strong>Toplam iz:</strong> ${cumulativeDistanceLabel}</div>`,
-    `<div><strong>Dogruluk:</strong> ${accuracy}</div>`,
+    `<div><strong>Doğruluk:</strong> ${accuracy}</div>`,
     `<div><strong>Durum:</strong> ${locationStatus}</div>`,
     `<div><strong>Cihaz:</strong> ${deviceId}</div>`,
     `<div><strong>IP:</strong> ${ip}</div>`,
@@ -957,7 +957,7 @@ function popupHtmlForPoint(point: LocationMonitorMapPoint, metrics?: PointMetric
     `<div><strong>Zaman:</strong> ${metrics?.timestampLabel ?? formatLocalDateTime(point.ts_utc)}</div>`,
     `<div><strong>Onceki gecis:</strong> ${metrics?.sincePreviousGapLabel ?? '-'} / ${metrics?.sincePreviousDistanceLabel ?? '-'}</div>`,
     `<div><strong>Toplam iz:</strong> ${metrics?.cumulativeDistanceLabel ?? '-'}</div>`,
-    `<div><strong>Dogruluk:</strong> ${point.accuracy_m == null ? '-' : `${Math.round(point.accuracy_m)} m`}</div>`,
+    `<div><strong>Doğruluk:</strong> ${point.accuracy_m == null ? '-' : `${Math.round(point.accuracy_m)} m`}</div>`,
     `<div><strong>Durum:</strong> ${point.location_status ?? '-'}</div>`,
     `<div><strong>Cihaz:</strong> ${point.device_id == null ? '-' : `#${point.device_id}`}</div>`,
     `<div><strong>IP:</strong> ${point.ip ?? '-'}</div>`,
@@ -1056,7 +1056,7 @@ export function LocationMonitor3DView({
           ? event.error.message.trim()
           : null
       if (message?.includes('404') || message?.includes('style')) {
-        setLoadError('3D harita katmani yuklenemedi. Sayfayi yenileyip tekrar deneyin.')
+        setLoadError('3D harita katmani yüklenemedi. Sayfayı yenileyip tekrar deneyin.')
       }
     })
 
@@ -1118,7 +1118,7 @@ export function LocationMonitor3DView({
       <div
         className={`flex items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 text-sm text-slate-500 ${className || 'h-[26rem]'}`}
       >
-        Bu tarayicida WebGL tabanli 3D harita desteklenmiyor.
+        Bu tarayıcıda WebGL tabanlı 3D harita desteklenmiyor.
       </div>
     )
   }

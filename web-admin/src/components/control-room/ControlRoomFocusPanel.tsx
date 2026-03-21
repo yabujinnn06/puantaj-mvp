@@ -72,7 +72,7 @@ function Pill({
 function buildEventSummary(event: LocationMonitorTimelineEvent): string {
   const parts = [pointSourceLabel(event.source)]
   if (event.accuracy_m != null) {
-    parts.push(`Dogruluk ${Math.round(event.accuracy_m)} m`)
+    parts.push(`Doğruluk ${Math.round(event.accuracy_m)} m`)
   }
   if (event.provider) {
     parts.push(event.provider)
@@ -125,7 +125,7 @@ function TimelineEventCard({
           Haritada odakla
         </button>
         <button type="button" onClick={onToggleExpanded}>
-          {expanded ? 'Detayi gizle' : 'Detayi goster'}
+          {expanded ? 'Detayı gizle' : 'Detayı göster'}
         </button>
       </div>
 
@@ -182,10 +182,10 @@ function DayRecordCard({
 
       <div className="cr-focus-day__metrics">
         <span>
-          Giris <strong>{formatClock(day.check_in)}</strong>
+          Giriş <strong>{formatClock(day.check_in)}</strong>
         </span>
         <span>
-          Cikis <strong>{formatClock(day.check_out)}</strong>
+          Çıkış <strong>{formatClock(day.check_out)}</strong>
         </span>
         <span>
           Calisilan <strong><MinuteDisplay minutes={day.worked_minutes} /></strong>
@@ -197,10 +197,10 @@ function DayRecordCard({
 
       <div className="cr-focus-day__actions">
         <button type="button" onClick={onSelect}>
-          {selected ? 'Secili gun' : 'Haritada ac'}
+          {selected ? 'Seçili gün' : 'Haritada ac'}
         </button>
         <button type="button" onClick={onToggleExpanded}>
-          {expanded ? 'Detayi gizle' : 'Detayi goster'}
+          {expanded ? 'Detayı gizle' : 'Detayı göster'}
         </button>
       </div>
 
@@ -219,11 +219,11 @@ function DayRecordCard({
             </strong>
           </div>
           <div>
-            <span>Supheli sicrama</span>
+            <span>Şüpheli sicrama</span>
             <strong>{day.suspicious_jump_count}</strong>
           </div>
           <div>
-            <span>Dusuk dogruluk</span>
+            <span>Düşük doğruluk</span>
             <strong>{day.low_accuracy_count}</strong>
           </div>
           {lastPoint ? (
@@ -422,11 +422,11 @@ export function ControlRoomFocusPanel({
   }
 
   if (isLoading) {
-    return <LoadingBlock label="Focus rota verisi hazirlaniyor..." />
+    return <LoadingBlock label="Focus rota verisi hazırlanıyor..." />
   }
 
   if (hasError || !summary || !mapData || !timelineData) {
-    return <ErrorBlock message="Calisan focus verisi yuklenemedi." />
+    return <ErrorBlock message="Çalışan focus verisi yüklenemedi." />
   }
 
   const focusHeader = (
@@ -459,7 +459,7 @@ export function ControlRoomFocusPanel({
     <section className="cr-focus-section">
       <header className="cr-focus-section__header">
         <div>
-          <p className="cr-ops-kicker">Rota haritasi</p>
+          <p className="cr-ops-kicker">Rota haritası</p>
           <h4>{effectiveSelectedDay ? `${formatDay(effectiveSelectedDay)} rota izi` : 'Rota izi'}</h4>
         </div>
         <div className="cr-focus-section__meta">
@@ -517,7 +517,7 @@ export function ControlRoomFocusPanel({
         />
         <MetricTile label="Sadelestirilmis" value={`${mapData.route_stats.simplified_point_count} nokta`} />
         <MetricTile label="Bekleme noktasi" value={mapData.route_stats.dwell_stop_count} />
-        <MetricTile label="Gorunen nokta" value={visibleMapPoints.length} />
+        <MetricTile label="Görünen nokta" value={visibleMapPoints.length} />
       </div>
 
       <div className="cr-focus-map-shell">
@@ -538,7 +538,7 @@ export function ControlRoomFocusPanel({
       <section className="cr-focus-section">
         <header className="cr-focus-section__header">
           <div>
-            <p className="cr-ops-kicker">Analitik ozet</p>
+            <p className="cr-ops-kicker">Analitik özet</p>
             <h4>Risk ve uyum sinyali</h4>
           </div>
           <span className="cr-focus-section__pill">{insights.length}</span>
@@ -556,13 +556,13 @@ export function ControlRoomFocusPanel({
               </article>
             ))
           ) : (
-            <div className="cr-feed-empty">Secili aralikta yorumlanabilir sinyal bulunmuyor.</div>
+            <div className="cr-feed-empty">Seçili aralıkta yorumlanabilir sinyal bulunmuyor.</div>
           )}
         </div>
 
         {insights.length > 3 ? (
           <button type="button" className="cr-focus-link" onClick={() => setShowAllInsights((current) => !current)}>
-            {showAllInsights ? 'Daha az goster' : 'Tumunu goster'}
+            {showAllInsights ? 'Daha az göster' : 'Tümünü göster'}
           </button>
         ) : null}
       </section>
@@ -583,13 +583,13 @@ export function ControlRoomFocusPanel({
             value={highlightedPoint ? formatCoordinates(highlightedPoint.lat, highlightedPoint.lon) : '-'}
           />
           <MetricTile
-            label="Risk ozet"
+            label="Risk özet"
             value={
               <>
                 {geofenceViolationCount ?? 0} geofence / {suspiciousJumpCount ?? 0} sicrama
               </>
             }
-            detail={lowAccuracyRatio == null ? undefined : `Dusuk dogruluk %${lowAccuracyRatio}`}
+            detail={lowAccuracyRatio == null ? undefined : `Düşük doğruluk %${lowAccuracyRatio}`}
           />
         </div>
       </section>
@@ -625,7 +625,7 @@ export function ControlRoomFocusPanel({
               />
             ))
           ) : (
-            <div className="cr-feed-empty">Secili gorunumde olay bulunmuyor.</div>
+            <div className="cr-feed-empty">Seçili görünümde olay bulunmuyor.</div>
           )}
         </div>
 
@@ -635,7 +635,7 @@ export function ControlRoomFocusPanel({
             className="cr-focus-link"
             onClick={() => setVisibleEventCount((current) => current + INITIAL_EVENT_RENDER_COUNT)}
           >
-            Daha fazla olay goster
+            Daha fazla olay göster
           </button>
         ) : null}
       </section>
@@ -643,10 +643,10 @@ export function ControlRoomFocusPanel({
       <section className="cr-focus-section">
         <header className="cr-focus-section__header">
           <div>
-            <p className="cr-ops-kicker">Gunluk kayit</p>
+            <p className="cr-ops-kicker">Günlük kayıt</p>
             <h4>Attendance ve fazla mesai</h4>
           </div>
-          <span className="cr-focus-section__pill">{timelineDays.length} gun</span>
+          <span className="cr-focus-section__pill">{timelineDays.length} gün</span>
         </header>
 
         <div className="cr-focus-day-list">
@@ -665,7 +665,7 @@ export function ControlRoomFocusPanel({
               />
             ))
           ) : (
-            <div className="cr-feed-empty">Bu aralikta gunluk kayit bulunmuyor.</div>
+            <div className="cr-feed-empty">Bu aralıkta günlük kayıt bulunmuyor.</div>
           )}
         </div>
 
@@ -675,7 +675,7 @@ export function ControlRoomFocusPanel({
             className="cr-focus-link"
             onClick={() => setVisibleDayCount((current) => current + INITIAL_DAY_RENDER_COUNT)}
           >
-            Daha fazla gun goster
+            Daha fazla gün göster
           </button>
         ) : null}
       </section>
@@ -700,7 +700,7 @@ export function ControlRoomFocusPanel({
           detail={summary.recent_ip ?? '-'}
         />
         <MetricTile
-          label="Bugun / hafta"
+          label="Bugün / hafta"
           value={<MinuteDisplay minutes={summary.worked_today_minutes} />}
           detail={
             <>
@@ -712,7 +712,7 @@ export function ControlRoomFocusPanel({
 
       <div className="cr-focus-detail-actions">
         <button type="button" onClick={() => onOpenEmployeeDetail(employeeId)}>
-          Tum dosyayi ac
+          Tüm dosyayi ac
         </button>
         <button type="button" onClick={() => onReturnToOverview()}>
           Overview'a don
@@ -737,7 +737,7 @@ export function ControlRoomFocusPanel({
           detail={summary.recent_ip ?? '-'}
         />
         <MetricTile
-          label="Bugun / hafta"
+          label="Bugün / hafta"
           value={<MinuteDisplay minutes={summary.worked_today_minutes} />}
           detail={
             <>

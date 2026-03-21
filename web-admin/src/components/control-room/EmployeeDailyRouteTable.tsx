@@ -48,20 +48,20 @@ export function EmployeeDailyRouteTable({
       <section className="cr-daily-table-panel">
         <header className="cr-daily-table-panel__header">
           <div>
-            <p className="cr-ops-kicker">Gunler</p>
-            <h3>Gunluk rota listesi</h3>
+            <p className="cr-ops-kicker">Günler</p>
+            <h3>Günlük rota listesi</h3>
           </div>
           <div className="cr-daily-table-panel__actions">
             {selectedEmployeeId != null ? (
               <button type="button" className="cr-ops-action is-secondary" onClick={onClearEmployee}>
-                Tum personeller
+                Tüm personeller
               </button>
             ) : null}
             <span className="cr-daily-table-panel__count">{rows.length} satir</span>
           </div>
         </header>
 
-        {loading && rows.length === 0 ? <div className="cr-feed-empty">Gunluk rota listesi hazirlaniyor...</div> : null}
+        {loading && rows.length === 0 ? <div className="cr-feed-empty">Günlük rota listesi hazırlanıyor...</div> : null}
 
         <div className="cr-daily-mobile-list">
           {rows.length ? (
@@ -105,7 +105,7 @@ export function EmployeeDailyRouteTable({
               )
             })
           ) : (
-            <div className="cr-feed-empty">Secili filtreler icin gunluk rota satiri bulunamadi.</div>
+            <div className="cr-feed-empty">Seçili filtreler için günlük rota satiri bulunamadı.</div>
           )}
         </div>
       </section>
@@ -116,27 +116,27 @@ export function EmployeeDailyRouteTable({
     <section className="cr-daily-table-panel">
       <header className="cr-daily-table-panel__header">
         <div>
-          <p className="cr-ops-kicker">Gunluk rota listesi</p>
-          <h3>Calisan + gun secimi</h3>
+          <p className="cr-ops-kicker">Günlük rota listesi</p>
+          <h3>Çalışan + gün seçimi</h3>
         </div>
         <div className="cr-daily-table-panel__actions">
           {selectedEmployeeId != null ? (
             <button type="button" className="cr-ops-action is-secondary" onClick={onClearEmployee}>
-              Tum personeller
+              Tüm personeller
             </button>
           ) : null}
           <span className="cr-daily-table-panel__count">{rows.length} satir</span>
         </div>
       </header>
 
-      {loading && rows.length === 0 ? <div className="cr-feed-empty">Gunluk rota listesi hazirlaniyor...</div> : null}
+      {loading && rows.length === 0 ? <div className="cr-feed-empty">Günlük rota listesi hazırlanıyor...</div> : null}
 
       <div className="cr-daily-table-shell">
         <table className="cr-daily-table">
           <thead>
             <tr>
               <th>Tarih</th>
-              <th>Calisan</th>
+              <th>Çalışan</th>
               <th>Ilk saat</th>
               <th>Son saat</th>
               <th>Nokta</th>
@@ -176,7 +176,7 @@ export function EmployeeDailyRouteTable({
             ) : (
               <tr>
                 <td colSpan={10}>
-                  <div className="cr-feed-empty">Secili filtreler icin gunluk rota satiri bulunamadi.</div>
+                  <div className="cr-feed-empty">Seçili filtreler için günlük rota satiri bulunamadı.</div>
                 </td>
               </tr>
             )}

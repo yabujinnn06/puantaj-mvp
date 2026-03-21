@@ -65,9 +65,9 @@ const defaultCodeTemplate: CodeTemplateState = {
 }
 
 function formatCodeType(value: QrCodeType): string {
-  if (value === 'CHECKIN') return 'CHECKIN (Giris)'
-  if (value === 'CHECKOUT') return 'CHECKOUT (Cikis)'
-  return 'BOTH (Duruma gore)'
+  if (value === 'CHECKIN') return 'CHECKIN (Giriş)'
+  if (value === 'CHECKOUT') return 'CHECKOUT (Çıkış)'
+  return 'BOTH (Duruma göre)'
 }
 
 function normalizeCodePart(value: string, fallback: string): string {
@@ -117,7 +117,7 @@ export function QrCodesPage() {
     onSuccess: (createdCode) => {
       pushToast({
         variant: 'success',
-        title: 'QR kod olusturuldu',
+        title: 'QR kod oluşturuldu',
         description: `Kod ID: ${createdCode.id}`,
       })
       setCodeForm(defaultCodeForm)
@@ -127,8 +127,8 @@ export function QrCodesPage() {
     onError: (error) => {
       pushToast({
         variant: 'error',
-        title: 'QR kod olusturulamadi',
-        description: parseApiError(error, 'Islem basarisiz.').message,
+        title: 'QR kod oluşturulamadı',
+        description: parseApiError(error, 'İşlem başarısız.').message,
       })
     },
   })
@@ -139,7 +139,7 @@ export function QrCodesPage() {
     onSuccess: (updatedCode) => {
       pushToast({
         variant: 'success',
-        title: 'QR kod guncellendi',
+        title: 'QR kod güncellendi',
         description: `Kod ID: ${updatedCode.id}`,
       })
       setEditingCodeId(null)
@@ -149,8 +149,8 @@ export function QrCodesPage() {
     onError: (error) => {
       pushToast({
         variant: 'error',
-        title: 'QR kod guncellenemedi',
-        description: parseApiError(error, 'Islem basarisiz.').message,
+        title: 'QR kod güncellenemedi',
+        description: parseApiError(error, 'İşlem başarısız.').message,
       })
     },
   })
@@ -161,8 +161,8 @@ export function QrCodesPage() {
     onSuccess: () => {
       pushToast({
         variant: 'success',
-        title: 'Nokta atamasi guncellendi',
-        description: 'Secili noktalari QR koda baglandi.',
+        title: 'Nokta atamasi güncellendi',
+        description: 'Seçili noktalari QR koda baglandi.',
       })
       setAssignSelectedPointIds([])
       void queryClient.invalidateQueries({ queryKey: ['qr-codes'] })
@@ -171,7 +171,7 @@ export function QrCodesPage() {
     onError: (error) => {
       pushToast({
         variant: 'error',
-        title: 'Atama basarisiz',
+        title: 'Atama başarısız',
         description: parseApiError(error, 'Nokta atamasi yapilamadi.').message,
       })
     },
@@ -184,7 +184,7 @@ export function QrCodesPage() {
       pushToast({
         variant: 'success',
         title: 'Nokta baglantisi kaldirildi',
-        description: 'Secili nokta bu QR koddan ayrildi.',
+        description: 'Seçili nokta bu QR koddan ayrildi.',
       })
       void queryClient.invalidateQueries({ queryKey: ['qr-codes'] })
       void queryClient.invalidateQueries({ queryKey: ['qr-points'] })
@@ -192,7 +192,7 @@ export function QrCodesPage() {
     onError: (error) => {
       pushToast({
         variant: 'error',
-        title: 'Islem basarisiz',
+        title: 'İşlem başarısız',
         description: parseApiError(error, 'Nokta kaldirilamadi.').message,
       })
     },
@@ -203,7 +203,7 @@ export function QrCodesPage() {
     onSuccess: (createdPoint) => {
       pushToast({
         variant: 'success',
-        title: 'QR nokta olusturuldu',
+        title: 'QR nokta oluşturuldu',
         description: `Nokta ID: ${createdPoint.id}`,
       })
       setPointForm(defaultPointForm)
@@ -212,8 +212,8 @@ export function QrCodesPage() {
     onError: (error) => {
       pushToast({
         variant: 'error',
-        title: 'QR nokta olusturulamadi',
-        description: parseApiError(error, 'Islem basarisiz.').message,
+        title: 'QR nokta oluşturulamadı',
+        description: parseApiError(error, 'İşlem başarısız.').message,
       })
     },
   })
@@ -224,7 +224,7 @@ export function QrCodesPage() {
     onSuccess: () => {
       pushToast({
         variant: 'success',
-        title: 'QR nokta guncellendi',
+        title: 'QR nokta güncellendi',
         description: 'Nokta bilgileri kaydedildi.',
       })
       setEditingPointId(null)
@@ -234,8 +234,8 @@ export function QrCodesPage() {
     onError: (error) => {
       pushToast({
         variant: 'error',
-        title: 'QR nokta guncellenemedi',
-        description: parseApiError(error, 'Islem basarisiz.').message,
+        title: 'QR nokta güncellenemedi',
+        description: parseApiError(error, 'İşlem başarısız.').message,
       })
     },
   })
@@ -245,7 +245,7 @@ export function QrCodesPage() {
     onSuccess: () => {
       pushToast({
         variant: 'success',
-        title: 'QR nokta pasife alindi',
+        title: 'QR nokta pasife alındı',
         description: 'Nokta aktif listeden cikarildi.',
       })
       void queryClient.invalidateQueries({ queryKey: ['qr-points'] })
@@ -254,8 +254,8 @@ export function QrCodesPage() {
     onError: (error) => {
       pushToast({
         variant: 'error',
-        title: 'Islem basarisiz',
-        description: parseApiError(error, 'Nokta pasife alinamadi.').message,
+        title: 'İşlem başarısız',
+        description: parseApiError(error, 'Nokta pasife alınamadı.').message,
       })
     },
   })
@@ -475,14 +475,14 @@ export function QrCodesPage() {
       pushToast({
         variant: 'error',
         title: 'Nokta adi zorunlu',
-        description: 'Lutfen bir nokta adi girin.',
+        description: 'Lütfen bir nokta adi girin.',
       })
       return
     }
     if (!Number.isFinite(lat) || !Number.isFinite(lon) || !Number.isFinite(radiusM) || radiusM <= 0) {
       pushToast({
         variant: 'error',
-        title: 'Gecersiz konum',
+        title: 'Geçersiz konum',
         description: 'Lat/Lon/radius alanlarini kontrol edin.',
       })
       return
@@ -507,16 +507,16 @@ export function QrCodesPage() {
     if (!selectedCode) {
       pushToast({
         variant: 'error',
-        title: 'QR kod seciniz',
-        description: 'Nokta atamak icin once bir QR kod secin.',
+        title: 'QR kod seçiniz',
+        description: 'Nokta atamak için önce bir QR kod seçin.',
       })
       return
     }
     if (assignSelectedPointIds.length === 0) {
       pushToast({
         variant: 'error',
-        title: 'Nokta seciniz',
-        description: 'Atama icin en az bir nokta secin.',
+        title: 'Nokta seçiniz',
+        description: 'Atama için en az bir nokta seçin.',
       })
       return
     }
@@ -534,8 +534,8 @@ export function QrCodesPage() {
     } catch {
       pushToast({
         variant: 'error',
-        title: 'Kopyalama basarisiz',
-        description: 'Lutfen manuel olarak kopyalayin.',
+        title: 'Kopyalama başarısız',
+        description: 'Lütfen manuel olarak kopyalayin.',
       })
     }
   }
@@ -561,8 +561,8 @@ export function QrCodesPage() {
     } catch {
       pushToast({
         variant: 'error',
-        title: 'Indirme basarisiz',
-        description: 'QR kod PNG olusturulamadi.',
+        title: 'Indirme başarısız',
+        description: 'QR kod PNG oluşturulamadı.',
       })
     }
   }
@@ -574,7 +574,7 @@ export function QrCodesPage() {
   if (qrCodesQuery.isError || qrPointsQuery.isError) {
     return (
       <Panel>
-        <p className="text-sm text-rose-700">QR kod veya nokta listesi yuklenemedi.</p>
+        <p className="text-sm text-rose-700">QR kod veya nokta listesi yüklenemedi.</p>
       </Panel>
     )
   }
@@ -582,8 +582,8 @@ export function QrCodesPage() {
   return (
     <div className="mx-auto w-full max-w-[1320px] space-y-4">
       <PageHeader
-        title="QR Kod Yonetimi"
-        description="Konuma bagli giris/cikis icin QR kod ve QR nokta yonetimi. Sirayla nokta olustur, kod olustur, nokta ata, sonra indir."
+        title="QR Kod Yönetimi"
+        description="Konuma bağlı giriş/çıkış için QR kod ve QR nokta yönetimi. Sırayla nokta oluştur, kod oluştur, nokta ata, sonra indir."
       />
 
       <Panel className="min-w-0">
@@ -591,10 +591,10 @@ export function QrCodesPage() {
           <div>
             <h4 className="text-base font-semibold text-slate-900">Nasil Calisir?</h4>
             <ol className="mt-2 space-y-1 text-sm text-slate-700">
-              <li>1) Once QR nokta olustur (ad + lat/lon + radius).</li>
-              <li>2) Sonra QR kod olustur (benzersiz code_value + tip).</li>
+              <li>1) Once QR nokta oluştur (ad + lat/lon + radius).</li>
+              <li>2) Sonra QR kod oluştur (benzersiz code_value + tip).</li>
               <li>3) QR koda bir veya birden fazla aktif nokta ata.</li>
-              <li>4) Calisan sadece atanmis nokta icindeyse okutma basarili olur.</li>
+              <li>4) Çalışan sadece atanmış nokta içindeyse okutma başarılı olur.</li>
             </ol>
             <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
               Onemli: Noktasi olmayan QR kod okutulamaz. Pasif nokta ya da pasif QR kod da kullanilamaz.
@@ -614,7 +614,7 @@ export function QrCodesPage() {
             <div className="col-span-2 rounded-lg border border-rose-200 bg-rose-50 p-3">
               <p className="text-xs text-rose-700">Noktasi Atanmamis Kod</p>
               <p className="text-lg font-semibold text-rose-800">{summary.codesWithoutPoint}</p>
-              <p className="text-xs text-rose-700">Bu kodlar okutuldugunda sistem izin vermez.</p>
+              <p className="text-xs text-rose-700">Bu kodlar okutulduğunda sistem izin vermez.</p>
             </div>
           </div>
         </div>
@@ -623,7 +623,7 @@ export function QrCodesPage() {
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <Panel className="min-w-0">
           <h4 className="text-base font-semibold text-slate-900">
-            {editingCodeId === null ? '2) QR Kod Olustur' : `2) QR Kod Duzenle (#${editingCodeId})`}
+            {editingCodeId === null ? '2) QR Kod Oluştur' : `2) QR Kod Duzenle (#${editingCodeId})`}
           </h4>
           <p className="mt-1 text-xs text-slate-500">
             Code value benzersiz olmalidir. Asagidaki anlamli format yardimcisini kullanabilirsiniz.
@@ -635,7 +635,7 @@ export function QrCodesPage() {
                 value={codeForm.name}
                 onChange={(event) => setCodeForm((prev) => ({ ...prev, name: event.target.value }))}
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-                placeholder="Orn: Merkez Giris"
+                placeholder="Orn: Merkez Giriş"
               />
             </label>
 
@@ -651,7 +651,7 @@ export function QrCodesPage() {
                     }))
                   }
                   className="rounded-lg border border-slate-300 px-2 py-2 text-sm"
-                  placeholder="Bolge (IST)"
+                  placeholder="Bölge (IST)"
                 />
                 <input
                   value={codeTemplate.locationCode}
@@ -717,7 +717,7 @@ export function QrCodesPage() {
                 <option value="BOTH">BOTH</option>
               </select>
               <p className="mt-1 text-xs text-slate-500">
-                CHECKIN: sadece giris, CHECKOUT: sadece cikis, BOTH: sistem bugunku duruma gore secer.
+                CHECKIN: sadece giriş, CHECKOUT: sadece çıkış, BOTH: sistem bugünkü duruma göre seçer.
               </p>
             </label>
 
@@ -736,7 +736,7 @@ export function QrCodesPage() {
                 disabled={createCodeMutation.isPending || updateCodeMutation.isPending}
                 className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
               >
-                {editingCodeId === null ? 'Olustur' : 'Guncelle'}
+                {editingCodeId === null ? 'Oluştur' : 'Güncelle'}
               </button>
               {editingCodeId !== null ? (
                 <button
@@ -754,7 +754,7 @@ export function QrCodesPage() {
         <Panel className="min-w-0">
           <h4 className="text-base font-semibold text-slate-900">QR Kod Listesi</h4>
           <p className="mt-1 text-xs text-slate-500">
-            Detay ve nokta atama islemleri icin bir QR kod secin.
+            Detay ve nokta atama işlemleri için bir QR kod seçin.
           </p>
           <div className="mt-3">
             <TableSearchInput value={codeSearch} onChange={setCodeSearch} placeholder="Kod adi / degeri / ID ara" />
@@ -824,7 +824,7 @@ export function QrCodesPage() {
                 {filteredCodes.length === 0 ? (
                   <tr>
                     <td className="px-3 py-4 text-sm text-slate-500" colSpan={6}>
-                      Arama kriterine uygun QR kod bulunamadi.
+                      Arama kriterine uygun QR kod bulunamadı.
                     </td>
                   </tr>
                 ) : null}
@@ -840,7 +840,7 @@ export function QrCodesPage() {
             {selectedCode ? `3) QR Kod Detay (#${selectedCode.id})` : '3) QR Kod Detay'}
           </h4>
           {!selectedCode ? (
-            <p className="mt-2 text-sm text-slate-600">Detay gormek icin listeden bir QR kod secin.</p>
+            <p className="mt-2 text-sm text-slate-600">Detay görmek için listeden bir QR kod seçin.</p>
           ) : (
             <div className="mt-3 space-y-3">
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
@@ -899,18 +899,18 @@ export function QrCodesPage() {
                     </div>
                   </div>
                 ) : (
-                  <p className="mt-2 text-xs text-rose-700">QR onizleme olusturulamadi.</p>
+                  <p className="mt-2 text-xs text-rose-700">QR onizleme oluşturulamadı.</p>
                 )}
               </div>
 
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-                Bu QR kod, sadece bu koda atanmis aktif konum noktalarinin radius alaninda okutuldugunda
-                gecerli olur. Diger konumlarda sistem isleme izin vermez.
+                Bu QR kod, sadece bu koda atanmış aktif konum noktalarinin radius alaninda okutulduğunda
+                geçerli olur. Diğer konumlarda sistem işleme izin vermez.
               </div>
 
-              <h5 className="text-sm font-semibold text-slate-900">Atanmis Noktalar</h5>
+              <h5 className="text-sm font-semibold text-slate-900">Atanmış Noktalar</h5>
               {assignedPoints.length === 0 ? (
-                <p className="text-sm text-slate-600">Bu QR kod icin henuz nokta atanmis degil.</p>
+                <p className="text-sm text-slate-600">Bu QR kod için henüz nokta atanmış degil.</p>
               ) : (
                 <div className="space-y-2">
                   {assignedPoints.map((point) => (
@@ -947,9 +947,9 @@ export function QrCodesPage() {
         </Panel>
 
         <Panel className="min-w-0">
-          <h4 className="text-base font-semibold text-slate-900">4) Nokta Ata (Coklu Secim)</h4>
+          <h4 className="text-base font-semibold text-slate-900">4) Nokta Ata (Çoklu Secim)</h4>
           <p className="mt-1 text-xs text-slate-500">
-            Arama ile nokta secip tek islemde birden fazla noktayi QR koda baglayabilirsiniz.
+            Arama ile nokta seçip tek işlemde birden fazla noktayı QR koda bağlayabilirsiniz.
           </p>
 
           <div className="mt-3">
@@ -958,7 +958,7 @@ export function QrCodesPage() {
 
           <div className="mt-3 max-h-56 overflow-auto overscroll-contain rounded-lg border border-slate-200 p-2">
             {assignablePoints.length === 0 ? (
-              <p className="px-2 py-1 text-sm text-slate-600">Aktif nokta bulunamadi.</p>
+              <p className="px-2 py-1 text-sm text-slate-600">Aktif nokta bulunamadı.</p>
             ) : (
               <div className="space-y-1">
                 {assignablePoints.map((point) => (
@@ -981,7 +981,7 @@ export function QrCodesPage() {
           </div>
 
           <div className="mt-3 flex items-center justify-between gap-3">
-            <p className="text-sm text-slate-600">Secilen nokta: {assignSelectedPointIds.length}</p>
+            <p className="text-sm text-slate-600">Seçilen nokta: {assignSelectedPointIds.length}</p>
             <button
               type="button"
               onClick={handleAssignPoints}
@@ -997,7 +997,7 @@ export function QrCodesPage() {
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <Panel className="min-w-0">
           <h4 className="text-base font-semibold text-slate-900">
-            {editingPointId === null ? '1) QR Nokta Olustur' : `1) QR Nokta Duzenle (#${editingPointId})`}
+            {editingPointId === null ? '1) QR Nokta Oluştur' : `1) QR Nokta Duzenle (#${editingPointId})`}
           </h4>
           <p className="mt-1 text-xs text-slate-500">
             QR noktasi okutmanin izinli oldugu fiziksel konumu temsil eder.
@@ -1012,7 +1012,7 @@ export function QrCodesPage() {
                 placeholder="Orn: Merkez Ofis Kapi"
               />
               <p className="mt-1 text-xs text-slate-500">
-                Ornek: Istanbul Merkez Kapi, Ankara Sube Giris.
+                Ornek: Istanbul Merkez Kapi, Ankara Şube Giriş.
               </p>
             </label>
 
@@ -1081,7 +1081,7 @@ export function QrCodesPage() {
                 disabled={createPointMutation.isPending || updatePointMutation.isPending}
                 className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
               >
-                {editingPointId === null ? 'Olustur' : 'Guncelle'}
+                {editingPointId === null ? 'Oluştur' : 'Güncelle'}
               </button>
               {editingPointId !== null ? (
                 <button
@@ -1157,7 +1157,7 @@ export function QrCodesPage() {
                 {filteredPoints.length === 0 ? (
                   <tr>
                     <td className="px-3 py-4 text-sm text-slate-500" colSpan={5}>
-                      Arama kriterine uygun nokta bulunamadi.
+                      Arama kriterine uygun nokta bulunamadı.
                     </td>
                   </tr>
                 ) : null}

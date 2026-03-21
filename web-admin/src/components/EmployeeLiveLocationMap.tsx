@@ -197,7 +197,7 @@ export function EmployeeLiveLocationMap({ markers, focusedMarkerId = null }: Emp
     <div
       ref={mapContainerRef}
       className="h-72 w-full rounded-lg border border-slate-300 bg-slate-100"
-      aria-label="Calisan konum haritasi"
+      aria-label="Çalışan konum haritası"
     />
   )
 }

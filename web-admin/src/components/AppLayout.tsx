@@ -253,7 +253,7 @@ export function AppLayout() {
           />
           <div className="min-w-0">
             <h1 className="admin-brand__title">Rainwater Yabujin</h1>
-            <p className="admin-brand__subtitle">Yonetim Konsolu</p>
+            <p className="admin-brand__subtitle">Yönetim Konsolu</p>
           </div>
         </div>
         <nav className="admin-nav mt-6" aria-label="Admin navigation">

@@ -275,7 +275,7 @@ export function NotificationTaskManager({
 
           <div className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600 md:grid-cols-3">
             <div>
-              <strong className="block text-slate-900">Toplam gorev</strong>
+              <strong className="block text-slate-900">Toplam görev</strong>
               {taskRows.length}
             </div>
             <div>

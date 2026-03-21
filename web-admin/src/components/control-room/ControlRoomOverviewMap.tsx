@@ -238,7 +238,7 @@ export function ControlRoomOverviewMap({
       <div className="cr-map-panel__hud">
         <div className="cr-map-panel__hud-row">
           <span className="cr-map-panel__badge is-live">FLEET</span>
-          <span className="cr-map-panel__badge">Marker secimi aktif</span>
+          <span className="cr-map-panel__badge">Marker seçimi aktif</span>
         </div>
         <div className="cr-map-panel__legend">
           <span>
@@ -251,7 +251,7 @@ export function ControlRoomOverviewMap({
           </span>
         </div>
       </div>
-      <div ref={containerRef} className="cr-map-panel__canvas" aria-label="Calisan fleet haritasi" />
+      <div ref={containerRef} className="cr-map-panel__canvas" aria-label="Çalışan fleet haritası" />
     </div>
   )
 }

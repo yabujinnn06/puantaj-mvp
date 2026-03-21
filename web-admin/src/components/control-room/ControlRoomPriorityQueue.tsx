@@ -24,7 +24,7 @@ export function ControlRoomPriorityQueue({
       <header className="cr-queue-panel__header">
         <div>
           <p className="cr-ops-kicker">Oncelik kuyrugu</p>
-          <h3>Kim once bakis istiyor?</h3>
+          <h3>Kim önce bakış istiyor?</h3>
         </div>
         <span className="cr-queue-panel__count">{items.length} kisi</span>
       </header>
@@ -57,7 +57,7 @@ export function ControlRoomPriorityQueue({
                   <p className="cr-queue-card__reason">{queueReason(item)}</p>
                   <div className="cr-queue-card__foot">
                     <span>
-                      Bugun <MinuteDisplay minutes={item.worked_today_minutes} />
+                      Bugün <MinuteDisplay minutes={item.worked_today_minutes} />
                     </span>
                     <span>{formatRelative(item.last_activity_utc)}</span>
                   </div>
@@ -74,7 +74,7 @@ export function ControlRoomPriorityQueue({
             </article>
           ))
         ) : (
-          <div className="cr-feed-empty">Oncelikli kuyruk bos.</div>
+          <div className="cr-feed-empty">Öncelikli kuyruk bos.</div>
         )}
       </div>
     </section>

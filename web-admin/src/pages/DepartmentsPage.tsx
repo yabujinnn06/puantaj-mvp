@@ -24,12 +24,12 @@ const createDepartmentSchema = z.object({
 
 function buildDepartmentErrorMessage(error: unknown): string {
   if (axios.isAxiosError(error) && error.response?.status === 409) {
-    return 'Bu departman adi zaten mevcut. Lutfen farkli bir ad girin.'
+    return 'Bu departman adi zaten mevcut. Lütfen farkli bir ad girin.'
   }
 
-  const parsed = parseApiError(error, 'Departman olusturulamadi.')
+  const parsed = parseApiError(error, 'Departman oluşturulamadı.')
   if (parsed.message.toLowerCase().includes('department name already exists')) {
-    return 'Bu departman adi zaten mevcut. Lutfen farkli bir ad girin.'
+    return 'Bu departman adi zaten mevcut. Lütfen farkli bir ad girin.'
   }
 
   return parsed.message
@@ -69,7 +69,7 @@ export function DepartmentsPage() {
       setIsCreateOpen(false)
       pushToast({
         variant: 'success',
-        title: 'Departman olusturuldu',
+        title: 'Departman oluşturuldu',
         description: `${department.name} basariyla eklendi.`,
       })
       void queryClient.invalidateQueries({ queryKey: ['departments'] })
@@ -79,7 +79,7 @@ export function DepartmentsPage() {
       setError(message)
       pushToast({
         variant: 'error',
-        title: 'Departman olusturulamadi',
+        title: 'Departman oluşturulamadı',
         description: message,
       })
     },
@@ -95,8 +95,8 @@ export function DepartmentsPage() {
       setEditingDepartmentRegionId('')
       pushToast({
         variant: 'success',
-        title: 'Departman guncellendi',
-        description: `${department.name} basariyla guncellendi.`,
+        title: 'Departman güncellendi',
+        description: `${department.name} basariyla güncellendi.`,
       })
       void queryClient.invalidateQueries({ queryKey: ['departments'] })
     },
@@ -105,7 +105,7 @@ export function DepartmentsPage() {
       setError(message)
       pushToast({
         variant: 'error',
-        title: 'Departman guncellenemedi',
+        title: 'Departman güncellenemedi',
         description: message,
       })
     },
@@ -122,7 +122,7 @@ export function DepartmentsPage() {
       setError(message)
       pushToast({
         variant: 'error',
-        title: 'Form hatasi',
+        title: 'Form hatası',
         description: message,
       })
       return
@@ -151,7 +151,7 @@ export function DepartmentsPage() {
       setError(message)
       pushToast({
         variant: 'error',
-        title: 'Form hatasi',
+        title: 'Form hatası',
         description: message,
       })
       return
@@ -183,7 +183,7 @@ export function DepartmentsPage() {
     <div className="space-y-4">
       <PageHeader
         title="Departmanlar"
-        description="Departman kayitlarini bolge bazli olarak yonetin."
+        description="Departman kayitlarini bölge bazlı olarak yonetin."
         action={
           <button
             type="button"
@@ -208,13 +208,13 @@ export function DepartmentsPage() {
               />
             </label>
             <label className="text-sm text-slate-700">
-              Bolge
+              Bölge
               <select
                 value={regionId}
                 onChange={(event) => setRegionId(event.target.value)}
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
               >
-                <option value="">Bolge yok</option>
+                <option value="">Bölge yok</option>
                 {regions.map((region) => (
                   <option key={region.id} value={region.id}>
                     {region.name}
@@ -258,13 +258,13 @@ export function DepartmentsPage() {
               />
             </label>
             <label className="text-sm text-slate-700">
-              Bolge
+              Bölge
               <select
                 value={editingDepartmentRegionId}
                 onChange={(event) => setEditingDepartmentRegionId(event.target.value)}
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
               >
-                <option value="">Bolge yok</option>
+                <option value="">Bölge yok</option>
                 {regions.map((region) => (
                   <option key={region.id} value={region.id}>
                     {region.name}
@@ -278,7 +278,7 @@ export function DepartmentsPage() {
                 disabled={updateMutation.isPending}
                 className="btn-primary rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
               >
-                {updateMutation.isPending ? 'Guncelleniyor...' : 'Guncelle'}
+                {updateMutation.isPending ? 'Güncelleniyor...' : 'Güncelle'}
               </button>
               <button
                 type="button"
@@ -300,7 +300,7 @@ export function DepartmentsPage() {
 
       {departmentsQuery.isLoading || regionsQuery.isLoading ? <LoadingBlock /> : null}
       {departmentsQuery.isError || regionsQuery.isError ? (
-        <ErrorBlock message="Departman verileri alinamadi." />
+        <ErrorBlock message="Departman verileri alınamadı." />
       ) : null}
 
       {!departmentsQuery.isLoading && !departmentsQuery.isError && !regionsQuery.isLoading && !regionsQuery.isError ? (
@@ -309,16 +309,16 @@ export function DepartmentsPage() {
             <TableSearchInput
               value={searchTerm}
               onChange={setSearchTerm}
-              placeholder="Departman adina gore ara..."
+              placeholder="Departman adına göre ara..."
             />
             <label className="text-sm text-slate-700">
-              Bolge filtresi
+              Bölge filtresi
               <select
                 value={regionFilterId}
                 onChange={(event) => setRegionFilterId(event.target.value)}
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
               >
-                <option value="">Tum bolgeler</option>
+                <option value="">Tüm bolgeler</option>
                 {regions.map((region) => (
                   <option key={region.id} value={region.id}>
                     {region.name}
@@ -334,8 +334,8 @@ export function DepartmentsPage() {
                 <tr>
                   <th className="py-2">Departman ID</th>
                   <th className="py-2">Departman Adi</th>
-                  <th className="py-2">Bolge</th>
-                  <th className="py-2">Islem</th>
+                  <th className="py-2">Bölge</th>
+                  <th className="py-2">İşlem</th>
                 </tr>
               </thead>
               <tbody>
@@ -366,7 +366,7 @@ export function DepartmentsPage() {
             </table>
           </div>
           {filteredDepartments.length === 0 ? (
-            <p className="mt-3 text-sm text-slate-500">Arama kriterine uygun departman bulunamadi.</p>
+            <p className="mt-3 text-sm text-slate-500">Arama kriterine uygun departman bulunamadı.</p>
           ) : null}
         </Panel>
       ) : null}

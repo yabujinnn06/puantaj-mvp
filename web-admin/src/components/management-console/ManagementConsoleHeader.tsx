@@ -21,7 +21,7 @@ export function ManagementConsoleHeader({
           <p className="mc-kicker">YONETIM KONSOLU</p>
           <h2>Ana Panel</h2>
           <p>
-            Calisan operasyon matrisi ana odak olarak korunur; bildirim ve yardimci analitik katmanlari
+            Çalışan operasyon matrisi ana odak olarak korunur; bildirim ve yardimci analitik katmanlari
             destekleyici rolde calisir.
           </p>
         </div>
@@ -37,7 +37,7 @@ export function ManagementConsoleHeader({
           ) : null}
           {hasPermission('attendance_events') ? (
             <Link to="/attendance-events" className="mc-button mc-button--ghost">
-              Yoklama kayitlari
+              Yoklama kayıtları
             </Link>
           ) : null}
           {hasPermission('log') ? (
@@ -53,7 +53,7 @@ export function ManagementConsoleHeader({
 
       <div className="mc-header__meta-strip">
         <span>Son senkron: {formatDateTime(generatedAtUtc)}</span>
-        <span>Gorunum: operasyon matrisi oncelikli</span>
+        <span>Görünüm: operasyon matrisi öncelikli</span>
         <span>Rail: bildirim ve operasyon sinyalleri</span>
       </div>
     </header>

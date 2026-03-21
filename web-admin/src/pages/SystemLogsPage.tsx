@@ -42,41 +42,41 @@ const DEFAULT_FILTERS: LogFilters = {
 const LOGS_PAGE_SIZE = 35
 
 const ACTION_OPTIONS: { value: string; label: string }[] = [
-  { value: '', label: 'Tum aksiyonlar' },
-  { value: 'ADMIN_LOGIN_SUCCESS', label: 'Admin giris basarili' },
-  { value: 'ADMIN_LOGIN_FAIL', label: 'Admin giris basarisiz' },
+  { value: '', label: 'Tüm aksiyonlar' },
+  { value: 'ADMIN_LOGIN_SUCCESS', label: 'Admin giriş başarılı' },
+  { value: 'ADMIN_LOGIN_FAIL', label: 'Admin giriş başarısız' },
   { value: 'ADMIN_REFRESH', label: 'Admin token yeniledi' },
-  { value: 'ADMIN_LOGOUT', label: 'Admin cikis yapti' },
-  { value: 'ATTENDANCE_EVENT_CREATED', label: 'Yoklama kaydi olusturuldu' },
-  { value: 'DEVICE_INVITE_CREATED', label: 'Cihaz daveti olusturuldu' },
+  { value: 'ADMIN_LOGOUT', label: 'Admin çıkış yapti' },
+  { value: 'ATTENDANCE_EVENT_CREATED', label: 'Yoklama kaydı oluşturuldu' },
+  { value: 'DEVICE_INVITE_CREATED', label: 'Cihaz daveti oluşturuldu' },
   { value: 'DEVICE_CLAIMED', label: 'Cihaz eslestirildi' },
-  { value: 'LEAVE_CREATED', label: 'Izin olusturuldu' },
-  { value: 'LEAVE_DELETED', label: 'Izin silindi' },
-  { value: 'EMPLOYEE_APP_LOCATION_PING', label: 'Employee app giris pingi' },
+  { value: 'LEAVE_CREATED', label: 'İzin oluşturuldu' },
+  { value: 'LEAVE_DELETED', label: 'İzin silindi' },
+  { value: 'EMPLOYEE_APP_LOCATION_PING', label: 'Employee app giriş pingi' },
 ]
 
 const MODULE_OPTIONS: { value: string; label: string }[] = [
-  { value: '', label: 'Tum moduller' },
+  { value: '', label: 'Tüm moduller' },
   { value: 'CORE', label: 'CORE' },
   { value: 'APP', label: 'APP' },
 ]
 
 const EVENT_OPTIONS: { value: string; label: string }[] = [
-  { value: '', label: 'Tum event tipleri' },
+  { value: '', label: 'Tüm event tipleri' },
   { value: 'app_login', label: 'app_login' },
 ]
 
 const ACTION_LABELS: Record<string, string> = {
-  ADMIN_LOGIN_SUCCESS: 'Admin giris basarili',
-  ADMIN_LOGIN_FAIL: 'Admin giris basarisiz',
+  ADMIN_LOGIN_SUCCESS: 'Admin giriş başarılı',
+  ADMIN_LOGIN_FAIL: 'Admin giriş başarısız',
   ADMIN_REFRESH: 'Admin token yeniledi',
-  ADMIN_LOGOUT: 'Admin cikis yapti',
-  ATTENDANCE_EVENT_CREATED: 'Yoklama kaydi olusturuldu',
-  DEVICE_INVITE_CREATED: 'Cihaz daveti olusturuldu',
+  ADMIN_LOGOUT: 'Admin çıkış yapti',
+  ATTENDANCE_EVENT_CREATED: 'Yoklama kaydı oluşturuldu',
+  DEVICE_INVITE_CREATED: 'Cihaz daveti oluşturuldu',
   DEVICE_CLAIMED: 'Cihaz eslestirildi',
-  LEAVE_CREATED: 'Izin olusturuldu',
-  LEAVE_DELETED: 'Izin silindi',
-  EMPLOYEE_APP_LOCATION_PING: 'Employee app giris pingi',
+  LEAVE_CREATED: 'İzin oluşturuldu',
+  LEAVE_DELETED: 'İzin silindi',
+  EMPLOYEE_APP_LOCATION_PING: 'Employee app giriş pingi',
 }
 
 function formatDateTime(value: string): string {
@@ -98,7 +98,7 @@ function formatTerminalTimestamp(value: string): string {
 }
 
 function successLabel(value: boolean): string {
-  return value ? 'Basarili' : 'Hata'
+  return value ? 'Başarılı' : 'Hata'
 }
 
 function detailsPreview(details: Record<string, unknown>): string {
@@ -156,7 +156,7 @@ export function SystemLogsPage() {
   const [commandInput, setCommandInput] = useState('')
   const [selectedLogId, setSelectedLogId] = useState<number | null>(null)
   const [consoleMessages, setConsoleMessages] = useState<ConsoleMessage[]>([
-    { id: 1, level: 'info', text: 'Log terminali hazir. Yardim icin "help" yazin.' },
+    { id: 1, level: 'info', text: 'Log terminali hazır. Yardim için "help" yazin.' },
   ])
 
   const messageCounterRef = useRef(2)
@@ -301,12 +301,12 @@ export function SystemLogsPage() {
       return
     }
 
-    if (name === 'reset' || name === 'sifirla') {
+    if (name === 'reset' || name === 'sıfırla') {
       setDraftFilters(DEFAULT_FILTERS)
       setAppliedFilters(DEFAULT_FILTERS)
       setLogsPage(1)
       setTextSearch('')
-      pushConsoleMessage('warning', 'Filtreler sifirlandi.')
+      pushConsoleMessage('warning', 'Filtreler sıfırlandı.')
       return
     }
 
@@ -320,12 +320,12 @@ export function SystemLogsPage() {
       const mode = args[0]?.toLowerCase()
       if (mode === 'on' || mode === 'ac') {
         setFollowLogs(true)
-        pushConsoleMessage('success', 'Canli takip acildi.')
+        pushConsoleMessage('success', 'Canlı takip acildi.')
         return
       }
       if (mode === 'off' || mode === 'kapat') {
         setFollowLogs(false)
-        pushConsoleMessage('warning', 'Canli takip kapatildi.')
+        pushConsoleMessage('warning', 'Canlı takip kapatildi.')
         return
       }
       pushConsoleMessage('error', 'Kullanim: follow on|off')
@@ -335,8 +335,8 @@ export function SystemLogsPage() {
     if (name === 'status' || name === 'durum') {
       const mode = args[0]?.toLowerCase()
       let next: LogFilters['success'] | null = null
-      if (mode === 'all' || mode === 'tum') next = 'all'
-      if (mode === 'success' || mode === 'ok' || mode === 'basarili') next = 'success'
+      if (mode === 'all' || mode === 'tüm') next = 'all'
+      if (mode === 'success' || mode === 'ok' || mode === 'başarılı') next = 'success'
       if (mode === 'failed' || mode === 'error' || mode === 'hata') next = 'failed'
       if (next === null) {
         pushConsoleMessage('error', 'Kullanim: status all|success|failed')
@@ -345,7 +345,7 @@ export function SystemLogsPage() {
       setDraftFilters((prev) => ({ ...prev, success: next as LogFilters['success'] }))
       setAppliedFilters((prev) => ({ ...prev, success: next as LogFilters['success'] }))
       setLogsPage(1)
-      pushConsoleMessage('success', `Durum filtresi guncellendi: ${next}`)
+      pushConsoleMessage('success', `Durum filtresi güncellendi: ${next}`)
       return
     }
 
@@ -357,7 +357,7 @@ export function SystemLogsPage() {
       setDraftFilters((prev) => ({ ...prev, action: value }))
       setAppliedFilters((prev) => ({ ...prev, action: value }))
       setLogsPage(1)
-      pushConsoleMessage('success', `Aksiyon filtresi guncellendi: ${value}`)
+      pushConsoleMessage('success', `Aksiyon filtresi güncellendi: ${value}`)
       return
     }
 
@@ -375,11 +375,11 @@ export function SystemLogsPage() {
       }
       const safe = Math.max(Math.trunc(parsed), 1)
       setLogsPage(safe)
-      pushConsoleMessage('success', `Sayfa guncellendi: ${safe}`)
+      pushConsoleMessage('success', `Sayfa güncellendi: ${safe}`)
       return
     }
 
-    pushConsoleMessage('error', `Bilinmeyen komut: ${name}. Yardim icin "help" yazin.`)
+    pushConsoleMessage('error', `Bilinmeyen komut: ${name}. Yardim için "help" yazin.`)
   }
 
   const handleCommandSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -391,8 +391,8 @@ export function SystemLogsPage() {
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Sistem Loglari"
-        description="Program hareketleri, hata kayitlari, giris/cikis ve yoklama islemlerini terminal gorunumunde izleyin."
+        title="Sistem Logları"
+        description="Program hareketleri, hata kayıtları, giriş/çıkış ve yoklama işlemlerini terminal görünümünde izleyin."
       />
 
       <Panel>
@@ -422,13 +422,13 @@ export function SystemLogsPage() {
               onClick={() => {
                 const next = !followLogs
                 setFollowLogs(next)
-                pushConsoleMessage('info', next ? 'Canli takip acildi.' : 'Canli takip kapatildi.')
+                pushConsoleMessage('info', next ? 'Canlı takip acildi.' : 'Canlı takip kapatildi.')
               }}
               className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
                 followLogs ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-700'
               }`}
             >
-              {followLogs ? 'Canli takip: Acik' : 'Canli takip: Kapali'}
+              {followLogs ? 'Canlı takip: Acik' : 'Canlı takip: Kapalı'}
             </button>
             <button
               type="button"
@@ -451,7 +451,7 @@ export function SystemLogsPage() {
 
           <div className="flex items-center gap-2 text-xs text-slate-600">
             <span>
-              Gosterilen satir: {logsRangeStart}-{logsRangeEnd} / {logsTotal}
+              Gösterilen satir: {logsRangeStart}-{logsRangeEnd} / {logsTotal}
             </span>
             <button
               type="button"
@@ -582,8 +582,8 @@ export function SystemLogsPage() {
                 }
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
               >
-                <option value="all">Tumu</option>
-                <option value="success">Basarili</option>
+                <option value="all">Tümü</option>
+                <option value="success">Başarılı</option>
                 <option value="failed">Hata</option>
               </select>
             </label>
@@ -596,7 +596,7 @@ export function SystemLogsPage() {
                 type="text"
                 value={textSearch}
                 onChange={(event) => setTextSearch(event.target.value)}
-                placeholder="Aksiyon, kullanici, IP, detay..."
+                placeholder="Aksiyon, kullanıcı, IP, detay..."
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
               />
             </label>
@@ -618,9 +618,9 @@ export function SystemLogsPage() {
       </Panel>
 
       <Panel>
-        {logsQuery.isLoading ? <LoadingBlock label="Log kayitlari yukleniyor..." /> : null}
+        {logsQuery.isLoading ? <LoadingBlock label="Log kayıtları yükleniyor..." /> : null}
         {logsQuery.isError ? (
-          <ErrorBlock message={parseApiError(logsQuery.error, 'Log kayitlari alinamadi.').message} />
+          <ErrorBlock message={parseApiError(logsQuery.error, 'Log kayıtları alınamadı.').message} />
         ) : null}
 
         {!logsQuery.isLoading && !logsQuery.isError ? (
@@ -677,15 +677,15 @@ export function SystemLogsPage() {
                 })}
 
                 {visibleLogs.length === 0 ? (
-                  <p className="mt-2 text-amber-300">Filtreye uygun log kaydi bulunamadi.</p>
+                  <p className="mt-2 text-amber-300">Filtreye uygun log kaydı bulunamadı.</p>
                 ) : null}
               </div>
             </section>
 
             <aside className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <h5 className="text-sm font-semibold text-slate-900">Secili log detayi</h5>
+              <h5 className="text-sm font-semibold text-slate-900">Seçili log detayı</h5>
               {selectedLog === null ? (
-                <p className="mt-3 text-sm text-slate-600">Listeden bir kayit secin.</p>
+                <p className="mt-3 text-sm text-slate-600">Listeden bir kayıt seçin.</p>
               ) : (
                 <div className="mt-3 space-y-3">
                   <div className="rounded-lg border border-slate-200 bg-white p-2">
@@ -728,7 +728,7 @@ export function SystemLogsPage() {
                       <span className="font-semibold">User Agent:</span> {selectedLog.user_agent ?? '-'}
                     </p>
                     <p>
-                      <span className="font-semibold">Detay ozeti:</span> {detailsPreview(selectedLog.details)}
+                      <span className="font-semibold">Detay özeti:</span> {detailsPreview(selectedLog.details)}
                     </p>
                   </div>
 

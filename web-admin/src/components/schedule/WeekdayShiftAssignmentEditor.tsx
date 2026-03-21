@@ -97,10 +97,10 @@ export function WeekdayShiftAssignmentEditor({
       <table className="min-w-full text-left text-sm">
         <thead className="text-xs uppercase text-slate-500">
           <tr>
-            <th className="py-2">Gun</th>
+            <th className="py-2">Gün</th>
             <th className="py-2">Eklenebilir vardiyalar</th>
-            <th className="py-2">Bu gune atanan vardiyalar</th>
-            <th className="py-2 text-right">Islem</th>
+            <th className="py-2">Bu güne atanan vardiyalar</th>
+            <th className="py-2 text-right">İşlem</th>
           </tr>
         </thead>
         <tbody>
@@ -145,11 +145,11 @@ export function WeekdayShiftAssignmentEditor({
                     </div>
                   ) : (
                     <span className="text-xs text-slate-500">
-                      Bu gun icin eklenebilir baska aktif vardiya yok.
+                      Bu gün için eklenebilir başka aktif vardiya yok.
                     </span>
                   )}
                   <span className="mt-1 block text-xs text-slate-500">
-                    Sol taraf sadece henuz bu gune eklenmemis aktif vardiyalari gosterir.
+                    Sol taraf sadece henüz bu güne eklenmemiş aktif vardiyaları gösterir.
                   </span>
                 </td>
                 <td className="min-w-72 py-2">
@@ -184,7 +184,7 @@ export function WeekdayShiftAssignmentEditor({
                     </div>
                   ) : (
                     <span className="text-xs text-slate-500">
-                      Atama yok. Bu gun icin sistem fallback kurallarina doner.
+                      Atama yok. Bu gün için sistem fallback kurallarına döner.
                     </span>
                   )}
                 </td>
@@ -196,7 +196,7 @@ export function WeekdayShiftAssignmentEditor({
                       onClick={() => saveWeekdayDraft(weekday.value, [])}
                       className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      Gunu temizle
+                      Günü temizle
                     </button>
                   </div>
                 </td>

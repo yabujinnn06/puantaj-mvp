@@ -86,7 +86,7 @@ export function QrPointMapPicker({ lat, lon, radiusM, onSelect }: QrPointMapPick
       setMapReady(true)
       setLoadingError(null)
     } catch {
-      setLoadingError('Harita yuklenemedi. Lutfen tekrar deneyin.')
+      setLoadingError('Harita yüklenemedi. Lütfen tekrar deneyin.')
       setMapReady(false)
     }
 
@@ -127,7 +127,7 @@ export function QrPointMapPicker({ lat, lon, radiusM, onSelect }: QrPointMapPick
     }
     const query = searchQuery.trim()
     if (!query) {
-      setInfoMessage('Lutfen adres veya lokasyon adi girin.')
+      setInfoMessage('Lütfen adres veya lokasyon adi girin.')
       return
     }
 
@@ -152,7 +152,7 @@ export function QrPointMapPicker({ lat, lon, radiusM, onSelect }: QrPointMapPick
 
       const results = (await response.json()) as NominatimResult[]
       if (!Array.isArray(results) || results.length === 0) {
-        setInfoMessage('Adres bulunamadi. Daha net bir sorgu deneyin.')
+        setInfoMessage('Adres bulunamadı. Daha net bir sorgu deneyin.')
         return
       }
 
@@ -170,7 +170,7 @@ export function QrPointMapPicker({ lat, lon, radiusM, onSelect }: QrPointMapPick
         `Adres bulundu: ${formatCoord(nextLat)}, ${formatCoord(nextLng)}${first.display_name ? ` (${first.display_name})` : ''}`,
       )
     } catch {
-      setInfoMessage('Adres aramasi gecici olarak kullanilamiyor. Lutfen tekrar deneyin.')
+      setInfoMessage('Adres araması geçici olarak kullanilamiyor. Lütfen tekrar deneyin.')
     } finally {
       setSearchBusy(false)
     }
@@ -178,7 +178,7 @@ export function QrPointMapPicker({ lat, lon, radiusM, onSelect }: QrPointMapPick
 
   const pickCurrentLocation = useCallback(() => {
     if (!navigator.geolocation) {
-      setInfoMessage('Tarayiciniz konum API destegi vermiyor.')
+      setInfoMessage('Tarayıcınız konum API desteği vermiyor.')
       return
     }
 
@@ -187,10 +187,10 @@ export function QrPointMapPicker({ lat, lon, radiusM, onSelect }: QrPointMapPick
         const nextLat = position.coords.latitude
         const nextLng = position.coords.longitude
         onSelect(nextLat, nextLng)
-        setInfoMessage(`Mevcut konum alindi: ${formatCoord(nextLat)}, ${formatCoord(nextLng)}`)
+        setInfoMessage(`Mevcut konum alındı: ${formatCoord(nextLat)}, ${formatCoord(nextLng)}`)
       },
       () => {
-        setInfoMessage('Konum alinamadi. Konum iznini kontrol edin.')
+        setInfoMessage('Konum alınamadı. Konum iznini kontrol edin.')
       },
       {
         enableHighAccuracy: true,
@@ -222,7 +222,7 @@ export function QrPointMapPicker({ lat, lon, radiusM, onSelect }: QrPointMapPick
           value={searchQuery}
           onChange={(event) => setSearchQuery(event.target.value)}
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          placeholder="Adres / isyeri / bolge adi ara"
+          placeholder="Adres / isyeri / bölge adi ara"
           disabled={!mapReady}
         />
         <button

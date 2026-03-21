@@ -659,9 +659,9 @@ export function AttendanceEventsPage() {
       <Panel>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h4 className="text-base font-semibold text-slate-900">Puantaj Analiz Ozeti</h4>
+            <h4 className="text-base font-semibold text-slate-900">Puantaj Analiz Özeti</h4>
             <p className="text-xs text-slate-500">
-              Secili calisan icin saat bazli net calisma, fazla mesai ve gun tipi kirilimlari.
+              Seçili çalışan için saat bazlı net calisma, fazla mesai ve gün tipi kırılımları.
             </p>
           </div>
           <p className="text-xs text-slate-500">
@@ -670,11 +670,11 @@ export function AttendanceEventsPage() {
         </div>
 
         {!selectedSummaryEmployeeId ? (
-          <p className="mt-3 text-sm text-slate-600">Analiz gormek icin filtrelerden bir calisan secin.</p>
+          <p className="mt-3 text-sm text-slate-600">Analiz görmek için filtrelerden bir çalışan seçin.</p>
         ) : monthlySummaryQuery.isLoading ? (
           <LoadingBlock />
         ) : monthlySummaryQuery.isError ? (
-          <ErrorBlock message={parseApiError(monthlySummaryQuery.error, 'Puantaj analiz ozeti alinamadi.').message} />
+          <ErrorBlock message={parseApiError(monthlySummaryQuery.error, 'Puantaj analiz özeti alınamadı.').message} />
         ) : (
           <div className="mt-3 space-y-3">
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
@@ -689,14 +689,14 @@ export function AttendanceEventsPage() {
                 <p className="text-sm font-semibold text-slate-900">
                   <MinuteDisplay minutes={monthlySummaryInsight.planOvertimeMinutes} />
                 </p>
-                <p className="text-xs text-slate-500">{monthlySummaryInsight.planOvertimeDayCount} gun</p>
+                <p className="text-xs text-slate-500">{monthlySummaryInsight.planOvertimeDayCount} gün</p>
               </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
                 <p className="text-xs text-slate-500">Yasal fazla mesai</p>
                 <p className="text-sm font-semibold text-slate-900">
                   <MinuteDisplay minutes={monthlySummaryInsight.overtimeMinutes} />
                 </p>
-                <p className="text-xs text-slate-500">{monthlySummaryInsight.overtimeDayCount} gun</p>
+                <p className="text-xs text-slate-500">{monthlySummaryInsight.overtimeDayCount} gün</p>
               </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
                 <p className="text-xs text-slate-500">Erken gelis</p>
@@ -704,25 +704,25 @@ export function AttendanceEventsPage() {
                   <MinuteDisplay minutes={monthlySummaryQuery.data?.totals.early_arrival_minutes ?? 0} />
                 </p>
                 <p className="text-xs text-slate-500">
-                  {(monthlySummaryRows.filter((day) => day.early_arrival_minutes > 0).length)} gun
+                  {(monthlySummaryRows.filter((day) => day.early_arrival_minutes > 0).length)} gün
                 </p>
               </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                <p className="text-xs text-slate-500">Calisilan gun</p>
+                <p className="text-xs text-slate-500">Calisilan gün</p>
                 <p className="text-sm font-semibold text-slate-900">{monthlySummaryInsight.workedDayCount}</p>
                 <p className="text-xs text-slate-500">Hafta ici: {monthlySummaryInsight.weekdayWorkedDayCount}</p>
               </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
                 <p className="text-xs text-slate-500">Pazar / Ozel</p>
                 <p className="text-sm font-semibold text-slate-900">
-                  {monthlySummaryInsight.sundayWorkedDayCount} / {monthlySummaryInsight.specialWorkedDayCount} gun
+                  {monthlySummaryInsight.sundayWorkedDayCount} / {monthlySummaryInsight.specialWorkedDayCount} gün
                 </p>
               </div>
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
               <p>
-                Gosterilen satir: {summaryRangeStart}-{summaryRangeEnd} / {monthlySummaryRows.length}
+                Gösterilen satir: {summaryRangeStart}-{summaryRangeEnd} / {monthlySummaryRows.length}
               </p>
               <label className="inline-flex items-center gap-2">
                 Sayfa basi
@@ -745,10 +745,10 @@ export function AttendanceEventsPage() {
                 <thead className="text-xs uppercase text-slate-500">
                   <tr>
                     <th className="py-2">Tarih</th>
-                    <th className="py-2">Gun Tipi</th>
+                    <th className="py-2">Gün Tipi</th>
                     <th className="py-2">Durum</th>
-                    <th className="py-2">Giris</th>
-                    <th className="py-2">Cikis</th>
+                    <th className="py-2">Giriş</th>
+                    <th className="py-2">Çıkış</th>
                     <th className="py-2">Calisma</th>
                     <th className="py-2">Erken Gelis</th>
                     <th className="py-2">Plan Ustu</th>
@@ -802,7 +802,7 @@ export function AttendanceEventsPage() {
             </div>
 
             {monthlySummaryRows.length === 0 ? (
-              <p className="text-sm text-slate-500">Secili aralikta puantaj gun kaydi bulunamadi.</p>
+              <p className="text-sm text-slate-500">Seçili aralıkta puantaj gün kaydı bulunamadı.</p>
             ) : null}
           </div>
         )}
@@ -918,7 +918,7 @@ export function AttendanceEventsPage() {
         {!auditLogsQuery.isLoading && !auditLogsQuery.isError ? (
           <div className="mt-3 space-y-3">
             <p className="text-xs text-slate-600">
-              Gosterilen satir: {auditRangeStart}-{auditRangeEnd} / {auditTotal}
+              Gösterilen satir: {auditRangeStart}-{auditRangeEnd} / {auditTotal}
             </p>
             <div className="list-scroll-area w-full max-w-full overflow-x-auto">
               <table className="min-w-[980px] text-left text-sm">
@@ -968,7 +968,7 @@ export function AttendanceEventsPage() {
               </div>
             </div>
             {auditRows.length === 0 ? (
-              <p className="text-sm text-slate-500">Audit kaydi bulunamadi.</p>
+              <p className="text-sm text-slate-500">Audit kaydı bulunamadı.</p>
             ) : null}
           </div>
         ) : null}

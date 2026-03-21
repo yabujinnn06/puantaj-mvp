@@ -7,15 +7,15 @@ import { UI_BRANDING } from '../config/ui'
 import { useAuth } from '../hooks/useAuth'
 
 const loginSchema = z.object({
-  username: z.string().min(1, 'Kullanici adi gerekli.'),
-  password: z.string().min(1, 'Sifre gerekli.'),
+  username: z.string().min(1, 'Kullanıcı adi gerekli.'),
+  password: z.string().min(1, 'Şifre gerekli.'),
   mfaCode: z.string().optional(),
   mfaRecoveryCode: z.string().optional(),
 })
 
 function getErrorTitle(error: ParsedApiError): string {
   if (error.code === 'INVALID_CREDENTIALS') {
-    return 'Giris bilgileri hatali'
+    return 'Giriş bilgileri hatali'
   }
 
   if (error.code === 'MFA_REQUIRED') {
@@ -23,7 +23,7 @@ function getErrorTitle(error: ParsedApiError): string {
   }
 
   if (error.code === 'INVALID_MFA_CODE') {
-    return 'MFA kodu gecersiz'
+    return 'MFA kodu geçersiz'
   }
 
   if (error.code === 'MFA_SETUP_REQUIRED') {
@@ -31,14 +31,14 @@ function getErrorTitle(error: ParsedApiError): string {
   }
 
   if (error.code === 'TOO_MANY_ATTEMPTS') {
-    return 'Cok fazla deneme'
+    return 'Çok fazla deneme'
   }
 
   if (error.code === 'INTERNAL_ERROR') {
-    return 'Sunucu hatasi'
+    return 'Sunucu hatası'
   }
 
-  return 'Giris basarisiz'
+  return 'Giriş başarısız'
 }
 
 export function LoginPage() {
@@ -79,7 +79,7 @@ export function LoginPage() {
       )
       navigate(target, { replace: true })
     } catch (submitError) {
-      setError(parseApiError(submitError, 'Giris basarisiz.'))
+      setError(parseApiError(submitError, 'Giriş başarısız.'))
     } finally {
       setIsSubmitting(false)
     }
@@ -88,12 +88,12 @@ export function LoginPage() {
   return (
     <div className="admin-auth-screen flex min-h-screen items-center justify-center px-4">
       <div className="admin-auth-card w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-panel">
-        <h1 className="text-2xl font-bold text-slate-900">Admin Giris</h1>
-        <p className="mt-2 text-sm text-slate-600">Puantaj yonetim paneline giris yap.</p>
+        <h1 className="text-2xl font-bold text-slate-900">Admin Giriş</h1>
+        <p className="mt-2 text-sm text-slate-600">Puantaj yönetim paneline giriş yap.</p>
 
         <form onSubmit={onSubmit} className="mt-6 space-y-4">
           <label className="block">
-            <span className="mb-1 block text-sm font-medium text-slate-700">Kullanici Adi</span>
+            <span className="mb-1 block text-sm font-medium text-slate-700">Kullanıcı Adi</span>
             <input
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-brand-200 focus:border-brand-500 focus:ring"
               value={username}
@@ -102,7 +102,7 @@ export function LoginPage() {
           </label>
 
           <label className="block">
-            <span className="mb-1 block text-sm font-medium text-slate-700">Sifre</span>
+            <span className="mb-1 block text-sm font-medium text-slate-700">Şifre</span>
             <input
               type="password"
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-brand-200 focus:border-brand-500 focus:ring"
@@ -153,10 +153,10 @@ export function LoginPage() {
             {isSubmitting ? (
               <>
                 <span className="inline-spinner" aria-hidden="true" />
-                Giris yapiliyor...
+                Giriş yapiliyor...
               </>
             ) : (
-              'Giris Yap'
+              'Giriş Yap'
             )}
           </button>
         </form>

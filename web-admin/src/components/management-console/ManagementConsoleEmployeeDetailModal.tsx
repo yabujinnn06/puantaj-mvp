@@ -562,7 +562,7 @@ export function ManagementConsoleEmployeeDetailModal({
                   <article className="mc-ops__summary-card">
                     <span>Portal / IP</span>
                     <strong>{formatDateTime(employee.last_portal_seen_utc)}</strong>
-                    <small>{employee.recent_ip ?? 'IP kaydi yok'}</small>
+                    <small>{employee.recent_ip ?? 'IP kaydı yok'}</small>
                   </article>
                   <article className="mc-ops__summary-card">
                     <span>Cihaz kapsamı</span>

@@ -68,9 +68,9 @@ function activeFilterEntries(filters: FilterFormState, employeeNames: Map<number
     entries.push(employeeLabel ? `Personel: ${employeeLabel}` : `Personel #${filters.employee_id}`)
   }
   if (filters.q.trim()) entries.push(`Arama: ${filters.q.trim()}`)
-  if (filters.region_id) entries.push(`Bolge #${filters.region_id}`)
+  if (filters.region_id) entries.push(`Bölge #${filters.region_id}`)
   if (filters.department_id) entries.push(`Departman #${filters.department_id}`)
-  if (filters.include_inactive) entries.push('Pasif calisanlar dahil')
+  if (filters.include_inactive) entries.push('Pasif çalışanlar dahil')
   return entries
 }
 
@@ -190,7 +190,7 @@ function CompactFilters({
               })
             }
           >
-            <option value="">Tum personeller</option>
+            <option value="">Tüm personeller</option>
             {employees.map((employee) => (
               <option key={employee.id} value={employee.id}>
                 {`#${employee.id} - ${employee.full_name}`}
@@ -213,12 +213,12 @@ function CompactFilters({
           />
         </label>
         <label className="cr-ops-field">
-          <span>Bolge</span>
+          <span>Bölge</span>
           <select
             value={filters.region_id}
             onChange={(event) => onChange({ ...filters, region_id: event.target.value })}
           >
-            <option value="">Tum bolgeler</option>
+            <option value="">Tüm bolgeler</option>
             {regions.map((region) => (
               <option key={region.id} value={region.id}>
                 {region.name}
@@ -232,7 +232,7 @@ function CompactFilters({
             value={filters.department_id}
             onChange={(event) => onChange({ ...filters, department_id: event.target.value })}
           >
-            <option value="">Tum departmanlar</option>
+            <option value="">Tüm departmanlar</option>
             {departments.map((department) => (
               <option key={department.id} value={department.id}>
                 {department.name}
@@ -272,7 +272,7 @@ function CompactFilters({
         </div>
         <div className="cr-inline-filters__actions">
           <button type="button" className="cr-ops-action is-secondary" onClick={onReset}>
-            Sifirla
+            Sıfırla
           </button>
           <button type="button" className="cr-ops-action" onClick={onApply}>
             Uygula
@@ -613,13 +613,13 @@ export function ControlRoomPage() {
           {mapMode === 'employeeDay' && selectedRow
             ? `${selectedRow.employeeName} / ${selectedRow.date}`
             : selectedEmployeeState
-              ? `${selectedEmployeeState.employee.full_name} secili, gun bekleniyor`
-              : 'Fleet marker gorunumu'}
+              ? `${selectedEmployeeState.employee.full_name} seçili, gün bekleniyor`
+              : 'Fleet marker görünümü'}
         </h3>
         <p>
           {mapMode === 'employeeDay' && selectedRow
-            ? 'Secilen gunun tum noktalarini ve rota izini ayni harita ustunde gosterir.'
-            : 'Marker secimi calisan filtreler, gun secimi ise haritayi rota gorunumune tasir.'}
+            ? 'Seçilen günün tüm noktalarını ve rota izini aynı harita üstünde gösterir.'
+            : 'Marker seçimi çalışan filtreler, gün seçimi ise haritayi rota gorunumune tasir.'}
         </p>
       </div>
       <div className="cr-ops-section-meta">
@@ -631,7 +631,7 @@ export function ControlRoomPage() {
         ) : (
           <>
             <span>{mapPoints.length} marker</span>
-            <span>{dailyRows.length} gun satiri</span>
+            <span>{dailyRows.length} gün satiri</span>
           </>
         )}
         {mapMode === 'employeeDay' ? (
@@ -647,7 +647,7 @@ export function ControlRoomPage() {
     <div className="cr-ops-page cr-ops-page--tracking">
       <PageHeader
         title="Employee Tracking"
-        description="Gunluk rota listesi ve harita ayni ekranda calisir. Fleet marker secimiyle calisan filtrelenir, gun secimiyle tek tikta rota sonucu gelir."
+        description="Günlük rota listesi ve harita aynı ekranda calisir. Fleet marker secimiyle çalışan filtrelenir, gün secimiyle tek tikta rota sonucu gelir."
         action={
           <div className="cr-ops-header-actions">
             <button type="button" className="cr-ops-action" onClick={() => void overviewQuery.refetch()}>
@@ -664,7 +664,7 @@ export function ControlRoomPage() {
                   setMapMode('fleet')
                 }}
               >
-                Secimi temizle
+                Seçimi temizle
               </button>
             ) : null}
             <button
@@ -685,10 +685,10 @@ export function ControlRoomPage() {
             <h2>{mapMode === 'employeeDay' ? 'Employee day mode' : 'Fleet mode'}</h2>
             <p>
               {selectedRow
-                ? `${selectedRow.employeeName} icin ${selectedRow.date} gunu secili. Harita tum konum noktalarini ve rota izini gosteriyor.`
+                ? `${selectedRow.employeeName} için ${selectedRow.date} günü seçili. Harita tüm konum noktalarını ve rota izini gösteriyor.`
                 : selectedEmployeeState
-                  ? `${selectedEmployeeState.employee.full_name} secili. Gun tablosundan bir satir secerek harita sonucunu acin.`
-                  : `Varsayilan fleet mod acik. ${appliedDayRange} gunluk pencere ve ${rangeLabel(appliedFilters.start_date, appliedFilters.end_date)} aktif.`}
+                  ? `${selectedEmployeeState.employee.full_name} seçili. Gün tablosundan bir satir secerek harita sonucunu acin.`
+                  : `Varsayılan fleet mod acik. ${appliedDayRange} günlük pencere ve ${rangeLabel(appliedFilters.start_date, appliedFilters.end_date)} aktif.`}
             </p>
           </div>
           <div className="cr-ops-command-bar__badges">
@@ -712,7 +712,7 @@ export function ControlRoomPage() {
                 className={mobileView === view ? 'is-active' : ''}
                 onClick={() => setMobileView(view)}
               >
-                {view === 'days' ? 'Gunler' : 'Harita'}
+                {view === 'days' ? 'Günler' : 'Harita'}
               </button>
             ))}
           </div>
@@ -741,12 +741,12 @@ export function ControlRoomPage() {
       ) : null}
 
       {overviewQuery.isPending && !hasOverviewData ? (
-        <LoadingBlock label="Employee tracking verisi hazirlaniyor..." />
+        <LoadingBlock label="Employee tracking verisi hazırlanıyor..." />
       ) : null}
 
       {overviewQuery.isError && !hasOverviewData ? (
         <section className="cr-ops-error">
-          <ErrorBlock message="Employee tracking overview verisi yuklenemedi." />
+          <ErrorBlock message="Employee tracking overview verisi yüklenemedi." />
           <button type="button" className="cr-ops-action" onClick={() => void overviewQuery.refetch()}>
             Tekrar dene
           </button>

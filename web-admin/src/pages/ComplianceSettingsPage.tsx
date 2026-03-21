@@ -56,7 +56,7 @@ export function ComplianceSettingsPage() {
     onSuccess: () => {
       pushToast({
         variant: 'success',
-        title: 'Uyumluluk ayarlari guncellendi',
+        title: 'Uyumluluk ayarlari güncellendi',
         description: 'Yasal puantaj hesaplama parametreleri kaydedildi.',
       })
       void queryClient.invalidateQueries({ queryKey: ['compliance-settings'] })
@@ -65,7 +65,7 @@ export function ComplianceSettingsPage() {
     onError: (error) => {
       pushToast({
         variant: 'error',
-        title: 'Kayit hatasi',
+        title: 'Kayıt hatası',
         description: parseApiError(error, 'Ayarlar kaydedilemedi.').message,
       })
     },
@@ -73,7 +73,7 @@ export function ComplianceSettingsPage() {
 
   if (settingsQuery.isLoading) return <LoadingBlock />
   if (settingsQuery.isError) {
-    return <ErrorBlock message={parseApiError(settingsQuery.error, 'Uyumluluk ayarlari alinamadi.').message} />
+    return <ErrorBlock message={parseApiError(settingsQuery.error, 'Uyumluluk ayarlari alınamadı.').message} />
   }
 
   return (
@@ -101,7 +101,7 @@ export function ComplianceSettingsPage() {
           </label>
 
           <label className="text-sm text-slate-700">
-            Haftalik Normal Sure (dk)
+            Haftalık Normal Sure (dk)
             <input
               type="number"
               min={1}
@@ -146,7 +146,7 @@ export function ComplianceSettingsPage() {
           </label>
 
           <label className="text-sm text-slate-700">
-            Yillik Fazla Mesai Limiti (dk)
+            Yıllık Fazla Mesai Limiti (dk)
             <input
               type="number"
               min={1}
@@ -251,10 +251,10 @@ export function ComplianceSettingsPage() {
       </Panel>
 
       <Panel>
-        <h4 className="text-base font-semibold text-slate-900">Hizli Özet</h4>
+        <h4 className="text-base font-semibold text-slate-900">Hızlı Özet</h4>
         <div className="mt-3 grid gap-3 sm:grid-cols-3">
           <div className="rounded-lg border border-slate-200 p-3">
-            <p className="text-xs text-slate-500">Haftalik normal sure</p>
+            <p className="text-xs text-slate-500">Haftalık normal sure</p>
             <p className="font-semibold">
               <MinuteDisplay minutes={form.weekly_normal_minutes_default} />
             </p>
@@ -266,7 +266,7 @@ export function ComplianceSettingsPage() {
             </p>
           </div>
           <div className="rounded-lg border border-slate-200 p-3">
-            <p className="text-xs text-slate-500">Yillik fazla mesai limiti</p>
+            <p className="text-xs text-slate-500">Yıllık fazla mesai limiti</p>
             <p className="font-semibold">
               <MinuteDisplay minutes={form.overtime_annual_cap_minutes} />
             </p>

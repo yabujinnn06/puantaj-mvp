@@ -59,18 +59,18 @@ export function ControlRoomUnifiedMap({
             ) : null}
           </div>
           <div className="cr-map-panel__legend">
-            <span>Secilen gunun tum noktalarini gosterir</span>
+            <span>Seçilen günün tüm noktalarını gösterir</span>
             <span>Polyline + repeated group + geofence aktif</span>
           </div>
         </div>
 
         {dayLoading && !dayMapData ? (
           <div className="cr-map-panel__state">
-            <LoadingBlock label="Secili gunun rota haritasi yukleniyor..." />
+            <LoadingBlock label="Seçili günün rota haritası yükleniyor..." />
           </div>
         ) : dayError || !dayMapData ? (
           <div className="cr-map-panel__state">
-            <ErrorBlock message="Secili gunun rota haritasi yuklenemedi." />
+            <ErrorBlock message="Seçili günün rota haritası yüklenemedi." />
           </div>
         ) : (
           <div className="cr-map-panel__route-shell">

@@ -43,28 +43,28 @@ export const adminPermissionModules: Array<{
   label: string
 }> = [
   { key: 'log', label: 'Log' },
-  { key: 'regions', label: 'Bolgeler' },
+  { key: 'regions', label: 'Bölgeler' },
   { key: 'departments', label: 'Departmanlar' },
-  { key: 'employees', label: 'Calisanlar' },
+  { key: 'employees', label: 'Çalışanlar' },
   { key: 'devices', label: 'Cihazlar' },
   { key: 'work_rules', label: 'Mesai Kurallari' },
-  { key: 'attendance_events', label: 'Yoklama Kayitlari' },
-  { key: 'leaves', label: 'Izinler' },
+  { key: 'attendance_events', label: 'Yoklama Kayıtları' },
+  { key: 'leaves', label: 'İzinler' },
   { key: 'reports', label: 'Raporlar' },
   { key: 'compliance', label: 'Uyumluluk' },
   { key: 'schedule', label: 'Planlama' },
   { key: 'qr_codes', label: 'QR Kodlar' },
   { key: 'notifications', label: 'Bildirimler' },
-  { key: 'audit_logs', label: 'Sistem Loglari' },
-  { key: 'manual_overrides', label: 'Manuel Duzeltme' },
+  { key: 'audit_logs', label: 'Sistem Logları' },
+  { key: 'manual_overrides', label: 'Manuel Düzeltme' },
   { key: 'audit', label: 'Denetim' },
-  { key: 'admin_users', label: 'Admin Kullanicilari' },
+  { key: 'admin_users', label: 'Admin Kullanıcıları' },
 ]
 
 export const adminNavItems: AdminNavItem[] = [
   {
     to: '/welcome',
-    label: 'Hosgeldiniz',
+    label: 'Hoş geldiniz',
     section: 'overview',
     aliases: ['/dashboard'],
   },
@@ -77,7 +77,7 @@ export const adminNavItems: AdminNavItem[] = [
   },
   {
     to: '/regions',
-    label: 'Bolgeler',
+    label: 'Bölgeler',
     permission: 'regions',
     section: 'organization',
   },
@@ -89,13 +89,13 @@ export const adminNavItems: AdminNavItem[] = [
   },
   {
     to: '/employees',
-    label: 'Calisanlar',
+    label: 'Çalışanlar',
     permission: 'employees',
     section: 'organization',
   },
   {
     to: '/quick-setup',
-    label: 'Hizli Ayarlar',
+    label: 'Hızlı Ayarlar',
     permission: 'schedule',
     section: 'attendance',
   },
@@ -107,7 +107,7 @@ export const adminNavItems: AdminNavItem[] = [
   },
   {
     to: '/attendance-events',
-    label: 'Yoklama Kayitlari',
+    label: 'Yoklama Kayıtları',
     permission: 'attendance_events',
     section: 'attendance',
   },
@@ -131,19 +131,19 @@ export const adminNavItems: AdminNavItem[] = [
   },
   {
     to: '/leaves',
-    label: 'Izinler',
+    label: 'İzinler',
     permission: 'leaves',
     section: 'attendance',
   },
   {
     to: '/reports/employee-monthly',
-    label: 'Aylik Calisan Raporu',
+    label: 'Aylık Çalışan Raporu',
     permission: 'reports',
     section: 'reporting',
   },
   {
     to: '/reports/department-summary',
-    label: 'Departman Ozeti',
+    label: 'Departman Özeti',
     permission: 'reports',
     section: 'reporting',
   },
@@ -161,13 +161,13 @@ export const adminNavItems: AdminNavItem[] = [
   },
   {
     to: '/audit-logs',
-    label: 'Sistem Loglari',
+    label: 'Sistem Logları',
     permission: 'audit_logs',
     section: 'administration',
   },
   {
     to: '/admin-users',
-    label: 'Admin Kullanicilari',
+    label: 'Admin Kullanıcıları',
     permission: 'admin_users',
     section: 'administration',
   },
@@ -175,11 +175,11 @@ export const adminNavItems: AdminNavItem[] = [
 
 const adminNavSectionLabels: Array<{ key: AdminNavSectionKey; label: string }> =
   [
-    { key: 'overview', label: 'Genel Bakis' },
+    { key: 'overview', label: 'Genel Bakış' },
     { key: 'organization', label: 'Organizasyon' },
     { key: 'attendance', label: 'Saha ve Yoklama' },
     { key: 'reporting', label: 'Raporlama ve Uyumluluk' },
-    { key: 'administration', label: 'Sistem ve Yonetim' },
+    { key: 'administration', label: 'Sistem ve Yönetim' },
   ]
 
 export const adminNavSections: AdminNavSection[] = adminNavSectionLabels.map(
@@ -190,28 +190,28 @@ export const adminNavSections: AdminNavSection[] = adminNavSectionLabels.map(
 )
 
 export const adminPageTitles: Record<string, string> = {
-  '/welcome': 'Hosgeldiniz',
-  '/dashboard': 'Hosgeldiniz',
+  '/welcome': 'Hoş geldiniz',
+  '/dashboard': 'Hoş geldiniz',
   '/management-console': 'Log',
   '/log': 'Log',
   '/location-monitor': 'Log',
   '/control-room': 'Log',
-  '/regions': 'Bolgeler',
+  '/regions': 'Bölgeler',
   '/departments': 'Departmanlar',
-  '/employees': 'Calisanlar',
-  '/quick-setup': 'Hizli Ayarlar',
+  '/employees': 'Çalışanlar',
+  '/quick-setup': 'Hızlı Ayarlar',
   '/work-rules': 'Mesai Kurallari',
-  '/attendance-events': 'Yoklama Kayitlari',
+  '/attendance-events': 'Yoklama Kayıtları',
   '/devices': 'Cihazlar',
   '/compliance-settings': 'Uyumluluk Ayarlari',
   '/qr-kodlar': 'QR Kodlar',
-  '/leaves': 'Izinler',
-  '/reports/employee-monthly': 'Aylik Calisan Raporu',
-  '/reports/department-summary': 'Departman Ozeti',
+  '/leaves': 'İzinler',
+  '/reports/employee-monthly': 'Aylık Çalışan Raporu',
+  '/reports/department-summary': 'Departman Özeti',
   '/reports/excel-export': 'Excel Disa Aktar',
   '/notifications': 'Bildirimler',
-  '/audit-logs': 'Sistem Loglari',
-  '/admin-users': 'Admin Kullanicilari',
+  '/audit-logs': 'Sistem Logları',
+  '/admin-users': 'Admin Kullanıcıları',
 }
 
 export function getFirstAccessibleAdminPath(

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
@@ -83,13 +84,51 @@ function compareRows(
 
 function sortIndicator(field: WelcomeSortField, activeField: WelcomeSortField, direction: 'asc' | 'desc') {
   if (field !== activeField) return null
-  return direction === 'asc' ? '↑' : '↓'
+  return direction === 'asc' ? '?' : '?'
 }
 
 function statusTone(value: ControlRoomEmployeeState['today_status']): string {
   if (value === 'IN_PROGRESS') return 'is-live'
   if (value === 'FINISHED') return 'is-finished'
   return 'is-waiting'
+}
+
+function WelcomeHeroMetric({
+  label,
+  value,
+  note,
+  tone = 'default',
+}: {
+  label: string
+  value: ReactNode
+  note: ReactNode
+  tone?: 'default' | 'live' | 'watch' | 'active'
+}) {
+  return (
+    <article className={`welcome-summary-card is-${tone}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{note}</small>
+    </article>
+  )
+}
+
+function WelcomeSignalCard({
+  label,
+  title,
+  note,
+}: {
+  label: string
+  title: ReactNode
+  note: ReactNode
+}) {
+  return (
+    <article className="welcome-signal-card">
+      <span>{label}</span>
+      <strong>{title}</strong>
+      <p>{note}</p>
+    </article>
+  )
 }
 
 export function WelcomePage() {
@@ -240,6 +279,50 @@ export function WelcomePage() {
     )
   }, [filteredRows])
 
+  const heroInsights = useMemo(() => {
+    const liveCount = filteredRows.filter((row) => row.todayStatus === 'IN_PROGRESS').length
+    const finishedCount = filteredRows.filter((row) => row.todayStatus === 'FINISHED').length
+    const waitingCount = Math.max(0, filteredRows.length - liveCount - finishedCount)
+    const activeRate = summary.total ? Math.round((summary.active / summary.total) * 100) : 0
+
+    const topOvertimeRow = filteredRows.reduce<WelcomeTableRow | null>((current, row) => {
+      if (!current || row.overtimeMinutes > current.overtimeMinutes) {
+        return row
+      }
+      return current
+    }, null)
+
+    const departmentLoads = new Map<string, { name: string; overtimeMinutes: number; employeeCount: number }>()
+    for (const row of filteredRows) {
+      const key = row.departmentName || '-'
+      const current = departmentLoads.get(key) ?? {
+        name: row.departmentName || 'Departman tanımsız',
+        overtimeMinutes: 0,
+        employeeCount: 0,
+      }
+      current.overtimeMinutes += row.overtimeMinutes
+      current.employeeCount += 1
+      departmentLoads.set(key, current)
+    }
+
+    const topDepartment =
+      [...departmentLoads.values()].sort((left, right) => {
+        if (left.overtimeMinutes === right.overtimeMinutes) {
+          return right.employeeCount - left.employeeCount
+        }
+        return right.overtimeMinutes - left.overtimeMinutes
+      })[0] ?? null
+
+    return {
+      liveCount,
+      finishedCount,
+      waitingCount,
+      activeRate,
+      topOvertimeRow,
+      topDepartment,
+    }
+  }, [filteredRows, summary.active, summary.total])
+
   const handleSort = (field: WelcomeSortField) => {
     if (field === sortField) {
       setSortDirection((current) => (current === 'asc' ? 'desc' : 'asc'))
@@ -251,83 +334,181 @@ export function WelcomePage() {
   }
 
   if (employeesQuery.isPending || regionsQuery.isPending || departmentsQuery.isPending || overviewQuery.isPending) {
-    return <LoadingBlock label="Hosgeldiniz ozeti ve mesai tablosu hazirlaniyor..." />
+    return <LoadingBlock label="Hoş geldiniz özeti ve mesai tablosu hazırlanıyor..." />
   }
 
   if (employeesQuery.isError || regionsQuery.isError || departmentsQuery.isError || overviewQuery.isError) {
-    return <ErrorBlock message="Hosgeldiniz sayfasi verileri yuklenemedi." />
+    return <ErrorBlock message="Hoş geldiniz sayfası verileri yüklenemedi." />
   }
 
   return (
     <div className="welcome-page">
       <PageHeader
-        title="Hosgeldiniz"
-        description="Konum yerine mesai yogunlugunu, ekip dagilimini ve fazla mesai tablosunu ilk ekranda toparlayan calisan odakli giris sayfasi."
+        title="Hoş geldiniz"
+        description="Mesai yoğunluğunu, ekip dağılımını ve filtrelenebilir fazla mesai tablosunu tek ekranda açan kurumsal giriş deneyimi."
       />
 
       <Panel className="welcome-hero">
         <div className="welcome-hero__grid">
           <div className="welcome-hero__content">
-            <p className="welcome-hero__eyebrow">MESAI OPERASYON OZETI</p>
-            <h2>Bugunun fazla mesai tablosu tek bakista hazir.</h2>
-            <p className="welcome-hero__lead">
-              Bu ekran bilerek saha veya konum ayrintisi gostermez. İlk bakista kimlerin yogun calistigini,
-              hangi ekiplerin yuk topladigini ve toplam ek mesainin nereye aktigini gormeniz icin tasarlandi.
+            <div className="welcome-reveal is-delay-1">
+              <p className="welcome-hero__eyebrow">OPERASYON GIRISI</p>
+              <h2>Mesai yoğunluğu, ekip dengesi ve dikkat isteyen yükler ilk bakışta hazır.</h2>
+            </div>
+
+            <p className="welcome-hero__lead welcome-reveal is-delay-2">
+              Bu ekran, saha detayına girmeden yönetsel karar vermeyi hızlandırmak için tasarlandi. Filtrelenebilir
+              fazla mesai tablosu, aktif kapasite görünümü ve departman dağılımı birlikte açılır; böylece hangi
+              ekipte yük biriktigini, kimin onde geldigini ve günün nasil aktigini saniyeler içinde okuyabilirsiniz.
             </p>
 
-            <div className="welcome-summary-grid">
-              <article className="welcome-summary-card">
-                <span>Kapsamdaki personel</span>
-                <strong>{summary.total}</strong>
-                <small>{summary.active} aktif personel</small>
-              </article>
-              <article className="welcome-summary-card">
-                <span>Aylik fazla mesai</span>
-                <strong><MinuteDisplay minutes={summary.overtime} /></strong>
-                <small>Filtreli gorunum toplami</small>
-              </article>
-              <article className="welcome-summary-card">
-                <span>Planlanan fazla</span>
-                <strong><MinuteDisplay minutes={summary.planOvertime} /></strong>
-                <small>Plan fazi mesai yukleri</small>
-              </article>
-              <article className="welcome-summary-card">
-                <span>Ek calisma</span>
-                <strong><MinuteDisplay minutes={summary.extraWork} /></strong>
-                <small>Ilave calisma hacmi</small>
-              </article>
+            <div className="welcome-hero__chips welcome-reveal is-delay-3">
+              <span className="welcome-chip is-live">Sistem hazır</span>
+              <span className="welcome-chip">
+                Son güncelleme{' '}
+                {overviewQuery.data?.generated_at_utc ? formatDateTime(overviewQuery.data.generated_at_utc) : '-'}
+              </span>
+              <span className="welcome-chip">{sortedRows.length} kayıt filtrelenebilir</span>
+              <span className="welcome-chip is-muted">Konum akışı bu ekranda kapalı</span>
+            </div>
+
+            <div className="welcome-summary-grid welcome-reveal is-delay-4">
+              <WelcomeHeroMetric
+                label="Kapsamdaki kadro"
+                value={summary.total}
+                note={
+                  <>
+                    {summary.active} aktif personel, {heroInsights.liveCount} aktif vardiya
+                  </>
+                }
+                tone="active"
+              />
+              <WelcomeHeroMetric
+                label="Aylık fazla mesai"
+                value={<MinuteDisplay minutes={summary.overtime} />}
+                note={
+                  heroInsights.topOvertimeRow ? (
+                    <>
+                      En yüklü kişi {heroInsights.topOvertimeRow.fullName}
+                    </>
+                  ) : (
+                    'Filtreli görünüm toplamı'
+                  )
+                }
+                tone="watch"
+              />
+              <WelcomeHeroMetric
+                label="Planlanan yük"
+                value={<MinuteDisplay minutes={summary.planOvertime} />}
+                note={
+                  heroInsights.topDepartment ? (
+                    <>
+                      {heroInsights.topDepartment.name} şu an en yüklü ekip
+                    </>
+                  ) : (
+                    'Departman dağılımı hazır'
+                  )
+                }
+                tone="live"
+              />
+              <WelcomeHeroMetric
+                label="Ek çalışma"
+                value={<MinuteDisplay minutes={summary.extraWork} />}
+                note={
+                  <>
+                    {heroInsights.finishedCount} kişi günü kapattı, {heroInsights.waitingCount} kişi beklemede
+                  </>
+                }
+              />
             </div>
           </div>
 
-          <div className="welcome-hero__visual">
-            <div className="welcome-logo" aria-hidden="true">
-              <span className="welcome-logo__ring" />
-              <span className="welcome-logo__ring is-secondary" />
-              <span className="welcome-logo__glow" />
-              <div className="welcome-logo__core">
-                <img src={`${import.meta.env.BASE_URL}admin-logo.svg`} alt="" />
+          <div className="welcome-hero__visual welcome-reveal is-delay-5">
+            <div className="welcome-scene">
+              <span className="welcome-scene__chip is-top">Hızlı tarama</span>
+              <span className="welcome-scene__chip is-left">Kurumsal netlik</span>
+              <span className="welcome-scene__chip is-bottom">Konumdan bağımsız özet</span>
+
+              <div className="welcome-logo" aria-hidden="true">
+                <span className="welcome-logo__ring" />
+                <span className="welcome-logo__ring is-secondary" />
+                <span className="welcome-logo__glow" />
+                <div className="welcome-logo__core">
+                  <img src={`${import.meta.env.BASE_URL}admin-logo.svg`} alt="" />
+                </div>
+              </div>
+
+              <div className="welcome-scene__panel">
+                <div>
+                  <span>Aktif vardiya</span>
+                  <strong>{heroInsights.liveCount}</strong>
+                  <small>Gün içinde canlı kapasite</small>
+                </div>
+                <div>
+                  <span>Pasif / bekleyen</span>
+                  <strong>{heroInsights.waitingCount}</strong>
+                  <small>Giriş bekleyen veya hareketsiz</small>
+                </div>
+                <div>
+                  <span>Aktif oran</span>
+                  <strong>%{heroInsights.activeRate}</strong>
+                  <small>Filtreli görünüm sağlık oranı</small>
+                </div>
               </div>
             </div>
 
-            <div className="welcome-hero__meta">
-              <span>Son guncelleme {overviewQuery.data?.generated_at_utc ? formatDateTime(overviewQuery.data.generated_at_utc) : '-'}</span>
-              <span>{sortedRows.length} kayit tabloda gorunuyor</span>
-              <span>Konum verisi bu sayfada kasitli olarak kapali</span>
+            <div className="welcome-signal-grid">
+              <WelcomeSignalCard
+                label="Yük odağı"
+                title={heroInsights.topOvertimeRow?.fullName ?? 'Veri hazırlanıyor'}
+                note={
+                  heroInsights.topOvertimeRow ? (
+                    <>
+                      Aylık fazla mesai: <MinuteDisplay minutes={heroInsights.topOvertimeRow.overtimeMinutes} />
+                    </>
+                  ) : (
+                    'Filtre uygulandığında otomatik hesaplanir.'
+                  )
+                }
+              />
+              <WelcomeSignalCard
+                label="En yüklü ekip"
+                title={heroInsights.topDepartment?.name ?? 'Dağılım bekleniyor'}
+                note={
+                  heroInsights.topDepartment ? (
+                    <>
+                      {heroInsights.topDepartment.employeeCount} kişi /{' '}
+                      <MinuteDisplay minutes={heroInsights.topDepartment.overtimeMinutes} />
+                    </>
+                  ) : (
+                    'Departman dağılımı oluştuğunda burada görünür.'
+                  )
+                }
+              />
+              <WelcomeSignalCard
+                label="Veri modu"
+                title="Mesai ve kapasite odaklı"
+                note="Bu welcome katmanı bilerek konum detayı göstermez; ilk bakışta iş gücü baskısını anlatir."
+              />
             </div>
           </div>
         </div>
       </Panel>
 
       <Panel className="welcome-table-panel">
-        <div className="welcome-table-panel__head">
+        <div className="welcome-table-panel__head welcome-reveal is-delay-6">
           <div>
             <p className="welcome-panel-kicker">FILTRELI TABLO</p>
-            <h3>Calisan bazli fazla mesai listesi</h3>
-            <p>Arama, personel secimi, bolge ve departman filtreleriyle tabloyu daraltin.</p>
+            <h3>Çalışan bazlı fazla mesai listesi</h3>
+            <p>
+              Personel, bölge ve departman filtreleriyle tabloyu daraltın; sıralamayla fazla mesai baskısını ve ekip
+              dağılımını hemen okuyun.
+            </p>
           </div>
 
           <div className="welcome-table-panel__meta">
             <span>{sortedRows.length} satir</span>
+            <span>%{heroInsights.activeRate} aktif oran</span>
             <label className="welcome-inline-field">
               <span>Sayfa boyutu</span>
               <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
@@ -341,84 +522,86 @@ export function WelcomePage() {
           </div>
         </div>
 
-        <div className="welcome-filters">
-          <EmployeeAutocompleteField
-            className="welcome-filter"
-            label="Personel sec"
-            employees={employees}
-            value={employeeId}
-            onChange={(value) => {
-              setEmployeeId(value)
-              if (value) setSearchTerm('')
-            }}
-            placeholder="Ad soyad veya #ID ile sec"
-            emptyLabel="Tum personeller"
-            labelClassName="grid gap-2 text-sm text-slate-700"
-            labelTextClassName="welcome-filter__label"
-            inputClassName="welcome-filter__control"
-            clearButtonClassName="absolute right-2 top-1/2 -translate-y-1/2 rounded-md px-2 py-1 text-[11px] font-semibold text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
-            menuClassName="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-lg"
-            optionClassName="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-50"
-            emptyOptionClassName="flex w-full items-center justify-between border-b border-slate-100 px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50"
-            helperText="Secili personel tabloyu tek kisiye indirir."
-            helperTextClassName="text-xs text-slate-500"
-          />
-
-          <label className="welcome-filter">
-            <span className="welcome-filter__label">Arama</span>
-            <input
-              className="welcome-filter__control"
-              value={searchTerm}
-              onChange={(event) => {
-                setSearchTerm(event.target.value)
-                if (event.target.value.trim()) {
-                  setEmployeeId('')
-                }
+        <div className="welcome-filter-bar welcome-reveal is-delay-6">
+          <div className="welcome-filters">
+            <EmployeeAutocompleteField
+              className="welcome-filter"
+              label="Personel seç"
+              employees={employees}
+              value={employeeId}
+              onChange={(value) => {
+                setEmployeeId(value)
+                if (value) setSearchTerm('')
               }}
-              placeholder="Ad, soyad veya #ID ara"
+              placeholder="Ad soyad veya #ID ile seç"
+              emptyLabel="Tüm personeller"
+              labelClassName="grid gap-2 text-sm text-slate-700"
+              labelTextClassName="welcome-filter__label"
+              inputClassName="welcome-filter__control"
+              clearButtonClassName="absolute right-2 top-1/2 -translate-y-1/2 rounded-md px-2 py-1 text-[11px] font-semibold text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+              menuClassName="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-lg"
+              optionClassName="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-50"
+              emptyOptionClassName="flex w-full items-center justify-between border-b border-slate-100 px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50"
+              helperText="Seçili personel tabloyu tek kişiye indirir."
+              helperTextClassName="text-xs text-slate-500"
             />
-          </label>
 
-          <label className="welcome-filter">
-            <span className="welcome-filter__label">Bolge</span>
-            <select className="welcome-filter__control" value={regionId} onChange={(event) => setRegionId(event.target.value)}>
-              <option value="">Tum bolgeler</option>
-              {(regionsQuery.data ?? []).map((region) => (
-                <option key={region.id} value={region.id}>
-                  {region.name}
-                </option>
-              ))}
-            </select>
-          </label>
+            <label className="welcome-filter">
+              <span className="welcome-filter__label">Arama</span>
+              <input
+                className="welcome-filter__control"
+                value={searchTerm}
+                onChange={(event) => {
+                  setSearchTerm(event.target.value)
+                  if (event.target.value.trim()) {
+                    setEmployeeId('')
+                  }
+                }}
+                placeholder="Ad, soyad veya #ID ara"
+              />
+            </label>
 
-          <label className="welcome-filter">
-            <span className="welcome-filter__label">Departman</span>
-            <select
-              className="welcome-filter__control"
-              value={departmentId}
-              onChange={(event) => setDepartmentId(event.target.value)}
-            >
-              <option value="">Tum departmanlar</option>
-              {filteredDepartments.map((department) => (
-                <option key={department.id} value={department.id}>
-                  {department.name}
-                </option>
-              ))}
-            </select>
-          </label>
+            <label className="welcome-filter">
+              <span className="welcome-filter__label">Bölge</span>
+              <select className="welcome-filter__control" value={regionId} onChange={(event) => setRegionId(event.target.value)}>
+                <option value="">Tüm bölgeler</option>
+                {(regionsQuery.data ?? []).map((region) => (
+                  <option key={region.id} value={region.id}>
+                    {region.name}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-          <label className="welcome-filter">
-            <span className="welcome-filter__label">Personel durumu</span>
-            <select
-              className="welcome-filter__control"
-              value={employmentFilter}
-              onChange={(event) => setEmploymentFilter(event.target.value as EmploymentFilter)}
-            >
-              <option value="all">Tum durumlar</option>
-              <option value="active">Sadece aktif</option>
-              <option value="inactive">Sadece pasif</option>
-            </select>
-          </label>
+            <label className="welcome-filter">
+              <span className="welcome-filter__label">Departman</span>
+              <select
+                className="welcome-filter__control"
+                value={departmentId}
+                onChange={(event) => setDepartmentId(event.target.value)}
+              >
+                <option value="">Tüm departmanlar</option>
+                {filteredDepartments.map((department) => (
+                  <option key={department.id} value={department.id}>
+                    {department.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="welcome-filter">
+              <span className="welcome-filter__label">Personel durumu</span>
+              <select
+                className="welcome-filter__control"
+                value={employmentFilter}
+                onChange={(event) => setEmploymentFilter(event.target.value as EmploymentFilter)}
+              >
+                <option value="all">Tüm durumlar</option>
+                <option value="active">Sadece aktif</option>
+                <option value="inactive">Sadece pasif</option>
+              </select>
+            </label>
+          </div>
         </div>
 
         <div className="welcome-table-shell">
@@ -427,15 +610,15 @@ export function WelcomePage() {
               <tr>
                 <th>
                   <button type="button" onClick={() => handleSort('employee_name')}>
-                    Calisan {sortIndicator('employee_name', sortField, sortDirection)}
+                    Çalışan {sortIndicator('employee_name', sortField, sortDirection)}
                   </button>
                 </th>
-                <th>Bolge</th>
+                <th>Bölge</th>
                 <th>Departman</th>
                 <th>Durum</th>
                 <th>
                   <button type="button" onClick={() => handleSort('worked_today')}>
-                    Bugun {sortIndicator('worked_today', sortField, sortDirection)}
+                    Bugün {sortIndicator('worked_today', sortField, sortDirection)}
                   </button>
                 </th>
                 <th>
@@ -445,7 +628,7 @@ export function WelcomePage() {
                 </th>
                 <th>
                   <button type="button" onClick={() => handleSort('overtime')}>
-                    Aylik fazla {sortIndicator('overtime', sortField, sortDirection)}
+                    Aylık fazla {sortIndicator('overtime', sortField, sortDirection)}
                   </button>
                 </th>
                 <th>
@@ -455,7 +638,7 @@ export function WelcomePage() {
                 </th>
                 <th>
                   <button type="button" onClick={() => handleSort('extra_work')}>
-                    Ek calisma {sortIndicator('extra_work', sortField, sortDirection)}
+                    Ek çalışma {sortIndicator('extra_work', sortField, sortDirection)}
                   </button>
                 </th>
               </tr>
@@ -492,7 +675,7 @@ export function WelcomePage() {
               ) : (
                 <tr>
                   <td colSpan={9}>
-                    <div className="welcome-empty">Secili filtreler icin uygun fazla mesai kaydi bulunamadi.</div>
+                    <div className="welcome-empty">Seçili filtreler için uygun fazla mesai kaydı bulunamadı.</div>
                   </td>
                 </tr>
               )}
@@ -502,7 +685,7 @@ export function WelcomePage() {
 
         <div className="welcome-pagination">
           <p>
-            {rangeStart}-{rangeEnd} / {sortedRows.length} satir gosteriliyor
+            {rangeStart}-{rangeEnd} / {sortedRows.length} satır gösteriliyor
           </p>
           <div className="welcome-pagination__actions">
             <button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={safePage <= 1}>
@@ -514,7 +697,7 @@ export function WelcomePage() {
               onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
               disabled={safePage >= totalPages}
             >
-              Ileri
+              İleri
             </button>
           </div>
         </div>

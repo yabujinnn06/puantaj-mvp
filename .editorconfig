@@ -1,0 +1,19 @@
+root = true
+
+[*.{ts,tsx,js,jsx,mjs,cjs,json,css,scss,html,md,txt,yml,yaml,py,sh}]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.ps1]
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{bat,cmd}]
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
+trim_trailing_whitespace = true

@@ -7,8 +7,8 @@ import { parseApiError, type ParsedApiError } from '../api/error'
 import { UI_BRANDING } from '../config/ui'
 
 const formSchema = z.object({
-  username: z.string().min(1, 'Kullanici adi gerekli.'),
-  password: z.string().min(1, 'Sifre gerekli.'),
+  username: z.string().min(1, 'Kullanıcı adi gerekli.'),
+  password: z.string().min(1, 'Şifre gerekli.'),
 })
 
 function triggerBlobDownload(blob: Blob, fileName: string): void {
@@ -24,15 +24,15 @@ function triggerBlobDownload(blob: Blob, fileName: string): void {
 
 function getErrorTitle(error: ParsedApiError): string {
   if (error.code === 'INVALID_CREDENTIALS') {
-    return 'Sifre dogrulanamadi'
+    return 'Şifre doğrulanamadı'
   }
   if (error.code === 'TOO_MANY_ATTEMPTS') {
-    return 'Cok fazla deneme'
+    return 'Çok fazla deneme'
   }
   if (error.code === 'INTERNAL_ERROR') {
-    return 'Sunucu hatasi'
+    return 'Sunucu hatası'
   }
-  return 'Indirme basarisiz'
+  return 'Indirme başarısız'
 }
 
 export function ArchivePasswordDownloadPage() {
@@ -61,7 +61,7 @@ export function ArchivePasswordDownloadPage() {
     setSuccessMessage(null)
 
     if (!archiveId) {
-      setError({ message: 'Gecerli bir arsiv kimligi bulunamadi.' })
+      setError({ message: 'Geçerli bir arşiv kimligi bulunamadı.' })
       return
     }
 
@@ -74,7 +74,7 @@ export function ArchivePasswordDownloadPage() {
     setIsSubmitting(true)
     try {
       const result = await downloadDailyReportArchiveWithPassword(archiveId, parsed.data)
-      const fileName = result.file_name ?? `arsiv-${archiveId}.xlsx`
+      const fileName = result.file_name ?? `arşiv-${archiveId}.xlsx`
       triggerBlobDownload(result.blob, fileName)
       setSuccessMessage('Indirme baslatildi. Dosya cihaziniza kaydedildi.')
       setPassword('')
@@ -88,15 +88,15 @@ export function ArchivePasswordDownloadPage() {
   return (
     <div className="admin-auth-screen flex min-h-screen items-center justify-center px-4">
       <div className="admin-auth-card w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-panel">
-        <h1 className="text-2xl font-bold text-slate-900">Excel Arsiv Indirme</h1>
+        <h1 className="text-2xl font-bold text-slate-900">Excel Arşiv Indirme</h1>
         <p className="mt-2 text-sm text-slate-600">
-          Admin sifreni dogrula, gunluk puantaj Excel dosyasi panel acmadan indirilsin.
+          Admin sifreni doğrula, günlük puantaj Excel dosyasi panel acmadan indirilsin.
         </p>
-        <p className="mt-2 text-xs text-slate-500">Arsiv ID: {archiveId ?? '-'}</p>
+        <p className="mt-2 text-xs text-slate-500">Arşiv ID: {archiveId ?? '-'}</p>
 
         <form onSubmit={onSubmit} className="mt-6 space-y-4">
           <label className="block">
-            <span className="mb-1 block text-sm font-medium text-slate-700">Kullanici Adi</span>
+            <span className="mb-1 block text-sm font-medium text-slate-700">Kullanıcı Adi</span>
             <input
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-brand-200 focus:border-brand-500 focus:ring"
               value={username}
@@ -105,7 +105,7 @@ export function ArchivePasswordDownloadPage() {
           </label>
 
           <label className="block">
-            <span className="mb-1 block text-sm font-medium text-slate-700">Sifre</span>
+            <span className="mb-1 block text-sm font-medium text-slate-700">Şifre</span>
             <input
               type="password"
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-brand-200 focus:border-brand-500 focus:ring"
@@ -141,7 +141,7 @@ export function ArchivePasswordDownloadPage() {
                 Dogrulaniyor...
               </>
             ) : (
-              'Sifreyi dogrula ve indir'
+              'Şifreyi doğrula ve indir'
             )}
           </button>
         </form>
