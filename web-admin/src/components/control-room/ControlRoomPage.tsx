@@ -1,150 +1,39 @@
-import { useEffect, useMemo, useReducer, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useEffect, useMemo, useState } from 'react'
+import { useQueries, useQuery } from '@tanstack/react-query'
 
 import {
   getControlRoomOverview,
   getDepartments,
   getEmployees,
   getLocationMonitorEmployeeMapPoints,
+  getLocationMonitorEmployeeTimelineEvents,
   getRegions,
 } from '../../api/admin'
 import { ErrorBlock } from '../ErrorBlock'
 import { LoadingBlock } from '../LoadingBlock'
-import { MinuteDisplay } from '../MinuteDisplay'
 import { PageHeader } from '../PageHeader'
-import { ManagementConsoleEmployeeDetailModal } from '../management-console/ManagementConsoleEmployeeDetailModal'
-import { ManagementConsoleFilters } from '../management-console/ManagementConsoleFilters'
 import { controlRoomQueryKeys } from './queryKeys'
-import { ControlRoomEventFeed } from './ControlRoomEventFeed'
-import { ControlRoomMobileSheet } from './ControlRoomMobileSheet'
-import { ControlRoomPriorityQueue } from './ControlRoomPriorityQueue'
-import { ControlRoomQuickFilters } from './ControlRoomQuickFilters'
+import { EmployeeDailyRouteTable, type EmployeeDailyRouteRow } from './EmployeeDailyRouteTable'
 import { ControlRoomUnifiedMap } from './ControlRoomUnifiedMap'
-import type { ControlRoomQuickFilter } from './utils'
 import {
-  buildQuickFilterParams,
-  controlRoomLocationLabel,
-  controlRoomRiskLabel,
   dayCountForRange,
   formatDateTime,
-  formatDistance,
-  formatRelative,
-  matchesQuickFilters,
-  queueReason,
+  latestAvailablePoint,
+  parseDateValue,
   rangeLabel,
-  toggleQuickFilter,
-  todayStatusLabel,
 } from './utils'
-import {
-  defaultFilters,
-  type FilterFormState,
-  toOverviewParams,
-} from '../management-console/types'
-import type { ControlRoomEmployeeState } from '../../types/api'
+import { defaultFilters, type FilterFormState, toOverviewParams } from '../management-console/types'
+import type { ControlRoomEmployeeState, LocationMonitorDayRecord, LocationMonitorMapPoint } from '../../types/api'
 
-type MapMode = 'fleet' | 'employeeRoute'
-type MobileTab = 'map' | 'queue' | 'feed'
+type MapMode = 'fleet' | 'employeeDay'
+type MobileView = 'days' | 'map'
 
-type ControlRoomUiState = {
-  mapMode: MapMode
-  selectedEmployeeId: number | null
-  selectedEventId: number | null
-  modalEmployeeId: number | null
-  mobileTab: MobileTab
-  quickFilters: ControlRoomQuickFilter[]
-  feedOpen: boolean
-}
-
-type ControlRoomUiAction =
-  | { type: 'selectEmployee'; employeeId: number; eventId?: number | null; mobileTab?: MobileTab }
-  | { type: 'clearSelection' }
-  | { type: 'showRoute' }
-  | { type: 'hideRoute' }
-  | { type: 'openModal'; employeeId: number }
-  | { type: 'closeModal' }
-  | { type: 'setMobileTab'; value: MobileTab }
-  | { type: 'toggleQuickFilter'; value: ControlRoomQuickFilter }
-  | { type: 'toggleFeed' }
-
-const initialUiState: ControlRoomUiState = {
-  mapMode: 'fleet',
-  selectedEmployeeId: null,
-  selectedEventId: null,
-  modalEmployeeId: null,
-  mobileTab: 'map',
-  quickFilters: [],
-  feedOpen: false,
-}
-
-function uiReducer(state: ControlRoomUiState, action: ControlRoomUiAction): ControlRoomUiState {
-  if (action.type === 'selectEmployee') {
-    return {
-      ...state,
-      selectedEmployeeId: action.employeeId,
-      selectedEventId: action.eventId ?? null,
-      mobileTab: action.mobileTab ?? 'map',
-    }
-  }
-
-  if (action.type === 'clearSelection') {
-    return {
-      ...state,
-      mapMode: 'fleet',
-      selectedEmployeeId: null,
-      selectedEventId: null,
-    }
-  }
-
-  if (action.type === 'showRoute') {
-    if (state.selectedEmployeeId == null) return state
-    return {
-      ...state,
-      mapMode: 'employeeRoute',
-      mobileTab: 'map',
-    }
-  }
-
-  if (action.type === 'hideRoute') {
-    return {
-      ...state,
-      mapMode: 'fleet',
-    }
-  }
-
-  if (action.type === 'openModal') {
-    return {
-      ...state,
-      selectedEmployeeId: action.employeeId,
-      modalEmployeeId: action.employeeId,
-    }
-  }
-
-  if (action.type === 'closeModal') {
-    return {
-      ...state,
-      modalEmployeeId: null,
-    }
-  }
-
-  if (action.type === 'setMobileTab') {
-    return {
-      ...state,
-      mobileTab: action.value,
-    }
-  }
-
-  if (action.type === 'toggleQuickFilter') {
-    return {
-      ...state,
-      quickFilters: toggleQuickFilter(state.quickFilters, action.value),
-    }
-  }
-
-  return {
-    ...state,
-    feedOpen: !state.feedOpen,
-  }
-}
+const MAP_DAY_FORMAT = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Europe/Istanbul',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+})
 
 function useIsMobile(breakpoint = 1024): boolean {
   const [isMobile, setIsMobile] = useState(() => {
@@ -171,11 +60,7 @@ function useIsMobile(breakpoint = 1024): boolean {
   return isMobile
 }
 
-function activeFilterEntries(
-  filters: FilterFormState,
-  quickFilters: ControlRoomQuickFilter[],
-  employeeNames: Map<number, string>,
-): string[] {
+function activeFilterEntries(filters: FilterFormState, employeeNames: Map<number, string>): string[] {
   const entries: string[] = []
   if (filters.employee_id) {
     const employeeId = Number(filters.employee_id)
@@ -185,14 +70,7 @@ function activeFilterEntries(
   if (filters.q.trim()) entries.push(`Arama: ${filters.q.trim()}`)
   if (filters.region_id) entries.push(`Bolge #${filters.region_id}`)
   if (filters.department_id) entries.push(`Departman #${filters.department_id}`)
-  if (filters.risk_min) entries.push(`Risk min ${filters.risk_min}`)
-  if (filters.risk_max) entries.push(`Risk max ${filters.risk_max}`)
-  if (filters.risk_status) entries.push(`Risk ${controlRoomRiskLabel(filters.risk_status)}`)
   if (filters.include_inactive) entries.push('Pasif calisanlar dahil')
-  if (quickFilters.includes('critical')) entries.push('Quick: Kritik')
-  if (quickFilters.includes('watch')) entries.push('Quick: Izlemeli')
-  if (quickFilters.includes('live')) entries.push('Quick: Canli')
-  if (quickFilters.includes('active-shift')) entries.push('Quick: Aktif vardiya')
   return entries
 }
 
@@ -201,12 +79,6 @@ function prioritySort(left: ControlRoomEmployeeState, right: ControlRoomEmployee
   const riskDelta = riskOrder[left.risk_status] - riskOrder[right.risk_status]
   if (riskDelta !== 0) return riskDelta
 
-  const measureDelta = Number(Boolean(right.active_measure)) - Number(Boolean(left.active_measure))
-  if (measureDelta !== 0) return measureDelta
-
-  const flagDelta = right.attention_flags.length - left.attention_flags.length
-  if (flagDelta !== 0) return flagDelta
-
   if (left.risk_score !== right.risk_score) {
     return right.risk_score - left.risk_score
   }
@@ -214,107 +86,198 @@ function prioritySort(left: ControlRoomEmployeeState, right: ControlRoomEmployee
   return new Date(right.last_activity_utc ?? 0).getTime() - new Date(left.last_activity_utc ?? 0).getTime()
 }
 
-function SelectedEmployeeInspector({
-  employee,
-  mapMode,
-  routeLoading,
-  routePointCount,
-  routeDistance,
-  onShowRoute,
-  onHideRoute,
-  onClearSelection,
-  onOpenDetail,
-}: {
-  employee: ControlRoomEmployeeState | null
-  mapMode: MapMode
-  routeLoading: boolean
-  routePointCount: number
-  routeDistance: string
-  onShowRoute: () => void
-  onHideRoute: () => void
-  onClearSelection: () => void
-  onOpenDetail: () => void
-}) {
-  if (!employee) {
-    return (
-      <section className="cr-dossier-peek cr-inspector-card">
-        <header className="cr-dossier-peek__header">
-          <div>
-            <p className="cr-ops-kicker">Map inspector</p>
-            <h3>Haritadan personel secin</h3>
-          </div>
-        </header>
-        <div className="cr-feed-empty">
-          Fleet marker'a bir kez tiklayin. Harita odaklanir, secili personel inspector'u acilir ve rota aksiyonu aktif olur.
-        </div>
-      </section>
-    )
+function pointDay(value: string): string {
+  const parsed = parseDateValue(value)
+  return parsed ? MAP_DAY_FORMAT.format(parsed) : value.slice(0, 10)
+}
+
+function distanceMeters(left: LocationMonitorMapPoint, right: LocationMonitorMapPoint): number {
+  const toRadians = (value: number) => (value * Math.PI) / 180
+  const earthRadius = 6_371_000
+  const latDelta = toRadians(right.lat - left.lat)
+  const lonDelta = toRadians(right.lon - left.lon)
+  const leftLat = toRadians(left.lat)
+  const rightLat = toRadians(right.lat)
+
+  const haversine =
+    Math.sin(latDelta / 2) * Math.sin(latDelta / 2) +
+    Math.cos(leftLat) * Math.cos(rightLat) * Math.sin(lonDelta / 2) * Math.sin(lonDelta / 2)
+
+  return 2 * earthRadius * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine))
+}
+
+function calculateRouteDistance(points: LocationMonitorMapPoint[]): number | null {
+  if (points.length < 2) return null
+
+  let totalDistance = 0
+  for (let index = 1; index < points.length; index += 1) {
+    totalDistance += distanceMeters(points[index - 1], points[index])
+  }
+  return totalDistance
+}
+
+function groupPointsByDay(points: LocationMonitorMapPoint[]): Map<string, LocationMonitorMapPoint[]> {
+  const groups = new Map<string, LocationMonitorMapPoint[]>()
+
+  for (const point of [...points].sort((left, right) => new Date(left.ts_utc).getTime() - new Date(right.ts_utc).getTime())) {
+    const day = pointDay(point.ts_utc)
+    groups.set(day, [...(groups.get(day) ?? []), point])
   }
 
+  return groups
+}
+
+function dailyGeofence(day: LocationMonitorDayRecord, points: LocationMonitorMapPoint[]): {
+  label: string
+  tone: EmployeeDailyRouteRow['geofenceTone']
+} {
+  const lastPoint = points[points.length - 1] ?? latestAvailablePoint(day)
+  if (day.outside_geofence_count > 0 || lastPoint?.geofence_status === 'OUTSIDE') {
+    return { label: 'Disari', tone: 'outside' }
+  }
+  if (lastPoint?.geofence_status === 'INSIDE') {
+    return { label: 'Iceride', tone: 'inside' }
+  }
+  return { label: 'Bilinmiyor', tone: 'unknown' }
+}
+
+function firstTimestamp(day: LocationMonitorDayRecord, points: LocationMonitorMapPoint[]): string | null {
+  return day.check_in ?? day.first_app_open_utc ?? day.first_demo_start_utc ?? points[0]?.ts_utc ?? null
+}
+
+function lastTimestamp(day: LocationMonitorDayRecord, points: LocationMonitorMapPoint[]): string | null {
   return (
-    <section className="cr-dossier-peek cr-inspector-card">
-      <header className="cr-dossier-peek__header">
-        <div>
-          <p className="cr-ops-kicker">Mini inspector</p>
-          <h3>{employee.employee.full_name}</h3>
-        </div>
-        <div className="cr-inspector-card__head-actions">
-          <span className={`cr-dossier-peek__risk is-${employee.risk_status.toLowerCase()}`}>
-            {employee.risk_score}
-          </span>
-          <button type="button" className="cr-inspector-card__clear" onClick={onClearSelection}>
-            Secimi temizle
-          </button>
-        </div>
-      </header>
+    day.check_out ??
+    day.last_app_close_utc ??
+    day.last_demo_end_utc ??
+    points[points.length - 1]?.ts_utc ??
+    latestAvailablePoint(day)?.ts_utc ??
+    null
+  )
+}
 
-      <div className="cr-dossier-peek__meta">
-        <span>{controlRoomRiskLabel(employee.risk_status)}</span>
-        <span>{controlRoomLocationLabel(employee.location_state)}</span>
-        <span>{todayStatusLabel(employee.today_status)}</span>
+function CompactFilters({
+  filters,
+  employees,
+  regions,
+  departments,
+  activeEntries,
+  onChange,
+  onApply,
+  onReset,
+}: {
+  filters: FilterFormState
+  employees: Array<{ id: number; full_name: string }>
+  regions: Array<{ id: number; name: string }>
+  departments: Array<{ id: number; name: string }>
+  activeEntries: string[]
+  onChange: (next: FilterFormState) => void
+  onApply: () => void
+  onReset: () => void
+}) {
+  return (
+    <section className="cr-inline-filters">
+      <div className="cr-inline-filters__grid">
+        <label className="cr-ops-field">
+          <span>Personel</span>
+          <select
+            value={filters.employee_id}
+            onChange={(event) =>
+              onChange({
+                ...filters,
+                employee_id: event.target.value,
+                q: event.target.value ? '' : filters.q,
+              })
+            }
+          >
+            <option value="">Tum personeller</option>
+            {employees.map((employee) => (
+              <option key={employee.id} value={employee.id}>
+                {`#${employee.id} - ${employee.full_name}`}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="cr-ops-field">
+          <span>Arama</span>
+          <input
+            value={filters.q}
+            onChange={(event) =>
+              onChange({
+                ...filters,
+                q: event.target.value,
+                employee_id: event.target.value.trim() ? '' : filters.employee_id,
+              })
+            }
+            placeholder="Ad, soyad veya #ID"
+          />
+        </label>
+        <label className="cr-ops-field">
+          <span>Bolge</span>
+          <select
+            value={filters.region_id}
+            onChange={(event) => onChange({ ...filters, region_id: event.target.value })}
+          >
+            <option value="">Tum bolgeler</option>
+            {regions.map((region) => (
+              <option key={region.id} value={region.id}>
+                {region.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="cr-ops-field">
+          <span>Departman</span>
+          <select
+            value={filters.department_id}
+            onChange={(event) => onChange({ ...filters, department_id: event.target.value })}
+          >
+            <option value="">Tum departmanlar</option>
+            {departments.map((department) => (
+              <option key={department.id} value={department.id}>
+                {department.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="cr-ops-field">
+          <span>Baslangic</span>
+          <input
+            type="date"
+            value={filters.start_date}
+            onChange={(event) => onChange({ ...filters, start_date: event.target.value })}
+          />
+        </label>
+        <label className="cr-ops-field">
+          <span>Bitis</span>
+          <input
+            type="date"
+            value={filters.end_date}
+            onChange={(event) => onChange({ ...filters, end_date: event.target.value })}
+          />
+        </label>
       </div>
 
-      <p className="cr-dossier-peek__reason">{queueReason(employee)}</p>
-
-      <div className="cr-dossier-peek__grid">
-        <article>
-          <span>Son aktivite</span>
-          <strong>{formatDateTime(employee.last_activity_utc)}</strong>
-          <small>{formatRelative(employee.last_activity_utc)}</small>
-        </article>
-        <article>
-          <span>Bugun / hafta</span>
-          <strong>
-            <MinuteDisplay minutes={employee.worked_today_minutes} />
-          </strong>
-          <small>
-            <MinuteDisplay minutes={employee.weekly_total_minutes} /> hafta
-          </small>
-        </article>
-        <article>
-          <span>Harita modu</span>
-          <strong>{mapMode === 'employeeRoute' ? 'Employee route' : 'Fleet'}</strong>
-          <small>
-            {mapMode === 'employeeRoute'
-              ? `${routePointCount} nokta / ${routeDistance}`
-              : 'Marker tabanli coklu saha gorunumu'}
-          </small>
-        </article>
-      </div>
-
-      <div className="cr-dossier-peek__actions">
-        {mapMode === 'employeeRoute' ? (
-          <button type="button" onClick={onHideRoute}>
-            Kapat
+      <div className="cr-inline-filters__footer">
+        <div className="cr-ops-active-tags">
+          {activeEntries.length ? (
+            activeEntries.map((entry) => (
+              <span key={entry} className="cr-ops-active-tag">
+                {entry}
+              </span>
+            ))
+          ) : (
+            <span className="cr-ops-active-tag">Aktif filtre yok</span>
+          )}
+        </div>
+        <div className="cr-inline-filters__actions">
+          <button type="button" className="cr-ops-action is-secondary" onClick={onReset}>
+            Sifirla
           </button>
-        ) : (
-          <button type="button" onClick={onShowRoute} disabled={routeLoading}>
-            {routeLoading ? 'Rota yukleniyor...' : 'Rota'}
+          <button type="button" className="cr-ops-action" onClick={onApply}>
+            Uygula
           </button>
-        )}
-        <button type="button" className="is-secondary" onClick={onOpenDetail}>
-          Dosyayi ac
-        </button>
+        </div>
       </div>
     </section>
   )
@@ -322,22 +285,25 @@ function SelectedEmployeeInspector({
 
 export function ControlRoomPage() {
   const isMobile = useIsMobile()
-  const [uiState, dispatch] = useReducer(uiReducer, initialUiState)
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null)
+  const [selectedDay, setSelectedDay] = useState<string | null>(null)
+  const [mapMode, setMapMode] = useState<MapMode>('fleet')
+  const [mobileView, setMobileView] = useState<MobileView>('days')
   const [draftFilters, setDraftFilters] = useState<FilterFormState>(() => defaultFilters())
   const [appliedFilters, setAppliedFilters] = useState<FilterFormState>(() => defaultFilters())
-  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [filtersOpen, setFiltersOpen] = useState(!isMobile)
 
-  const quickFilterParams = useMemo(
-    () => buildQuickFilterParams(uiState.quickFilters),
-    [uiState.quickFilters],
-  )
+  useEffect(() => {
+    if (!isMobile) {
+      setFiltersOpen(true)
+    }
+  }, [isMobile])
 
   const overviewParams = useMemo(
     () => ({
       ...toOverviewParams(appliedFilters, 1),
-      ...quickFilterParams,
     }),
-    [appliedFilters, quickFilterParams],
+    [appliedFilters],
   )
 
   const overviewQuery = useQuery({
@@ -365,27 +331,6 @@ export function ControlRoomPage() {
     staleTime: 5 * 60_000,
   })
 
-  const routeQueryEnabled = uiState.selectedEmployeeId != null && uiState.mapMode === 'employeeRoute'
-  const routeQuery = useQuery({
-    enabled: routeQueryEnabled,
-    queryKey:
-      routeQueryEnabled && uiState.selectedEmployeeId != null
-        ? controlRoomQueryKeys.focusMap(uiState.selectedEmployeeId, {
-            start_date: appliedFilters.start_date,
-            end_date: appliedFilters.end_date,
-            latest_only: false,
-          })
-        : ['control-room-route-overlay', 'idle'],
-    queryFn: () =>
-      getLocationMonitorEmployeeMapPoints(uiState.selectedEmployeeId!, {
-        start_date: appliedFilters.start_date,
-        end_date: appliedFilters.end_date,
-        latest_only: false,
-      }),
-    staleTime: 20_000,
-    placeholderData: (previousData) => previousData,
-  })
-
   const overview = overviewQuery.data ?? null
   const employees = employeesQuery.data ?? []
   const employeeNames = useMemo(
@@ -399,25 +344,13 @@ export function ControlRoomPage() {
   )
 
   const selectedEmployeeState =
-    (uiState.selectedEmployeeId != null ? employeeStateMap.get(uiState.selectedEmployeeId) : null) ?? null
-
-  useEffect(() => {
-    if (uiState.selectedEmployeeId == null) return
-    if (employeeStateMap.has(uiState.selectedEmployeeId)) return
-    dispatch({ type: 'clearSelection' })
-  }, [employeeStateMap, uiState.selectedEmployeeId])
-
-  const priorityQueue = useMemo(
-    () => [...(overview?.items ?? [])].sort(prioritySort).slice(0, 8),
-    [overview?.items],
-  )
+    (selectedEmployeeId != null ? employeeStateMap.get(selectedEmployeeId) : null) ?? null
 
   const mapPoints = useMemo(() => {
     return (overview?.map_points ?? [])
       .map((point) => {
         const employeeState = employeeStateMap.get(point.employee_id)
         if (!employeeState) return null
-        if (!matchesQuickFilters(employeeState, uiState.quickFilters)) return null
         return {
           employeeId: point.employee_id,
           employeeName: point.employee_name,
@@ -432,112 +365,278 @@ export function ControlRoomPage() {
         }
       })
       .filter((point): point is NonNullable<typeof point> => point != null)
-  }, [employeeStateMap, overview?.map_points, uiState.quickFilters])
+  }, [employeeStateMap, overview?.map_points])
 
-  const recentEvents = useMemo(() => {
-    return (overview?.recent_events ?? []).filter((event) => {
-      const employeeState = employeeStateMap.get(event.employee_id)
-      return employeeState ? matchesQuickFilters(employeeState, uiState.quickFilters) : true
+  const employeesInScope = useMemo(
+    () => [...(overview?.items ?? [])].sort(prioritySort),
+    [overview?.items],
+  )
+
+  const employeeTimelineQueries = useQueries({
+    queries: employeesInScope.map((employeeState) => ({
+      queryKey: controlRoomQueryKeys.focusTimeline(employeeState.employee.id, {
+        start_date: appliedFilters.start_date,
+        end_date: appliedFilters.end_date,
+        latest_only: false,
+      }),
+      queryFn: () =>
+        getLocationMonitorEmployeeTimelineEvents(employeeState.employee.id, {
+          start_date: appliedFilters.start_date,
+          end_date: appliedFilters.end_date,
+          latest_only: false,
+        }),
+      staleTime: 30_000,
+      placeholderData: (previousData: Awaited<ReturnType<typeof getLocationMonitorEmployeeTimelineEvents>> | undefined) =>
+        previousData,
+    })),
+  })
+
+  const employeeMapQueries = useQueries({
+    queries: employeesInScope.map((employeeState) => ({
+      queryKey: controlRoomQueryKeys.focusMap(employeeState.employee.id, {
+        start_date: appliedFilters.start_date,
+        end_date: appliedFilters.end_date,
+        latest_only: false,
+      }),
+      queryFn: () =>
+        getLocationMonitorEmployeeMapPoints(employeeState.employee.id, {
+          start_date: appliedFilters.start_date,
+          end_date: appliedFilters.end_date,
+          latest_only: false,
+        }),
+      staleTime: 30_000,
+      placeholderData: (previousData: Awaited<ReturnType<typeof getLocationMonitorEmployeeMapPoints>> | undefined) =>
+        previousData,
+    })),
+  })
+
+  const dailyRows = useMemo<EmployeeDailyRouteRow[]>(() => {
+    const rows: EmployeeDailyRouteRow[] = []
+
+    employeesInScope.forEach((employeeState, index) => {
+      const timelineData = employeeTimelineQueries[index]?.data
+      const mapData = employeeMapQueries[index]?.data
+      if (!timelineData) return
+
+      const simplifiedByDay = groupPointsByDay(mapData?.simplified_points ?? [])
+      const pointsByDay = groupPointsByDay(mapData?.points ?? [])
+
+      timelineData.days.forEach((day) => {
+        const routePoints = simplifiedByDay.get(day.date) ?? pointsByDay.get(day.date) ?? []
+        const rawPoints = pointsByDay.get(day.date) ?? []
+        const geofence = dailyGeofence(day, rawPoints)
+
+        rows.push({
+          employeeId: employeeState.employee.id,
+          employeeName: employeeState.employee.full_name,
+          date: day.date,
+          firstTimestamp: firstTimestamp(day, rawPoints),
+          lastTimestamp: lastTimestamp(day, rawPoints),
+          pointCount: rawPoints.length || day.event_count,
+          distanceMeters: calculateRouteDistance(routePoints.length ? routePoints : rawPoints),
+          geofenceLabel: geofence.label,
+          geofenceTone: geofence.tone,
+          suspiciousJumpCount: day.suspicious_jump_count,
+          lowAccuracyCount: day.low_accuracy_count,
+          workedMinutes: day.worked_minutes,
+        })
+      })
     })
-  }, [employeeStateMap, overview?.recent_events, uiState.quickFilters])
+
+    const filteredRows = selectedEmployeeId != null
+      ? rows.filter((row) => row.employeeId === selectedEmployeeId)
+      : rows
+
+    return filteredRows.sort((left, right) => {
+      if (left.date !== right.date) {
+        return new Date(right.date).getTime() - new Date(left.date).getTime()
+      }
+      return left.employeeName.localeCompare(right.employeeName, 'tr')
+    })
+  }, [employeeMapQueries, employeeTimelineQueries, employeesInScope, selectedEmployeeId])
+
+  const hasOverviewData = Boolean(overview)
+  const dailyRowsLoading =
+    employeeTimelineQueries.some((query) => query.isPending) || employeeMapQueries.some((query) => query.isPending)
+
+  const selectedRow =
+    (selectedEmployeeId != null && selectedDay != null
+      ? dailyRows.find((row) => row.employeeId === selectedEmployeeId && row.date === selectedDay)
+      : null) ?? null
+
+  useEffect(() => {
+    if (selectedEmployeeId == null) return
+    if (employeeStateMap.has(selectedEmployeeId)) return
+    setSelectedEmployeeId(null)
+    setSelectedDay(null)
+    setMapMode('fleet')
+  }, [employeeStateMap, selectedEmployeeId])
+
+  useEffect(() => {
+    if (selectedDay == null || selectedEmployeeId == null) return
+    if (dailyRows.some((row) => row.employeeId === selectedEmployeeId && row.date === selectedDay)) return
+    if (dailyRowsLoading) return
+    setSelectedDay(null)
+    setMapMode('fleet')
+  }, [dailyRows, dailyRowsLoading, selectedDay, selectedEmployeeId])
+
+  const selectedDayQueryEnabled = selectedEmployeeId != null && selectedDay != null
+
+  const selectedDayTimelineQuery = useQuery({
+    enabled: selectedDayQueryEnabled,
+    queryKey:
+      selectedDayQueryEnabled && selectedEmployeeId != null && selectedDay != null
+        ? controlRoomQueryKeys.focusTimeline(selectedEmployeeId, {
+            start_date: appliedFilters.start_date,
+            end_date: appliedFilters.end_date,
+            day: selectedDay,
+            latest_only: false,
+          })
+        : ['control-room', 'selected-day', 'timeline', 'idle'],
+    queryFn: () =>
+      getLocationMonitorEmployeeTimelineEvents(selectedEmployeeId!, {
+        start_date: appliedFilters.start_date,
+        end_date: appliedFilters.end_date,
+        day: selectedDay!,
+        latest_only: false,
+      }),
+    staleTime: 20_000,
+    placeholderData: (previousData) => previousData,
+  })
+
+  const selectedDayMapQuery = useQuery({
+    enabled: selectedDayQueryEnabled,
+    queryKey:
+      selectedDayQueryEnabled && selectedEmployeeId != null && selectedDay != null
+        ? controlRoomQueryKeys.focusMap(selectedEmployeeId, {
+            start_date: appliedFilters.start_date,
+            end_date: appliedFilters.end_date,
+            day: selectedDay,
+            latest_only: false,
+          })
+        : ['control-room', 'selected-day', 'map', 'idle'],
+    queryFn: () =>
+      getLocationMonitorEmployeeMapPoints(selectedEmployeeId!, {
+        start_date: appliedFilters.start_date,
+        end_date: appliedFilters.end_date,
+        day: selectedDay!,
+        latest_only: false,
+      }),
+    staleTime: 20_000,
+    placeholderData: (previousData) => previousData,
+  })
 
   const appliedDayRange = dayCountForRange(appliedFilters.start_date, appliedFilters.end_date)
-  const hasOverviewData = Boolean(overview)
   const filterTags = useMemo(
-    () => activeFilterEntries(appliedFilters, uiState.quickFilters, employeeNames),
-    [appliedFilters, employeeNames, uiState.quickFilters],
+    () => activeFilterEntries(appliedFilters, employeeNames),
+    [appliedFilters, employeeNames],
   )
 
   const handleApplyFilters = () => {
     setAppliedFilters(draftFilters)
-    setFiltersOpen(false)
+    setSelectedDay(null)
+    setMapMode('fleet')
   }
 
   const handleResetFilters = () => {
     const next = defaultFilters()
     setDraftFilters(next)
     setAppliedFilters(next)
+    setSelectedEmployeeId(null)
+    setSelectedDay(null)
+    setMapMode('fleet')
   }
 
-  const inspector = (
-    <SelectedEmployeeInspector
-      employee={selectedEmployeeState}
-      mapMode={uiState.mapMode}
-      routeLoading={routeQuery.isFetching}
-      routePointCount={routeQuery.data?.route_stats.event_count ?? 0}
-      routeDistance={formatDistance(routeQuery.data?.route_stats.total_distance_m)}
-      onShowRoute={() => dispatch({ type: 'showRoute' })}
-      onHideRoute={() => dispatch({ type: 'hideRoute' })}
-      onClearSelection={() => dispatch({ type: 'clearSelection' })}
-      onOpenDetail={() => {
-        if (uiState.selectedEmployeeId != null) {
-          dispatch({ type: 'openModal', employeeId: uiState.selectedEmployeeId })
-        }
-      }}
-    />
-  )
+  const handleSelectEmployee = (employeeId: number) => {
+    setSelectedEmployeeId(employeeId)
+    setSelectedDay(null)
+    setMapMode('fleet')
+  }
 
-  const eventFeed = (
-    <ControlRoomEventFeed
-      events={recentEvents}
-      employeeStates={employeeStateMap}
-      selectedEventId={uiState.selectedEventId}
-      initialVisibleCount={isMobile ? 10 : 12}
-      incrementCount={8}
-      scrollable
-      onSelectEvent={(employeeId, eventId) =>
-        dispatch({
-          type: 'selectEmployee',
-          employeeId,
-          eventId,
-          mobileTab: 'map',
-        })
-      }
-      onPinToMap={(employeeId, eventId) =>
-        dispatch({
-          type: 'selectEmployee',
-          employeeId,
-          eventId,
-          mobileTab: 'map',
-        })
-      }
-      onOpenEmployeeDetail={(employeeId) => dispatch({ type: 'openModal', employeeId })}
-      hideHeader={!isMobile}
-    />
-  )
+  const handleSelectRow = (employeeId: number, day: string) => {
+    setSelectedEmployeeId(employeeId)
+    setSelectedDay(day)
+    setMapMode('employeeDay')
+    if (isMobile) {
+      setMobileView('map')
+    }
+  }
 
-  const queue = (
-    <ControlRoomPriorityQueue
-      items={priorityQueue}
-      selectedEmployeeId={uiState.selectedEmployeeId}
-      onSelectEmployee={(employeeId) =>
-        dispatch({
-          type: 'selectEmployee',
-          employeeId,
-          mobileTab: 'map',
-        })
-      }
-      onOpenEmployeeDetail={(employeeId) => dispatch({ type: 'openModal', employeeId })}
-    />
+  const handleCloseDayView = () => {
+    setSelectedDay(null)
+    setMapMode('fleet')
+    if (isMobile) {
+      setMobileView('days')
+    }
+  }
+
+  const mapHeader = (
+    <header className="cr-ops-section-head">
+      <div>
+        <p className="cr-ops-kicker">Harita</p>
+        <h3>
+          {mapMode === 'employeeDay' && selectedRow
+            ? `${selectedRow.employeeName} / ${selectedRow.date}`
+            : selectedEmployeeState
+              ? `${selectedEmployeeState.employee.full_name} secili, gun bekleniyor`
+              : 'Fleet marker gorunumu'}
+        </h3>
+        <p>
+          {mapMode === 'employeeDay' && selectedRow
+            ? 'Secilen gunun tum noktalarini ve rota izini ayni harita ustunde gosterir.'
+            : 'Marker secimi calisan filtreler, gun secimi ise haritayi rota gorunumune tasir.'}
+        </p>
+      </div>
+      <div className="cr-ops-section-meta">
+        {mapMode === 'employeeDay' && selectedDayTimelineQuery.data ? (
+          <>
+            <span>{selectedDayTimelineQuery.data.events.length} olay</span>
+            <span>{selectedDayMapQuery.data?.points.length ?? 0} nokta</span>
+          </>
+        ) : (
+          <>
+            <span>{mapPoints.length} marker</span>
+            <span>{dailyRows.length} gun satiri</span>
+          </>
+        )}
+        {mapMode === 'employeeDay' ? (
+          <button type="button" className="cr-ops-action" onClick={handleCloseDayView}>
+            Kapat
+          </button>
+        ) : null}
+      </div>
+    </header>
   )
 
   return (
-    <div className="cr-ops-page cr-ops-page--map-first">
+    <div className="cr-ops-page cr-ops-page--tracking">
       <PageHeader
-        title="Employee Control Board"
-        description="Harita ana urun olarak kalir. Fleet marker secimi, secili personel inspector'u ve rota overlay ayni ekranda tek akista calisir."
+        title="Employee Tracking"
+        description="Gunluk rota listesi ve harita ayni ekranda calisir. Fleet marker secimiyle calisan filtrelenir, gun secimiyle tek tikta rota sonucu gelir."
         action={
           <div className="cr-ops-header-actions">
             <button type="button" className="cr-ops-action" onClick={() => void overviewQuery.refetch()}>
               Veriyi yenile
             </button>
-            {!isMobile ? (
-              <button type="button" className="cr-ops-action is-secondary" onClick={() => dispatch({ type: 'toggleFeed' })}>
-                {uiState.feedOpen ? 'Feed gizle' : 'Feed ac'}
+            {selectedEmployeeId != null ? (
+              <button
+                type="button"
+                className="cr-ops-action is-secondary"
+                onClick={() => {
+                  setSelectedEmployeeId(null)
+                  setSelectedDay(null)
+                  setMapMode('fleet')
+                }}
+              >
+                Secimi temizle
               </button>
             ) : null}
-            <button type="button" className="cr-ops-action is-secondary" onClick={() => setFiltersOpen(true)}>
-              Filtreler
+            <button
+              type="button"
+              className="cr-ops-action is-secondary"
+              onClick={() => setFiltersOpen((current) => !current)}
+            >
+              {filtersOpen ? 'Filtreleri gizle' : 'Filtreler'}
             </button>
           </div>
         }
@@ -546,20 +645,18 @@ export function ControlRoomPage() {
       <section className="cr-ops-command-bar cr-ops-command-bar--hud">
         <div className="cr-ops-command-bar__identity">
           <div>
-            <p className="cr-ops-kicker">Map-first control board</p>
-            <h2>{uiState.mapMode === 'employeeRoute' ? 'Secili employee route overlay' : 'Fleet marker gorunumu'}</h2>
+            <p className="cr-ops-kicker">Tracking HUD</p>
+            <h2>{mapMode === 'employeeDay' ? 'Employee day mode' : 'Fleet mode'}</h2>
             <p>
-              {selectedEmployeeState
-                ? `${selectedEmployeeState.employee.full_name} secili. ${
-                    uiState.mapMode === 'employeeRoute'
-                      ? 'Rota overlay ayni harita ustunde acik.'
-                      : 'Marker secildi; rota icin tek adimlik aksiyon hazir.'
-                  }`
-                : `Harita varsayilan olarak fleet modda aciliyor. ${appliedDayRange} gunluk pencere ve ${rangeLabel(appliedFilters.start_date, appliedFilters.end_date)} aktif.`}
+              {selectedRow
+                ? `${selectedRow.employeeName} icin ${selectedRow.date} gunu secili. Harita tum konum noktalarini ve rota izini gosteriyor.`
+                : selectedEmployeeState
+                  ? `${selectedEmployeeState.employee.full_name} secili. Gun tablosundan bir satir secerek harita sonucunu acin.`
+                  : `Varsayilan fleet mod acik. ${appliedDayRange} gunluk pencere ve ${rangeLabel(appliedFilters.start_date, appliedFilters.end_date)} aktif.`}
             </p>
           </div>
           <div className="cr-ops-command-bar__badges">
-            <span className="cr-ops-inline-badge">Mode: {uiState.mapMode === 'employeeRoute' ? 'employeeRoute' : 'fleet'}</span>
+            <span className="cr-ops-inline-badge">Mode: {mapMode}</span>
             <span className="cr-ops-inline-badge">{mapPoints.length} marker</span>
             {selectedEmployeeState ? (
               <span className="cr-ops-inline-badge">{selectedEmployeeState.employee.full_name}</span>
@@ -570,118 +667,50 @@ export function ControlRoomPage() {
           </div>
         </div>
 
-        <div className="cr-ops-command-bar__filters">
-          <label className="cr-ops-field">
-            <span>Personel</span>
-            <select
-              value={draftFilters.employee_id}
-              onChange={(event) =>
-                setDraftFilters((current) => ({
-                  ...current,
-                  employee_id: event.target.value,
-                  q: event.target.value ? '' : current.q,
-                }))
-              }
-            >
-              <option value="">Tum personeller</option>
-              {employees.map((employee) => (
-                <option key={employee.id} value={employee.id}>
-                  {`#${employee.id} - ${employee.full_name}`}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="cr-ops-field">
-            <span>Arama</span>
-            <input
-              value={draftFilters.q}
-              onChange={(event) =>
-                setDraftFilters((current) => ({
-                  ...current,
-                  q: event.target.value,
-                  employee_id: event.target.value.trim() ? '' : current.employee_id,
-                }))
-              }
-              placeholder="Ad, soyad veya #ID"
-            />
-          </label>
-          <label className="cr-ops-field">
-            <span>Bolge</span>
-            <select
-              value={draftFilters.region_id}
-              onChange={(event) => setDraftFilters((current) => ({ ...current, region_id: event.target.value }))}
-            >
-              <option value="">Tum bolgeler</option>
-              {(regionsQuery.data ?? []).map((region) => (
-                <option key={region.id} value={region.id}>
-                  {region.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="cr-ops-field">
-            <span>Departman</span>
-            <select
-              value={draftFilters.department_id}
-              onChange={(event) =>
-                setDraftFilters((current) => ({ ...current, department_id: event.target.value }))
-              }
-            >
-              <option value="">Tum departmanlar</option>
-              {(departmentsQuery.data ?? []).map((department) => (
-                <option key={department.id} value={department.id}>
-                  {department.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="cr-ops-field">
-            <span>Baslangic</span>
-            <input
-              type="date"
-              value={draftFilters.start_date}
-              onChange={(event) =>
-                setDraftFilters((current) => ({ ...current, start_date: event.target.value }))
-              }
-            />
-          </label>
-          <label className="cr-ops-field">
-            <span>Bitis</span>
-            <input
-              type="date"
-              value={draftFilters.end_date}
-              onChange={(event) => setDraftFilters((current) => ({ ...current, end_date: event.target.value }))}
-            />
-          </label>
-          <button type="button" className="cr-ops-action" onClick={handleApplyFilters}>
-            Uygula
-          </button>
-        </div>
-      </section>
-
-      <section className="cr-ops-filter-strip">
-        <ControlRoomQuickFilters
-          activeFilters={uiState.quickFilters}
-          onToggle={(value) => dispatch({ type: 'toggleQuickFilter', value })}
-        />
-        {filterTags.length ? (
-          <div className="cr-ops-active-tags" aria-label="Aktif filtreler">
-            {filterTags.slice(0, isMobile ? 4 : filterTags.length).map((entry) => (
-              <span key={entry} className="cr-ops-active-tag">
-                {entry}
-              </span>
+        {isMobile ? (
+          <div className="cr-mobile-view-toggle" role="tablist" aria-label="Mobile tracking views">
+            {(['days', 'map'] as MobileView[]).map((view) => (
+              <button
+                key={view}
+                type="button"
+                className={mobileView === view ? 'is-active' : ''}
+                onClick={() => setMobileView(view)}
+              >
+                {view === 'days' ? 'Gunler' : 'Harita'}
+              </button>
             ))}
           </div>
         ) : null}
       </section>
 
+      {filtersOpen ? (
+        <CompactFilters
+          filters={draftFilters}
+          employees={employees}
+          regions={regionsQuery.data ?? []}
+          departments={departmentsQuery.data ?? []}
+          activeEntries={filterTags}
+          onChange={setDraftFilters}
+          onApply={handleApplyFilters}
+          onReset={handleResetFilters}
+        />
+      ) : filterTags.length ? (
+        <div className="cr-ops-active-tags" aria-label="Aktif filtreler">
+          {filterTags.map((entry) => (
+            <span key={entry} className="cr-ops-active-tag">
+              {entry}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
       {overviewQuery.isPending && !hasOverviewData ? (
-        <LoadingBlock label="Control board harita verisi hazirlaniyor..." />
+        <LoadingBlock label="Employee tracking verisi hazirlaniyor..." />
       ) : null}
 
       {overviewQuery.isError && !hasOverviewData ? (
         <section className="cr-ops-error">
-          <ErrorBlock message="Control board overview verisi yuklenemedi." />
+          <ErrorBlock message="Employee tracking overview verisi yuklenemedi." />
           <button type="button" className="cr-ops-action" onClick={() => void overviewQuery.refetch()}>
             Tekrar dene
           </button>
@@ -691,143 +720,71 @@ export function ControlRoomPage() {
       {hasOverviewData ? (
         <>
           {!isMobile ? (
-            <>
-              <section className="cr-board-layout">
-                <article className="cr-board-map">
+            <section className="cr-tracking-layout">
+              <aside className="cr-tracking-layout__list">
+                <EmployeeDailyRouteTable
+                  rows={dailyRows}
+                  selectedEmployeeId={selectedEmployeeId}
+                  selectedDay={selectedDay}
+                  loading={dailyRowsLoading}
+                  onSelectRow={handleSelectRow}
+                  onClearEmployee={() => {
+                    setSelectedEmployeeId(null)
+                    setSelectedDay(null)
+                    setMapMode('fleet')
+                  }}
+                />
+              </aside>
+
+              <article className="cr-tracking-layout__map">
+                <section className="cr-ops-map-card">
+                  {mapHeader}
                   <ControlRoomUnifiedMap
-                    mapMode={uiState.mapMode}
-                    selectedEmployeeId={uiState.selectedEmployeeId}
+                    mapMode={mapMode}
+                    selectedEmployeeId={selectedEmployeeId}
                     selectedEmployeeName={selectedEmployeeState?.employee.full_name ?? null}
+                    selectedDay={selectedDay}
                     overviewPoints={mapPoints}
-                    routeData={routeQuery.data ?? null}
-                    routeLoading={routeQuery.isFetching}
-                    routeError={routeQuery.isError}
-                    onSelectEmployee={(employeeId) =>
-                      dispatch({
-                        type: 'selectEmployee',
-                        employeeId,
-                      })
-                    }
-                  />
-                </article>
-
-                <aside className="cr-board-rail">
-                  {inspector}
-                  {queue}
-                </aside>
-              </section>
-
-              <section className={`cr-feed-drawer ${uiState.feedOpen ? 'is-open' : ''}`}>
-                <header className="cr-feed-drawer__header">
-                  <div>
-                    <p className="cr-ops-kicker">Secondary feed</p>
-                    <h3>Event drawer</h3>
-                  </div>
-                  <div className="cr-feed-drawer__meta">
-                    <span>{recentEvents.length} olay</span>
-                    <button type="button" className="cr-ops-action is-secondary" onClick={() => dispatch({ type: 'toggleFeed' })}>
-                      {uiState.feedOpen ? 'Gizle' : 'Ac'}
-                    </button>
-                  </div>
-                </header>
-
-                {uiState.feedOpen ? eventFeed : (
-                  <div className="cr-feed-drawer__empty">
-                    Event feed ana navigasyon degil. Ihtiyac oldugunda bu drawer'dan acabilirsiniz.
-                  </div>
-                )}
-              </section>
-            </>
-          ) : (
-            <>
-              {uiState.mobileTab === 'map' ? (
-                <section className="cr-board-map cr-board-map--mobile">
-                  <ControlRoomUnifiedMap
-                    mapMode={uiState.mapMode}
-                    selectedEmployeeId={uiState.selectedEmployeeId}
-                    selectedEmployeeName={selectedEmployeeState?.employee.full_name ?? null}
-                    overviewPoints={mapPoints}
-                    routeData={routeQuery.data ?? null}
-                    routeLoading={routeQuery.isFetching}
-                    routeError={routeQuery.isError}
-                    onSelectEmployee={(employeeId) =>
-                      dispatch({
-                        type: 'selectEmployee',
-                        employeeId,
-                        mobileTab: 'map',
-                      })
-                    }
+                    dayMapData={selectedDayMapQuery.data ?? null}
+                    dayLoading={selectedDayMapQuery.isFetching}
+                    dayError={selectedDayMapQuery.isError}
+                    onSelectEmployee={handleSelectEmployee}
                   />
                 </section>
-              ) : uiState.mobileTab === 'queue' ? (
-                <section className="cr-mobile-tab-shell">{queue}</section>
-              ) : (
-                <section className="cr-mobile-tab-shell">{eventFeed}</section>
-              )}
-
-              {uiState.mobileTab === 'map' && uiState.selectedEmployeeId != null ? (
-                <div className="cr-mobile-inspector-sheet">
-                  {inspector}
-                </div>
-              ) : null}
-
-              <nav className="cr-ops-mobile-nav" aria-label="Mobile control room navigation">
-                {(['map', 'queue', 'feed'] as MobileTab[]).map((tab) => (
-                  <button
-                    key={tab}
-                    type="button"
-                    className={uiState.mobileTab === tab ? 'is-active' : ''}
-                    onClick={() => dispatch({ type: 'setMobileTab', value: tab })}
-                  >
-                    {tab === 'map' ? 'Harita' : tab === 'queue' ? 'Kuyruk' : 'Feed'}
-                  </button>
-                ))}
-              </nav>
-            </>
+              </article>
+            </section>
+          ) : mobileView === 'days' ? (
+            <EmployeeDailyRouteTable
+              rows={dailyRows}
+              selectedEmployeeId={selectedEmployeeId}
+              selectedDay={selectedDay}
+              loading={dailyRowsLoading}
+              mobile
+              onSelectRow={handleSelectRow}
+              onClearEmployee={() => {
+                setSelectedEmployeeId(null)
+                setSelectedDay(null)
+                setMapMode('fleet')
+              }}
+            />
+          ) : (
+            <section className="cr-ops-map-card">
+              {mapHeader}
+              <ControlRoomUnifiedMap
+                mapMode={mapMode}
+                selectedEmployeeId={selectedEmployeeId}
+                selectedEmployeeName={selectedEmployeeState?.employee.full_name ?? null}
+                selectedDay={selectedDay}
+                overviewPoints={mapPoints}
+                dayMapData={selectedDayMapQuery.data ?? null}
+                dayLoading={selectedDayMapQuery.isFetching}
+                dayError={selectedDayMapQuery.isError}
+                onSelectEmployee={handleSelectEmployee}
+              />
+            </section>
           )}
         </>
       ) : null}
-
-      {!isMobile ? (
-        <div className={`cr-ops-filters-desktop ${filtersOpen ? 'is-open' : ''}`}>
-          {filtersOpen ? (
-            <ManagementConsoleFilters
-              filterForm={draftFilters}
-              employees={employees}
-              regions={regionsQuery.data ?? []}
-              departments={departmentsQuery.data ?? []}
-              activeFilterEntries={filterTags}
-              onChange={setDraftFilters}
-              onApply={handleApplyFilters}
-              onReset={handleResetFilters}
-            />
-          ) : null}
-        </div>
-      ) : (
-        <ControlRoomMobileSheet
-          open={filtersOpen}
-          title="Harita filtreleri"
-          onClose={() => setFiltersOpen(false)}
-        >
-          <ManagementConsoleFilters
-            filterForm={draftFilters}
-            employees={employees}
-            regions={regionsQuery.data ?? []}
-            departments={departmentsQuery.data ?? []}
-            activeFilterEntries={filterTags}
-            onChange={setDraftFilters}
-            onApply={handleApplyFilters}
-            onReset={handleResetFilters}
-          />
-        </ControlRoomMobileSheet>
-      )}
-
-      <ManagementConsoleEmployeeDetailModal
-        employeeId={uiState.modalEmployeeId}
-        open={uiState.modalEmployeeId != null}
-        onClose={() => dispatch({ type: 'closeModal' })}
-        placement="right"
-      />
     </div>
   )
 }

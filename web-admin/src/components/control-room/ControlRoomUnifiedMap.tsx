@@ -2,69 +2,72 @@ import { ErrorBlock } from '../ErrorBlock'
 import { LoadingBlock } from '../LoadingBlock'
 import { LocationMonitorMap } from '../location-monitor/LocationMonitorMap'
 import type { LocationMonitorMapResponse } from '../../types/api'
-import { formatDistance } from './utils'
+import { formatDate, formatDistance } from './utils'
 import {
   ControlRoomOverviewMap,
   type ControlRoomOverviewMarkerPoint,
 } from './ControlRoomOverviewMap'
 
-type MapMode = 'fleet' | 'employeeRoute'
+type MapMode = 'fleet' | 'employeeDay'
 
 export function ControlRoomUnifiedMap({
   mapMode,
   selectedEmployeeId,
   selectedEmployeeName,
+  selectedDay,
   overviewPoints,
-  routeData,
-  routeLoading,
-  routeError,
+  dayMapData,
+  dayLoading,
+  dayError,
   onSelectEmployee,
 }: {
   mapMode: MapMode
   selectedEmployeeId: number | null
   selectedEmployeeName: string | null
+  selectedDay: string | null
   overviewPoints: ControlRoomOverviewMarkerPoint[]
-  routeData: LocationMonitorMapResponse | null
-  routeLoading: boolean
-  routeError: boolean
+  dayMapData: LocationMonitorMapResponse | null
+  dayLoading: boolean
+  dayError: boolean
   onSelectEmployee: (employeeId: number) => void
 }) {
-  if (mapMode === 'employeeRoute' && selectedEmployeeId != null) {
+  if (mapMode === 'employeeDay' && selectedEmployeeId != null && selectedDay) {
     return (
       <div className="cr-map-panel">
         <div className="cr-map-panel__hud">
           <div className="cr-map-panel__hud-row">
-            <span className="cr-map-panel__badge is-live">EMPLOYEE ROUTE</span>
+            <span className="cr-map-panel__badge is-live">EMPLOYEE DAY</span>
             <span className="cr-map-panel__badge">
               {selectedEmployeeName ?? `#${selectedEmployeeId}`}
             </span>
-            {routeData ? (
+            <span className="cr-map-panel__badge">{formatDate(selectedDay)}</span>
+            {dayMapData ? (
               <span className="cr-map-panel__badge">
-                {routeData.route_stats.event_count} nokta / {formatDistance(routeData.route_stats.total_distance_m)}
+                {dayMapData.route_stats.event_count} nokta / {formatDistance(dayMapData.route_stats.total_distance_m)}
               </span>
             ) : null}
           </div>
           <div className="cr-map-panel__legend">
-            <span>Tek personel rota overlay</span>
-            <span>Repeated group + geofence aktif</span>
+            <span>Secilen gunun tum noktalarini gosterir</span>
+            <span>Polyline + repeated group + geofence aktif</span>
           </div>
         </div>
 
-        {routeLoading && !routeData ? (
+        {dayLoading && !dayMapData ? (
           <div className="cr-map-panel__state">
-            <LoadingBlock label="Secili personelin rota overlay'i yukleniyor..." />
+            <LoadingBlock label="Secili gunun rota haritasi yukleniyor..." />
           </div>
-        ) : routeError || !routeData ? (
+        ) : dayError || !dayMapData ? (
           <div className="cr-map-panel__state">
-            <ErrorBlock message="Secili personelin rota overlay'i yuklenemedi." />
+            <ErrorBlock message="Secili gunun rota haritasi yuklenemedi." />
           </div>
         ) : (
           <LocationMonitorMap
-            points={routeData.points}
-            simplifiedPoints={routeData.simplified_points}
-            repeatedGroups={routeData.repeated_groups}
-            geofence={routeData.geofence}
-            focusedPointId={routeData.points[routeData.points.length - 1]?.id ?? null}
+            points={dayMapData.points}
+            simplifiedPoints={dayMapData.simplified_points}
+            repeatedGroups={dayMapData.repeated_groups}
+            geofence={dayMapData.geofence}
+            focusedPointId={dayMapData.points[dayMapData.points.length - 1]?.id ?? null}
             className="cr-map-panel__route-canvas"
           />
         )}
