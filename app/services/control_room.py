@@ -57,6 +57,7 @@ from app.services.weekday_shift_assignments import (
 CONTROL_ROOM_ACTION_AUDIT = "CONTROL_ROOM_EMPLOYEE_ACTION"
 CONTROL_ROOM_NOTE_AUDIT = "CONTROL_ROOM_NOTE_CREATED"
 CONTROL_ROOM_OVERRIDE_AUDIT = "CONTROL_ROOM_RISK_OVERRIDE"
+EMPLOYEE_APP_LOCATION_AUDIT = "EMPLOYEE_APP_LOCATION_PING"
 
 CONTROL_ROOM_ACTION_LABELS: dict[str, str] = {
     "SUSPEND": "Askiya Al",
@@ -192,6 +193,98 @@ def _event_to_live_location(event: AttendanceEvent | None) -> EmployeeLiveLocati
     )
 
 
+def _float_or_none(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed != parsed or parsed in {float("inf"), float("-inf")}:
+        return None
+    return parsed
+
+
+def _audit_location_source_label(log_item: AuditLog) -> str:
+    details = log_item.details if isinstance(log_item.details, dict) else {}
+    source = str(details.get("source") or "").strip().upper()
+    if source == "APP_CLOSE":
+        return "Uygulama cikisi"
+    if source in {"DEMO_START", "DEMO_MARK"}:
+        return "Demo baslangici"
+    if source == "DEMO_END":
+        return "Demo bitisi"
+    if source == "APP_OPEN":
+        return "Uygulama acilisi"
+    return "Uygulama konumu"
+
+
+def _audit_location_snapshot(
+    log_item: AuditLog | None,
+) -> tuple[datetime | None, float | None, float | None, float | None, str | None] | None:
+    if log_item is None or log_item.action != EMPLOYEE_APP_LOCATION_AUDIT:
+        return None
+    details = log_item.details if isinstance(log_item.details, dict) else {}
+    lat = _float_or_none(details.get("lat"))
+    lon = _float_or_none(details.get("lon"))
+    if lat is None or lon is None:
+        return None
+    return (
+        _normalize_utc(log_item.ts_utc),
+        lat,
+        lon,
+        _float_or_none(details.get("accuracy_m")),
+        _audit_location_source_label(log_item),
+    )
+
+
+def _pick_latest_location_snapshot(
+    attendance_event: AttendanceEvent | None,
+    audit_log: AuditLog | None,
+) -> tuple[datetime | None, float | None, float | None, float | None, str | None] | None:
+    attendance_snapshot: tuple[datetime | None, float | None, float | None, float | None, str | None] | None = None
+    if attendance_event is not None and attendance_event.lat is not None and attendance_event.lon is not None:
+        attendance_snapshot = (
+            _normalize_utc(attendance_event.ts_utc),
+            float(attendance_event.lat),
+            float(attendance_event.lon),
+            attendance_event.accuracy_m,
+            None,
+        )
+
+    audit_snapshot = _audit_location_snapshot(audit_log)
+    if attendance_snapshot is None:
+        return audit_snapshot
+    if audit_snapshot is None:
+        return attendance_snapshot
+
+    attendance_ts = attendance_snapshot[0]
+    audit_ts = audit_snapshot[0]
+    if audit_ts is not None and (attendance_ts is None or audit_ts >= attendance_ts):
+        return audit_snapshot
+    return attendance_snapshot
+
+
+def _location_state_from_values(
+    *,
+    lat: float | None,
+    lon: float | None,
+    ts_utc: datetime | None,
+    now_utc: datetime,
+) -> Literal["LIVE", "STALE", "DORMANT", "NONE"]:
+    if lat is None or lon is None:
+        return "NONE"
+    location_ts = _normalize_utc(ts_utc)
+    if location_ts is None:
+        return "NONE"
+    age = now_utc - location_ts
+    if age <= timedelta(minutes=30):
+        return "LIVE"
+    if age <= timedelta(hours=6):
+        return "STALE"
+    return "DORMANT"
+
+
 def _today_status_from_events(today_events: list[AttendanceEvent]) -> Literal["NOT_STARTED", "IN_PROGRESS", "FINISHED"]:
     today_last_in: datetime | None = None
     today_last_out: datetime | None = None
@@ -208,17 +301,12 @@ def _today_status_from_events(today_events: list[AttendanceEvent]) -> Literal["N
 
 
 def _control_room_location_state(latest_location_event: AttendanceEvent | None, *, now_utc: datetime) -> Literal["LIVE", "STALE", "DORMANT", "NONE"]:
-    if latest_location_event is None or latest_location_event.lat is None or latest_location_event.lon is None:
-        return "NONE"
-    location_ts = _normalize_utc(latest_location_event.ts_utc)
-    if location_ts is None:
-        return "NONE"
-    age = now_utc - location_ts
-    if age <= timedelta(minutes=30):
-        return "LIVE"
-    if age <= timedelta(hours=6):
-        return "STALE"
-    return "DORMANT"
+    return _location_state_from_values(
+        lat=latest_location_event.lat if latest_location_event is not None else None,
+        lon=latest_location_event.lon if latest_location_event is not None else None,
+        ts_utc=latest_location_event.ts_utc if latest_location_event is not None else None,
+        now_utc=now_utc,
+    )
 
 
 def _risk_status(score: int) -> Literal["NORMAL", "WATCH", "CRITICAL"]:
@@ -825,9 +913,27 @@ def build_control_room_overview(
         last_checkin = latest_checkin_by_employee.get(employee.id)
         last_checkout = latest_checkout_by_employee.get(employee.id)
         latest_location = latest_location_by_employee.get(employee.id)
-        location_state_value = _control_room_location_state(latest_location, now_utc=now_utc)
         latest_system_log = latest_system_activity.get(str(employee.id))
         last_portal_seen_utc = latest_system_log.ts_utc if latest_system_log is not None else None
+        recent_logs_for_employee = system_audits_by_actor.get(str(employee.id), [])
+        latest_audit_location = next(
+            (item for item in recent_logs_for_employee if _audit_location_snapshot(item) is not None),
+            None,
+        )
+        effective_location_snapshot = _pick_latest_location_snapshot(latest_location, latest_audit_location)
+        if effective_location_snapshot is not None:
+            effective_ts, effective_lat, effective_lon, _, effective_source_label = effective_location_snapshot
+        else:
+            effective_ts = None
+            effective_lat = None
+            effective_lon = None
+            effective_source_label = None
+        location_state_value = _location_state_from_values(
+            lat=effective_lat,
+            lon=effective_lon,
+            ts_utc=effective_ts,
+            now_utc=now_utc,
+        )
         last_activity_candidates = [
             item
             for item in [
@@ -837,7 +943,6 @@ def build_control_room_overview(
             if item is not None
         ]
         last_activity_utc = max(last_activity_candidates) if last_activity_candidates else None
-        recent_logs_for_employee = system_audits_by_actor.get(str(employee.id), [])
         recent_ip = next((item.ip for item in recent_logs_for_employee if item.ip), None)
 
         active_devices = sum(1 for item in (employee.devices or []) if item.is_active)
@@ -1198,7 +1303,11 @@ def build_control_room_overview(
             "last_portal_seen_utc": last_portal_seen_utc,
             "last_activity_utc": last_activity_utc,
             "recent_ip": recent_ip,
-            "location_label": _location_label(latest_location),
+            "location_label": (
+                f"{effective_source_label} ({effective_lat:.5f}, {effective_lon:.5f})"
+                if effective_source_label is not None and effective_lat is not None and effective_lon is not None
+                else _location_label(latest_location)
+            ),
             "active_devices": active_devices,
             "total_devices": total_devices,
             "worked_today_minutes": worked_today_minutes,
@@ -1306,26 +1415,42 @@ def build_control_room_overview(
     map_points: list[ControlRoomMapPointRead] = []
     for row in filtered_rows:
         employee = row["employee"]
+        recent_logs_for_employee = system_audits_by_actor.get(str(employee.id), [])
         day_events = [
             item
             for item in events_by_employee.get(employee.id, [])
             if _local_day(item.ts_utc, tz) == selected_map_date and item.lat is not None and item.lon is not None
         ]
-        if not day_events:
+        day_audit_location = next(
+            (
+                item
+                for item in recent_logs_for_employee
+                if _local_day(item.ts_utc, tz) == selected_map_date and _audit_location_snapshot(item) is not None
+            ),
+            None,
+        )
+        latest_day_event = day_events[-1] if day_events else None
+        day_snapshot = _pick_latest_location_snapshot(latest_day_event, day_audit_location)
+        if day_snapshot is None:
             continue
-        event = day_events[-1]
+        point_ts, point_lat, point_lon, point_accuracy, point_source_label = day_snapshot
+        if point_ts is None or point_lat is None or point_lon is None:
+            continue
+        point_label = f"{employee.full_name} / {row['department_name'] or 'Departman yok'}"
+        if point_source_label is not None:
+            point_label = f"{point_label} / {point_source_label}"
         map_points.append(
             ControlRoomMapPointRead(
                 employee_id=employee.id,
                 employee_name=employee.full_name,
                 department_name=row["department_name"],
-                lat=float(event.lat),
-                lon=float(event.lon),
-                ts_utc=event.ts_utc,
-                accuracy_m=event.accuracy_m,
+                lat=point_lat,
+                lon=point_lon,
+                ts_utc=point_ts,
+                accuracy_m=point_accuracy,
                 today_status=row["today_status"],
                 location_state=row["location_state"],
-                label=f"{employee.full_name} / {row['department_name'] or 'Departman yok'}",
+                label=point_label,
             )
         )
 

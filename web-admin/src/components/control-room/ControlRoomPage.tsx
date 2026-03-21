@@ -16,6 +16,7 @@ import { controlRoomQueryKeys } from './queryKeys'
 import { EmployeeDailyRouteTable, type EmployeeDailyRouteRow } from './EmployeeDailyRouteTable'
 import { ControlRoomUnifiedMap } from './ControlRoomUnifiedMap'
 import {
+  sourceKey,
   dayCountForRange,
   formatDateTime,
   latestAvailablePoint,
@@ -23,7 +24,12 @@ import {
   rangeLabel,
 } from './utils'
 import { defaultFilters, type FilterFormState, toOverviewParams } from '../management-console/types'
-import type { ControlRoomEmployeeState, LocationMonitorDayRecord, LocationMonitorMapPoint } from '../../types/api'
+import type {
+  ControlRoomEmployeeState,
+  LocationMonitorDayRecord,
+  LocationMonitorMapPoint,
+  LocationMonitorPointSource,
+} from '../../types/api'
 
 type MapMode = 'fleet' | 'employeeDay'
 type MobileView = 'days' | 'map'
@@ -34,6 +40,18 @@ const MAP_DAY_FORMAT = new Intl.DateTimeFormat('en-CA', {
   month: '2-digit',
   day: '2-digit',
 })
+
+const SOURCE_OPTIONS: Array<{ value: LocationMonitorPointSource; label: string }> = [
+  { value: 'CHECKIN', label: 'Mesai girisi' },
+  { value: 'CHECKOUT', label: 'Mesai cikisi' },
+  { value: 'APP_OPEN', label: 'App girisi' },
+  { value: 'APP_CLOSE', label: 'App cikisi' },
+  { value: 'DEMO_START', label: 'Demo baslangici' },
+  { value: 'DEMO_END', label: 'Demo bitisi' },
+  { value: 'LOCATION_PING', label: 'Konum pingi' },
+]
+
+const ALL_SOURCES = SOURCE_OPTIONS.map((item) => item.value)
 
 function useIsMobile(breakpoint = 1024): boolean {
   const [isMobile, setIsMobile] = useState(() => {
@@ -293,6 +311,7 @@ export function ControlRoomPage() {
   const [draftFilters, setDraftFilters] = useState<FilterFormState>(() => defaultFilters())
   const [appliedFilters, setAppliedFilters] = useState<FilterFormState>(() => defaultFilters())
   const [filtersOpen, setFiltersOpen] = useState(!isMobile)
+  const [enabledSources, setEnabledSources] = useState<LocationMonitorPointSource[]>(ALL_SOURCES)
 
   useEffect(() => {
     if (!isMobile) {
@@ -516,14 +535,16 @@ export function ControlRoomPage() {
             end_date: appliedFilters.end_date,
             day: selectedDay,
             latest_only: false,
+            source: enabledSources.length === ALL_SOURCES.length ? undefined : enabledSources,
           })
-        : ['control-room', 'selected-day', 'map', 'idle'],
+        : ['control-room', 'selected-day', 'map', 'idle', sourceKey(enabledSources)],
     queryFn: () =>
       getLocationMonitorEmployeeMapPoints(selectedEmployeeId!, {
         start_date: appliedFilters.start_date,
         end_date: appliedFilters.end_date,
         day: selectedDay!,
         latest_only: false,
+        source: enabledSources.length === ALL_SOURCES.length ? undefined : enabledSources,
       }),
     staleTime: 20_000,
     placeholderData: (previousData) => previousData,
@@ -531,8 +552,12 @@ export function ControlRoomPage() {
 
   const selectedDayEvents = useMemo(() => {
     const events = selectedDayTimelineQuery.data?.events ?? []
-    return [...events].sort((left, right) => new Date(right.ts_utc).getTime() - new Date(left.ts_utc).getTime())
-  }, [selectedDayTimelineQuery.data?.events])
+    const filteredEvents =
+      enabledSources.length === ALL_SOURCES.length
+        ? events
+        : events.filter((event) => enabledSources.includes(event.source))
+    return [...filteredEvents].sort((left, right) => new Date(right.ts_utc).getTime() - new Date(left.ts_utc).getTime())
+  }, [enabledSources, selectedDayTimelineQuery.data?.events])
 
   useEffect(() => {
     if (mapMode !== 'employeeDay') {
@@ -573,6 +598,7 @@ export function ControlRoomPage() {
     const next = defaultFilters()
     setDraftFilters(next)
     setAppliedFilters(next)
+    setEnabledSources(ALL_SOURCES)
     setSelectedEmployeeId(null)
     setSelectedDay(null)
     setSelectedEventId(null)
@@ -603,6 +629,17 @@ export function ControlRoomPage() {
     if (isMobile) {
       setMobileView('days')
     }
+  }
+
+  const allSourcesSelected = enabledSources.length === ALL_SOURCES.length
+
+  const handleToggleSource = (source: LocationMonitorPointSource) => {
+    setEnabledSources((current) => {
+      if (current.includes(source)) {
+        return current.length === 1 ? current : current.filter((item) => item !== source)
+      }
+      return [...current, source].sort()
+    })
   }
 
   const mapHeader = (
@@ -776,6 +813,41 @@ export function ControlRoomPage() {
               <article className="cr-tracking-layout__map">
                 <section className="cr-ops-map-card">
                   {mapHeader}
+                  {mapMode === 'employeeDay' ? (
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Kaynak
+                      </span>
+                      <button
+                        type="button"
+                        className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                          allSourcesSelected
+                            ? 'border-slate-900 bg-slate-900 text-white'
+                            : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                        }`}
+                        onClick={() => setEnabledSources(ALL_SOURCES)}
+                      >
+                        Tumu
+                      </button>
+                      {SOURCE_OPTIONS.map((option) => {
+                        const active = enabledSources.includes(option.value)
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                              active
+                                ? 'border-sky-600 bg-sky-600 text-white'
+                                : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                            }`}
+                            onClick={() => handleToggleSource(option.value)}
+                          >
+                            {option.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  ) : null}
                   <ControlRoomUnifiedMap
                     mapMode={mapMode}
                     selectedEmployeeId={selectedEmployeeId}
@@ -813,6 +885,41 @@ export function ControlRoomPage() {
           ) : (
             <section className="cr-ops-map-card">
               {mapHeader}
+              {mapMode === 'employeeDay' ? (
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                    Kaynak
+                  </span>
+                  <button
+                    type="button"
+                    className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                      allSourcesSelected
+                        ? 'border-slate-900 bg-slate-900 text-white'
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                    }`}
+                    onClick={() => setEnabledSources(ALL_SOURCES)}
+                  >
+                    Tumu
+                  </button>
+                  {SOURCE_OPTIONS.map((option) => {
+                    const active = enabledSources.includes(option.value)
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                          active
+                            ? 'border-sky-600 bg-sky-600 text-white'
+                            : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                        }`}
+                        onClick={() => handleToggleSource(option.value)}
+                      >
+                        {option.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              ) : null}
               <ControlRoomUnifiedMap
                 mapMode={mapMode}
                 selectedEmployeeId={selectedEmployeeId}

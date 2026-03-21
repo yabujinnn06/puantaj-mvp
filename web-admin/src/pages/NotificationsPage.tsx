@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
 
 import {
@@ -15,6 +15,7 @@ import {
   getAdminUsers,
   getDailyReportArchives,
   getEmployees,
+  getLocationMonitorEmployeeSummary,
   healAdminDevice,
   getNotificationDeliveryLogs,
   getNotificationJobs,
@@ -39,10 +40,12 @@ import type {
   AdminDailyReportJobHealth,
   AdminDeviceInviteCreateResponse,
   AttendanceEvent,
+  LocationMonitorMapPoint,
   NotificationDeliveryLog,
   NotificationJob,
   NotificationJobStatus,
 } from '../types/api'
+import { dateValue } from '../utils/dateValue'
 import { urlBase64ToUint8Array } from '../utils/push'
 
 function dt(value: string): string {
@@ -100,6 +103,40 @@ function parsePositiveInt(value: string | null): number | null {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null
 }
 
+function notificationPointSourceLabel(
+  value: LocationMonitorMapPoint['source'] | null | undefined,
+): string {
+  if (value === 'CHECKIN') return 'Mesai girisi'
+  if (value === 'CHECKOUT') return 'Mesai cikisi'
+  if (value === 'APP_OPEN') return 'App girisi'
+  if (value === 'APP_CLOSE') return 'App cikisi'
+  if (value === 'DEMO_START') return 'Demo baslangici'
+  if (value === 'DEMO_END') return 'Demo bitisi'
+  if (value === 'LOCATION_PING') return 'Konum pingi'
+  return 'Son konum'
+}
+
+function notificationLocationStateLabel(
+  value: LocationMonitorMapPoint['location_status'] | null | undefined,
+): string {
+  if (value === 'VERIFIED' || value === 'VERIFIED_HOME') return 'Dogrulandi'
+  if (value === 'INSIDE_GEOFENCE') return 'Geofence ici'
+  if (value === 'OUTSIDE_GEOFENCE') return 'Geofence disi'
+  if (value === 'LOW_ACCURACY') return 'Dusuk dogruluk'
+  if (value === 'STALE_LOCATION') return 'Gecikmeli'
+  if (value === 'SUSPICIOUS_JUMP') return 'Supheli sicrama'
+  if (value === 'MOCK_GPS_SUSPECTED') return 'Mock GPS supheli'
+  if (value === 'UNVERIFIED_LOCATION') return 'Dogrulanmamis'
+  return 'Konum var'
+}
+
+function notificationCoordinates(
+  point: LocationMonitorMapPoint | null | undefined,
+): string {
+  if (!point) return '-'
+  return `${point.lat.toFixed(5)}, ${point.lon.toFixed(5)}`
+}
+
 function timelineEventLabel(event: AttendanceEvent): string {
   const rawShiftName =
     typeof event.flags?.SHIFT_NAME === 'string' ? event.flags.SHIFT_NAME : null
@@ -152,6 +189,8 @@ function downloadBlob(blob: Blob, name: string): void {
 
 const LIST_PAGE_SIZE = 35
 const PUSH_VAPID_KEY_STORAGE = 'pf_admin_push_vapid_public_key'
+const NOTIFY_LOCATION_LOOKBACK_START = dateValue(-6)
+const NOTIFY_LOCATION_LOOKBACK_END = dateValue(0)
 
 type NotificationSectionKey =
   | 'overview'
@@ -554,6 +593,44 @@ export function NotificationsPage() {
       : requestedArchiveId !== null
         ? 'archives'
         : 'overview'
+  const employeeLookup = useMemo(
+    () => new Map((employeesQuery.data ?? []).map((employee) => [employee.id, employee])),
+    [employeesQuery.data],
+  )
+  const selectedEmployeeLocationQueries = useQueries({
+    queries:
+      activeSection === 'send' && target !== 'admins' && selectedEmployees.length > 0
+        ? selectedEmployees.map((employeeId) => ({
+            queryKey: [
+              'notify-employee-location',
+              employeeId,
+              NOTIFY_LOCATION_LOOKBACK_START,
+              NOTIFY_LOCATION_LOOKBACK_END,
+            ],
+            queryFn: () =>
+              getLocationMonitorEmployeeSummary(employeeId, {
+                start_date: NOTIFY_LOCATION_LOOKBACK_START,
+                end_date: NOTIFY_LOCATION_LOOKBACK_END,
+              }),
+            staleTime: 30_000,
+          }))
+        : [],
+  })
+  const selectedEmployeeLocationCards = useMemo(() => {
+    if (activeSection !== 'send' || target === 'admins' || selectedEmployees.length === 0) {
+      return []
+    }
+    return selectedEmployees.map((employeeId, index) => {
+      const query = selectedEmployeeLocationQueries[index]
+      return {
+        employeeId,
+        employeeName: employeeLookup.get(employeeId)?.full_name ?? `#${employeeId}`,
+        isLoading: query?.isPending ?? false,
+        isError: query?.isError ?? false,
+        point: query?.data?.summary.latest_location ?? null,
+      }
+    })
+  }, [activeSection, employeeLookup, selectedEmployeeLocationQueries, selectedEmployees, target])
   const notificationSections = useMemo(
     () => [
       {
@@ -1235,6 +1312,85 @@ export function NotificationsPage() {
                     </label>
                   ))}
                 </div>
+                {selectedEmployees.length === 0 ? (
+                  <p className="mt-2 text-xs text-slate-500">
+                    Calisan secmezsen bildirim tum calisanlara gider. Konum ozeti secili personellerde gosterilir.
+                  </p>
+                ) : null}
+                {selectedEmployeeLocationCards.length > 0 ? (
+                  <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h5 className="text-sm font-semibold text-slate-900">
+                          Secili personel konum ozeti
+                        </h5>
+                        <p className="text-xs text-slate-500">
+                          Son 7 gun icindeki en guncel konum, kaynagi ve zamani.
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600">
+                        {selectedEmployeeLocationCards.length} personel
+                      </span>
+                    </div>
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      {selectedEmployeeLocationCards.map((card) => (
+                        <article
+                          key={card.employeeId}
+                          className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <strong className="text-slate-900">{card.employeeName}</strong>
+                              <p className="mt-1 text-xs text-slate-500">
+                                {card.point ? dt(card.point.ts_utc) : 'Konum kaydi yok'}
+                              </p>
+                            </div>
+                            {card.point ? (
+                              <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700">
+                                {notificationPointSourceLabel(card.point.source)}
+                              </span>
+                            ) : null}
+                          </div>
+                          {card.isLoading ? (
+                            <p className="mt-3 text-xs text-slate-500">Konum yukleniyor...</p>
+                          ) : card.isError ? (
+                            <p className="mt-3 text-xs text-rose-600">Konum bilgisi alinamadi.</p>
+                          ) : card.point ? (
+                            <>
+                              <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                  Son nokta
+                                </div>
+                                <div className="mt-1 font-mono text-sm text-slate-900">
+                                  {notificationCoordinates(card.point)}
+                                </div>
+                              </div>
+                              <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+                                <span className="rounded-full bg-sky-50 px-2 py-1 font-semibold text-sky-700">
+                                  {notificationLocationStateLabel(card.point.location_status)}
+                                </span>
+                                {card.point.accuracy_m != null ? (
+                                  <span className="rounded-full bg-slate-100 px-2 py-1 font-semibold text-slate-600">
+                                    {Math.round(card.point.accuracy_m)} m
+                                  </span>
+                                ) : null}
+                                {card.point.provider ? (
+                                  <span className="rounded-full bg-slate-100 px-2 py-1 font-semibold text-slate-600">
+                                    {card.point.provider}
+                                  </span>
+                                ) : null}
+                              </div>
+                            </>
+                          ) : (
+                            <p className="mt-3 text-xs text-slate-500">
+                              Son 7 gun icinde koordinatli konum bulunamadi.
+                            </p>
+                          )}
+                        </article>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ) : null}
 
