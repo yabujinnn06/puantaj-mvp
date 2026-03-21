@@ -7,14 +7,8 @@ import type {
   ControlRoomLocationState,
   ControlRoomRiskStatus,
 } from '../../types/api'
-import {
-  controlRoomLocationLabel,
-  controlRoomRiskLabel,
-  formatDateTime,
-  formatRelative,
-} from './utils'
 
-type OverviewMarkerPoint = {
+export type ControlRoomOverviewMarkerPoint = {
   employeeId: number
   employeeName: string
   departmentName: string | null
@@ -35,15 +29,7 @@ const clusterCellSize = (zoom: number) => {
   return 0.075
 }
 
-const escapeHtml = (value: string) =>
-  value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;')
-
-function markerIcon(point: OverviewMarkerPoint, selected: boolean): L.DivIcon {
+function markerIcon(point: ControlRoomOverviewMarkerPoint, selected: boolean): L.DivIcon {
   const classes = [
     'cr-map-marker',
     `is-location-${point.locationState.toLowerCase()}`,
@@ -64,7 +50,6 @@ function markerIcon(point: OverviewMarkerPoint, selected: boolean): L.DivIcon {
     ].join(''),
     iconSize: [28, 28],
     iconAnchor: [14, 14],
-    popupAnchor: [0, -14],
   })
 }
 
@@ -81,35 +66,14 @@ function clusterIcon(count: number, hasCritical: boolean): L.DivIcon {
   })
 }
 
-function popupHtml(point: OverviewMarkerPoint): string {
-  return [
-    '<div class="cr-map-popup">',
-    `<strong>${escapeHtml(point.employeeName)}</strong>`,
-    `<p>${escapeHtml(point.departmentName ?? 'Departman yok')} / ${escapeHtml(point.label)}</p>`,
-    '<div class="cr-map-popup__meta">',
-    `<span>${escapeHtml(controlRoomLocationLabel(point.locationState))}</span>`,
-    `<span>${escapeHtml(controlRoomRiskLabel(point.riskStatus))}</span>`,
-    `<span>${escapeHtml(formatRelative(point.tsUtc))}</span>`,
-    '</div>',
-    `<div class="cr-map-popup__time">${escapeHtml(formatDateTime(point.tsUtc))}</div>`,
-    '<div class="cr-map-popup__actions">',
-    `<button type="button" data-cr-map-action="focus" data-employee-id="${point.employeeId}">Rota odagi</button>`,
-    `<button type="button" data-cr-map-action="detail" data-employee-id="${point.employeeId}">Dosya</button>`,
-    '</div>',
-    '</div>',
-  ].join('')
-}
-
 export function ControlRoomOverviewMap({
   points,
   selectedEmployeeId,
   onSelectEmployee,
-  onOpenEmployeeDetail,
 }: {
-  points: OverviewMarkerPoint[]
+  points: ControlRoomOverviewMarkerPoint[]
   selectedEmployeeId: number | null
   onSelectEmployee: (employeeId: number) => void
-  onOpenEmployeeDetail: (employeeId: number) => void
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<L.Map | null>(null)
@@ -118,13 +82,11 @@ export function ControlRoomOverviewMap({
   const hasInitialFitRef = useRef(false)
   const invalidateTimerRef = useRef<number | null>(null)
   const selectRef = useRef(onSelectEmployee)
-  const detailRef = useRef(onOpenEmployeeDetail)
   const [viewportVersion, setViewportVersion] = useState(0)
 
   useEffect(() => {
     selectRef.current = onSelectEmployee
-    detailRef.current = onOpenEmployeeDetail
-  }, [onOpenEmployeeDetail, onSelectEmployee])
+  }, [onSelectEmployee])
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
@@ -145,30 +107,7 @@ export function ControlRoomOverviewMap({
     }).addTo(map)
 
     const handleViewportChange = () => setViewportVersion((current) => current + 1)
-    const handlePopupOpen = (event: L.PopupEvent) => {
-      const popupElement = event.popup.getElement()
-      if (!popupElement) return
-      const handleClick = (nativeEvent: Event) => {
-        const target = nativeEvent.target as HTMLElement | null
-        const actionButton = target?.closest<HTMLElement>('[data-cr-map-action]')
-        if (!actionButton) return
-        nativeEvent.preventDefault()
-        nativeEvent.stopPropagation()
-
-        const employeeId = Number(actionButton.dataset.employeeId)
-        if (!Number.isFinite(employeeId)) return
-        if (actionButton.dataset.crMapAction === 'detail') {
-          detailRef.current(employeeId)
-          return
-        }
-        selectRef.current(employeeId)
-      }
-
-      popupElement.addEventListener('click', handleClick)
-    }
-
     map.on('moveend zoomend', handleViewportChange)
-    map.on('popupopen', handlePopupOpen)
 
     mapRef.current = map
     layerRef.current = L.layerGroup().addTo(map)
@@ -179,7 +118,6 @@ export function ControlRoomOverviewMap({
         window.clearTimeout(invalidateTimerRef.current)
       }
       map.off('moveend zoomend', handleViewportChange)
-      map.off('popupopen', handlePopupOpen)
       map.stop()
       map.remove()
       mapRef.current = null
@@ -202,7 +140,7 @@ export function ControlRoomOverviewMap({
       return points.map((point) => ({ kind: 'single' as const, point }))
     }
 
-    const groups = new Map<string, OverviewMarkerPoint[]>()
+    const groups = new Map<string, ControlRoomOverviewMarkerPoint[]>()
     for (const point of points) {
       const key = `${Math.floor(point.lat / cellSize)}:${Math.floor(point.lon / cellSize)}`
       groups.set(key, [...(groups.get(key) ?? []), point])
@@ -244,11 +182,7 @@ export function ControlRoomOverviewMap({
         const marker = L.marker([item.point.lat, item.point.lon], {
           icon: markerIcon(item.point, selectedEmployeeId === item.point.employeeId),
         })
-          .bindPopup(popupHtml(item.point), {
-            className: 'cr-map-popup-shell',
-            closeButton: false,
-            autoPanPadding: [24, 24],
-          })
+          .on('click', () => selectRef.current(item.point.employeeId))
           .addTo(layer)
 
         renderedMarkersRef.current.set(item.point.employeeId, marker)
@@ -259,14 +193,6 @@ export function ControlRoomOverviewMap({
       const clusterMarker = L.marker([item.centerLat, item.centerLon], {
         icon: clusterIcon(item.count, item.hasCritical),
       })
-        .bindPopup(
-          `<div class="cr-map-popup"><strong>${item.count} personel</strong><p>Yogun saha kumesi</p></div>`,
-          {
-            className: 'cr-map-popup-shell',
-            closeButton: false,
-            autoPanPadding: [24, 24],
-          },
-        )
         .on('click', () => {
           map.setView([item.centerLat, item.centerLon], Math.min(map.getZoom() + 2, 15), {
             animate: false,
@@ -305,28 +231,27 @@ export function ControlRoomOverviewMap({
     if (!marker) return
 
     mapRef.current.setView(marker.getLatLng(), Math.max(mapRef.current.getZoom(), 12), { animate: false })
-    marker.openPopup()
   }, [selectedEmployeeId])
 
   return (
     <div className="cr-map-panel">
       <div className="cr-map-panel__hud">
         <div className="cr-map-panel__hud-row">
-          <span className="cr-map-panel__badge is-live">LIVE OVERVIEW</span>
-          <span className="cr-map-panel__badge">Route polyline yok</span>
+          <span className="cr-map-panel__badge is-live">FLEET</span>
+          <span className="cr-map-panel__badge">Marker secimi aktif</span>
         </div>
         <div className="cr-map-panel__legend">
           <span>
             <i className="cr-map-panel__legend-dot is-live" />
-            Konum durumu
+            Dis ring: konum durumu
           </span>
           <span>
             <i className="cr-map-panel__legend-dot is-critical" />
-            Risk cekirdegi
+            Ic core: risk seviyesi
           </span>
         </div>
       </div>
-      <div ref={containerRef} className="cr-map-panel__canvas" aria-label="Calisan overview haritasi" />
+      <div ref={containerRef} className="cr-map-panel__canvas" aria-label="Calisan fleet haritasi" />
     </div>
   )
 }

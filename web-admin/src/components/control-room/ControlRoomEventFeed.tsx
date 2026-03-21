@@ -28,6 +28,7 @@ export function ControlRoomEventFeed({
   initialVisibleCount,
   incrementCount = 10,
   scrollable = false,
+  hideHeader = false,
 }: {
   events: ControlRoomRecentEvent[]
   employeeStates: Map<number, ControlRoomEmployeeState>
@@ -38,6 +39,7 @@ export function ControlRoomEventFeed({
   initialVisibleCount?: number
   incrementCount?: number
   scrollable?: boolean
+  hideHeader?: boolean
 }) {
   const [visibleCount, setVisibleCount] = useState(initialVisibleCount ?? events.length)
 
@@ -52,15 +54,17 @@ export function ControlRoomEventFeed({
 
   return (
     <section className="cr-feed-panel">
-      <header className="cr-feed-panel__header">
-        <div>
-          <p className="cr-ops-kicker">Canli olay akisi</p>
-          <h3>Event feed</h3>
-        </div>
-        <span className="cr-feed-panel__count">
-          {visibleEvents.length === events.length ? events.length : `${visibleEvents.length} / ${events.length}`} kayit
-        </span>
-      </header>
+      {!hideHeader ? (
+        <header className="cr-feed-panel__header">
+          <div>
+            <p className="cr-ops-kicker">Canli olay akisi</p>
+            <h3>Event feed</h3>
+          </div>
+          <span className="cr-feed-panel__count">
+            {visibleEvents.length === events.length ? events.length : `${visibleEvents.length} / ${events.length}`} kayit
+          </span>
+        </header>
+      ) : null}
 
       <div className={`cr-feed-list ${scrollable ? 'is-scrollable' : ''}`}>
         {visibleEvents.length ? (

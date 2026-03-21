@@ -1,22 +1,25 @@
-import { useEffect, useMemo, useReducer, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useReducer, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
-import { getControlRoomOverview, getDepartments, getEmployees, getRegions } from '../../api/admin'
+import {
+  getControlRoomOverview,
+  getDepartments,
+  getEmployees,
+  getLocationMonitorEmployeeMapPoints,
+  getRegions,
+} from '../../api/admin'
 import { ErrorBlock } from '../ErrorBlock'
 import { LoadingBlock } from '../LoadingBlock'
 import { MinuteDisplay } from '../MinuteDisplay'
 import { PageHeader } from '../PageHeader'
 import { ManagementConsoleEmployeeDetailModal } from '../management-console/ManagementConsoleEmployeeDetailModal'
 import { ManagementConsoleFilters } from '../management-console/ManagementConsoleFilters'
-import { ManagementConsoleKpiCards } from '../management-console/ManagementConsoleKpiCards'
-import { ManagementConsoleMatrixTable } from '../management-console/ManagementConsoleMatrixTable'
 import { controlRoomQueryKeys } from './queryKeys'
 import { ControlRoomEventFeed } from './ControlRoomEventFeed'
-import { ControlRoomFocusPanel } from './ControlRoomFocusPanel'
 import { ControlRoomMobileSheet } from './ControlRoomMobileSheet'
-import { ControlRoomOverviewMap } from './ControlRoomOverviewMap'
 import { ControlRoomPriorityQueue } from './ControlRoomPriorityQueue'
 import { ControlRoomQuickFilters } from './ControlRoomQuickFilters'
+import { ControlRoomUnifiedMap } from './ControlRoomUnifiedMap'
 import type { ControlRoomQuickFilter } from './utils'
 import {
   buildQuickFilterParams,
@@ -24,6 +27,7 @@ import {
   controlRoomRiskLabel,
   dayCountForRange,
   formatDateTime,
+  formatDistance,
   formatRelative,
   matchesQuickFilters,
   queueReason,
@@ -34,78 +38,91 @@ import {
 import {
   defaultFilters,
   type FilterFormState,
-  type SortField,
   toOverviewParams,
 } from '../management-console/types'
 import type { ControlRoomEmployeeState } from '../../types/api'
 
-type ScreenMode = 'overview' | 'focus'
-type MobileTab = 'feed' | 'map' | 'queue' | 'detail'
+type MapMode = 'fleet' | 'employeeRoute'
+type MobileTab = 'map' | 'queue' | 'feed'
 
 type ControlRoomUiState = {
-  screenMode: ScreenMode
+  mapMode: MapMode
   selectedEmployeeId: number | null
   selectedEventId: number | null
-  detailEmployeeId: number | null
+  modalEmployeeId: number | null
   mobileTab: MobileTab
   quickFilters: ControlRoomQuickFilter[]
-  page: number
+  feedOpen: boolean
 }
 
 type ControlRoomUiAction =
-  | { type: 'focusEmployee'; employeeId: number; eventId?: number | null; mobileTab?: MobileTab }
-  | { type: 'showEmployeeOnMap'; employeeId: number; eventId?: number | null }
-  | { type: 'openDetail'; employeeId: number }
-  | { type: 'closeDetail' }
+  | { type: 'selectEmployee'; employeeId: number; eventId?: number | null; mobileTab?: MobileTab }
+  | { type: 'clearSelection' }
+  | { type: 'showRoute' }
+  | { type: 'hideRoute' }
+  | { type: 'openModal'; employeeId: number }
+  | { type: 'closeModal' }
   | { type: 'setMobileTab'; value: MobileTab }
   | { type: 'toggleQuickFilter'; value: ControlRoomQuickFilter }
-  | { type: 'setPage'; value: number }
-  | { type: 'returnOverview' }
+  | { type: 'toggleFeed' }
 
 const initialUiState: ControlRoomUiState = {
-  screenMode: 'overview',
+  mapMode: 'fleet',
   selectedEmployeeId: null,
   selectedEventId: null,
-  detailEmployeeId: null,
-  mobileTab: 'feed',
+  modalEmployeeId: null,
+  mobileTab: 'map',
   quickFilters: [],
-  page: 1,
+  feedOpen: false,
 }
 
 function uiReducer(state: ControlRoomUiState, action: ControlRoomUiAction): ControlRoomUiState {
-  if (action.type === 'focusEmployee') {
+  if (action.type === 'selectEmployee') {
     return {
       ...state,
-      screenMode: 'focus',
       selectedEmployeeId: action.employeeId,
       selectedEventId: action.eventId ?? null,
       mobileTab: action.mobileTab ?? 'map',
     }
   }
 
-  if (action.type === 'showEmployeeOnMap') {
+  if (action.type === 'clearSelection') {
     return {
       ...state,
-      screenMode: 'overview',
-      selectedEmployeeId: action.employeeId,
-      selectedEventId: action.eventId ?? null,
+      mapMode: 'fleet',
+      selectedEmployeeId: null,
+      selectedEventId: null,
+    }
+  }
+
+  if (action.type === 'showRoute') {
+    if (state.selectedEmployeeId == null) return state
+    return {
+      ...state,
+      mapMode: 'employeeRoute',
       mobileTab: 'map',
     }
   }
 
-  if (action.type === 'openDetail') {
+  if (action.type === 'hideRoute') {
     return {
       ...state,
-      selectedEmployeeId: action.employeeId,
-      detailEmployeeId: action.employeeId,
-      mobileTab: 'detail',
+      mapMode: 'fleet',
     }
   }
 
-  if (action.type === 'closeDetail') {
+  if (action.type === 'openModal') {
     return {
       ...state,
-      detailEmployeeId: null,
+      selectedEmployeeId: action.employeeId,
+      modalEmployeeId: action.employeeId,
+    }
+  }
+
+  if (action.type === 'closeModal') {
+    return {
+      ...state,
+      modalEmployeeId: null,
     }
   }
 
@@ -120,22 +137,12 @@ function uiReducer(state: ControlRoomUiState, action: ControlRoomUiAction): Cont
     return {
       ...state,
       quickFilters: toggleQuickFilter(state.quickFilters, action.value),
-      page: 1,
-    }
-  }
-
-  if (action.type === 'setPage') {
-    return {
-      ...state,
-      page: action.value,
     }
   }
 
   return {
     ...state,
-    screenMode: 'overview',
-    selectedEventId: null,
-    mobileTab: 'feed',
+    feedOpen: !state.feedOpen,
   }
 }
 
@@ -207,41 +214,58 @@ function prioritySort(left: ControlRoomEmployeeState, right: ControlRoomEmployee
   return new Date(right.last_activity_utc ?? 0).getTime() - new Date(left.last_activity_utc ?? 0).getTime()
 }
 
-function SelectedEmployeeBrief({
+function SelectedEmployeeInspector({
   employee,
-  onFocus,
+  mapMode,
+  routeLoading,
+  routePointCount,
+  routeDistance,
+  onShowRoute,
+  onHideRoute,
+  onClearSelection,
   onOpenDetail,
 }: {
   employee: ControlRoomEmployeeState | null
-  onFocus: () => void
+  mapMode: MapMode
+  routeLoading: boolean
+  routePointCount: number
+  routeDistance: string
+  onShowRoute: () => void
+  onHideRoute: () => void
+  onClearSelection: () => void
   onOpenDetail: () => void
 }) {
   if (!employee) {
     return (
-      <section className="cr-dossier-peek">
+      <section className="cr-dossier-peek cr-inspector-card">
         <header className="cr-dossier-peek__header">
           <div>
-            <p className="cr-ops-kicker">Dossier</p>
-            <h3>Secili personel yok</h3>
+            <p className="cr-ops-kicker">Map inspector</p>
+            <h3>Haritadan personel secin</h3>
           </div>
         </header>
         <div className="cr-feed-empty">
-          Feed, kuyruk veya harita uzerinden bir personel sectiginizde burada kisa briefing gorunur.
+          Fleet marker'a bir kez tiklayin. Harita odaklanir, secili personel inspector'u acilir ve rota aksiyonu aktif olur.
         </div>
       </section>
     )
   }
 
   return (
-    <section className="cr-dossier-peek">
+    <section className="cr-dossier-peek cr-inspector-card">
       <header className="cr-dossier-peek__header">
         <div>
-          <p className="cr-ops-kicker">Intelligence brief</p>
+          <p className="cr-ops-kicker">Mini inspector</p>
           <h3>{employee.employee.full_name}</h3>
         </div>
-        <span className={`cr-dossier-peek__risk is-${employee.risk_status.toLowerCase()}`}>
-          {employee.risk_score}
-        </span>
+        <div className="cr-inspector-card__head-actions">
+          <span className={`cr-dossier-peek__risk is-${employee.risk_status.toLowerCase()}`}>
+            {employee.risk_score}
+          </span>
+          <button type="button" className="cr-inspector-card__clear" onClick={onClearSelection}>
+            Secimi temizle
+          </button>
+        </div>
       </header>
 
       <div className="cr-dossier-peek__meta">
@@ -267,13 +291,28 @@ function SelectedEmployeeBrief({
             <MinuteDisplay minutes={employee.weekly_total_minutes} /> hafta
           </small>
         </article>
+        <article>
+          <span>Harita modu</span>
+          <strong>{mapMode === 'employeeRoute' ? 'Employee route' : 'Fleet'}</strong>
+          <small>
+            {mapMode === 'employeeRoute'
+              ? `${routePointCount} nokta / ${routeDistance}`
+              : 'Marker tabanli coklu saha gorunumu'}
+          </small>
+        </article>
       </div>
 
       <div className="cr-dossier-peek__actions">
-        <button type="button" onClick={onFocus}>
-          Rota focus'a git
-        </button>
-        <button type="button" onClick={onOpenDetail}>
+        {mapMode === 'employeeRoute' ? (
+          <button type="button" onClick={onHideRoute}>
+            Kapat
+          </button>
+        ) : (
+          <button type="button" onClick={onShowRoute} disabled={routeLoading}>
+            {routeLoading ? 'Rota yukleniyor...' : 'Rota'}
+          </button>
+        )}
+        <button type="button" className="is-secondary" onClick={onOpenDetail}>
           Dosyayi ac
         </button>
       </div>
@@ -295,10 +334,10 @@ export function ControlRoomPage() {
 
   const overviewParams = useMemo(
     () => ({
-      ...toOverviewParams(appliedFilters, uiState.page),
+      ...toOverviewParams(appliedFilters, 1),
       ...quickFilterParams,
     }),
-    [appliedFilters, quickFilterParams, uiState.page],
+    [appliedFilters, quickFilterParams],
   )
 
   const overviewQuery = useQuery({
@@ -326,6 +365,27 @@ export function ControlRoomPage() {
     staleTime: 5 * 60_000,
   })
 
+  const routeQueryEnabled = uiState.selectedEmployeeId != null && uiState.mapMode === 'employeeRoute'
+  const routeQuery = useQuery({
+    enabled: routeQueryEnabled,
+    queryKey:
+      routeQueryEnabled && uiState.selectedEmployeeId != null
+        ? controlRoomQueryKeys.focusMap(uiState.selectedEmployeeId, {
+            start_date: appliedFilters.start_date,
+            end_date: appliedFilters.end_date,
+            latest_only: false,
+          })
+        : ['control-room-route-overlay', 'idle'],
+    queryFn: () =>
+      getLocationMonitorEmployeeMapPoints(uiState.selectedEmployeeId!, {
+        start_date: appliedFilters.start_date,
+        end_date: appliedFilters.end_date,
+        latest_only: false,
+      }),
+    staleTime: 20_000,
+    placeholderData: (previousData) => previousData,
+  })
+
   const overview = overviewQuery.data ?? null
   const employees = employeesQuery.data ?? []
   const employeeNames = useMemo(
@@ -340,6 +400,12 @@ export function ControlRoomPage() {
 
   const selectedEmployeeState =
     (uiState.selectedEmployeeId != null ? employeeStateMap.get(uiState.selectedEmployeeId) : null) ?? null
+
+  useEffect(() => {
+    if (uiState.selectedEmployeeId == null) return
+    if (employeeStateMap.has(uiState.selectedEmployeeId)) return
+    dispatch({ type: 'clearSelection' })
+  }, [employeeStateMap, uiState.selectedEmployeeId])
 
   const priorityQueue = useMemo(
     () => [...(overview?.items ?? [])].sort(prioritySort).slice(0, 8),
@@ -375,24 +441,15 @@ export function ControlRoomPage() {
     })
   }, [employeeStateMap, overview?.recent_events, uiState.quickFilters])
 
-  const totalPages = Math.max(1, Math.ceil((overview?.total ?? 0) / appliedFilters.limit))
   const appliedDayRange = dayCountForRange(appliedFilters.start_date, appliedFilters.end_date)
   const hasOverviewData = Boolean(overview)
-  const showFocusMode = uiState.screenMode === 'focus' && uiState.selectedEmployeeId != null
   const filterTags = useMemo(
     () => activeFilterEntries(appliedFilters, uiState.quickFilters, employeeNames),
     [appliedFilters, employeeNames, uiState.quickFilters],
   )
 
-  useEffect(() => {
-    if (!isMobile && uiState.mobileTab === 'detail' && uiState.detailEmployeeId == null) {
-      dispatch({ type: 'setMobileTab', value: showFocusMode ? 'map' : 'feed' })
-    }
-  }, [isMobile, showFocusMode, uiState.detailEmployeeId, uiState.mobileTab])
-
   const handleApplyFilters = () => {
     setAppliedFilters(draftFilters)
-    dispatch({ type: 'setPage', value: 1 })
     setFiltersOpen(false)
   }
 
@@ -400,350 +457,113 @@ export function ControlRoomPage() {
     const next = defaultFilters()
     setDraftFilters(next)
     setAppliedFilters(next)
-    dispatch({ type: 'setPage', value: 1 })
   }
 
-  const handleSort = (field: SortField) => {
-    const nextSortDir: FilterFormState['sort_dir'] =
-      appliedFilters.sort_by === field ? (appliedFilters.sort_dir === 'asc' ? 'desc' : 'asc') : 'desc'
-
-    const nextFilters = {
-      ...appliedFilters,
-      sort_by: field,
-      sort_dir: nextSortDir,
-    }
-
-    setDraftFilters(nextFilters)
-    setAppliedFilters(nextFilters)
-    dispatch({ type: 'setPage', value: 1 })
-  }
-
-  const renderDesktopOverview = () => (
-    <>
-      {overview?.summary ? <ManagementConsoleKpiCards summary={overview.summary} /> : null}
-
-      <section className="cr-ops-grid">
-        <article className="cr-ops-map-card">
-          <header className="cr-ops-section-head">
-            <div>
-              <p className="cr-ops-kicker">Overview map</p>
-              <h3>Coklu calisan saha gorunumu</h3>
-            </div>
-            <div className="cr-ops-section-meta">
-              <span>{mapPoints.length} marker</span>
-              <span>{appliedDayRange} gun</span>
-              <span>Polyline kapali</span>
-            </div>
-          </header>
-          {mapPoints.length ? (
-            <ControlRoomOverviewMap
-              points={mapPoints}
-              selectedEmployeeId={uiState.selectedEmployeeId}
-              onSelectEmployee={(employeeId) =>
-                dispatch({
-                  type: 'focusEmployee',
-                  employeeId,
-                  mobileTab: 'map',
-                })
-              }
-              onOpenEmployeeDetail={(employeeId) => dispatch({ type: 'openDetail', employeeId })}
-            />
-          ) : (
-            <div className="cr-feed-empty">Haritada gosterilecek aktif konum noktasi yok.</div>
-          )}
-        </article>
-
-        <div className="cr-ops-rail">
-          <ControlRoomPriorityQueue
-            items={priorityQueue}
-            selectedEmployeeId={uiState.selectedEmployeeId}
-            onSelectEmployee={(employeeId) =>
-              dispatch({
-                type: 'focusEmployee',
-                employeeId,
-                mobileTab: 'map',
-              })
-            }
-            onOpenEmployeeDetail={(employeeId) => dispatch({ type: 'openDetail', employeeId })}
-          />
-          <SelectedEmployeeBrief
-            employee={selectedEmployeeState}
-            onFocus={() =>
-              uiState.selectedEmployeeId != null
-                ? dispatch({
-                    type: 'focusEmployee',
-                    employeeId: uiState.selectedEmployeeId,
-                    mobileTab: 'map',
-                  })
-                : undefined
-            }
-            onOpenDetail={() => {
-              if (uiState.selectedEmployeeId != null) {
-                dispatch({ type: 'openDetail', employeeId: uiState.selectedEmployeeId })
-              }
-            }}
-          />
-        </div>
-      </section>
-
-      <section className="cr-ops-secondary-grid">
-        <article className="min-w-0">
-          <ManagementConsoleMatrixTable
-            items={overview?.items ?? []}
-            total={overview?.total ?? 0}
-            page={uiState.page}
-            totalPages={totalPages}
-            filters={appliedFilters}
-            onSort={handleSort}
-            onOpenEmployee={(employeeId) =>
-              dispatch({
-                type: 'focusEmployee',
-                employeeId,
-                mobileTab: 'map',
-              })
-            }
-            selectedEmployeeId={uiState.selectedEmployeeId}
-            onPageChange={(page) => dispatch({ type: 'setPage', value: page })}
-          />
-        </article>
-
-        <ControlRoomEventFeed
-          events={recentEvents}
-          employeeStates={employeeStateMap}
-          selectedEventId={uiState.selectedEventId}
-          initialVisibleCount={14}
-          incrementCount={10}
-          scrollable
-          onSelectEvent={(employeeId, eventId) =>
-            dispatch({
-              type: 'focusEmployee',
-              employeeId,
-              eventId,
-              mobileTab: 'map',
-            })
-          }
-          onPinToMap={(employeeId, eventId) =>
-            dispatch({
-              type: 'showEmployeeOnMap',
-              employeeId,
-              eventId,
-            })
-          }
-          onOpenEmployeeDetail={(employeeId) => dispatch({ type: 'openDetail', employeeId })}
-        />
-      </section>
-    </>
+  const inspector = (
+    <SelectedEmployeeInspector
+      employee={selectedEmployeeState}
+      mapMode={uiState.mapMode}
+      routeLoading={routeQuery.isFetching}
+      routePointCount={routeQuery.data?.route_stats.event_count ?? 0}
+      routeDistance={formatDistance(routeQuery.data?.route_stats.total_distance_m)}
+      onShowRoute={() => dispatch({ type: 'showRoute' })}
+      onHideRoute={() => dispatch({ type: 'hideRoute' })}
+      onClearSelection={() => dispatch({ type: 'clearSelection' })}
+      onOpenDetail={() => {
+        if (uiState.selectedEmployeeId != null) {
+          dispatch({ type: 'openModal', employeeId: uiState.selectedEmployeeId })
+        }
+      }}
+    />
   )
 
-  const renderMobileOverviewContent = (): ReactNode => {
-    if (uiState.mobileTab === 'map') {
-      return (
-        <section className="cr-mobile-tab-shell">
-          <article className="cr-ops-map-card">
-            <header className="cr-ops-section-head">
-              <div>
-                <p className="cr-ops-kicker">Overview map</p>
-                <h3>Saha dagilimi</h3>
-              </div>
-              <div className="cr-ops-section-meta">
-                <span>{mapPoints.length} marker</span>
-                <span>Polyline yok</span>
-              </div>
-            </header>
-            {mapPoints.length ? (
-              <ControlRoomOverviewMap
-                points={mapPoints}
-                selectedEmployeeId={uiState.selectedEmployeeId}
-                onSelectEmployee={(employeeId) =>
-                  dispatch({
-                    type: 'focusEmployee',
-                    employeeId,
-                    mobileTab: 'map',
-                  })
-                }
-                onOpenEmployeeDetail={(employeeId) => dispatch({ type: 'openDetail', employeeId })}
-              />
-            ) : (
-              <div className="cr-feed-empty">Haritada gosterilecek aktif konum yok.</div>
-            )}
-          </article>
-        </section>
-      )
-    }
+  const eventFeed = (
+    <ControlRoomEventFeed
+      events={recentEvents}
+      employeeStates={employeeStateMap}
+      selectedEventId={uiState.selectedEventId}
+      initialVisibleCount={isMobile ? 10 : 12}
+      incrementCount={8}
+      scrollable
+      onSelectEvent={(employeeId, eventId) =>
+        dispatch({
+          type: 'selectEmployee',
+          employeeId,
+          eventId,
+          mobileTab: 'map',
+        })
+      }
+      onPinToMap={(employeeId, eventId) =>
+        dispatch({
+          type: 'selectEmployee',
+          employeeId,
+          eventId,
+          mobileTab: 'map',
+        })
+      }
+      onOpenEmployeeDetail={(employeeId) => dispatch({ type: 'openModal', employeeId })}
+      hideHeader={!isMobile}
+    />
+  )
 
-    if (uiState.mobileTab === 'queue') {
-      return (
-        <section className="cr-mobile-tab-shell">
-          <ControlRoomPriorityQueue
-            items={priorityQueue}
-            selectedEmployeeId={uiState.selectedEmployeeId}
-            onSelectEmployee={(employeeId) =>
-              dispatch({
-                type: 'focusEmployee',
-                employeeId,
-                mobileTab: 'map',
-              })
-            }
-            onOpenEmployeeDetail={(employeeId) => dispatch({ type: 'openDetail', employeeId })}
-          />
-          <SelectedEmployeeBrief
-            employee={selectedEmployeeState}
-            onFocus={() => {
-              if (uiState.selectedEmployeeId != null) {
-                dispatch({
-                  type: 'focusEmployee',
-                  employeeId: uiState.selectedEmployeeId,
-                  mobileTab: 'map',
-                })
-              }
-            }}
-            onOpenDetail={() => {
-              if (uiState.selectedEmployeeId != null) {
-                dispatch({ type: 'openDetail', employeeId: uiState.selectedEmployeeId })
-              }
-            }}
-          />
-        </section>
-      )
-    }
-
-    if (uiState.mobileTab === 'detail') {
-      return (
-        <section className="cr-mobile-tab-shell">
-          <SelectedEmployeeBrief
-            employee={selectedEmployeeState}
-            onFocus={() => {
-              if (uiState.selectedEmployeeId != null) {
-                dispatch({
-                  type: 'focusEmployee',
-                  employeeId: uiState.selectedEmployeeId,
-                  mobileTab: 'map',
-                })
-              }
-            }}
-            onOpenDetail={() => {
-              if (uiState.selectedEmployeeId != null) {
-                dispatch({ type: 'openDetail', employeeId: uiState.selectedEmployeeId })
-              }
-            }}
-          />
-        </section>
-      )
-    }
-
-    return (
-      <section className="cr-mobile-tab-shell">
-        {overview?.summary ? (
-          <div className="cr-mobile-snapshot">
-            <article>
-              <span>Aktif</span>
-              <strong>{overview.summary.active_employees}</strong>
-            </article>
-            <article>
-              <span>Kritik</span>
-              <strong>{overview.summary.critical_count}</strong>
-            </article>
-            <article>
-              <span>Izlemeli</span>
-              <strong>{overview.summary.watch_count}</strong>
-            </article>
-            <article>
-              <span>Canli</span>
-              <strong>{mapPoints.length}</strong>
-            </article>
-          </div>
-        ) : null}
-
-        <ControlRoomEventFeed
-          events={recentEvents}
-          employeeStates={employeeStateMap}
-          selectedEventId={uiState.selectedEventId}
-          initialVisibleCount={10}
-          incrementCount={8}
-          scrollable
-          onSelectEvent={(employeeId, eventId) =>
-            dispatch({
-              type: 'focusEmployee',
-              employeeId,
-              eventId,
-              mobileTab: 'map',
-            })
-          }
-          onPinToMap={(employeeId, eventId) =>
-            dispatch({
-              type: 'showEmployeeOnMap',
-              employeeId,
-              eventId,
-            })
-          }
-          onOpenEmployeeDetail={(employeeId) => dispatch({ type: 'openDetail', employeeId })}
-        />
-      </section>
-    )
-  }
+  const queue = (
+    <ControlRoomPriorityQueue
+      items={priorityQueue}
+      selectedEmployeeId={uiState.selectedEmployeeId}
+      onSelectEmployee={(employeeId) =>
+        dispatch({
+          type: 'selectEmployee',
+          employeeId,
+          mobileTab: 'map',
+        })
+      }
+      onOpenEmployeeDetail={(employeeId) => dispatch({ type: 'openModal', employeeId })}
+    />
+  )
 
   return (
-    <div className="cr-ops-page">
+    <div className="cr-ops-page cr-ops-page--map-first">
       <PageHeader
-        title="Employee Intelligence Control Room"
-        description="Overview modunda coklu calisan haritasi, event feed ve oncelik kuyrugu; focus modunda tek calisan rota izi, timeline ve dossier akisi ayni kontrol merkezinde birlestirildi."
+        title="Employee Control Board"
+        description="Harita ana urun olarak kalir. Fleet marker secimi, secili personel inspector'u ve rota overlay ayni ekranda tek akista calisir."
         action={
           <div className="cr-ops-header-actions">
-            <button
-              type="button"
-              className={`cr-ops-mode-toggle ${uiState.screenMode === 'overview' ? 'is-active' : ''}`}
-              onClick={() => dispatch({ type: 'returnOverview' })}
-            >
-              Overview
-            </button>
-            <button
-              type="button"
-              className={`cr-ops-mode-toggle ${showFocusMode ? 'is-active' : ''}`}
-              onClick={() => {
-                if (uiState.selectedEmployeeId != null) {
-                  dispatch({
-                    type: 'focusEmployee',
-                    employeeId: uiState.selectedEmployeeId,
-                    mobileTab: 'map',
-                  })
-                }
-              }}
-              disabled={uiState.selectedEmployeeId == null}
-            >
-              Focus
-            </button>
-            <button
-              type="button"
-              className="cr-ops-action"
-              onClick={() => void overviewQuery.refetch()}
-            >
+            <button type="button" className="cr-ops-action" onClick={() => void overviewQuery.refetch()}>
               Veriyi yenile
             </button>
-            <button
-              type="button"
-              className="cr-ops-action is-secondary"
-              onClick={() => setFiltersOpen(true)}
-            >
+            {!isMobile ? (
+              <button type="button" className="cr-ops-action is-secondary" onClick={() => dispatch({ type: 'toggleFeed' })}>
+                {uiState.feedOpen ? 'Feed gizle' : 'Feed ac'}
+              </button>
+            ) : null}
+            <button type="button" className="cr-ops-action is-secondary" onClick={() => setFiltersOpen(true)}>
               Filtreler
             </button>
           </div>
         }
       />
 
-      <section className="cr-ops-command-bar">
+      <section className="cr-ops-command-bar cr-ops-command-bar--hud">
         <div className="cr-ops-command-bar__identity">
           <div>
-            <p className="cr-ops-kicker">Operasyon gorunumu</p>
-            <h2>{showFocusMode ? 'Secili calisan rota odagi' : 'Canli overview'}</h2>
+            <p className="cr-ops-kicker">Map-first control board</p>
+            <h2>{uiState.mapMode === 'employeeRoute' ? 'Secili employee route overlay' : 'Fleet marker gorunumu'}</h2>
             <p>
-              {showFocusMode && uiState.selectedEmployeeId != null
-                ? `Focus personeli #${uiState.selectedEmployeeId} icin rota, timeline ve gunluk kayit akiyor.`
-                : `Kisi secmeden veri yuklu; ${appliedDayRange} gunluk pencere ve ${rangeLabel(appliedFilters.start_date, appliedFilters.end_date)} aktif.`}
+              {selectedEmployeeState
+                ? `${selectedEmployeeState.employee.full_name} secili. ${
+                    uiState.mapMode === 'employeeRoute'
+                      ? 'Rota overlay ayni harita ustunde acik.'
+                      : 'Marker secildi; rota icin tek adimlik aksiyon hazir.'
+                  }`
+                : `Harita varsayilan olarak fleet modda aciliyor. ${appliedDayRange} gunluk pencere ve ${rangeLabel(appliedFilters.start_date, appliedFilters.end_date)} aktif.`}
             </p>
           </div>
           <div className="cr-ops-command-bar__badges">
-            <span className="cr-ops-inline-badge">Default: overview</span>
-            <span className="cr-ops-inline-badge">Multi map: polyline kapali</span>
+            <span className="cr-ops-inline-badge">Mode: {uiState.mapMode === 'employeeRoute' ? 'employeeRoute' : 'fleet'}</span>
+            <span className="cr-ops-inline-badge">{mapPoints.length} marker</span>
+            {selectedEmployeeState ? (
+              <span className="cr-ops-inline-badge">{selectedEmployeeState.employee.full_name}</span>
+            ) : null}
             {overview?.generated_at_utc ? (
               <span className="cr-ops-inline-badge">Son sync {formatDateTime(overview.generated_at_utc)}</span>
             ) : null}
@@ -855,52 +675,116 @@ export function ControlRoomPage() {
         ) : null}
       </section>
 
-      {overviewQuery.isPending && !hasOverviewData && !showFocusMode ? (
-        <LoadingBlock label="Overview control room verisi hazirlaniyor..." />
+      {overviewQuery.isPending && !hasOverviewData ? (
+        <LoadingBlock label="Control board harita verisi hazirlaniyor..." />
       ) : null}
 
-      {overviewQuery.isError && !hasOverviewData && !showFocusMode ? (
+      {overviewQuery.isError && !hasOverviewData ? (
         <section className="cr-ops-error">
-          <ErrorBlock message="Control room overview verisi yuklenemedi." />
+          <ErrorBlock message="Control board overview verisi yuklenemedi." />
           <button type="button" className="cr-ops-action" onClick={() => void overviewQuery.refetch()}>
             Tekrar dene
           </button>
         </section>
       ) : null}
 
-      {showFocusMode && uiState.selectedEmployeeId != null ? (
-        <ControlRoomFocusPanel
-          employeeId={uiState.selectedEmployeeId}
-          startDate={appliedFilters.start_date}
-          endDate={appliedFilters.end_date}
-          mobileTab={uiState.mobileTab}
-          selectedEmployeeState={selectedEmployeeState}
-          onReturnToOverview={() => dispatch({ type: 'returnOverview' })}
-          onOpenEmployeeDetail={(employeeId) => dispatch({ type: 'openDetail', employeeId })}
-        />
-      ) : hasOverviewData ? (
+      {hasOverviewData ? (
         <>
-          {!isMobile ? renderDesktopOverview() : renderMobileOverviewContent()}
-          {isMobile ? (
-            <nav className="cr-ops-mobile-nav" aria-label="Mobile control room navigation">
-              {(['feed', 'map', 'queue', 'detail'] as MobileTab[]).map((tab) => (
-                <button
-                  key={tab}
-                  type="button"
-                  className={uiState.mobileTab === tab ? 'is-active' : ''}
-                  onClick={() => dispatch({ type: 'setMobileTab', value: tab })}
-                >
-                  {tab === 'feed'
-                    ? 'Feed'
-                    : tab === 'map'
-                      ? 'Map'
-                      : tab === 'queue'
-                        ? 'Queue'
-                        : 'Detail'}
-                </button>
-              ))}
-            </nav>
-          ) : null}
+          {!isMobile ? (
+            <>
+              <section className="cr-board-layout">
+                <article className="cr-board-map">
+                  <ControlRoomUnifiedMap
+                    mapMode={uiState.mapMode}
+                    selectedEmployeeId={uiState.selectedEmployeeId}
+                    selectedEmployeeName={selectedEmployeeState?.employee.full_name ?? null}
+                    overviewPoints={mapPoints}
+                    routeData={routeQuery.data ?? null}
+                    routeLoading={routeQuery.isFetching}
+                    routeError={routeQuery.isError}
+                    onSelectEmployee={(employeeId) =>
+                      dispatch({
+                        type: 'selectEmployee',
+                        employeeId,
+                      })
+                    }
+                  />
+                </article>
+
+                <aside className="cr-board-rail">
+                  {inspector}
+                  {queue}
+                </aside>
+              </section>
+
+              <section className={`cr-feed-drawer ${uiState.feedOpen ? 'is-open' : ''}`}>
+                <header className="cr-feed-drawer__header">
+                  <div>
+                    <p className="cr-ops-kicker">Secondary feed</p>
+                    <h3>Event drawer</h3>
+                  </div>
+                  <div className="cr-feed-drawer__meta">
+                    <span>{recentEvents.length} olay</span>
+                    <button type="button" className="cr-ops-action is-secondary" onClick={() => dispatch({ type: 'toggleFeed' })}>
+                      {uiState.feedOpen ? 'Gizle' : 'Ac'}
+                    </button>
+                  </div>
+                </header>
+
+                {uiState.feedOpen ? eventFeed : (
+                  <div className="cr-feed-drawer__empty">
+                    Event feed ana navigasyon degil. Ihtiyac oldugunda bu drawer'dan acabilirsiniz.
+                  </div>
+                )}
+              </section>
+            </>
+          ) : (
+            <>
+              {uiState.mobileTab === 'map' ? (
+                <section className="cr-board-map cr-board-map--mobile">
+                  <ControlRoomUnifiedMap
+                    mapMode={uiState.mapMode}
+                    selectedEmployeeId={uiState.selectedEmployeeId}
+                    selectedEmployeeName={selectedEmployeeState?.employee.full_name ?? null}
+                    overviewPoints={mapPoints}
+                    routeData={routeQuery.data ?? null}
+                    routeLoading={routeQuery.isFetching}
+                    routeError={routeQuery.isError}
+                    onSelectEmployee={(employeeId) =>
+                      dispatch({
+                        type: 'selectEmployee',
+                        employeeId,
+                        mobileTab: 'map',
+                      })
+                    }
+                  />
+                </section>
+              ) : uiState.mobileTab === 'queue' ? (
+                <section className="cr-mobile-tab-shell">{queue}</section>
+              ) : (
+                <section className="cr-mobile-tab-shell">{eventFeed}</section>
+              )}
+
+              {uiState.mobileTab === 'map' && uiState.selectedEmployeeId != null ? (
+                <div className="cr-mobile-inspector-sheet">
+                  {inspector}
+                </div>
+              ) : null}
+
+              <nav className="cr-ops-mobile-nav" aria-label="Mobile control room navigation">
+                {(['map', 'queue', 'feed'] as MobileTab[]).map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    className={uiState.mobileTab === tab ? 'is-active' : ''}
+                    onClick={() => dispatch({ type: 'setMobileTab', value: tab })}
+                  >
+                    {tab === 'map' ? 'Harita' : tab === 'queue' ? 'Kuyruk' : 'Feed'}
+                  </button>
+                ))}
+              </nav>
+            </>
+          )}
         </>
       ) : null}
 
@@ -922,7 +806,7 @@ export function ControlRoomPage() {
       ) : (
         <ControlRoomMobileSheet
           open={filtersOpen}
-          title="Tam filtre ayarlari"
+          title="Harita filtreleri"
           onClose={() => setFiltersOpen(false)}
         >
           <ManagementConsoleFilters
@@ -939,9 +823,9 @@ export function ControlRoomPage() {
       )}
 
       <ManagementConsoleEmployeeDetailModal
-        employeeId={uiState.detailEmployeeId}
-        open={uiState.detailEmployeeId != null}
-        onClose={() => dispatch({ type: 'closeDetail' })}
+        employeeId={uiState.modalEmployeeId}
+        open={uiState.modalEmployeeId != null}
+        onClose={() => dispatch({ type: 'closeModal' })}
         placement="right"
       />
     </div>
