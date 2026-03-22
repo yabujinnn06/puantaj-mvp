@@ -9753,6 +9753,34 @@ button[class*="bg-slate-900"] {
   }
 }
 
+@keyframes welcome-logo-serenity {
+  0%,
+  100% {
+    opacity: 0.42;
+    transform: translateZ(-18px) scale(0.92);
+    filter: blur(24px);
+  }
+
+  50% {
+    opacity: 0.78;
+    transform: translateZ(-6px) scale(1.08);
+    filter: blur(32px);
+  }
+}
+
+@keyframes welcome-logo-radiance {
+  0%,
+  100% {
+    opacity: 0.26;
+    transform: translateZ(-28px) scale(0.94);
+  }
+
+  50% {
+    opacity: 0.48;
+    transform: translateZ(-12px) scale(1.06);
+  }
+}
+
 .welcome-page {
   display: grid;
   gap: 1.25rem;
@@ -10098,6 +10126,35 @@ button[class*="bg-slate-900"] {
   transform-style: preserve-3d;
 }
 
+.welcome-hero-logo::before,
+.welcome-hero-logo::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.welcome-hero-logo::before {
+  inset: 14%;
+  background:
+    radial-gradient(circle, rgba(214, 246, 255, 0.42), rgba(128, 207, 239, 0.24) 34%, rgba(60, 129, 169, 0.08) 56%, rgba(60, 129, 169, 0) 72%);
+  mix-blend-mode: screen;
+  transform: translateZ(-18px);
+  animation: welcome-logo-serenity 5600ms ease-in-out infinite;
+}
+
+.welcome-hero-logo::after {
+  inset: -6%;
+  background:
+    radial-gradient(circle, rgba(175, 227, 247, 0.22), rgba(175, 227, 247, 0.08) 36%, rgba(175, 227, 247, 0) 66%),
+    conic-gradient(from 180deg, rgba(194, 240, 255, 0.18), rgba(114, 190, 225, 0.04), rgba(194, 240, 255, 0.18));
+  filter: blur(14px);
+  opacity: 0.34;
+  transform: translateZ(-28px);
+  animation: welcome-logo-radiance 7200ms ease-in-out infinite;
+}
+
 .welcome-hero-logo__shadow {
   position: absolute;
   inset: auto 16% 7%;
@@ -10143,9 +10200,9 @@ button[class*="bg-slate-900"] {
   inset: 10%;
   border-radius: 50%;
   background:
-    radial-gradient(circle, rgba(157, 224, 255, 0.24), rgba(79, 165, 202, 0.12) 38%, rgba(22, 76, 103, 0) 74%),
-    conic-gradient(from 180deg, rgba(163, 230, 255, 0.18), rgba(59, 140, 178, 0.05), rgba(163, 230, 255, 0.18));
-  filter: blur(10px);
+    radial-gradient(circle, rgba(176, 234, 255, 0.3), rgba(95, 182, 216, 0.14) 38%, rgba(22, 76, 103, 0) 74%),
+    conic-gradient(from 180deg, rgba(186, 236, 255, 0.22), rgba(59, 140, 178, 0.05), rgba(186, 236, 255, 0.22));
+  filter: blur(12px);
   transform: translateZ(-18px);
   animation: employee-loader-aura-breathe 2400ms ease-in-out infinite;
 }
@@ -10271,11 +10328,11 @@ button[class*="bg-slate-900"] {
 
 .welcome-hero-logo__halo {
   position: absolute;
-  inset: 20px;
+  inset: 16px;
   border-radius: 50%;
   background:
-    radial-gradient(circle, rgba(207, 244, 255, 0.3), rgba(119, 197, 237, 0.18) 38%, rgba(20, 77, 108, 0) 72%);
-  filter: blur(10px);
+    radial-gradient(circle, rgba(229, 248, 255, 0.42), rgba(146, 215, 246, 0.24) 34%, rgba(20, 77, 108, 0) 72%);
+  filter: blur(14px);
   transform: translateZ(-6px);
   animation: employee-loader-planet-halo 2400ms ease-in-out infinite;
 }
@@ -10326,7 +10383,8 @@ button[class*="bg-slate-900"] {
     inset 0 0 32px rgba(191, 236, 251, 0.24),
     inset -12px -18px 26px rgba(5, 30, 46, 0.42),
     0 22px 34px -24px rgba(106, 188, 225, 0.56),
-    0 0 42px rgba(106, 188, 225, 0.24);
+    0 0 42px rgba(106, 188, 225, 0.24),
+    0 0 74px rgba(159, 228, 255, 0.22);
   transform: rotateX(18deg) rotateY(-20deg) translateZ(28px);
   transform-style: preserve-3d;
   overflow: hidden;

@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 
 export function PageHeader({
   title,
-  description,
+  description: _description,
   action,
 }: {
   title: string
@@ -14,10 +14,8 @@ export function PageHeader({
       <div className="admin-page-header__copy max-w-3xl">
         <span className="admin-page-header__accent" aria-hidden="true" />
         <h3 className="admin-page-header__title">{title}</h3>
-        {description ? <p className="admin-page-header__description">{description}</p> : null}
       </div>
       {action ? <div className="admin-page-header__action flex shrink-0 flex-wrap items-center gap-2">{action}</div> : null}
     </header>
   )
 }
-
