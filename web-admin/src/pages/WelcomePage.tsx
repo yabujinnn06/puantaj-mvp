@@ -429,12 +429,36 @@ export function WelcomePage() {
               <span className="welcome-scene__chip is-left">Kurumsal netlik</span>
               <span className="welcome-scene__chip is-bottom">Konumdan bağımsız özet</span>
 
-              <div className="welcome-logo" aria-hidden="true">
-                <span className="welcome-logo__ring" />
-                <span className="welcome-logo__ring is-secondary" />
-                <span className="welcome-logo__glow" />
-                <div className="welcome-logo__core">
-                  <img src={`${import.meta.env.BASE_URL}admin-logo.svg`} alt="" />
+              <div className="welcome-hero-logo" aria-hidden="true">
+                <div className="welcome-hero-logo__shadow" />
+                <div className="welcome-hero-logo__nebula welcome-hero-logo__nebula--back" />
+                <div className="welcome-hero-logo__nebula welcome-hero-logo__nebula--front" />
+                <div className="welcome-hero-logo__aura" />
+                <div className="welcome-hero-logo__orbit welcome-hero-logo__orbit--outer" />
+                <div className="welcome-hero-logo__orbit welcome-hero-logo__orbit--mid" />
+                <div className="welcome-hero-logo__orbit welcome-hero-logo__orbit--inner" />
+                <div className="welcome-hero-logo__orbit welcome-hero-logo__orbit--polar" />
+                <div className="welcome-hero-logo__satellite welcome-hero-logo__satellite--outer">
+                  <div className="welcome-hero-logo__satellite-core" />
+                </div>
+                <div className="welcome-hero-logo__satellite welcome-hero-logo__satellite--mid">
+                  <div className="welcome-hero-logo__satellite-core" />
+                </div>
+                <div className="welcome-hero-logo__satellite welcome-hero-logo__satellite--inner">
+                  <div className="welcome-hero-logo__satellite-core" />
+                </div>
+                <div className="welcome-hero-logo__planet">
+                  <div className="welcome-hero-logo__depth" />
+                  <div className="welcome-hero-logo__halo" />
+                  <div className="welcome-hero-logo__ring welcome-hero-logo__ring--back" />
+                  <div className="welcome-hero-logo__core">
+                    <span className="welcome-hero-logo__monogram">Y</span>
+                    <span className="welcome-hero-logo__brand">YABUJIN</span>
+                    <span className="welcome-hero-logo__sub">ADMIN CORE</span>
+                  </div>
+                  <div className="welcome-hero-logo__ring welcome-hero-logo__ring--front" />
+                  <div className="welcome-hero-logo__spark welcome-hero-logo__spark--a" />
+                  <div className="welcome-hero-logo__spark welcome-hero-logo__spark--b" />
                 </div>
               </div>
 
