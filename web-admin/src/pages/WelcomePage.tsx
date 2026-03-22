@@ -357,9 +357,9 @@ export function WelcomePage() {
             </div>
 
             <p className="welcome-hero__lead welcome-reveal is-delay-2">
-              Bu ekran, saha detayına girmeden yönetsel karar vermeyi hızlandırmak için tasarlandi. Filtrelenebilir
-              fazla mesai tablosu, aktif kapasite görünümü ve departman dağılımı birlikte açılır; böylece hangi
-              ekipte yük biriktigini, kimin onde geldigini ve günün nasil aktigini saniyeler içinde okuyabilirsiniz.
+              Bu ekran yönetsel karar vermeyi hızlandırmak için tasarlandı. Filtrelenebilir fazla mesai tablosu,
+              aktif kapasite görünümü ve departman dağılımı birlikte açılır; böylece hangi ekipte yük biriktiğini,
+              kimin önde geldiğini ve günün nasıl aktığını saniyeler içinde okuyabilirsiniz.
             </p>
 
             <div className="welcome-hero__chips welcome-reveal is-delay-3">
