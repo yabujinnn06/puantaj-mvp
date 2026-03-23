@@ -1767,6 +1767,17 @@ textarea:focus {
   padding-top: 0.58rem;
 }
 
+.employee-signature-note {
+  margin: 0;
+  font-size: 0.65rem;
+  line-height: 1.45;
+  color: rgba(63, 94, 112, 0.92);
+}
+
+.employee-signature-brand {
+  margin-top: 0.42rem;
+}
+
 .employee-signature-main {
   margin: 0;
   font-size: 0.8rem;

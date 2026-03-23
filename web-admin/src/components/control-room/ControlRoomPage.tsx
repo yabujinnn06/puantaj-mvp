@@ -28,7 +28,10 @@ import type {
   ControlRoomEmployeeState,
   LocationMonitorDayRecord,
   LocationMonitorMapPoint,
+  LocationMonitorMapResponse,
   LocationMonitorPointSource,
+  LocationMonitorTimelineEvent,
+  LocationMonitorTimelineResponse,
 } from '../../types/api'
 
 type MapMode = 'fleet' | 'employeeDay'
@@ -143,6 +146,70 @@ function groupPointsByDay(points: LocationMonitorMapPoint[]): Map<string, Locati
   }
 
   return groups
+}
+
+function routeDurationMinutes(points: LocationMonitorMapPoint[]): number {
+  if (points.length < 2) return 0
+
+  const ordered = [...points].sort((left, right) => new Date(left.ts_utc).getTime() - new Date(right.ts_utc).getTime())
+  const startedAt = new Date(ordered[0]?.ts_utc ?? '').getTime()
+  const endedAt = new Date(ordered[ordered.length - 1]?.ts_utc ?? '').getTime()
+
+  if (!Number.isFinite(startedAt) || !Number.isFinite(endedAt) || endedAt <= startedAt) {
+    return 0
+  }
+
+  return Math.round((endedAt - startedAt) / 60_000)
+}
+
+function buildFallbackDayEvents(
+  timelineData: LocationMonitorTimelineResponse | null,
+  day: string | null,
+  enabledSources: LocationMonitorPointSource[],
+): LocationMonitorTimelineEvent[] {
+  if (!timelineData || !day) return []
+
+  return timelineData.events
+    .filter((event) => event.day === day && enabledSources.includes(event.source))
+    .sort((left, right) => new Date(right.ts_utc).getTime() - new Date(left.ts_utc).getTime())
+}
+
+function buildFallbackDayMapData(
+  mapData: LocationMonitorMapResponse | null,
+  day: string | null,
+  enabledSources: LocationMonitorPointSource[],
+): LocationMonitorMapResponse | null {
+  if (!mapData || !day) return null
+
+  const filteredPoints = mapData.points.filter(
+    (point) => point.day === day && enabledSources.includes(point.source),
+  )
+  const filteredSimplifiedPoints = mapData.simplified_points.filter(
+    (point) => point.day === day && enabledSources.includes(point.source),
+  )
+  const routePoints = filteredSimplifiedPoints.length ? filteredSimplifiedPoints : filteredPoints
+
+  return {
+    ...mapData,
+    points: filteredPoints,
+    simplified_points: filteredSimplifiedPoints,
+    repeated_groups: [],
+    route_stats: {
+      total_distance_m: calculateRouteDistance(routePoints) ?? 0,
+      total_duration_minutes: routeDurationMinutes(filteredPoints),
+      event_count: filteredPoints.length,
+      simplified_point_count: filteredSimplifiedPoints.length,
+      repeated_group_count: 0,
+      suspicious_jump_count: filteredPoints.filter(
+        (point) =>
+          point.marker_kind === 'JUMP' || point.location_status === 'SUSPICIOUS_JUMP',
+      ).length,
+      low_accuracy_event_count: filteredPoints.filter(
+        (point) => point.location_status === 'LOW_ACCURACY',
+      ).length,
+      dwell_stop_count: 0,
+    },
+  }
 }
 
 function dailyGeofence(day: LocationMonitorDayRecord, points: LocationMonitorMapPoint[]): {
@@ -503,6 +570,16 @@ export function ControlRoomPage() {
   }, [dailyRows, dailyRowsLoading, selectedDay, selectedEmployeeId])
 
   const selectedDayQueryEnabled = selectedEmployeeId != null && selectedDay != null
+  const selectedEmployeeDataIndex = useMemo(
+    () => employeesInScope.findIndex((item) => item.employee.id === selectedEmployeeId),
+    [employeesInScope, selectedEmployeeId],
+  )
+  const selectedEmployeeTimelineData =
+    selectedEmployeeDataIndex >= 0
+      ? employeeTimelineQueries[selectedEmployeeDataIndex]?.data ?? null
+      : null
+  const selectedEmployeeMapData =
+    selectedEmployeeDataIndex >= 0 ? employeeMapQueries[selectedEmployeeDataIndex]?.data ?? null : null
 
   const selectedDayTimelineQuery = useQuery({
     enabled: selectedDayQueryEnabled,
@@ -523,7 +600,6 @@ export function ControlRoomPage() {
         latest_only: false,
       }),
     staleTime: 20_000,
-    placeholderData: (previousData) => previousData,
   })
 
   const selectedDayMapQuery = useQuery({
@@ -547,17 +623,27 @@ export function ControlRoomPage() {
         source: enabledSources.length === ALL_SOURCES.length ? undefined : enabledSources,
       }),
     staleTime: 20_000,
-    placeholderData: (previousData) => previousData,
   })
 
+  const fallbackSelectedDayEvents = useMemo(
+    () => buildFallbackDayEvents(selectedEmployeeTimelineData, selectedDay, enabledSources),
+    [enabledSources, selectedDay, selectedEmployeeTimelineData],
+  )
+  const fallbackSelectedDayMapData = useMemo(
+    () => buildFallbackDayMapData(selectedEmployeeMapData, selectedDay, enabledSources),
+    [enabledSources, selectedDay, selectedEmployeeMapData],
+  )
+
+  const effectiveSelectedDayMapData = selectedDayMapQuery.data ?? fallbackSelectedDayMapData
+
   const selectedDayEvents = useMemo(() => {
-    const events = selectedDayTimelineQuery.data?.events ?? []
+    const events = selectedDayTimelineQuery.data?.events ?? fallbackSelectedDayEvents
     const filteredEvents =
       enabledSources.length === ALL_SOURCES.length
         ? events
         : events.filter((event) => enabledSources.includes(event.source))
     return [...filteredEvents].sort((left, right) => new Date(right.ts_utc).getTime() - new Date(left.ts_utc).getTime())
-  }, [enabledSources, selectedDayTimelineQuery.data?.events])
+  }, [enabledSources, fallbackSelectedDayEvents, selectedDayTimelineQuery.data?.events])
 
   useEffect(() => {
     if (mapMode !== 'employeeDay') {
@@ -660,10 +746,10 @@ export function ControlRoomPage() {
         </p>
       </div>
       <div className="cr-ops-section-meta">
-        {mapMode === 'employeeDay' && selectedDayTimelineQuery.data ? (
+        {mapMode === 'employeeDay' && (selectedDayTimelineQuery.data || fallbackSelectedDayEvents.length) ? (
           <>
-            <span>{selectedDayTimelineQuery.data.events.length} olay</span>
-            <span>{selectedDayMapQuery.data?.points.length ?? 0} nokta</span>
+            <span>{selectedDayEvents.length} olay</span>
+            <span>{effectiveSelectedDayMapData?.points.length ?? 0} nokta</span>
           </>
         ) : (
           <>
@@ -854,11 +940,11 @@ export function ControlRoomPage() {
                     selectedEmployeeName={selectedEmployeeState?.employee.full_name ?? null}
                     selectedDay={selectedDay}
                     overviewPoints={mapPoints}
-                    dayMapData={selectedDayMapQuery.data ?? null}
+                    dayMapData={effectiveSelectedDayMapData}
                     dayEvents={selectedDayEvents}
-                    dayLoading={selectedDayMapQuery.isFetching}
+                    dayLoading={selectedDayMapQuery.isFetching && !effectiveSelectedDayMapData}
                     dayError={selectedDayMapQuery.isError}
-                    dayEventsLoading={selectedDayTimelineQuery.isFetching}
+                    dayEventsLoading={selectedDayTimelineQuery.isFetching && !selectedDayEvents.length}
                     dayEventsError={selectedDayTimelineQuery.isError}
                     selectedEventId={selectedEventId}
                     onSelectEmployee={handleSelectEmployee}
@@ -926,11 +1012,11 @@ export function ControlRoomPage() {
                 selectedEmployeeName={selectedEmployeeState?.employee.full_name ?? null}
                 selectedDay={selectedDay}
                 overviewPoints={mapPoints}
-                dayMapData={selectedDayMapQuery.data ?? null}
+                dayMapData={effectiveSelectedDayMapData}
                 dayEvents={selectedDayEvents}
-                dayLoading={selectedDayMapQuery.isFetching}
+                dayLoading={selectedDayMapQuery.isFetching && !effectiveSelectedDayMapData}
                 dayError={selectedDayMapQuery.isError}
-                dayEventsLoading={selectedDayTimelineQuery.isFetching}
+                dayEventsLoading={selectedDayTimelineQuery.isFetching && !selectedDayEvents.length}
                 dayEventsError={selectedDayTimelineQuery.isError}
                 selectedEventId={selectedEventId}
                 onSelectEmployee={handleSelectEmployee}
