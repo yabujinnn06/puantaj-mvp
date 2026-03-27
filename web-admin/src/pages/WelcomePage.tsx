@@ -96,19 +96,16 @@ function statusTone(value: ControlRoomEmployeeState['today_status']): string {
 function WelcomeHeroMetric({
   label,
   value,
-  note,
   tone = 'default',
 }: {
   label: string
   value: ReactNode
-  note: ReactNode
   tone?: 'default' | 'live' | 'watch' | 'active'
 }) {
   return (
     <article className={`welcome-summary-card is-${tone}`}>
       <span>{label}</span>
       <strong>{value}</strong>
-      <small>{note}</small>
     </article>
   )
 }
@@ -116,17 +113,14 @@ function WelcomeHeroMetric({
 function WelcomeSignalCard({
   label,
   title,
-  note,
 }: {
   label: string
   title: ReactNode
-  note?: ReactNode
 }) {
   return (
     <article className="welcome-signal-card">
       <span>{label}</span>
       <strong>{title}</strong>
-      {note ? <p>{note}</p> : null}
     </article>
   )
 }
@@ -363,53 +357,18 @@ export function WelcomePage() {
             </div>
 
             <div className="welcome-summary-grid welcome-reveal is-delay-4">
-              <WelcomeHeroMetric
-                label="Kapsamdaki kadro"
-                value={summary.total}
-                note={
-                  <>
-                    {summary.active} aktif personel, {heroInsights.liveCount} aktif vardiya
-                  </>
-                }
-                tone="active"
-              />
+              <WelcomeHeroMetric label="Kapsamdaki kadro" value={summary.total} tone="active" />
               <WelcomeHeroMetric
                 label="Aylık fazla mesai"
                 value={<MinuteDisplay minutes={summary.overtime} />}
-                note={
-                  heroInsights.topOvertimeRow ? (
-                    <>
-                      En yüklü kişi {heroInsights.topOvertimeRow.fullName}
-                    </>
-                  ) : (
-                    'Filtreli görünüm toplamı'
-                  )
-                }
                 tone="watch"
               />
               <WelcomeHeroMetric
                 label="Planlanan yük"
                 value={<MinuteDisplay minutes={summary.planOvertime} />}
-                note={
-                  heroInsights.topDepartment ? (
-                    <>
-                      {heroInsights.topDepartment.name} şu an en yüklü ekip
-                    </>
-                  ) : (
-                    'Departman dağılımı hazır'
-                  )
-                }
                 tone="live"
               />
-              <WelcomeHeroMetric
-                label="Ek çalışma"
-                value={<MinuteDisplay minutes={summary.extraWork} />}
-                note={
-                  <>
-                    {heroInsights.finishedCount} kişi günü kapattı, {heroInsights.waitingCount} kişi beklemede
-                  </>
-                }
-              />
+              <WelcomeHeroMetric label="Ek çalışma" value={<MinuteDisplay minutes={summary.extraWork} />} />
             </div>
           </div>
 
@@ -456,17 +415,14 @@ export function WelcomePage() {
                 <div>
                   <span>Aktif vardiya</span>
                   <strong>{heroInsights.liveCount}</strong>
-                  <small>Gün içinde canlı kapasite</small>
                 </div>
                 <div>
                   <span>Pasif / bekleyen</span>
                   <strong>{heroInsights.waitingCount}</strong>
-                  <small>Giriş bekleyen veya hareketsiz</small>
                 </div>
                 <div>
                   <span>Aktif oran</span>
                   <strong>%{heroInsights.activeRate}</strong>
-                  <small>Filtreli görünüm sağlık oranı</small>
                 </div>
               </div>
             </div>
