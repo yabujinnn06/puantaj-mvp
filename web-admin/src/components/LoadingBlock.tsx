@@ -28,8 +28,10 @@ export function LoadingBlock({ label = 'Yükleniyor...' }: { label?: string }) {
             <div className="welcome-hero-logo__depth" />
             <div className="welcome-hero-logo__halo" />
             <div className="welcome-hero-logo__ring welcome-hero-logo__ring--back" />
-            <div className="welcome-hero-logo__core loading-orbit-core">
-              <span className="loading-orbit-core__dot" />
+            <div className="welcome-hero-logo__core">
+              <span className="welcome-hero-logo__monogram">Y</span>
+              <span className="welcome-hero-logo__brand">YABUJIN</span>
+              <span className="welcome-hero-logo__sub">ADMIN CORE</span>
             </div>
             <div className="welcome-hero-logo__ring welcome-hero-logo__ring--front" />
             <div className="welcome-hero-logo__spark welcome-hero-logo__spark--a" />
