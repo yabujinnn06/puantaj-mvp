@@ -6,6 +6,8 @@ from datetime import date, datetime, time, timezone, timedelta
 from app.models import AttendanceEvent, AttendanceType, DepartmentShift, Employee, LocationStatus, NotificationJob
 from app.services.attendance_notification_monitor import (
     AUDIENCE_ADMIN,
+    AUDIENCE_EMPLOYEE,
+    TYPE_ABSENCE,
     TYPE_EARLY_CHECKOUT,
     TYPE_LATE_CHECKIN,
     TYPE_OVERRIDE_INFO,
@@ -13,11 +15,15 @@ from app.services.attendance_notification_monitor import (
     DayAssessment,
     _is_checkin_outside_shift,
     _create_notification_job,
+    _schedule_absence,
     _schedule_early_checkout,
     _schedule_late_checkin,
     _schedule_overtime_auto_close,
     _schedule_override_info,
 )
+
+
+_DEFAULT_FIRST_CHECKIN = object()
 
 
 class _DummySession:
@@ -42,8 +48,9 @@ def _build_assessment(
     *,
     override_active: bool,
     checkout_ts_utc: datetime | None,
-    first_checkin_ts_utc: datetime | None = None,
+    first_checkin_ts_utc: datetime | None | object = _DEFAULT_FIRST_CHECKIN,
     overtime_grace_minutes: int = 0,
+    has_any_activity: bool = True,
 ) -> DayAssessment:
     employee = Employee(id=7, full_name="Ahmet Yilmaz", department_id=10, shift_id=101, is_active=True)
     shift = DepartmentShift(
@@ -64,6 +71,11 @@ def _build_assessment(
         break_minutes=60,
         is_active=True,
     )
+    resolved_first_checkin = (
+        datetime(2026, 3, 1, 7, 0, tzinfo=timezone.utc)
+        if first_checkin_ts_utc is _DEFAULT_FIRST_CHECKIN
+        else first_checkin_ts_utc
+    )
     return DayAssessment(
         employee=employee,
         local_day=date(2026, 3, 1),
@@ -72,8 +84,8 @@ def _build_assessment(
         plan=None,
         shift=shift,
         default_shift=default_shift,
-        first_checkin_ts_utc=first_checkin_ts_utc or datetime(2026, 3, 1, 7, 0, tzinfo=timezone.utc),
-        first_checkin_source="event",
+        first_checkin_ts_utc=resolved_first_checkin,
+        first_checkin_source="event" if resolved_first_checkin is not None else None,
         checkout_ts_utc=checkout_ts_utc,
         checkout_source="event" if checkout_ts_utc is not None else None,
         checkout_is_manual=False,
@@ -87,7 +99,7 @@ def _build_assessment(
         planned_minutes=480,
         override_active=override_active,
         override_note="Ramazan duzeni" if override_active else None,
-        has_any_activity=True,
+        has_any_activity=has_any_activity,
         checkin_outside_shift=False,
     )
 
@@ -277,6 +289,36 @@ class AttendanceNotificationMonitorTests(unittest.TestCase):
         self.assertEqual(admin_job.title, "Tekrarlayan Gec Giris Kritik Seviyede")
         self.assertEqual(admin_job.risk_level, "Kritik")
         self.assertEqual(admin_job.payload.get("late_streak_days"), 3)
+
+    def test_absence_triggers_one_hour_after_shift_start_for_employee_and_admin(self) -> None:
+        session = _DummySession(scalar_values=[None, None])
+        assessment = _build_assessment(
+            override_active=False,
+            checkout_ts_utc=None,
+            first_checkin_ts_utc=None,
+            has_any_activity=False,
+        )
+        created_jobs: list[NotificationJob] = []
+
+        _schedule_absence(
+            session,  # type: ignore[arg-type]
+            created_jobs=created_jobs,
+            assessment=assessment,
+            now_utc=datetime(2026, 3, 1, 10, 59, tzinfo=timezone.utc),
+        )
+        self.assertEqual(created_jobs, [])
+
+        _schedule_absence(
+            session,  # type: ignore[arg-type]
+            created_jobs=created_jobs,
+            assessment=assessment,
+            now_utc=datetime(2026, 3, 1, 11, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(len(created_jobs), 2)
+        self.assertTrue(all(job.notification_type == TYPE_ABSENCE for job in created_jobs))
+        self.assertEqual({job.audience for job in created_jobs}, {AUDIENCE_EMPLOYEE, AUDIENCE_ADMIN})
+        self.assertTrue(all(job.scheduled_at_utc == datetime(2026, 3, 1, 11, 0, tzinfo=timezone.utc) for job in created_jobs))
 
 
 if __name__ == "__main__":

@@ -939,7 +939,7 @@ def _schedule_absence(
     if assessment.first_checkin_ts_utc is not None or assessment.has_any_activity or assessment.shift_start_local_dt is None:
         return
     trigger_utc = (
-        assessment.shift_end_local_dt + timedelta(minutes=max(0, assessment.grace_minutes))
+        assessment.shift_start_local_dt + timedelta(hours=1)
     ).astimezone(timezone.utc)
     if now_utc < trigger_utc:
         return
