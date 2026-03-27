@@ -120,13 +120,13 @@ function WelcomeSignalCard({
 }: {
   label: string
   title: ReactNode
-  note: ReactNode
+  note?: ReactNode
 }) {
   return (
     <article className="welcome-signal-card">
       <span>{label}</span>
       <strong>{title}</strong>
-      <p>{note}</p>
+      {note ? <p>{note}</p> : null}
     </article>
   )
 }
@@ -343,10 +343,7 @@ export function WelcomePage() {
 
   return (
     <div className="welcome-page">
-      <PageHeader
-        title="Hoş geldiniz"
-        description="Mesai yoğunluğunu, ekip dağılımını ve filtrelenebilir fazla mesai tablosunu tek ekranda açan kurumsal giriş deneyimi."
-      />
+      <PageHeader title="Hoş geldiniz" />
 
       <Panel className="welcome-hero">
         <div className="welcome-hero__grid">
@@ -356,12 +353,6 @@ export function WelcomePage() {
               <h2>Mesai yoğunluğu, ekip dengesi ve dikkat isteyen yükler ilk bakışta hazır.</h2>
             </div>
 
-            <p className="welcome-hero__lead welcome-reveal is-delay-2">
-              Bu ekran yönetsel karar vermeyi hızlandırmak için tasarlandı. Filtrelenebilir fazla mesai tablosu,
-              aktif kapasite görünümü ve departman dağılımı birlikte açılır; böylece hangi ekipte yük biriktiğini,
-              kimin önde geldiğini ve günün nasıl aktığını saniyeler içinde okuyabilirsiniz.
-            </p>
-
             <div className="welcome-hero__chips welcome-reveal is-delay-3">
               <span className="welcome-chip is-live">Sistem hazır</span>
               <span className="welcome-chip">
@@ -369,7 +360,6 @@ export function WelcomePage() {
                 {overviewQuery.data?.generated_at_utc ? formatDateTime(overviewQuery.data.generated_at_utc) : '-'}
               </span>
               <span className="welcome-chip">{sortedRows.length} kayıt filtrelenebilir</span>
-              <span className="welcome-chip is-muted">Konum akışı bu ekranda kapalı</span>
             </div>
 
             <div className="welcome-summary-grid welcome-reveal is-delay-4">
@@ -485,34 +475,10 @@ export function WelcomePage() {
               <WelcomeSignalCard
                 label="Yük odağı"
                 title={heroInsights.topOvertimeRow?.fullName ?? 'Veri hazırlanıyor'}
-                note={
-                  heroInsights.topOvertimeRow ? (
-                    <>
-                      Aylık fazla mesai: <MinuteDisplay minutes={heroInsights.topOvertimeRow.overtimeMinutes} />
-                    </>
-                  ) : (
-                    'Filtre uygulandığında otomatik hesaplanir.'
-                  )
-                }
               />
               <WelcomeSignalCard
                 label="En yüklü ekip"
                 title={heroInsights.topDepartment?.name ?? 'Dağılım bekleniyor'}
-                note={
-                  heroInsights.topDepartment ? (
-                    <>
-                      {heroInsights.topDepartment.employeeCount} kişi /{' '}
-                      <MinuteDisplay minutes={heroInsights.topDepartment.overtimeMinutes} />
-                    </>
-                  ) : (
-                    'Departman dağılımı oluştuğunda burada görünür.'
-                  )
-                }
-              />
-              <WelcomeSignalCard
-                label="Veri modu"
-                title="Mesai ve kapasite odaklı"
-                note="Bu welcome katmanı bilerek konum detayı göstermez; ilk bakışta iş gücü baskısını anlatir."
               />
             </div>
           </div>
@@ -524,10 +490,6 @@ export function WelcomePage() {
           <div>
             <p className="welcome-panel-kicker">FILTRELI TABLO</p>
             <h3>Çalışan bazlı fazla mesai listesi</h3>
-            <p>
-              Personel, bölge ve departman filtreleriyle tabloyu daraltın; sıralamayla fazla mesai baskısını ve ekip
-              dağılımını hemen okuyun.
-            </p>
           </div>
 
           <div className="welcome-table-panel__meta">
@@ -566,7 +528,6 @@ export function WelcomePage() {
               menuClassName="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-lg"
               optionClassName="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-50"
               emptyOptionClassName="flex w-full items-center justify-between border-b border-slate-100 px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50"
-              helperText="Seçili personel tabloyu tek kişiye indirir."
               helperTextClassName="text-xs text-slate-500"
             />
 
