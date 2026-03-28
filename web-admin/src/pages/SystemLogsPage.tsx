@@ -1,13 +1,13 @@
 ﻿import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
-import { getAuditLogs, type AuditLogParams } from '../api/admin'
+import { getAuditLogs, getEmployeeDetail, type AuditLogParams } from '../api/admin'
 import { parseApiError } from '../api/error'
 import { ErrorBlock } from '../components/ErrorBlock'
 import { LoadingBlock } from '../components/LoadingBlock'
 import { PageHeader } from '../components/PageHeader'
 import { Panel } from '../components/Panel'
-import type { AuditLog } from '../types/api'
+import type { AuditLog, LocationStatus } from '../types/api'
 
 interface LogFilters {
   module: string
@@ -79,7 +79,10 @@ const ACTION_LABELS: Record<string, string> = {
   EMPLOYEE_APP_LOCATION_PING: 'Employee app giriş pingi',
 }
 
-function formatDateTime(value: string): string {
+function formatDateTime(value?: string | null): string {
+  if (!value) {
+    return '-'
+  }
   return new Intl.DateTimeFormat('tr-TR', {
     dateStyle: 'short',
     timeStyle: 'medium',
@@ -115,6 +118,50 @@ function detailsPreview(details: Record<string, unknown>): string {
 
 function actionLabel(action: string): string {
   return ACTION_LABELS[action] ?? action
+}
+
+function formatLocationSignalStatus(status?: LocationStatus | null): string {
+  if (status === 'VERIFIED_HOME') return 'Doğrulama güçlü'
+  if (status === 'UNVERIFIED_LOCATION') return 'Kontrol gerektiriyor'
+  if (status === 'NO_LOCATION') return 'Sinyal alınmadı'
+  return 'Bekleniyor'
+}
+
+function formatAttendanceEventLabel(eventType?: 'IN' | 'OUT' | null): string {
+  if (eventType === 'IN') return 'Giriş'
+  if (eventType === 'OUT') return 'Çıkış'
+  return '-'
+}
+
+function locationSignalTone(status?: LocationStatus | null): string {
+  if (status === 'VERIFIED_HOME') {
+    return 'border-emerald-200 bg-emerald-50 text-emerald-900'
+  }
+  if (status === 'UNVERIFIED_LOCATION') {
+    return 'border-amber-200 bg-amber-50 text-amber-900'
+  }
+  if (status === 'NO_LOCATION') {
+    return 'border-slate-200 bg-slate-50 text-slate-800'
+  }
+  return 'border-slate-200 bg-white text-slate-800'
+}
+
+const istanbulDayFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Europe/Istanbul',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+})
+
+function toIstanbulDay(value?: string | null): string | null {
+  if (!value) {
+    return null
+  }
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    return null
+  }
+  return istanbulDayFormatter.format(parsed)
 }
 
 function toQueryParams(filters: LogFilters, page: number): AuditLogParams {
@@ -153,6 +200,7 @@ export function SystemLogsPage() {
   const [logsPage, setLogsPage] = useState(1)
   const [textSearch, setTextSearch] = useState('')
   const [followLogs, setFollowLogs] = useState(true)
+  const [isEmployeeContextOpen, setIsEmployeeContextOpen] = useState(false)
   const [commandInput, setCommandInput] = useState('')
   const [selectedLogId, setSelectedLogId] = useState<number | null>(null)
   const [consoleMessages, setConsoleMessages] = useState<ConsoleMessage[]>([
@@ -163,6 +211,14 @@ export function SystemLogsPage() {
   const terminalScrollRef = useRef<HTMLDivElement | null>(null)
 
   const queryParams = useMemo(() => toQueryParams(appliedFilters, logsPage), [appliedFilters, logsPage])
+  const filteredEmployeeId = useMemo(() => {
+    const parsed = Number(appliedFilters.employeeId)
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      return null
+    }
+    return parsed
+  }, [appliedFilters.employeeId])
+  const todayIstanbul = useMemo(() => istanbulDayFormatter.format(new Date()), [])
 
   const logsQuery = useQuery({
     queryKey: ['audit-logs', queryParams],
@@ -170,12 +226,40 @@ export function SystemLogsPage() {
     refetchInterval: followLogs ? 8000 : false,
     refetchIntervalInBackground: true,
   })
+  const employeeContextQuery = useQuery({
+    queryKey: ['audit-logs', 'employee-context', filteredEmployeeId],
+    queryFn: () => getEmployeeDetail(filteredEmployeeId as number),
+    enabled: filteredEmployeeId !== null && isEmployeeContextOpen,
+    staleTime: 60_000,
+  })
 
   const logs = logsQuery.data?.items ?? []
   const logsTotal = logsQuery.data?.total ?? 0
   const logsTotalPages = Math.max(1, Math.ceil(logsTotal / LOGS_PAGE_SIZE))
   const logsRangeStart = logsTotal === 0 ? 0 : (logsPage - 1) * LOGS_PAGE_SIZE + 1
   const logsRangeEnd = logs.length === 0 ? 0 : logsRangeStart + logs.length - 1
+  const employeeLocationRows = useMemo(
+    () => employeeContextQuery.data?.recent_locations ?? [],
+    [employeeContextQuery.data?.recent_locations],
+  )
+  const employeeTodayLocationRows = useMemo(
+    () => employeeLocationRows.filter((row) => toIstanbulDay(row.ts_utc) === todayIstanbul),
+    [employeeLocationRows, todayIstanbul],
+  )
+  const visibleEmployeeLocationRows = useMemo(
+    () => (employeeTodayLocationRows.length > 0 ? employeeTodayLocationRows : employeeLocationRows).slice(0, 6),
+    [employeeLocationRows, employeeTodayLocationRows],
+  )
+  const visibleEmployeeIpSummaries = useMemo(
+    () => (employeeContextQuery.data?.ip_summary ?? []).slice(0, 3),
+    [employeeContextQuery.data?.ip_summary],
+  )
+  const visibleEmployeePortalRows = useMemo(
+    () => (employeeContextQuery.data?.recent_activity ?? []).slice(0, 6),
+    [employeeContextQuery.data?.recent_activity],
+  )
+  const employeeFieldStatus =
+    visibleEmployeeLocationRows[0]?.location_status ?? employeeContextQuery.data?.latest_location?.location_status ?? null
 
   const visibleLogs = useMemo(() => {
     if (!textSearch.trim()) {
@@ -247,6 +331,13 @@ export function SystemLogsPage() {
     }
     terminalScrollRef.current.scrollTop = terminalScrollRef.current.scrollHeight
   }, [followLogs, visibleLogs, consoleMessages])
+
+  useEffect(() => {
+    if (filteredEmployeeId !== null) {
+      return
+    }
+    setIsEmployeeContextOpen(false)
+  }, [filteredEmployeeId])
 
   const pushConsoleMessage = (level: ConsoleMessageLevel, text: string) => {
     setConsoleMessages((prev) => {
@@ -615,6 +706,177 @@ export function SystemLogsPage() {
             </button>
           </div>
         </form>
+      </Panel>
+
+      <Panel>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h4 className="text-base font-semibold text-slate-900">Çalışan izleri</h4>
+            <p className="mt-1 text-xs text-slate-500">
+              Employee ID filtresi uygulandığında saha izi, bağlantı özeti ve portal hareketleri burada kapalı bir bölmede açılır.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {filteredEmployeeId !== null ? (
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+                Employee #{filteredEmployeeId}
+              </span>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => setIsEmployeeContextOpen((prev) => !prev)}
+              disabled={filteredEmployeeId === null}
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isEmployeeContextOpen ? 'Bölmeyi gizle' : 'Bölmeyi aç'}
+            </button>
+          </div>
+        </div>
+
+        {filteredEmployeeId === null ? (
+          <p className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+            Önce log filtrelerinden bir `Employee ID` seçin. Bu gizli bölüm sadece seçili çalışan için açılır.
+          </p>
+        ) : !isEmployeeContextOpen ? (
+          <p className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+            Gizli çalışan bölmesi hazır. Taşınan saha ve portal özetini görmek için “Bölmeyi aç” butonunu kullanın.
+          </p>
+        ) : employeeContextQuery.isLoading ? (
+          <div className="mt-4">
+            <LoadingBlock label="Çalışan izleri yükleniyor..." />
+          </div>
+        ) : employeeContextQuery.isError ? (
+          <div className="mt-4">
+            <ErrorBlock message={parseApiError(employeeContextQuery.error, 'Çalışan izleri alınamadı.').message} />
+          </div>
+        ) : employeeContextQuery.data ? (
+          <div className="mt-4 grid gap-4 xl:grid-cols-[1.08fr_0.92fr]">
+            <section className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Saha izi / bağlantı özeti
+                  </p>
+                  <h5 className="mt-2 text-lg font-semibold text-slate-900">
+                    {employeeContextQuery.data.employee.full_name}
+                  </h5>
+                </div>
+                <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${locationSignalTone(employeeFieldStatus)}`}>
+                  {formatLocationSignalStatus(employeeFieldStatus)}
+                </span>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-xl border border-white bg-white p-3">
+                  <p className="text-xs text-slate-500">Son portal ziyareti</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">
+                    {formatDateTime(employeeContextQuery.data.last_portal_seen_utc)}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-white bg-white p-3">
+                  <p className="text-xs text-slate-500">Bugünkü saha izi</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">{employeeTodayLocationRows.length} kayıt</p>
+                </div>
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-[0.96fr_1.04fr]">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <h6 className="text-sm font-semibold text-slate-900">Saha izi</h6>
+                    <span className="text-xs text-slate-500">
+                      {employeeTodayLocationRows.length > 0 ? 'Bugün öncelikli' : 'Son kayıtlar'}
+                    </span>
+                  </div>
+                  {visibleEmployeeLocationRows.length === 0 ? (
+                    <p className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-5 text-sm text-slate-500">
+                      Saha izi bulunmuyor.
+                    </p>
+                  ) : (
+                    visibleEmployeeLocationRows.map((row, index) => (
+                      <div
+                        key={`${row.ts_utc}-${row.device_id}-${index}`}
+                        className="rounded-xl border border-slate-200 bg-white px-4 py-3"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-sm font-semibold text-slate-900">{formatDateTime(row.ts_utc)}</p>
+                          <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${locationSignalTone(row.location_status)}`}>
+                            {formatLocationSignalStatus(row.location_status)}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-sm text-slate-600">
+                          {formatAttendanceEventLabel(row.event_type)} akışı, cihaz #{row.device_id}
+                        </p>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <h6 className="text-sm font-semibold text-slate-900">Bağlantı özeti</h6>
+                    <span className="text-xs text-slate-500">{visibleEmployeeIpSummaries.length} özet</span>
+                  </div>
+                  {visibleEmployeeIpSummaries.length === 0 ? (
+                    <p className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-5 text-sm text-slate-500">
+                      Bağlantı özeti henüz oluşmadı.
+                    </p>
+                  ) : (
+                    visibleEmployeeIpSummaries.map((item) => (
+                      <div
+                        key={`${item.ip}-${item.last_seen_at_utc ?? 'summary'}`}
+                        className="rounded-xl border border-slate-200 bg-white px-4 py-3"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="font-mono text-xs text-slate-700">{item.ip}</p>
+                          <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${locationSignalTone(item.last_location_status)}`}>
+                            {formatLocationSignalStatus(item.last_location_status)}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-xs text-slate-500">Son portal işlemi: {item.last_action ?? '-'}</p>
+                        <p className="text-xs text-slate-500">Son iz: {formatDateTime(item.last_seen_at_utc)}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Portal hareketleri
+                  </p>
+                  <h5 className="mt-2 text-lg font-semibold text-slate-900">Son kullanıcı adımları</h5>
+                </div>
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+                  Son ziyaret: {formatDateTime(employeeContextQuery.data.last_portal_seen_utc)}
+                </span>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                {visibleEmployeePortalRows.length === 0 ? (
+                  <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+                    Portal tarafında henüz hareket izi oluşmadı.
+                  </p>
+                ) : (
+                  visibleEmployeePortalRows.map((item, index) => (
+                    <div key={`${item.ts_utc}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-slate-900">{item.action}</p>
+                        <span className="text-xs text-slate-500">{formatDateTime(item.ts_utc)}</span>
+                      </div>
+                      <p className="mt-2 text-xs text-slate-500">IP: {item.ip ?? '-'}</p>
+                      <p className="mt-1 truncate text-xs text-slate-500" title={item.user_agent ?? '-'}>
+                        {item.user_agent ?? 'User agent bilgisi yok'}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </section>
+          </div>
+        ) : null}
       </Panel>
 
       <Panel>
