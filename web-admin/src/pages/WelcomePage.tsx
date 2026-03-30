@@ -11,6 +11,7 @@ import { PageHeader } from '../components/PageHeader'
 import { Panel } from '../components/Panel'
 import { controlRoomQueryKeys } from '../components/control-room/queryKeys'
 import { formatDateTime, todayStatusLabel } from '../components/control-room/utils'
+import { UI_BRANDING } from '../config/ui'
 import type { ControlRoomEmployeeState } from '../types/api'
 
 type WelcomeSortField =
@@ -376,7 +377,6 @@ export function WelcomePage() {
             <div className="welcome-scene">
               <span className="welcome-scene__chip is-top">Hızlı tarama</span>
               <span className="welcome-scene__chip is-left">Kurumsal netlik</span>
-              <span className="welcome-scene__chip is-bottom">Konumdan bağımsız özet</span>
 
               <div className="welcome-hero-logo" aria-hidden="true">
                 <div className="welcome-hero-logo__shadow" />
@@ -408,6 +408,20 @@ export function WelcomePage() {
                   <div className="welcome-hero-logo__ring welcome-hero-logo__ring--front" />
                   <div className="welcome-hero-logo__spark welcome-hero-logo__spark--a" />
                   <div className="welcome-hero-logo__spark welcome-hero-logo__spark--b" />
+                </div>
+              </div>
+
+              <div className="welcome-scene__signature">
+                <div className="welcome-scene__signature-mark" aria-hidden="true">
+                  <span className="welcome-scene__signature-core">Y</span>
+                  <span className="welcome-scene__signature-trace" />
+                  <span className="welcome-scene__signature-pulse is-a" />
+                  <span className="welcome-scene__signature-pulse is-b" />
+                </div>
+                <div className="welcome-scene__signature-copy">
+                  <p className="welcome-scene__signature-kicker">YABUJIN SIGNATURE</p>
+                  <strong>{UI_BRANDING.signatureText}</strong>
+                  <span>{UI_BRANDING.signatureTagline}</span>
                 </div>
               </div>
 

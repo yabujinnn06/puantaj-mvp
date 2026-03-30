@@ -580,10 +580,6 @@ export function EmployeeDetailPage() {
               </div>
             </div>
 
-            <div className="mt-4 rounded-2xl border border-teal-300/20 bg-teal-400/10 p-4 text-sm leading-6 text-teal-50">
-              Bu blok koordinat veya açık konum bilgisi göstermez. Sadece gün içindeki saha doğrulamasının kullanılıp
-              kullanılmadığını ve ne kadar canlı olduğunu anlatır.
-            </div>
           </div>
         </div>
       </Panel>
