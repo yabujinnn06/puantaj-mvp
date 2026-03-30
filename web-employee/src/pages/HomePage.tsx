@@ -20,6 +20,7 @@ import {
   type ParsedApiError,
 } from '../api/attendance'
 import { BrandSignature } from '../components/BrandSignature'
+import { useToast } from '../hooks/useToast'
 import type {
   AttendanceActionResponse,
   EmployeeDemoDayResponse,
@@ -601,7 +602,7 @@ export function HomePage() {
   const [pendingAction, setPendingAction] = useState<'checkin' | 'checkout' | 'demo' | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [secondCheckinApprovalAlert, setSecondCheckinApprovalAlert] = useState<ParsedApiError | null>(null)
-  const [, setLocationWarning] = useState<string | null>(null)
+  const [locationWarning, setLocationWarning] = useState<string | null>(null)
   const [requestId, setRequestId] = useState<string | null>(null)
   const [lastAction, setLastAction] = useState<LastAction | null>(null)
   const [actionNotice, setActionNotice] = useState<{ tone: 'success' | 'warning'; text: string } | null>(null)
@@ -651,6 +652,7 @@ export function HomePage() {
   const [installFunnelSnapshot, setInstallFunnelSnapshot] = useState<InstallFunnelSnapshot>(() =>
     loadInstallFunnelSnapshot(),
   )
+  const { pushToast } = useToast()
   const scanSuccessFxTimerRef = useRef<number | null>(null)
   const actionPanelRef = useRef<HTMLElement | null>(null)
   const qrPanelAutoFocusDoneRef = useRef(false)
@@ -660,6 +662,149 @@ export function HomePage() {
   const iosInAppBrowserLoggedRef = useRef(false)
   const iosBrowserContext = useMemo(() => detectIosBrowserContext(), [])
   const installFunnelLastSentRef = useRef<Record<string, number>>({})
+  const toastDedupRef = useRef<Record<string, string | null>>({})
+
+  const emitToast = useCallback(
+    (
+      scope: string,
+      key: string | null,
+      toast:
+        | {
+            title: string
+            description?: string
+            variant?: 'success' | 'error' | 'warning' | 'info'
+            durationMs?: number
+          }
+        | null,
+    ) => {
+      if (!key || !toast) {
+        toastDedupRef.current[scope] = null
+        return
+      }
+      if (toastDedupRef.current[scope] === key) {
+        return
+      }
+      toastDedupRef.current[scope] = key
+      pushToast(toast)
+    },
+    [pushToast],
+  )
+
+  useEffect(() => {
+    if (!errorMessage) {
+      emitToast('error', null, null)
+      return
+    }
+    emitToast('error', errorMessage, {
+      title: 'Islem uyarisi',
+      description: errorMessage,
+      variant: 'error',
+      durationMs: 5200,
+    })
+  }, [emitToast, errorMessage])
+
+  useEffect(() => {
+    if (!scannerError) {
+      emitToast('scannerError', null, null)
+      return
+    }
+    emitToast('scannerError', scannerError, {
+      title: 'Kamera uyarisi',
+      description: scannerError,
+      variant: 'warning',
+      durationMs: 5200,
+    })
+  }, [emitToast, scannerError])
+
+  useEffect(() => {
+    if (!locationWarning) {
+      emitToast('locationWarning', null, null)
+      return
+    }
+    emitToast('locationWarning', locationWarning, {
+      title: 'Konum uyarisi',
+      description: locationWarning,
+      variant: 'warning',
+    })
+  }, [emitToast, locationWarning])
+
+  useEffect(() => {
+    if (!passkeyNotice) {
+      emitToast('passkeyNotice', null, null)
+      return
+    }
+    emitToast('passkeyNotice', passkeyNotice, {
+      title: 'Passkey',
+      description: passkeyNotice,
+      variant: 'success',
+    })
+  }, [emitToast, passkeyNotice])
+
+  useEffect(() => {
+    if (!recoveryNotice) {
+      emitToast('recoveryNotice', null, null)
+      return
+    }
+    emitToast('recoveryNotice', recoveryNotice, {
+      title: 'Recovery Code',
+      description: recoveryNotice,
+      variant: 'info',
+      durationMs: 5000,
+    })
+  }, [emitToast, recoveryNotice])
+
+  useEffect(() => {
+    if (!pushNotice) {
+      emitToast('pushNotice', null, null)
+      return
+    }
+    emitToast('pushNotice', pushNotice, {
+      title: 'Bildirimler',
+      description: pushNotice,
+      variant: 'success',
+    })
+  }, [emitToast, pushNotice])
+
+  useEffect(() => {
+    if (!installNotice) {
+      emitToast('installNotice', null, null)
+      return
+    }
+    emitToast('installNotice', installNotice, {
+      title: 'Kurulum',
+      description: installNotice,
+      variant: 'info',
+    })
+  }, [emitToast, installNotice])
+
+  useEffect(() => {
+    if (!actionNotice) {
+      emitToast('actionNotice', null, null)
+      return
+    }
+    emitToast('actionNotice', `${actionNotice.tone}:${actionNotice.text}`, {
+      title: actionNotice.tone === 'success' ? 'Islem kaydedildi' : 'Islem uyarisi',
+      description: actionNotice.text,
+      variant: actionNotice.tone === 'success' ? 'success' : 'warning',
+    })
+  }, [actionNotice, emitToast])
+
+  useEffect(() => {
+    if (!secondCheckinApprovalAlert) {
+      emitToast('secondCheckinApproval', null, null)
+      return
+    }
+    emitToast(
+      'secondCheckinApproval',
+      `${secondCheckinApprovalAlert.code ?? 'SECOND_CHECKIN_APPROVAL_REQUIRED'}:${secondCheckinApprovalAlert.message}`,
+      {
+        title: 'Admin onayi gerekli',
+        description: secondCheckinApprovalAlert.message,
+        variant: 'warning',
+        durationMs: 6000,
+      },
+    )
+  }, [emitToast, secondCheckinApprovalAlert])
 
   const sendInstallFunnelEvent = useCallback(
     (event: InstallFunnelEvent, snapshot: InstallFunnelSnapshot) => {
@@ -2763,6 +2908,17 @@ export function HomePage() {
         {installNotice ? (
           <div className="notice-box notice-box-warning mt-3">
             <p>{installNotice}</p>
+          </div>
+        ) : null}
+
+        {locationWarning ? (
+          <div className="warn-box banner-warning">
+            <p>
+              <span className="banner-icon" aria-hidden="true">
+                !
+              </span>
+              {locationWarning}
+            </p>
           </div>
         ) : null}
 

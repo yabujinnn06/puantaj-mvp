@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom'
 import { registerSW } from 'virtual:pwa-register'
 import './index.css'
 import App from './App.tsx'
+import { ToastProvider } from './components/ToastProvider'
 
 interface DeferredInstallPromptEvent extends Event {
   prompt: () => Promise<void>
@@ -37,7 +38,9 @@ const basePath =
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter basename={basePath}>
-      <App />
+      <ToastProvider>
+        <App />
+      </ToastProvider>
     </BrowserRouter>
   </StrictMode>,
 )
