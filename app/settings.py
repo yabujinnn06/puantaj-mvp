@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     recovery_admin_vault_key: str | None = None
     device_invite_max_attempts: int = 3
     admin_device_invite_max_attempts: int = 3
-    device_invite_max_ttl_minutes: int = 240
+    device_invite_max_ttl_minutes: int = 60 * 24 * 30
     admin_device_invite_max_ttl_minutes: int = 120
     device_invite_min_retry_seconds: int = 4
     admin_device_invite_min_retry_seconds: int = 6

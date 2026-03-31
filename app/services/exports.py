@@ -271,6 +271,88 @@ def _auto_width(ws: Worksheet) -> None:
         ws.column_dimensions[col_letter].width = min(max_len + 2, 45)
 
 
+def build_device_invites_xlsx_bytes(
+    rows: list[dict[str, object]],
+    *,
+    generated_at: datetime,
+    expires_in_minutes: int,
+) -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Claim Tokens"
+
+    metadata_rows = [
+        ("Exported At", _to_excel_datetime(generated_at)),
+        ("Invite Duration (minutes)", expires_in_minutes),
+        ("Employee Count", len(rows)),
+    ]
+    for label, value in metadata_rows:
+        ws.append([label, value])
+    _style_metadata_rows(ws, start_row=1, end_row=len(metadata_rows))
+    ws["B1"].number_format = "yyyy-mm-dd hh:mm"
+
+    _append_spacer_row(ws)
+    header_row = ws.max_row + 1
+    headers = [
+        "Employee ID",
+        "Employee Name",
+        "Region",
+        "Department",
+        "Token",
+        "Claim URL",
+        "Expires At",
+        "Created At",
+    ]
+    ws.append(headers)
+    _style_header(ws, header_row)
+    ws.freeze_panes = f"A{header_row + 1}"
+
+    for row in rows:
+        ws.append(
+            [
+                row.get("employee_id"),
+                row.get("employee_name"),
+                row.get("region_name"),
+                row.get("department_name"),
+                row.get("token"),
+                row.get("invite_url"),
+                _to_excel_datetime(row.get("expires_at")),
+                _to_excel_datetime(row.get("created_at")),
+            ]
+        )
+
+    for row_idx in range(header_row + 1, ws.max_row + 1):
+        for col_idx in range(1, ws.max_column + 1):
+            cell = ws.cell(row=row_idx, column=col_idx)
+            cell.border = THIN_BORDER
+            if row_idx % 2 == 0:
+                cell.fill = ZEBRA_FILL
+        ws.cell(row=row_idx, column=7).number_format = "yyyy-mm-dd hh:mm"
+        ws.cell(row=row_idx, column=8).number_format = "yyyy-mm-dd hh:mm"
+
+    if rows:
+        table = Table(
+            displayName="ClaimTokenTable",
+            ref=f"A{header_row}:H{ws.max_row}",
+        )
+        table.tableStyleInfo = TableStyleInfo(
+            name="TableStyleMedium2",
+            showFirstColumn=False,
+            showLastColumn=False,
+            showRowStripes=True,
+            showColumnStripes=False,
+        )
+        ws.add_table(table)
+
+    _auto_width(ws)
+    _apply_print_layout(ws, header_row=header_row)
+    _finalize_visual_scope(ws, used_max_col=ws.max_column)
+
+    buffer = BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue()
+
+
 def _append_spacer_row(ws: Worksheet) -> None:
     # `ws.append([])` does not always advance `max_row`; write a blank string cell for stable row indexing.
     ws.append([""])

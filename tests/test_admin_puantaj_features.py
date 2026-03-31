@@ -170,6 +170,30 @@ class _FakeEmployeeDeviceOverviewDB:
         return _ScalarRows(rows)
 
 
+class _FakeBulkDeviceInviteExportDB:
+    def __init__(self, employees):
+        self.employees = {employee.id: employee for employee in employees}
+        self.added_invites: list[DeviceInvite] = []
+        self.audit_rows: list[object] = []
+
+    def get(self, model, pk):  # type: ignore[no-untyped-def]
+        if model is Employee:
+            return self.employees.get(pk)
+        return None
+
+    def add(self, obj: object) -> None:
+        if isinstance(obj, DeviceInvite):
+            self.added_invites.append(obj)
+            return
+        self.audit_rows.append(obj)
+
+    def commit(self) -> None:
+        return
+
+    def rollback(self) -> None:
+        return
+
+
 class _FakeEmployeeDepartmentDB:
     def __init__(self, employee, departments, shifts):
         self.employee = employee
@@ -825,6 +849,62 @@ class AdminPuantajFeatureTests(unittest.TestCase):
         self.assertEqual(device["recovery_code_active_count"], 7)
         self.assertEqual(device["recovery_pin_plain"], "123456")
         self.assertEqual(device["recovery_code_entries"][0]["status"], "ACTIVE")
+
+    @patch("app.routers.admin.log_audit")
+    def test_bulk_device_invite_export_returns_xlsx_with_one_row_per_employee(
+        self,
+        _mock_log_audit,
+    ) -> None:
+        region = Region(id=1, name="Istanbul", is_active=True)
+        department = Department(id=2, name="Operasyon", region_id=1)
+        employee_1 = Employee(id=11, full_name="Ada Lovelace", region_id=1, department_id=2, is_active=True)
+        employee_1.region = region
+        employee_1.department = department
+        employee_2 = Employee(id=12, full_name="Grace Hopper", region_id=1, department_id=2, is_active=True)
+        employee_2.region = region
+        employee_2.department = department
+
+        fake_db = _FakeBulkDeviceInviteExportDB([employee_1, employee_2])
+        app.dependency_overrides[get_db] = _override_get_db(fake_db)
+        app.dependency_overrides[require_admin] = lambda: _super_admin_claims()
+        client = TestClient(app)
+
+        response = client.post(
+            "/api/admin/device-invites/bulk-export.xlsx",
+            json={"employee_ids": [11, 12], "expires_in_minutes": 1440},
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(
+            response.headers["content-type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        self.assertEqual(len(fake_db.added_invites), 2)
+
+        workbook = load_workbook(BytesIO(response.content))
+        sheet = workbook["Claim Tokens"]
+        self.assertEqual(sheet["A5"].value, "Employee ID")
+        self.assertEqual(sheet["A6"].value, 11)
+        self.assertEqual(sheet["B6"].value, "Ada Lovelace")
+        self.assertEqual(sheet["B7"].value, "Grace Hopper")
+        self.assertTrue(str(sheet["F6"].value).endswith(fake_db.added_invites[0].token))
+        self.assertIsNotNone(sheet["G6"].value)
+
+    def test_bulk_device_invite_export_rejects_inactive_employees(self) -> None:
+        employee = Employee(id=21, full_name="Inactive Person", department_id=2, is_active=False)
+        fake_db = _FakeBulkDeviceInviteExportDB([employee])
+        app.dependency_overrides[get_db] = _override_get_db(fake_db)
+        app.dependency_overrides[require_admin] = lambda: _super_admin_claims()
+        client = TestClient(app)
+
+        response = client.post(
+            "/api/admin/device-invites/bulk-export.xlsx",
+            json={"employee_ids": [21], "expires_in_minutes": 1440},
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["error"]["code"], "EMPLOYEE_INACTIVE")
+        self.assertEqual(len(fake_db.added_invites), 0)
 
     def test_update_employee_department_clears_shift_if_department_changes(self) -> None:
         employee = Employee(id=6, full_name="Departman Test", region_id=1, department_id=1, shift_id=7, is_active=True)

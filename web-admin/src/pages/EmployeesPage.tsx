@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { z } from 'zod'
@@ -11,6 +11,7 @@ import {
   getRegions,
   updateEmployeeActive,
 } from '../api/admin'
+import { apiClient } from '../api/client'
 import { parseApiError } from '../api/error'
 import { ErrorBlock } from '../components/ErrorBlock'
 import { LoadingBlock } from '../components/LoadingBlock'
@@ -28,6 +29,42 @@ const employeeSchema = z.object({
 })
 
 const EMPLOYEE_LIST_PAGE_SIZES = [20, 35, 50, 100]
+const BULK_DEVICE_INVITE_MAX_MINUTES = 60 * 24 * 30
+const DEFAULT_BULK_DEVICE_INVITE_MINUTES = 60 * 24
+
+const bulkInviteSchema = z.object({
+  employee_ids: z.array(z.number().int().positive()).min(1, 'En az bir calisan secin.'),
+  expires_in_minutes: z.coerce.number().int().positive().max(BULK_DEVICE_INVITE_MAX_MINUTES),
+})
+
+type BulkDeviceInviteExportPayload = {
+  employee_ids: number[]
+  expires_in_minutes: number
+}
+
+function downloadBlob(blob: Blob, fileName: string): void {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+async function downloadBulkDeviceInviteExport(
+  payload: BulkDeviceInviteExportPayload,
+): Promise<Blob> {
+  const response = await apiClient.post<Blob>(
+    '/api/admin/device-invites/bulk-export.xlsx',
+    payload,
+    {
+      responseType: 'blob',
+    },
+  )
+  return response.data
+}
 
 export function EmployeesPage() {
   const queryClient = useQueryClient()
@@ -42,6 +79,8 @@ export function EmployeesPage() {
   const [showInactive, setShowInactive] = useState(false)
   const [regionFilterId, setRegionFilterId] = useState('')
   const [departmentFilterId, setDepartmentFilterId] = useState('')
+  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<number[]>([])
+  const [bulkInviteMinutes, setBulkInviteMinutes] = useState(String(DEFAULT_BULK_DEVICE_INVITE_MINUTES))
   const [employeeListPageSize, setEmployeeListPageSize] = useState(35)
   const [employeeListPage, setEmployeeListPage] = useState(1)
   const [error, setError] = useState<string | null>(null)
@@ -129,6 +168,25 @@ export function EmployeesPage() {
     },
   })
 
+  const bulkInviteExportMutation = useMutation({
+    mutationFn: downloadBulkDeviceInviteExport,
+    onSuccess: (blob) => {
+      downloadBlob(blob, `employee-claim-tokens-${Date.now()}.xlsx`)
+      pushToast({
+        variant: 'success',
+        title: 'Claim token Excel indirildi',
+        description: 'Secili calisanlar icin ayri tokenler uretildi ve Excel indirildi.',
+      })
+    },
+    onError: (mutationError) => {
+      pushToast({
+        variant: 'error',
+        title: 'Toplu claim token basarisiz',
+        description: parseApiError(mutationError, 'Claim token Excel dosyasi uretilemedi.').message,
+      })
+    },
+  })
+
   const onSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setError(null)
@@ -185,6 +243,11 @@ export function EmployeesPage() {
     }
     return employees.filter((employee) => employee.full_name.toLowerCase().includes(normalized))
   }, [employees, searchTerm])
+  const activeEmployeeIds = useMemo(
+    () => new Set(employees.filter((employee) => employee.is_active).map((employee) => employee.id)),
+    [employees],
+  )
+  const selectedEmployeeIdSet = useMemo(() => new Set(selectedEmployeeIds), [selectedEmployeeIds])
 
   const employeeListTotalPages = Math.max(1, Math.ceil(filteredEmployees.length / employeeListPageSize))
   const safeEmployeeListPage = Math.min(employeeListPage, employeeListTotalPages)
@@ -207,8 +270,91 @@ export function EmployeesPage() {
   ).size
   const missingRegionCount = employees.filter((employee) => !employee.region_id).length
   const missingDepartmentCount = employees.filter((employee) => !employee.department_id).length
+  const activeFilteredEmployees = useMemo(
+    () => filteredEmployees.filter((employee) => employee.is_active),
+    [filteredEmployees],
+  )
+  const activePagedEmployees = useMemo(
+    () => pagedEmployees.filter((employee) => employee.is_active),
+    [pagedEmployees],
+  )
+  const selectedEmployeeCount = selectedEmployeeIds.length
+  const allPagedActiveSelected = activePagedEmployees.length > 0
+    && activePagedEmployees.every((employee) => selectedEmployeeIdSet.has(employee.id))
+  const allFilteredActiveSelected = activeFilteredEmployees.length > 0
+    && activeFilteredEmployees.every((employee) => selectedEmployeeIdSet.has(employee.id))
 
   const resetEmployeePagination = () => setEmployeeListPage(1)
+
+  useEffect(() => {
+    setSelectedEmployeeIds((previous) => previous.filter((employeeId) => activeEmployeeIds.has(employeeId)))
+  }, [activeEmployeeIds])
+
+  const toggleEmployeeSelection = (employeeId: number) => {
+    setSelectedEmployeeIds((previous) =>
+      previous.includes(employeeId)
+        ? previous.filter((value) => value !== employeeId)
+        : [...previous, employeeId],
+    )
+  }
+
+  const mergeSelectedEmployees = (employeeIds: number[]) => {
+    setSelectedEmployeeIds((previous) => Array.from(new Set([...previous, ...employeeIds])))
+  }
+
+  const removeSelectedEmployees = (employeeIds: number[]) => {
+    const idsToRemove = new Set(employeeIds)
+    setSelectedEmployeeIds((previous) => previous.filter((employeeId) => !idsToRemove.has(employeeId)))
+  }
+
+  const handleTogglePagedEmployees = () => {
+    const pagedActiveIds = activePagedEmployees.map((employee) => employee.id)
+    if (pagedActiveIds.length === 0) {
+      return
+    }
+    if (allPagedActiveSelected) {
+      removeSelectedEmployees(pagedActiveIds)
+      return
+    }
+    mergeSelectedEmployees(pagedActiveIds)
+  }
+
+  const handleSelectFilteredEmployees = () => {
+    const filteredActiveIds = activeFilteredEmployees.map((employee) => employee.id)
+    if (filteredActiveIds.length === 0) {
+      return
+    }
+    if (allFilteredActiveSelected) {
+      removeSelectedEmployees(filteredActiveIds)
+      return
+    }
+    mergeSelectedEmployees(filteredActiveIds)
+  }
+
+  const handleBulkInviteExport = () => {
+    const parsed = bulkInviteSchema.safeParse({
+      employee_ids: selectedEmployeeIds,
+      expires_in_minutes: bulkInviteMinutes,
+    })
+    if (!parsed.success) {
+      const message = parsed.error.issues[0]?.message ?? 'Toplu claim token formunu kontrol edin.'
+      pushToast({
+        variant: 'error',
+        title: 'Form hatasi',
+        description: message,
+      })
+      return
+    }
+
+    const confirmed = window.confirm(
+      `Secili ${parsed.data.employee_ids.length} calisan icin ayri claim token uretilecek ve Excel indirilecek. Devam edilsin mi?`,
+    )
+    if (!confirmed) {
+      return
+    }
+
+    bulkInviteExportMutation.mutate(parsed.data)
+  }
 
   if (employeesQuery.isLoading || departmentsQuery.isLoading || regionsQuery.isLoading) {
     return <LoadingBlock />
@@ -458,6 +604,63 @@ export function EmployeesPage() {
           </div>
         </div>
 
+        <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50/70 px-4 py-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Toplu claim token</p>
+              <p className="mt-1 text-sm text-emerald-950">
+                Secili her calisan icin ayri token uretir ve tek bir Excel dosyasinda indirir.
+              </p>
+              <p className="mt-1 text-xs text-emerald-800">
+                Secili: {selectedEmployeeCount} calisan | Filtrede aktif: {activeFilteredEmployees.length}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleSelectFilteredEmployees}
+                className="rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
+              >
+                {allFilteredActiveSelected ? 'Filtre secimini kaldir' : 'Filtredeki aktifleri sec'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedEmployeeIds([])}
+                disabled={selectedEmployeeCount === 0}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Secimi temizle
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-end gap-3">
+            <label className="text-sm text-slate-700">
+              Claim suresi (dakika)
+              <input
+                type="number"
+                min={1}
+                max={BULK_DEVICE_INVITE_MAX_MINUTES}
+                step={1}
+                value={bulkInviteMinutes}
+                onChange={(event) => setBulkInviteMinutes(event.target.value)}
+                className="mt-1 w-40 rounded-lg border border-emerald-300 bg-white px-3 py-2"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={handleBulkInviteExport}
+              disabled={selectedEmployeeCount === 0 || bulkInviteExportMutation.isPending}
+              className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60"
+            >
+              {bulkInviteExportMutation.isPending
+                ? 'Excel hazirlaniyor...'
+                : 'Secili calisanlara token uret ve Excel indir'}
+            </button>
+            <p className="text-xs text-slate-600">Ornek: 1440 = 1 gun, 10080 = 7 gun, 43200 = 30 gun.</p>
+          </div>
+        </div>
+
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
           <p>
             Görünen aktif kayıt: {filteredActiveCount}
@@ -470,6 +673,15 @@ export function EmployeesPage() {
             <thead className="text-xs uppercase text-slate-500">
               <tr>
                 <th className="py-2">Çalışan</th>
+                <th className="py-2">
+                  <input
+                    type="checkbox"
+                    checked={allPagedActiveSelected}
+                    onChange={handleTogglePagedEmployees}
+                    disabled={activePagedEmployees.length === 0}
+                    aria-label="Sayfadaki aktif calisanlari sec"
+                  />
+                </th>
                 <th className="py-2">Kapsam</th>
                 <th className="py-2">Durum</th>
                 <th className="py-2">Not</th>
@@ -484,6 +696,15 @@ export function EmployeesPage() {
                       <p className="font-semibold text-slate-900">{employee.full_name}</p>
                       <p className="text-xs text-slate-500">ID #{employee.id}</p>
                     </div>
+                  </td>
+                  <td className="py-2 align-top">
+                    <input
+                      type="checkbox"
+                      checked={selectedEmployeeIdSet.has(employee.id)}
+                      onChange={() => toggleEmployeeSelection(employee.id)}
+                      disabled={!employee.is_active}
+                      aria-label={`${employee.full_name} sec`}
+                    />
                   </td>
                   <td className="py-2">
                     <div className="space-y-1 text-sm text-slate-600">

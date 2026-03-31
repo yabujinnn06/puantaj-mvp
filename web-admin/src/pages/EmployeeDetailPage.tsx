@@ -29,8 +29,11 @@ import type { LocationStatus, MonthlyEmployeeDay } from '../types/api'
 import { buildMonthlyAttendanceInsight, getAttendanceDayType } from '../utils/attendanceInsights'
 import { getFlagMeta } from '../utils/flagDictionary'
 
+const maxInviteDurationMinutes = 60 * 24 * 30
+const defaultInviteDurationMinutes = 60 * 24
+
 const inviteSchema = z.object({
-  expires_in_minutes: z.coerce.number().int().positive().max(1440),
+  expires_in_minutes: z.coerce.number().int().positive().max(maxInviteDurationMinutes),
 })
 
 function formatDateTime(value?: string | null): string {
@@ -137,7 +140,7 @@ export function EmployeeDetailPage() {
   const [selectedMonth, setSelectedMonth] = useState(String(now.getMonth() + 1))
 
   const [isInviteModalOpen, setInviteModalOpen] = useState(false)
-  const [expiresInMinutes, setExpiresInMinutes] = useState('30')
+  const [expiresInMinutes, setExpiresInMinutes] = useState(String(defaultInviteDurationMinutes))
   const [inviteError, setInviteError] = useState<string | null>(null)
   const [inviteToken, setInviteToken] = useState<string | null>(null)
   const [inviteUrl, setInviteUrl] = useState<string | null>(null)
@@ -315,7 +318,7 @@ export function EmployeeDetailPage() {
     setInviteError(null)
     setInviteToken(null)
     setInviteUrl(null)
-    setExpiresInMinutes('30')
+    setExpiresInMinutes(String(defaultInviteDurationMinutes))
     setInviteModalOpen(true)
   }
 
@@ -892,11 +895,16 @@ export function EmployeeDetailPage() {
           <label className="block text-sm text-slate-700">
             Geçerlilik süresi (dakika)
             <input
+              type="number"
+              min={1}
+              max={maxInviteDurationMinutes}
+              step={1}
               value={expiresInMinutes}
               onChange={(event) => setExpiresInMinutes(event.target.value)}
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
             />
           </label>
+          <p className="text-xs text-slate-500">Ornek: 1440 = 1 gun, 10080 = 7 gun, 43200 = 30 gun.</p>
 
           <button
             type="submit"
