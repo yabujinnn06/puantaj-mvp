@@ -24,6 +24,8 @@ services:
         value: puantaj-admin
       - key: ACCESS_TOKEN_MINUTES
         value: "43200"
+      - key: DEVICE_INVITE_MAX_TTL_MINUTES
+        value: "43200"
       - key: REFRESH_TOKEN_DAYS
         value: "30"
       - key: ALLOW_REFRESH
