@@ -29,8 +29,11 @@ import type { LocationStatus, MonthlyEmployeeDay } from '../types/api'
 import { buildMonthlyAttendanceInsight, getAttendanceDayType } from '../utils/attendanceInsights'
 import { getFlagMeta } from '../utils/flagDictionary'
 
+const maxInviteDurationMinutes = 60 * 24 * 30
+const defaultInviteDurationMinutes = 60 * 24
+
 const inviteSchema = z.object({
-  expires_in_minutes: z.coerce.number().int().positive().max(1440),
+  expires_in_minutes: z.coerce.number().int().positive().max(maxInviteDurationMinutes),
 })
 
 function formatDateTime(value?: string | null): string {
@@ -89,12 +92,6 @@ function formatLocationSignalStatus(status?: LocationStatus | null): string {
   return 'Bekleniyor'
 }
 
-function formatAttendanceEventLabel(eventType?: 'IN' | 'OUT' | null): string {
-  if (eventType === 'IN') return 'Giriş'
-  if (eventType === 'OUT') return 'Çıkış'
-  return '-'
-}
-
 function locationSignalTone(status?: LocationStatus | null): string {
   if (status === 'VERIFIED_HOME') {
     return 'border-emerald-200 bg-emerald-50 text-emerald-900'
@@ -143,7 +140,7 @@ export function EmployeeDetailPage() {
   const [selectedMonth, setSelectedMonth] = useState(String(now.getMonth() + 1))
 
   const [isInviteModalOpen, setInviteModalOpen] = useState(false)
-  const [expiresInMinutes, setExpiresInMinutes] = useState('30')
+  const [expiresInMinutes, setExpiresInMinutes] = useState(String(defaultInviteDurationMinutes))
   const [inviteError, setInviteError] = useState<string | null>(null)
   const [inviteToken, setInviteToken] = useState<string | null>(null)
   const [inviteUrl, setInviteUrl] = useState<string | null>(null)
@@ -321,7 +318,7 @@ export function EmployeeDetailPage() {
     setInviteError(null)
     setInviteToken(null)
     setInviteUrl(null)
-    setExpiresInMinutes('30')
+    setExpiresInMinutes(String(defaultInviteDurationMinutes))
     setInviteModalOpen(true)
   }
 
@@ -438,15 +435,6 @@ export function EmployeeDetailPage() {
   const todayFieldSignalRows = useMemo(
     () => recentLocationRows.filter((row) => toIstanbulDay(row.ts_utc) === todayIstanbul),
     [recentLocationRows, todayIstanbul],
-  )
-  const visibleFieldSignalRows = useMemo(
-    () => (todayFieldSignalRows.length > 0 ? todayFieldSignalRows : recentLocationRows).slice(0, 6),
-    [recentLocationRows, todayFieldSignalRows],
-  )
-  const visiblePortalActivityRows = useMemo(() => portalActivityRows.slice(0, 6), [portalActivityRows])
-  const topIpSummaries = useMemo(
-    () => (detailQuery.data?.ip_summary ?? []).slice(0, 3),
-    [detailQuery.data?.ip_summary],
   )
   const departmentNameById = useMemo(
     () => new Map((departmentsQuery.data ?? []).map((department) => [department.id, department.name])),
@@ -595,10 +583,6 @@ export function EmployeeDetailPage() {
               </div>
             </div>
 
-            <div className="mt-4 rounded-2xl border border-teal-300/20 bg-teal-400/10 p-4 text-sm leading-6 text-teal-50">
-              Bu blok koordinat veya açık konum bilgisi göstermez. Sadece gün içindeki saha doğrulamasının kullanılıp
-              kullanılmadığını ve ne kadar canlı olduğunu anlatır.
-            </div>
           </div>
         </div>
       </Panel>
@@ -866,161 +850,43 @@ export function EmployeeDetailPage() {
         )}
       </Panel>
 
-      <div className="grid gap-5 xl:grid-cols-[1.2fr_1fr]">
-        <Panel>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h4 className="text-base font-semibold text-slate-900">Kayıtlı cihazlar</h4>
-              <p className="mt-1 text-xs text-slate-500">Cihazlar, son attendance zamanı ve canlılık sinyalini birlikte gösterir.</p>
-            </div>
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
-              {activeDeviceCount}/{detailQuery.data?.devices.length ?? 0} aktif
-            </span>
-          </div>
-          <div className="mt-4 list-scroll-area">
-            <table className="min-w-full text-left text-sm">
-              <thead className="text-xs uppercase text-slate-500">
-                <tr>
-                  <th className="py-2">Cihaz ID</th>
-                  <th className="py-2">Parmak İzi</th>
-                  <th className="py-2">Durum</th>
-                  <th className="py-2">Oluşma</th>
-                  <th className="py-2">Son Attendance</th>
-                  <th className="py-2">Son İşlem</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(detailQuery.data?.devices ?? []).map((device) => (
-                  <tr key={device.id} className="border-t border-slate-100">
-                    <td className="py-2">{device.id}</td>
-                    <td className="py-2 font-mono text-xs">{device.device_fingerprint}</td>
-                    <td className="py-2">
-                      <StatusBadge value={device.is_active ? 'Aktif' : 'Pasif'} />
-                    </td>
-                    <td className="py-2">{formatDateTime(device.created_at)}</td>
-                    <td className="py-2">{formatDateTime(device.last_attendance_ts_utc)}</td>
-                    <td className="py-2">{formatDateTime(device.last_seen_at_utc)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Panel>
-
-        <div className="grid gap-5">
-          <Panel>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h4 className="text-base font-semibold text-slate-900">Saha izi</h4>
-                <p className="mt-1 text-xs text-slate-500">
-                  Konum koordinatı göstermeden mobil doğrulama akışını ve gün içi canlılığı özetler.
-                </p>
-              </div>
-              <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${locationSignalTone(fieldSignalStatus)}`}>
-                {formatLocationSignalStatus(fieldSignalStatus)}
-              </span>
-            </div>
-            <div className="mt-4 space-y-3">
-              {visibleFieldSignalRows.length === 0 ? (
-                <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
-                  Saha izi bulunmadığında bu alan sessiz kalır; ek koordinat ya da hassas bilgi gösterilmez.
-                </p>
-              ) : (
-                visibleFieldSignalRows.map((row, index) => (
-                  <div
-                    key={`${row.ts_utc}-${row.device_id}-${index}`}
-                    className="rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-sm font-semibold text-slate-900">{formatDateTime(row.ts_utc)}</p>
-                      <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${locationSignalTone(row.location_status)}`}>
-                        {formatLocationSignalStatus(row.location_status)}
-                      </span>
-                    </div>
-                    <p className="mt-2 text-sm text-slate-600">
-                      {formatAttendanceEventLabel(row.event_type)} akışı, cihaz #{row.device_id}
-                    </p>
-                  </div>
-                ))
-              )}
-            </div>
-          </Panel>
-
-          <Panel>
-            <h4 className="text-base font-semibold text-slate-900">Bağlantı özeti</h4>
-            <p className="mt-1 text-xs text-slate-500">Son portal izleri ve tekrar eden ağ izleri kullanıcı desteğini hızlandırır.</p>
-            <div className="mt-4 space-y-3">
-              {topIpSummaries.length === 0 ? (
-                <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
-                  Bağlantı özeti henüz oluşmadı.
-                </p>
-              ) : (
-                topIpSummaries.map((item) => (
-                  <div key={`${item.ip}-${item.last_seen_at_utc ?? 'summary'}`} className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="font-mono text-xs text-slate-700">{item.ip}</p>
-                      <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${locationSignalTone(item.last_location_status)}`}>
-                        {formatLocationSignalStatus(item.last_location_status)}
-                      </span>
-                    </div>
-                    <p className="mt-2 text-xs text-slate-500">Son portal işlemi: {item.last_action ?? '-'}</p>
-                    <p className="text-xs text-slate-500">Son iz: {formatDateTime(item.last_seen_at_utc)}</p>
-                  </div>
-                ))
-              )}
-            </div>
-          </Panel>
-        </div>
-      </div>
-
       <Panel>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h4 className="text-base font-semibold text-slate-900">Portal hareketleri</h4>
-            <p className="mt-1 text-xs text-slate-500">Kullanıcının son portal adımlarını ve tarayıcı izini hızlıca okuyun.</p>
+            <h4 className="text-base font-semibold text-slate-900">Kayıtlı cihazlar</h4>
+            <p className="mt-1 text-xs text-slate-500">Cihazlar, son attendance zamanı ve canlılık sinyalini birlikte gösterir.</p>
           </div>
           <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
-            Son ziyaret: {formatDateTime(detailQuery.data?.last_portal_seen_utc)}
+            {activeDeviceCount}/{detailQuery.data?.devices.length ?? 0} aktif
           </span>
         </div>
-        <div className="mt-4 grid gap-3 lg:grid-cols-[0.95fr_1.05fr]">
-          <div className="space-y-3">
-            {visiblePortalActivityRows.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
-                Portal tarafında henüz hareket izi oluşmadı.
-              </p>
-            ) : (
-              visiblePortalActivityRows.map((item, index) => (
-                <div key={`${item.ts_utc}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm font-semibold text-slate-900">{item.action}</p>
-                    <span className="text-xs text-slate-500">{formatDateTime(item.ts_utc)}</span>
-                  </div>
-                  <p className="mt-2 truncate text-xs text-slate-500" title={item.user_agent ?? '-'}>
-                    {item.user_agent ?? 'User agent bilgisi yok'}
-                  </p>
-                </div>
-              ))
-            )}
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Hızlı yorum</p>
-            <h5 className="mt-2 text-lg font-semibold text-slate-900">Kullanım kolaylığı notu</h5>
-            <p className="mt-3 text-sm leading-6 text-slate-600">
-              Çalışan sayfası artık sadece kayıt listesi değil; operasyon ekibinin "hangi cihaz aktif, portalda en son ne
-              olmuş, saha doğrulaması bugün canlı mı" sorularına tek bakışta cevap veren bir çalışma yüzeyi gibi davranıyor.
-            </p>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <div className="rounded-xl border border-white bg-white p-3">
-                <p className="text-xs text-slate-500">Son portal olayı</p>
-                <p className="mt-1 text-sm font-semibold text-slate-900">{lastPortalActivity?.action ?? '-'}</p>
-              </div>
-              <div className="rounded-xl border border-white bg-white p-3">
-                <p className="text-xs text-slate-500">Son saha izi</p>
-                <p className="mt-1 text-sm font-semibold text-slate-900">{formatDateTime(lastFieldSignalAt)}</p>
-              </div>
-            </div>
-          </div>
+        <div className="mt-4 list-scroll-area">
+          <table className="min-w-full text-left text-sm">
+            <thead className="text-xs uppercase text-slate-500">
+              <tr>
+                <th className="py-2">Cihaz ID</th>
+                <th className="py-2">Parmak İzi</th>
+                <th className="py-2">Durum</th>
+                <th className="py-2">Oluşma</th>
+                <th className="py-2">Son Attendance</th>
+                <th className="py-2">Son İşlem</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(detailQuery.data?.devices ?? []).map((device) => (
+                <tr key={device.id} className="border-t border-slate-100">
+                  <td className="py-2">{device.id}</td>
+                  <td className="py-2 font-mono text-xs">{device.device_fingerprint}</td>
+                  <td className="py-2">
+                    <StatusBadge value={device.is_active ? 'Aktif' : 'Pasif'} />
+                  </td>
+                  <td className="py-2">{formatDateTime(device.created_at)}</td>
+                  <td className="py-2">{formatDateTime(device.last_attendance_ts_utc)}</td>
+                  <td className="py-2">{formatDateTime(device.last_seen_at_utc)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </Panel>
 
@@ -1029,11 +895,16 @@ export function EmployeeDetailPage() {
           <label className="block text-sm text-slate-700">
             Geçerlilik süresi (dakika)
             <input
+              type="number"
+              min={1}
+              max={maxInviteDurationMinutes}
+              step={1}
               value={expiresInMinutes}
               onChange={(event) => setExpiresInMinutes(event.target.value)}
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
             />
           </label>
+          <p className="text-xs text-slate-500">Ornek: 1440 = 1 gun, 10080 = 7 gun, 43200 = 30 gun.</p>
 
           <button
             type="submit"

@@ -740,7 +740,7 @@ class EmployeeDeviceOverviewRead(BaseModel):
 class DeviceInviteCreateRequest(BaseModel):
     employee_id: int | None = Field(default=None, ge=1)
     employee_name: str | None = Field(default=None, min_length=2, max_length=255)
-    expires_in_minutes: int = Field(ge=1, le=60 * 24)
+    expires_in_minutes: int = Field(ge=1, le=60 * 24 * 30)
 
     @model_validator(mode="after")
     def _validate_target(self) -> "DeviceInviteCreateRequest":
@@ -751,6 +751,25 @@ class DeviceInviteCreateRequest(BaseModel):
             raise ValueError("Provide employee_id or employee_name, not both.")
         if self.employee_name is not None:
             self.employee_name = normalized_name
+        return self
+
+
+class DeviceInviteBulkExportRequest(BaseModel):
+    employee_ids: list[int] = Field(min_length=1, max_length=500)
+    expires_in_minutes: int = Field(default=60 * 24, ge=1, le=60 * 24 * 30)
+
+    @model_validator(mode="after")
+    def _normalize_employee_ids(self) -> "DeviceInviteBulkExportRequest":
+        normalized_ids: list[int] = []
+        seen_ids: set[int] = set()
+        for employee_id in self.employee_ids:
+            if employee_id < 1:
+                raise ValueError("employee_ids must contain positive integers.")
+            if employee_id in seen_ids:
+                continue
+            seen_ids.add(employee_id)
+            normalized_ids.append(employee_id)
+        self.employee_ids = normalized_ids
         return self
 
 

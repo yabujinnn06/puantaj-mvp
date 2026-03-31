@@ -106,6 +106,7 @@ from app.schemas import (
     DepartmentRead,
     DepartmentUpdate,
     DeviceInviteCreateRequest,
+    DeviceInviteBulkExportRequest,
     DeviceInviteCreateResponse,
     DeviceCreate,
     EmployeeDepartmentUpdateRequest,
@@ -214,7 +215,11 @@ from app.services.attendance import (
     update_admin_manual_event,
 )
 from app.services.compliance import get_or_create_labor_profile, upsert_labor_profile
-from app.services.exports import build_puantaj_range_xlsx_bytes, build_puantaj_xlsx_bytes
+from app.services.exports import (
+    build_device_invites_xlsx_bytes,
+    build_puantaj_range_xlsx_bytes,
+    build_puantaj_xlsx_bytes,
+)
 from app.services.leaves import create_leave, delete_leave, list_leaves
 from app.services.manual_overrides import (
     delete_manual_day_override,
@@ -443,6 +448,21 @@ def _resolve_employee_by_name(db: Session, employee_name: str) -> Employee:
         status_code=404,
         code="EMPLOYEE_NOT_FOUND",
         message="Employee not found for provided name.",
+    )
+
+
+def _build_device_invite(
+    *,
+    employee: Employee,
+    expires_at: datetime,
+    max_attempts: int,
+) -> DeviceInvite:
+    return DeviceInvite(
+        employee_id=employee.id,
+        token=secrets.token_urlsafe(32),
+        expires_at=expires_at,
+        is_used=False,
+        max_attempts=max_attempts,
     )
 
 
@@ -2854,12 +2874,10 @@ def create_device_invite(
             message=f"Invite ttl cannot exceed {max_ttl_minutes} minutes.",
         )
     max_attempts = max(1, int(settings.device_invite_max_attempts or 1))
-    token = secrets.token_urlsafe(32)
-    invite = DeviceInvite(
-        employee_id=employee.id,
-        token=token,
-        expires_at=now_utc + timedelta(minutes=payload.expires_in_minutes),
-        is_used=False,
+    expires_at = now_utc + timedelta(minutes=payload.expires_in_minutes)
+    invite = _build_device_invite(
+        employee=employee,
+        expires_at=expires_at,
         max_attempts=max_attempts,
     )
     db.add(invite)
@@ -2890,8 +2908,121 @@ def create_device_invite(
         request_id=getattr(request.state, "request_id", None),
     )
     return DeviceInviteCreateResponse(
-        token=token,
-        invite_url=f"{base_url}/claim?token={token}",
+        token=invite.token,
+        invite_url=f"{base_url}/claim?token={invite.token}",
+    )
+
+
+@router.post(
+    "/api/admin/device-invites/bulk-export.xlsx",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_admin_permission("devices", write=True))],
+)
+def bulk_export_device_invites(
+    payload: DeviceInviteBulkExportRequest,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin_permission("devices", write=True)),
+    db: Session = Depends(get_db),
+) -> Response:
+    now_utc = datetime.now(timezone.utc)
+    max_ttl_minutes = max(1, int(settings.device_invite_max_ttl_minutes or 1))
+    if payload.expires_in_minutes > max_ttl_minutes:
+        raise ApiError(
+            status_code=422,
+            code="INVITE_TTL_TOO_LONG",
+            message=f"Invite ttl cannot exceed {max_ttl_minutes} minutes.",
+        )
+
+    employees: list[Employee] = []
+    missing_employee_ids: list[int] = []
+    inactive_employee_names: list[str] = []
+    for employee_id in payload.employee_ids:
+        employee = db.get(Employee, employee_id)
+        if employee is None:
+            missing_employee_ids.append(employee_id)
+            continue
+        if not employee.is_active:
+            inactive_employee_names.append(employee.full_name)
+            continue
+        employees.append(employee)
+
+    if missing_employee_ids:
+        missing_preview = ", ".join(str(value) for value in missing_employee_ids[:10])
+        raise ApiError(
+            status_code=404,
+            code="EMPLOYEE_NOT_FOUND",
+            message=f"Employees not found: {missing_preview}",
+        )
+    if inactive_employee_names:
+        inactive_preview = ", ".join(inactive_employee_names[:10])
+        raise ApiError(
+            status_code=409,
+            code="EMPLOYEE_INACTIVE",
+            message=f"Inactive employees cannot receive invites: {inactive_preview}",
+        )
+
+    max_attempts = max(1, int(settings.device_invite_max_attempts or 1))
+    expires_at = now_utc + timedelta(minutes=payload.expires_in_minutes)
+    base_url = get_employee_portal_base_url()
+    export_rows: list[dict[str, object]] = []
+
+    for employee in employees:
+        invite = _build_device_invite(
+            employee=employee,
+            expires_at=expires_at,
+            max_attempts=max_attempts,
+        )
+        db.add(invite)
+        export_rows.append(
+            {
+                "employee_id": employee.id,
+                "employee_name": employee.full_name,
+                "region_name": employee.region.name if employee.region is not None else "-",
+                "department_name": employee.department.name if employee.department is not None else "-",
+                "token": invite.token,
+                "invite_url": f"{base_url}/claim?token={invite.token}",
+                "expires_at": expires_at,
+                "created_at": now_utc,
+            }
+        )
+
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Could not create invite tokens")
+
+    actor_username, _actor_admin_user_id = _normalized_admin_actor_from_claims(claims)
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=actor_username,
+        action="DEVICE_INVITES_BULK_EXPORTED",
+        success=True,
+        entity_type="device_invite_batch",
+        entity_id=str(len(export_rows)),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "employee_count": len(export_rows),
+            "employee_ids": [row["employee_id"] for row in export_rows],
+            "expires_in_minutes": payload.expires_in_minutes,
+            "max_attempts": max_attempts,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+
+    export_bytes = build_device_invites_xlsx_bytes(
+        export_rows,
+        generated_at=now_utc,
+        expires_in_minutes=payload.expires_in_minutes,
+    )
+    file_name = f"employee-claim-tokens-{now_utc.strftime('%Y%m%d-%H%M%S')}.xlsx"
+    return Response(
+        content=export_bytes,
+        media_type=XLSX_MEDIA_TYPE,
+        status_code=status.HTTP_201_CREATED,
+        headers={"Content-Disposition": f'attachment; filename="{file_name}"'},
     )
 
 
