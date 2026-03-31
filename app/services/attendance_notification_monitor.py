@@ -55,6 +55,9 @@ TYPE_ABSENCE = "devamsizlik"
 TYPE_OVERRIDE_INFO = "vardiya_override_bilgi"
 TYPE_OFF_SHIFT_ACTIVITY = "vardiya_disinda_aktivite"
 
+# Employee cihazlarinda sadece explicit onay ve demo akislari gorunsun.
+EMPLOYEE_ATTENDANCE_MONITOR_NOTIFICATION_TYPES: frozenset[str] = frozenset()
+
 DEFAULT_DAILY_MINUTES_PLANNED = 540
 DEFAULT_GRACE_MINUTES = 5
 DEFAULT_OVERTIME_GRACE_MINUTES = 0
@@ -64,6 +67,11 @@ OVERTIME_MAX_HOURS = 6
 LATE_STREAK_ESCALATION_DAYS = 2
 LATE_STREAK_CRITICAL_DAYS = 3
 LATE_STREAK_LOOKBACK_DAYS = 14
+
+
+def is_employee_attendance_monitor_notification_enabled(notification_type: str | None) -> bool:
+    normalized = str(notification_type or "").strip().lower()
+    return normalized in EMPLOYEE_ATTENDANCE_MONITOR_NOTIFICATION_TYPES
 
 
 @dataclass(frozen=True, slots=True)
@@ -701,22 +709,23 @@ def _schedule_for_both_audiences(
     admin_action: str,
     extra_payload: dict[str, Any] | None = None,
 ) -> None:
-    employee_job = _create_notification_job(
-        session,
-        assessment=assessment,
-        notification_type=notification_type,
-        audience=AUDIENCE_EMPLOYEE,
-        risk_level=employee_risk,
-        event_ts_utc=event_ts_utc,
-        scheduled_at_utc=scheduled_at_utc,
-        title=employee_title,
-        description=employee_description,
-        actual_time_summary=actual_time_summary,
-        suggested_action=employee_action,
-        extra_payload=extra_payload,
-    )
-    if employee_job is not None:
-        created_jobs.append(employee_job)
+    if notification_type in EMPLOYEE_ATTENDANCE_MONITOR_NOTIFICATION_TYPES:
+        employee_job = _create_notification_job(
+            session,
+            assessment=assessment,
+            notification_type=notification_type,
+            audience=AUDIENCE_EMPLOYEE,
+            risk_level=employee_risk,
+            event_ts_utc=event_ts_utc,
+            scheduled_at_utc=scheduled_at_utc,
+            title=employee_title,
+            description=employee_description,
+            actual_time_summary=actual_time_summary,
+            suggested_action=employee_action,
+            extra_payload=extra_payload,
+        )
+        if employee_job is not None:
+            created_jobs.append(employee_job)
 
     admin_job = _create_notification_job(
         session,

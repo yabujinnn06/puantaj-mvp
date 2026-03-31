@@ -37,6 +37,7 @@ from app.services.attendance_notification_monitor import (
     AUDIENCE_ADMIN,
     AUDIENCE_EMPLOYEE,
     JOB_TYPE_ATTENDANCE_MONITOR,
+    is_employee_attendance_monitor_notification_enabled,
     schedule_attendance_monitor_notifications,
 )
 from app.services.exports import build_puantaj_xlsx_bytes
@@ -828,6 +829,13 @@ def _admin_notification_emails(session: Session) -> list[str]:
 
 
 def _employee_notification_emails(session: Session, *, job: NotificationJob) -> list[str]:
+    if (
+        job.job_type == JOB_TYPE_ATTENDANCE_MONITOR
+        and str(job.audience or "").strip().lower() == AUDIENCE_EMPLOYEE
+        and not is_employee_attendance_monitor_notification_enabled(job.notification_type)
+    ):
+        return []
+
     payload = job.payload or {}
     values: set[str] = set()
     payload_email = payload.get("employee_email")
@@ -1162,6 +1170,14 @@ def _send_push_for_job(
     if job.job_type == JOB_TYPE_ATTENDANCE_MONITOR or job.notification_type:
         payload = job.payload or {}
         audience = str(job.audience or payload.get("audience") or AUDIENCE_EMPLOYEE).strip().lower()
+        if audience == AUDIENCE_EMPLOYEE and not is_employee_attendance_monitor_notification_enabled(job.notification_type):
+            return {
+                "total_targets": 0,
+                "sent": 0,
+                "failed": 0,
+                "deactivated": 0,
+                "suppressed": True,
+            }
         target_url = f"/admin-panel/notifications?job_id={job.id}"
         if audience == AUDIENCE_ADMIN:
             target_admin_user_ids = _payload_int_list(payload.get("admin_user_ids"))
@@ -2263,6 +2279,22 @@ def send_pending_notifications(
         try:
             current_job = session.get(NotificationJob, claimed.id)
             if current_job is None:
+                continue
+            if (
+                current_job.job_type == JOB_TYPE_ATTENDANCE_MONITOR
+                and str(current_job.audience or "").strip().lower() == AUDIENCE_EMPLOYEE
+                and not is_employee_attendance_monitor_notification_enabled(current_job.notification_type)
+            ):
+                sent_job = _mark_job_sent(
+                    session,
+                    job_id=current_job.id,
+                    delivery_details={
+                        "suppressed": True,
+                        "reason": "employee_attendance_monitor_disabled",
+                    },
+                )
+                if sent_job is not None:
+                    processed.append(sent_job)
                 continue
             message = _build_message_for_job(session, current_job)
             push_summary: dict[str, Any] = {

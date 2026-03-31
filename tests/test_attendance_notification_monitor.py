@@ -6,7 +6,6 @@ from datetime import date, datetime, time, timezone, timedelta
 from app.models import AttendanceEvent, AttendanceType, DepartmentShift, Employee, LocationStatus, NotificationJob
 from app.services.attendance_notification_monitor import (
     AUDIENCE_ADMIN,
-    AUDIENCE_EMPLOYEE,
     TYPE_ABSENCE,
     TYPE_EARLY_CHECKOUT,
     TYPE_LATE_CHECKIN,
@@ -126,8 +125,8 @@ class AttendanceNotificationMonitorTests(unittest.TestCase):
         self.assertIsNone(job)
         self.assertEqual(session.added, [])
 
-    def test_schedule_early_checkout_creates_two_jobs(self) -> None:
-        session = _DummySession(scalar_values=[None, None])
+    def test_schedule_early_checkout_creates_admin_job_only(self) -> None:
+        session = _DummySession(scalar_values=[None])
         assessment = _build_assessment(
             override_active=False,
             checkout_ts_utc=datetime(2026, 3, 1, 14, 0, tzinfo=timezone.utc),
@@ -137,9 +136,9 @@ class AttendanceNotificationMonitorTests(unittest.TestCase):
 
         _schedule_early_checkout(session, created_jobs=created_jobs, assessment=assessment)  # type: ignore[arg-type]
 
-        self.assertEqual(len(created_jobs), 2)
+        self.assertEqual(len(created_jobs), 1)
         self.assertTrue(all(job.notification_type == TYPE_EARLY_CHECKOUT for job in created_jobs))
-        self.assertEqual({job.audience for job in created_jobs}, {"employee", "admin"})
+        self.assertEqual({job.audience for job in created_jobs}, {AUDIENCE_ADMIN})
 
     def test_override_info_does_not_create_early_checkout_alarm(self) -> None:
         session = _DummySession(scalar_values=[None])
@@ -157,7 +156,7 @@ class AttendanceNotificationMonitorTests(unittest.TestCase):
         self.assertEqual(created_jobs[0].audience, AUDIENCE_ADMIN)
 
     def test_overtime_auto_close_creates_checkout_event_and_notifications(self) -> None:
-        session = _DummySession(scalar_values=[None, None])
+        session = _DummySession(scalar_values=[None])
         assessment = _build_assessment(override_active=False, checkout_ts_utc=None)
         created_jobs: list[NotificationJob] = []
         open_event = AttendanceEvent(
@@ -179,9 +178,10 @@ class AttendanceNotificationMonitorTests(unittest.TestCase):
         )
 
         self.assertTrue(closed)
-        self.assertEqual(len(created_jobs), 2)
+        self.assertEqual(len(created_jobs), 1)
         self.assertTrue(all(job.notification_type == TYPE_OVERTIME_6H_CLOSED for job in created_jobs))
-        self.assertGreaterEqual(len(session.added), 3)
+        self.assertEqual({job.audience for job in created_jobs}, {AUDIENCE_ADMIN})
+        self.assertGreaterEqual(len(session.added), 2)
         auto_event = session.added[0]
         self.assertIsInstance(auto_event, AttendanceEvent)
         self.assertEqual(auto_event.type, AttendanceType.OUT)
@@ -250,7 +250,7 @@ class AttendanceNotificationMonitorTests(unittest.TestCase):
 
         _schedule_late_checkin(session, created_jobs=created_jobs, assessment=assessment)  # type: ignore[arg-type]
 
-        self.assertEqual(len(created_jobs), 2)
+        self.assertEqual(len(created_jobs), 1)
         admin_job = next(job for job in created_jobs if job.audience == AUDIENCE_ADMIN)
         self.assertEqual(admin_job.notification_type, TYPE_LATE_CHECKIN)
         self.assertIn("Personel ID: #7", admin_job.description or "")
@@ -290,8 +290,8 @@ class AttendanceNotificationMonitorTests(unittest.TestCase):
         self.assertEqual(admin_job.risk_level, "Kritik")
         self.assertEqual(admin_job.payload.get("late_streak_days"), 3)
 
-    def test_absence_triggers_one_hour_after_shift_start_for_employee_and_admin(self) -> None:
-        session = _DummySession(scalar_values=[None, None])
+    def test_absence_triggers_one_hour_after_shift_start_for_admin_only(self) -> None:
+        session = _DummySession(scalar_values=[None])
         assessment = _build_assessment(
             override_active=False,
             checkout_ts_utc=None,
@@ -315,9 +315,9 @@ class AttendanceNotificationMonitorTests(unittest.TestCase):
             now_utc=datetime(2026, 3, 1, 11, 0, tzinfo=timezone.utc),
         )
 
-        self.assertEqual(len(created_jobs), 2)
+        self.assertEqual(len(created_jobs), 1)
         self.assertTrue(all(job.notification_type == TYPE_ABSENCE for job in created_jobs))
-        self.assertEqual({job.audience for job in created_jobs}, {AUDIENCE_EMPLOYEE, AUDIENCE_ADMIN})
+        self.assertEqual({job.audience for job in created_jobs}, {AUDIENCE_ADMIN})
         self.assertTrue(all(job.scheduled_at_utc == datetime(2026, 3, 1, 11, 0, tzinfo=timezone.utc) for job in created_jobs))
 
 
