@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type ReactNode, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 
@@ -589,6 +589,56 @@ function playDemoPromptTone() {
   } catch {
     // no-op
   }
+}
+
+interface EmployeeFocusModalProps {
+  title: string
+  titleId: string
+  children: ReactNode
+  kicker?: string
+  descriptionId?: string
+  onClose?: () => void
+  panelClassName?: string
+}
+
+function EmployeeFocusModal({
+  title,
+  titleId,
+  children,
+  kicker,
+  descriptionId,
+  onClose,
+  panelClassName,
+}: EmployeeFocusModalProps) {
+  if (typeof document === 'undefined') {
+    return null
+  }
+
+  return createPortal(
+    <div
+      className="modal-backdrop checkout-confirm-backdrop employee-focus-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      aria-describedby={descriptionId}
+      onClick={onClose}
+    >
+      <div className="checkout-confirm-lights" aria-hidden="true">
+        <span className="checkout-confirm-light checkout-confirm-light-left" />
+        <span className="checkout-confirm-light checkout-confirm-light-center" />
+        <span className="checkout-confirm-light checkout-confirm-light-right" />
+      </div>
+      <div
+        className={`help-modal checkout-confirm-modal employee-focus-modal ${panelClassName ?? ''}`.trim()}
+        onClick={(event) => event.stopPropagation()}
+      >
+        {kicker ? <p className="checkout-confirm-kicker">{kicker}</p> : null}
+        <h2 id={titleId}>{title}</h2>
+        {children}
+      </div>
+    </div>,
+    document.body,
+  )
 }
 
 export function HomePage() {
@@ -3046,75 +3096,79 @@ export function HomePage() {
         ) : null}
 
         {showIosInstallOnboarding ? (
-          <div className="modal-backdrop install-onboarding-backdrop" role="dialog" aria-modal="true">
-            <div className="help-modal install-onboarding-modal">
-              <p className="install-onboarding-kicker">IPHONE KURULUM</p>
-              <h2>Ana Ekrana Ekle</h2>
-              <p>
-                Bu portali uygulama gibi kullanmak icin Safari uzerinden tek seferlik kurulum yapin.
-                {iosInAppBrowserBlocked ? ' Once Safari ile acmaniz gerekiyor.' : ''}
-              </p>
-              <ol className="install-onboarding-list">
-                <li>Safari alt menuden Paylas ikonuna dokunun.</li>
-                <li>Ana Ekrana Ekle secenegini secin.</li>
-                <li>Ekleye dokunup YABUJIN kisayolunu acin.</li>
-              </ol>
-              <div className="stack">
+          <EmployeeFocusModal
+            titleId="ios-install-onboarding-title"
+            descriptionId="ios-install-onboarding-description"
+            title="Ana Ekrana Ekle"
+            kicker="IPHONE KURULUM"
+            panelClassName="install-onboarding-modal employee-focus-modal--wide"
+          >
+            <p id="ios-install-onboarding-description">
+              Bu portali uygulama gibi kullanmak icin Safari uzerinden tek seferlik kurulum yapin.
+              {iosInAppBrowserBlocked ? ' Once Safari ile acmaniz gerekiyor.' : ''}
+            </p>
+            <ol className="install-onboarding-list">
+              <li>Safari alt menuden Paylas ikonuna dokunun.</li>
+              <li>Ana Ekrana Ekle secenegini secin.</li>
+              <li>Ekleye dokunup YABUJIN kisayolunu acin.</li>
+            </ol>
+            <div className="stack">
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={isInstallPromptBusy}
+                onClick={() => void runInstallPrompt()}
+              >
+                {isInstallPromptBusy ? 'Aciliyor...' : 'Ana Ekrana Ekle'}
+              </button>
+              {iosInAppBrowserBlocked ? (
                 <button
                   type="button"
-                  className="btn btn-primary"
-                  disabled={isInstallPromptBusy}
-                  onClick={() => void runInstallPrompt()}
+                  className="btn btn-soft"
+                  onClick={() => void copyPortalLinkForSafari()}
                 >
-                  {isInstallPromptBusy ? 'Aciliyor...' : 'Ana Ekrana Ekle'}
+                  Linki Kopyala
                 </button>
-                {iosInAppBrowserBlocked ? (
-                  <button
-                    type="button"
-                    className="btn btn-soft"
-                    onClick={() => void copyPortalLinkForSafari()}
-                  >
-                    Linki Kopyala
-                  </button>
-                ) : null}
-                <button type="button" className="btn btn-soft" onClick={dismissIosInstallOnboarding}>
-                  24 Saat Sonra Hatirlat
-                </button>
-              </div>
+              ) : null}
+              <button type="button" className="btn btn-soft" onClick={dismissIosInstallOnboarding}>
+                24 Saat Sonra Hatirlat
+              </button>
             </div>
-          </div>
+          </EmployeeFocusModal>
         ) : null}
 
         {showAndroidInstallOnboarding ? (
-          <div className="modal-backdrop install-onboarding-backdrop" role="dialog" aria-modal="true">
-            <div className="help-modal install-onboarding-modal">
-              <p className="install-onboarding-kicker">ANDROID KURULUM</p>
-              <h2>Tek Seferde Ana Ekrana Ekle</h2>
-              <p>
-                {installPromptEvent
-                  ? 'Kurulum penceresi hazir, tek butonla tamamlayabilirsiniz.'
-                  : 'Kurulum penceresi hazir degilse Chrome menüsünden hızlıca tamamlayın.'}
-              </p>
-              <ol className="install-onboarding-list">
-                <li>Chrome sağ üstten 3 nokta menüsünü açın.</li>
-                <li>"Ana ekrana ekle" veya "Install app" seçeneğini seçin.</li>
-                <li>"Ekle / Install" ile kurulumu bitirin.</li>
-              </ol>
-              <div className="stack">
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  disabled={isInstallPromptBusy}
-                  onClick={() => void runInstallPrompt()}
-                >
-                  {isInstallPromptBusy ? 'Aciliyor...' : installPromptEvent ? 'Tek Dokunusla Kur' : 'Tekrar Dene'}
-                </button>
-                <button type="button" className="btn btn-soft" onClick={dismissAndroidInstallOnboarding}>
-                  Simdilik Kapat
-                </button>
-              </div>
+          <EmployeeFocusModal
+            titleId="android-install-onboarding-title"
+            descriptionId="android-install-onboarding-description"
+            title="Tek Seferde Ana Ekrana Ekle"
+            kicker="ANDROID KURULUM"
+            panelClassName="install-onboarding-modal employee-focus-modal--wide"
+          >
+            <p id="android-install-onboarding-description">
+              {installPromptEvent
+                ? 'Kurulum penceresi hazir, tek butonla tamamlayabilirsiniz.'
+                : 'Kurulum penceresi hazir degilse Chrome menüsünden hızlıca tamamlayın.'}
+            </p>
+            <ol className="install-onboarding-list">
+              <li>Chrome sağ üstten 3 nokta menüsünü açın.</li>
+              <li>"Ana ekrana ekle" veya "Install app" seçeneğini seçin.</li>
+              <li>"Ekle / Install" ile kurulumu bitirin.</li>
+            </ol>
+            <div className="stack">
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={isInstallPromptBusy}
+                onClick={() => void runInstallPrompt()}
+              >
+                {isInstallPromptBusy ? 'Aciliyor...' : installPromptEvent ? 'Tek Dokunusla Kur' : 'Tekrar Dene'}
+              </button>
+              <button type="button" className="btn btn-soft" onClick={dismissAndroidInstallOnboarding}>
+                Simdilik Kapat
+              </button>
             </div>
-          </div>
+          </EmployeeFocusModal>
         ) : null}
 
         {isCheckoutConfirmOpen && typeof document !== 'undefined'
@@ -3214,101 +3268,115 @@ export function HomePage() {
           : null}
 
         {isDemoLocationPromptOpen ? (
-          <div className="modal-backdrop" role="dialog" aria-modal="true">
-            <div className="help-modal">
-              <h2>Konumu Acin</h2>
-              <p>Demo kaydini tamamlamak icin cihazinizda konum acik olmali. Konumu actiktan sonra tekrar deneyin.</p>
-              <div className="stack">
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  onClick={() => {
-                    setIsDemoLocationPromptOpen(false)
-                    void runDemoMark()
-                  }}
-                >
-                  Tekrar dene
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-soft"
-                  onClick={() => setIsDemoLocationPromptOpen(false)}
-                >
-                  Kapat
-                </button>
-              </div>
+          <EmployeeFocusModal
+            titleId="demo-location-prompt-title"
+            descriptionId="demo-location-prompt-description"
+            title="Konumu Açın"
+            kicker="DEMO KONUMU"
+            onClose={() => setIsDemoLocationPromptOpen(false)}
+          >
+            <p id="demo-location-prompt-description">
+              Demo kaydini tamamlamak icin cihazinizda konum acik olmali. Konumu actiktan sonra tekrar deneyin.
+            </p>
+            <div className="stack">
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  setIsDemoLocationPromptOpen(false)
+                  void runDemoMark()
+                }}
+              >
+                Tekrar dene
+              </button>
+              <button
+                type="button"
+                className="btn btn-soft"
+                onClick={() => setIsDemoLocationPromptOpen(false)}
+              >
+                Kapat
+              </button>
             </div>
-          </div>
+          </EmployeeFocusModal>
         ) : null}
 
         {isHelpOpen ? (
-          <div className="modal-backdrop" role="dialog" aria-modal="true">
-            <div className="help-modal">
-              <h2>Mesai Bitiş Bilgilendirmesi</h2>
-              <p>Gün içinde girişten sonra çıkışı mutlaka "Mesaiyi Bitir" ile tamamlayın.</p>
+          <EmployeeFocusModal
+            titleId="checkout-help-title"
+            descriptionId="checkout-help-description"
+            title="Mesai Bitiş Bilgilendirmesi"
+            kicker="MESAI HATIRLATMASI"
+            onClose={() => setIsHelpOpen(false)}
+          >
+            <p id="checkout-help-description">
+              Gun icinde giristen sonra cikisi mutlaka "Mesaiyi Bitir" ile tamamlayin.
+            </p>
+            <div className="stack">
               <button type="button" className="btn btn-primary" onClick={() => setIsHelpOpen(false)}>
                 Anladım
               </button>
             </div>
-          </div>
+          </EmployeeFocusModal>
         ) : null}
 
         {showPushGateModal ? (
-          <div className="modal-backdrop" role="dialog" aria-modal="true">
-            <div className="help-modal">
-              <h2>Bildirim İzni Zorunlu</h2>
-              <p>
-                {pushSecondChanceOpen
-                  ? 'Bildirim izni ilk denemede verilmedi. Bu özellik sistemin zorunlu bir parçası. Lütfen son kez izin verin.'
-                  : pushGateMessage}
-              </p>
-              <div className="stack">
+          <EmployeeFocusModal
+            titleId="push-gate-title"
+            descriptionId="push-gate-description"
+            title="Bildirim İzni Zorunlu"
+            kicker="PUSH GATE"
+          >
+            <p id="push-gate-description">
+              {pushSecondChanceOpen
+                ? 'Bildirim izni ilk denemede verilmedi. Bu özellik sistemin zorunlu bir parçası. Lütfen son kez izin verin.'
+                : pushGateMessage}
+            </p>
+            <div className="stack">
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={isPushBusy || !pushEnabled || !pushRuntimeSupported}
+                onClick={() => {
+                  if (pushRequiresStandalone) {
+                    setPushGateRequestedByQr(false)
+                    openIosInstallOnboarding()
+                    return
+                  }
+                  void runPushSubscription(pushSecondChanceOpen)
+                }}
+              >
+                {isPushBusy
+                  ? 'Bildirim açılıyor...'
+                  : pushRequiresStandalone
+                    ? 'Ana Ekrana Ekle'
+                  : pushSecondChanceOpen
+                    ? 'Tekrar Sor (2/2)'
+                    : 'Bildirimleri Aç'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-soft"
+                onClick={() => {
+                  setPushSecondChanceOpen(false)
+                  void syncPushState(true)
+                }}
+              >
+                {pushSecondChanceOpen ? 'Bu Kez Kapat' : 'Durumu Yenile'}
+              </button>
+              {pushGateCanBeDismissedForInstall ? (
                 <button
                   type="button"
-                  className="btn btn-primary"
-                  disabled={isPushBusy || !pushEnabled || !pushRuntimeSupported}
-                  onClick={() => {
-                    if (pushRequiresStandalone) {
-                      setPushGateRequestedByQr(false)
-                      openIosInstallOnboarding()
-                      return
-                    }
-                    void runPushSubscription(pushSecondChanceOpen)
-                  }}
-                >
-                  {isPushBusy
-                    ? 'Bildirim açılıyor...'
-                    : pushRequiresStandalone
-                      ? 'Ana Ekrana Ekle'
-                    : pushSecondChanceOpen
-                      ? 'Tekrar Sor (2/2)'
-                      : 'Bildirimleri Aç'}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-soft"
+                  className="btn btn-ghost"
                   onClick={() => {
                     setPushSecondChanceOpen(false)
-                    void syncPushState(true)
+                    setPushGateDismissed(true)
                   }}
                 >
-                  {pushSecondChanceOpen ? 'Bu Kez Kapat' : 'Durumu Yenile'}
+                  Simdilik Kapat
                 </button>
-                {pushGateCanBeDismissedForInstall ? (
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    onClick={() => {
-                      setPushSecondChanceOpen(false)
-                      setPushGateDismissed(true)
-                    }}
-                  >
-                    Simdilik Kapat
-                  </button>
-                ) : null}
-              </div>
+              ) : null}
             </div>
-          </div>
+          </EmployeeFocusModal>
         ) : null}
 
         <BrandSignature />

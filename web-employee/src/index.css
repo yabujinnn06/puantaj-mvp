@@ -2426,6 +2426,19 @@ textarea:focus {
   overflow: hidden;
 }
 
+.employee-focus-backdrop {
+  z-index: 60;
+}
+
+.employee-focus-modal {
+  max-height: calc(100svh - 2rem);
+  overflow-y: auto;
+}
+
+.employee-focus-modal--wide {
+  max-width: min(100%, 420px);
+}
+
 .checkout-confirm-modal::before {
   content: '';
   position: absolute;
