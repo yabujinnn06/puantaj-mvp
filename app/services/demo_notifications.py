@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta, timezone
 import hashlib
+import unicodedata
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -34,6 +35,7 @@ DEMO_END_REMINDER_AFTER = timedelta(hours=1)
 DEMO_ADMIN_ESCALATION_AFTER = timedelta(hours=2)
 DEMO_GAP_REMINDER_AFTER = timedelta(hours=2)
 DEMO_GAP_REPEAT_AFTER = timedelta(hours=2)
+DRIVER_DEPARTMENT_KEYWORDS = ("surucu", "sofor", "driver")
 
 
 def _local_day_bounds_utc(local_day: date) -> tuple[datetime, datetime]:
@@ -51,6 +53,19 @@ def _format_local_dt(value: datetime | None) -> str:
 
 def _duration_minutes(reference_utc: datetime, event_utc: datetime) -> int:
     return max(0, int((_normalize_ts(reference_utc) - _normalize_ts(event_utc)).total_seconds() // 60))
+
+
+def _normalize_department_name(value: str | None) -> str:
+    normalized = unicodedata.normalize("NFKD", (value or "").strip().lower())
+    without_marks = "".join(char for char in normalized if not unicodedata.combining(char))
+    return " ".join(without_marks.split())
+
+
+def _is_driver_department_name(value: str | None) -> bool:
+    normalized = _normalize_department_name(value)
+    if not normalized:
+        return False
+    return any(keyword in normalized for keyword in DRIVER_DEPARTMENT_KEYWORDS)
 
 
 def _create_job_if_missing(
@@ -182,6 +197,7 @@ def schedule_demo_monitor_notifications(
         )
 
         employee_name = record.employee_full_name or f"#{record.employee_id}"
+        employee_demo_notifications_enabled = _is_driver_department_name(record.department_name)
 
         if demo_active and latest_start_log is not None and latest_start_utc is not None:
             active_for = reference_utc - latest_start_utc
@@ -191,7 +207,7 @@ def schedule_demo_monitor_notifications(
                 f"Acik sure: {active_minutes} dk"
             )
 
-            if active_for >= DEMO_END_REMINDER_AFTER:
+            if employee_demo_notifications_enabled and active_for >= DEMO_END_REMINDER_AFTER:
                 employee_job = _create_job_if_missing(
                     session,
                     employee_id=record.employee_id,
@@ -266,29 +282,30 @@ def schedule_demo_monitor_notifications(
             "demo_gap_bucket": gap_bucket,
         }
 
-        employee_job = _create_job_if_missing(
-            session,
-            employee_id=record.employee_id,
-            employee_name=employee_name,
-            department_name=record.department_name,
-            local_day=record.local_day,
-            audience=AUDIENCE_EMPLOYEE,
-            notification_type=TYPE_DEMO_GAP,
-            risk_level=RISK_WARNING,
-            event_ts_utc=latest_end_utc,
-            scheduled_at_utc=reference_utc,
-            identity_suffix=f"end-{latest_end_log.id}-gap-{gap_bucket}-employee",
-            title="Son demodan beri yeni kayit yok",
-            description=(
-                "Son demo kaydinizin uzerinden 2 saatten fazla gecti. "
-                "Yeni bir demoya gittiyseniz Demo Basladi butonunu kullanin."
-            ),
-            actual_time_summary=actual_time_summary,
-            suggested_action="Yeni bir demo basladiysa employee uygulamasindan Demo Basladi butonuna basin.",
-            extra_payload=extra_payload,
-        )
-        if employee_job is not None:
-            created_jobs.append(employee_job)
+        if employee_demo_notifications_enabled:
+            employee_job = _create_job_if_missing(
+                session,
+                employee_id=record.employee_id,
+                employee_name=employee_name,
+                department_name=record.department_name,
+                local_day=record.local_day,
+                audience=AUDIENCE_EMPLOYEE,
+                notification_type=TYPE_DEMO_GAP,
+                risk_level=RISK_WARNING,
+                event_ts_utc=latest_end_utc,
+                scheduled_at_utc=reference_utc,
+                identity_suffix=f"end-{latest_end_log.id}-gap-{gap_bucket}-employee",
+                title="Son demodan beri yeni kayit yok",
+                description=(
+                    "Son demo kaydinizin uzerinden 2 saatten fazla gecti. "
+                    "Yeni bir demoya gittiyseniz Demo Basladi butonunu kullanin."
+                ),
+                actual_time_summary=actual_time_summary,
+                suggested_action="Yeni bir demo basladiysa employee uygulamasindan Demo Basladi butonuna basin.",
+                extra_payload=extra_payload,
+            )
+            if employee_job is not None:
+                created_jobs.append(employee_job)
 
         admin_job = _create_job_if_missing(
             session,
