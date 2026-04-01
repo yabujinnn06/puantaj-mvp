@@ -1460,7 +1460,26 @@ def _record_delivery_logs(
                 error=email_result.get("error") if isinstance(email_result.get("error"), str) else None,
                 delivered_at=now_utc if email_status == "SENT" else None,
             )
-        )
+            )
+
+
+def _is_soft_no_target_delivery(
+    *,
+    push_summary: dict[str, Any] | None,
+    email_result: dict[str, Any] | None,
+) -> bool:
+    push_total_targets = _as_int((push_summary or {}).get("total_targets"), 0)
+    push_sent = _as_int((push_summary or {}).get("sent"), 0)
+    push_failed = _as_int((push_summary or {}).get("failed"), 0)
+    push_deactivated = _as_int((push_summary or {}).get("deactivated"), 0)
+    email_sent = _as_int((email_result or {}).get("sent"), 0)
+    email_mode = str((email_result or {}).get("mode") or "").strip().lower()
+
+    if push_total_targets > 0 or push_sent > 0 or push_failed > 0 or push_deactivated > 0:
+        return False
+    if email_sent > 0:
+        return False
+    return email_mode in {"disabled", "skipped_no_recipients"}
 
 
 def _shift_crosses_midnight(shift: DepartmentShift | None) -> bool:
@@ -2358,6 +2377,55 @@ def send_pending_notifications(
                 now_utc=reference_utc,
             )
             delivery_ok = push_sent > 0 or (email_enabled and email_sent > 0)
+            delivery_skipped_no_targets = _is_soft_no_target_delivery(
+                push_summary=push_summary,
+                email_result=email_result,
+            )
+            if not delivery_ok and delivery_skipped_no_targets:
+                sent_job = _mark_job_sent(
+                    session,
+                    job_id=current_job.id,
+                    delivery_details={
+                        "push_total_targets": push_total_targets,
+                        "push_sent": push_sent,
+                        "push_failed": push_failed,
+                        "push_deactivated": push_deactivated,
+                        "email_mode": str(email_result.get("mode") or "unknown"),
+                        "email_sent": email_sent,
+                        "email_enabled": email_enabled,
+                        "email_required": False,
+                        "email_forced": False,
+                        "push_error": push_summary.get("error"),
+                        "target_zero": True,
+                        "skipped_no_targets": True,
+                    },
+                )
+                if sent_job is not None:
+                    processed.append(sent_job)
+                    log_audit(
+                        session,
+                        actor_type=AuditActorType.SYSTEM,
+                        actor_id="notification_runner",
+                        action="NOTIFICATION_JOB_SKIPPED_NO_TARGET",
+                        success=True,
+                        entity_type="notification_job",
+                        entity_id=str(sent_job.id),
+                        details={
+                            "job_type": sent_job.job_type,
+                            "employee_id": sent_job.employee_id,
+                            "attempts": sent_job.attempts,
+                            "idempotency_key": sent_job.idempotency_key,
+                            "push_total_targets": push_total_targets,
+                            "push_sent": push_sent,
+                            "push_failed": push_failed,
+                            "push_deactivated": push_deactivated,
+                            "email_mode": email_result.get("mode"),
+                            "email_sent": email_sent,
+                            "target_zero": True,
+                            "skipped_no_targets": True,
+                        },
+                    )
+                continue
             if not delivery_ok:
                 raise RuntimeError(
                     "Notification delivery failed on all channels "

@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 from datetime import date, datetime, time, timezone
 import os
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from app.models import (
@@ -32,9 +33,11 @@ from app.services.notifications import (
     get_notification_channel_health,
     get_employees_with_open_shift,
     get_employees_with_stale_open_shift,
+    NotificationMessage,
     repair_auto_midnight_checkout_events,
     schedule_missing_checkin_notifications,
     send_admin_notification_test_email,
+    send_pending_notifications,
 )
 from app.services.notification_tasks import (
     TASK_JOB_TYPE,
@@ -185,6 +188,24 @@ class _FakeScheduledNotificationTaskSession:
 
     def refresh(self, _obj) -> None:  # type: ignore[no-untyped-def]
         return None
+
+
+class _FakeNotificationRunnerSession:
+    def __init__(self, *, job: NotificationJob) -> None:
+        self.job = job
+        self.commit_count = 0
+        self.refresh_count = 0
+
+    def get(self, model, pk):  # type: ignore[no-untyped-def]
+        if model is NotificationJob and pk == self.job.id:
+            return self.job
+        return None
+
+    def commit(self) -> None:
+        self.commit_count += 1
+
+    def refresh(self, _obj) -> None:  # type: ignore[no-untyped-def]
+        self.refresh_count += 1
 
 
 class NotificationServiceTests(unittest.TestCase):
@@ -863,6 +884,103 @@ class NotificationServiceTests(unittest.TestCase):
         self.assertEqual(result["sent"], 0)
         self.assertEqual(result["mode"], "send_exception")
         self.assertIn("smtp_down", str(result.get("error")))
+
+    def test_send_pending_notifications_soft_skips_zero_target_jobs(self) -> None:
+        job = NotificationJob(
+            id=1339,
+            employee_id=None,
+            admin_user_id=None,
+            job_type="ADMIN_DAILY_REPORT_READY",
+            payload={"report_date": "2026-04-01"},
+            scheduled_at_utc=datetime(2026, 4, 1, 12, 0, tzinfo=timezone.utc),
+            status="PENDING",
+            attempts=0,
+            idempotency_key="ADMIN_DAILY_REPORT_READY:2026-04-01",
+        )
+        fake_db = _FakeNotificationRunnerSession(job=job)
+
+        with (
+            patch(
+                "app.services.notifications.get_settings",
+                return_value=SimpleNamespace(notification_email_enabled=False),
+            ),
+            patch("app.services.notifications._claim_due_pending_jobs", return_value=[job]),
+            patch(
+                "app.services.notifications._build_message_for_job",
+                return_value=NotificationMessage(recipients=[], subject="Test", body="Body"),
+            ),
+            patch(
+                "app.services.notifications._send_push_for_job",
+                return_value={
+                    "total_targets": 0,
+                    "sent": 0,
+                    "failed": 0,
+                    "deactivated": 0,
+                },
+            ),
+            patch("app.services.notifications._record_delivery_logs", return_value=None),
+            patch("app.services.notifications.log_audit", return_value=None),
+        ):
+            processed = send_pending_notifications(
+                limit=10,
+                now_utc=datetime(2026, 4, 1, 12, 1, tzinfo=timezone.utc),
+                db=fake_db,  # type: ignore[arg-type]
+            )
+
+        self.assertEqual(len(processed), 1)
+        self.assertEqual(processed[0].status, "SENT")
+        self.assertIsNone(processed[0].last_error)
+        self.assertEqual(processed[0].attempts, 0)
+        self.assertTrue(processed[0].payload["delivery"]["target_zero"])
+        self.assertTrue(processed[0].payload["delivery"]["skipped_no_targets"])
+
+    def test_send_pending_notifications_still_fails_real_push_errors(self) -> None:
+        job = NotificationJob(
+            id=1440,
+            employee_id=None,
+            admin_user_id=None,
+            job_type="ADMIN_DAILY_REPORT_READY",
+            payload={"report_date": "2026-04-01"},
+            scheduled_at_utc=datetime(2026, 4, 1, 12, 0, tzinfo=timezone.utc),
+            status="PENDING",
+            attempts=0,
+            idempotency_key="ADMIN_DAILY_REPORT_READY:2026-04-01:2",
+        )
+        fake_db = _FakeNotificationRunnerSession(job=job)
+
+        with (
+            patch(
+                "app.services.notifications.get_settings",
+                return_value=SimpleNamespace(notification_email_enabled=False),
+            ),
+            patch("app.services.notifications._claim_due_pending_jobs", return_value=[job]),
+            patch(
+                "app.services.notifications._build_message_for_job",
+                return_value=NotificationMessage(recipients=[], subject="Test", body="Body"),
+            ),
+            patch(
+                "app.services.notifications._send_push_for_job",
+                return_value={
+                    "total_targets": 2,
+                    "sent": 0,
+                    "failed": 2,
+                    "deactivated": 0,
+                    "error": "push_gateway_failed",
+                },
+            ),
+            patch("app.services.notifications._record_delivery_logs", return_value=None),
+            patch("app.services.notifications.log_audit", return_value=None),
+        ):
+            processed = send_pending_notifications(
+                limit=10,
+                now_utc=datetime(2026, 4, 1, 12, 1, tzinfo=timezone.utc),
+                db=fake_db,  # type: ignore[arg-type]
+            )
+
+        self.assertEqual(len(processed), 1)
+        self.assertEqual(processed[0].status, "PENDING")
+        self.assertEqual(processed[0].attempts, 1)
+        self.assertIn("Notification delivery failed on all channels", processed[0].last_error or "")
 
     def test_normalize_scheduled_notification_task_payload_requires_selected_employee(self) -> None:
         fake_db = _FakeScheduledNotificationTaskSession()
