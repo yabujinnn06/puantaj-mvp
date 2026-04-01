@@ -124,9 +124,7 @@ class DemoNotificationTests(unittest.TestCase):
                 db=session,  # type: ignore[arg-type]
             )
 
-        self.assertEqual(len(created_jobs), 1)
-        self.assertEqual(created_jobs[0].audience, AUDIENCE_ADMIN)
-        self.assertEqual(created_jobs[0].notification_type, TYPE_DEMO_LONG_RUNNING)
+        self.assertEqual(created_jobs, [])
 
     def test_non_driver_department_skips_employee_demo_gap_reminder(self) -> None:
         session = _DummySession(
@@ -155,9 +153,7 @@ class DemoNotificationTests(unittest.TestCase):
                 db=session,  # type: ignore[arg-type]
             )
 
-        self.assertEqual(len(created_jobs), 1)
-        self.assertEqual(created_jobs[0].audience, AUDIENCE_ADMIN)
-        self.assertEqual(created_jobs[0].notification_type, TYPE_DEMO_GAP)
+        self.assertEqual(created_jobs, [])
 
     def test_driver_department_keeps_employee_demo_notifications(self) -> None:
         session = _DummySession(

@@ -982,6 +982,46 @@ class NotificationServiceTests(unittest.TestCase):
         self.assertEqual(processed[0].attempts, 1)
         self.assertIn("Notification delivery failed on all channels", processed[0].last_error or "")
 
+    def test_send_pending_notifications_suppresses_non_driver_demo_jobs(self) -> None:
+        job = NotificationJob(
+            id=1550,
+            employee_id=17,
+            admin_user_id=None,
+            job_type="DEMO_MONITOR",
+            notification_type="demo_gap",
+            audience="admin",
+            payload={"department_name": "Arge"},
+            scheduled_at_utc=datetime(2026, 4, 1, 12, 0, tzinfo=timezone.utc),
+            status="PENDING",
+            attempts=0,
+            idempotency_key="DEMO_MONITOR:17:2026-04-01:demo_gap",
+        )
+        fake_db = _FakeNotificationRunnerSession(job=job)
+
+        with (
+            patch(
+                "app.services.notifications.get_settings",
+                return_value=SimpleNamespace(notification_email_enabled=False),
+            ),
+            patch("app.services.notifications._claim_due_pending_jobs", return_value=[job]),
+            patch("app.services.notifications.log_audit", return_value=None),
+        ):
+            processed = send_pending_notifications(
+                limit=10,
+                now_utc=datetime(2026, 4, 1, 12, 1, tzinfo=timezone.utc),
+                db=fake_db,  # type: ignore[arg-type]
+            )
+
+        self.assertEqual(len(processed), 1)
+        self.assertEqual(processed[0].status, "SENT")
+        self.assertIsNone(processed[0].last_error)
+        self.assertEqual(processed[0].attempts, 0)
+        self.assertTrue(processed[0].payload["delivery"]["suppressed"])
+        self.assertEqual(
+            processed[0].payload["delivery"]["reason"],
+            "demo_notifications_disabled_for_department",
+        )
+
     def test_normalize_scheduled_notification_task_payload_requires_selected_employee(self) -> None:
         fake_db = _FakeScheduledNotificationTaskSession()
 

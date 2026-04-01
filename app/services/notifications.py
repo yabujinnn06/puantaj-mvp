@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import smtplib
+import unicodedata
 from email.message import EmailMessage
 from typing import Any
 
@@ -76,6 +77,8 @@ JOB_TYPE_ADMIN_AUTO_MIDNIGHT_CHECKOUT = "ADMIN_AUTO_MIDNIGHT_CHECKOUT"
 JOB_TYPE_ADMIN_MISSING_CHECKIN = "ADMIN_MISSING_CHECKIN"
 JOB_TYPE_ADMIN_DAILY_REPORT_READY = "ADMIN_DAILY_REPORT_READY"
 JOB_TYPE_ADMIN_SCHEDULED_BROADCAST = "ADMIN_SCHEDULED_BROADCAST"
+JOB_TYPE_DEMO_MONITOR = "DEMO_MONITOR"
+DRIVER_DEPARTMENT_KEYWORDS = ("surucu", "sofor", "driver")
 
 logger = logging.getLogger("app.notifications")
 
@@ -904,6 +907,26 @@ def _payload_local_day(value: Any) -> date | None:
         return date.fromisoformat(normalized[:10])
     except ValueError:
         return None
+
+
+def _normalize_department_name_for_demo(value: str | None) -> str:
+    normalized = unicodedata.normalize("NFKD", (value or "").strip().lower())
+    without_marks = "".join(char for char in normalized if not unicodedata.combining(char))
+    return " ".join(without_marks.split())
+
+
+def _is_demo_notification_enabled_for_department_name(value: str | None) -> bool:
+    normalized = _normalize_department_name_for_demo(value)
+    if not normalized:
+        return False
+    return any(keyword in normalized for keyword in DRIVER_DEPARTMENT_KEYWORDS)
+
+
+def _is_demo_notification_enabled_for_job(job: NotificationJob) -> bool:
+    payload = job.payload if isinstance(job.payload, dict) else {}
+    payload_department_name = payload.get("department_name")
+    department_name = payload_department_name if isinstance(payload_department_name, str) else None
+    return _is_demo_notification_enabled_for_department_name(department_name)
 
 
 def _build_message_for_job(session: Session, job: NotificationJob) -> NotificationMessage:
@@ -2310,6 +2333,21 @@ def send_pending_notifications(
                     delivery_details={
                         "suppressed": True,
                         "reason": "employee_attendance_monitor_disabled",
+                    },
+                )
+                if sent_job is not None:
+                    processed.append(sent_job)
+                continue
+            if (
+                current_job.job_type == JOB_TYPE_DEMO_MONITOR
+                and not _is_demo_notification_enabled_for_job(current_job)
+            ):
+                sent_job = _mark_job_sent(
+                    session,
+                    job_id=current_job.id,
+                    delivery_details={
+                        "suppressed": True,
+                        "reason": "demo_notifications_disabled_for_department",
                     },
                 )
                 if sent_job is not None:

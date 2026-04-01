@@ -197,7 +197,7 @@ def schedule_demo_monitor_notifications(
         )
 
         employee_name = record.employee_full_name or f"#{record.employee_id}"
-        employee_demo_notifications_enabled = _is_driver_department_name(record.department_name)
+        demo_notifications_enabled = _is_driver_department_name(record.department_name)
 
         if demo_active and latest_start_log is not None and latest_start_utc is not None:
             active_for = reference_utc - latest_start_utc
@@ -207,7 +207,7 @@ def schedule_demo_monitor_notifications(
                 f"Acik sure: {active_minutes} dk"
             )
 
-            if employee_demo_notifications_enabled and active_for >= DEMO_END_REMINDER_AFTER:
+            if demo_notifications_enabled and active_for >= DEMO_END_REMINDER_AFTER:
                 employee_job = _create_job_if_missing(
                     session,
                     employee_id=record.employee_id,
@@ -232,7 +232,7 @@ def schedule_demo_monitor_notifications(
                 if employee_job is not None:
                     created_jobs.append(employee_job)
 
-            if active_for >= DEMO_ADMIN_ESCALATION_AFTER:
+            if demo_notifications_enabled and active_for >= DEMO_ADMIN_ESCALATION_AFTER:
                 admin_job = _create_job_if_missing(
                     session,
                     employee_id=record.employee_id,
@@ -282,7 +282,7 @@ def schedule_demo_monitor_notifications(
             "demo_gap_bucket": gap_bucket,
         }
 
-        if employee_demo_notifications_enabled:
+        if demo_notifications_enabled:
             employee_job = _create_job_if_missing(
                 session,
                 employee_id=record.employee_id,
@@ -307,28 +307,29 @@ def schedule_demo_monitor_notifications(
             if employee_job is not None:
                 created_jobs.append(employee_job)
 
-        admin_job = _create_job_if_missing(
-            session,
-            employee_id=record.employee_id,
-            employee_name=employee_name,
-            department_name=record.department_name,
-            local_day=record.local_day,
-            audience=AUDIENCE_ADMIN,
-            notification_type=TYPE_DEMO_GAP,
-            risk_level=RISK_WARNING,
-            event_ts_utc=latest_end_utc,
-            scheduled_at_utc=reference_utc,
-            identity_suffix=f"end-{latest_end_log.id}-gap-{gap_bucket}-admin",
-            title="Calisan 2 saattir yeni demo kaydi olusturmadi",
-            description=(
-                f"{employee_name} icin son demo bitisinin uzerinden 2 saatten fazla gecti."
-            ),
-            actual_time_summary=actual_time_summary,
-            suggested_action="Saha akisinda yeni demo noktasi varsa kaydin alinip alinmadigini kontrol edin.",
-            extra_payload=extra_payload,
-        )
-        if admin_job is not None:
-            created_jobs.append(admin_job)
+        if demo_notifications_enabled:
+            admin_job = _create_job_if_missing(
+                session,
+                employee_id=record.employee_id,
+                employee_name=employee_name,
+                department_name=record.department_name,
+                local_day=record.local_day,
+                audience=AUDIENCE_ADMIN,
+                notification_type=TYPE_DEMO_GAP,
+                risk_level=RISK_WARNING,
+                event_ts_utc=latest_end_utc,
+                scheduled_at_utc=reference_utc,
+                identity_suffix=f"end-{latest_end_log.id}-gap-{gap_bucket}-admin",
+                title="Calisan 2 saattir yeni demo kaydi olusturmadi",
+                description=(
+                    f"{employee_name} icin son demo bitisinin uzerinden 2 saatten fazla gecti."
+                ),
+                actual_time_summary=actual_time_summary,
+                suggested_action="Saha akisinda yeni demo noktasi varsa kaydin alinip alinmadigini kontrol edin.",
+                extra_payload=extra_payload,
+            )
+            if admin_job is not None:
+                created_jobs.append(admin_job)
 
     if created_jobs:
         session.commit()
