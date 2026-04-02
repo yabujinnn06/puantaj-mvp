@@ -1124,6 +1124,50 @@ textarea:focus {
     0 18px 26px -24px rgba(6, 38, 55, 0.86);
 }
 
+.employee-surface-head,
+.employee-action-layout,
+.employee-action-primary,
+.employee-live-grid,
+.employee-history-layout {
+  display: grid;
+  gap: 10px;
+}
+
+.employee-surface-kicker {
+  margin: 0;
+  font-size: 0.66rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #1a5875;
+}
+
+.employee-surface-title {
+  margin: 0.12rem 0 0;
+  font-size: 1.04rem;
+  color: #12384a;
+}
+
+.employee-surface-copy {
+  margin: 0;
+  max-width: 58ch;
+  font-size: 0.79rem;
+  line-height: 1.58;
+  color: #567083;
+}
+
+.employee-action-primary,
+.employee-live-grid,
+.employee-history-layout {
+  align-items: start;
+}
+
+.employee-action-primary > *,
+.employee-live-grid > *,
+.employee-history-layout > * {
+  min-width: 0;
+}
+
 .status-cta-row-compact {
   margin-top: 10px;
 }
@@ -1400,8 +1444,8 @@ textarea:focus {
 .leave-history-card {
   display: grid;
   gap: 0.7rem;
-  border-radius: 14px;
-  padding: 0.9rem;
+  border-radius: 16px;
+  padding: 1rem;
   border: 1px solid rgba(130, 173, 195, 0.26);
   background:
     radial-gradient(circle at 86% 16%, rgba(95, 214, 167, 0.12), transparent 30%),
@@ -2979,6 +3023,16 @@ textarea:focus {
 
   .promo-mobile-dock {
     display: none;
+  }
+}
+
+@media (min-width: 980px) {
+  .employee-action-layout {
+    grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+  }
+
+  .employee-history-layout {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

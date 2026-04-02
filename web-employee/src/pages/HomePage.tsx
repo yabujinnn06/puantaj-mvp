@@ -2904,8 +2904,23 @@ export function HomePage() {
             </div>
           </section>
 
-          <section className="employee-action-surface">
-            <section className="action-panel" ref={actionPanelRef}>
+          <section className="employee-action-surface" aria-labelledby="employee-action-surface-title">
+            <div className="employee-surface-head">
+              <div>
+                <p className="employee-surface-kicker">GUNLUK AKIS</p>
+                <h2 id="employee-action-surface-title" className="employee-surface-title">
+                  Bugunu daha net yonet
+                </h2>
+              </div>
+              <p className="employee-surface-copy">
+                Hemen gereken islemleri ustte tamamla, demo ve izin durumunu yan tarafta izle, gecmis kayitlara ise
+                asagida ayri bir bolumden bak.
+              </p>
+            </div>
+
+            <div className="employee-action-layout">
+              <div className="employee-action-primary">
+                <section className="action-panel" ref={actionPanelRef}>
               <div className="action-panel-head">
                 <p className="small-title">Komut Merkezi</p>
                 <span className="action-panel-kicker">Hızlı İşlemler</span>
@@ -3001,8 +3016,10 @@ export function HomePage() {
                 </Link>
               </div>
             )}
+              </div>
 
-            <section className={`demo-visit-card ${isDemoActive ? 'is-live' : 'is-idle'}`}>
+              <div className="employee-live-grid">
+                <section className={`demo-visit-card ${isDemoActive ? 'is-live' : 'is-idle'}`}>
               <div className="demo-visit-head">
                 <div>
                   <p className="demo-visit-kicker">GÜN İÇİ DEMO</p>
@@ -3056,9 +3073,12 @@ export function HomePage() {
                 </button>
               </section>
             ) : null}
+              </div>
+            </div>
 
             {deviceFingerprint ? (
-              <section className="demo-history-card" aria-labelledby="demo-history-title">
+              <div className="employee-history-layout">
+                <section className="demo-history-card" aria-labelledby="demo-history-title">
                 <div className="demo-history-head">
                   <div>
                     <p className="demo-history-kicker">GUNLUK OZET</p>
@@ -3097,11 +3117,9 @@ export function HomePage() {
                 ) : (
                   <p className="demo-history-empty">Bugun demo kaydi yok.</p>
                 )}
-              </section>
-            ) : null}
+                </section>
 
-            {deviceFingerprint ? (
-              <section className="leave-history-card" aria-labelledby="leave-history-title">
+                <section className="leave-history-card" aria-labelledby="leave-history-title">
                 <div className="leave-history-head">
                   <div>
                     <p className="leave-history-kicker">IZIN GECMISI</p>
@@ -3142,7 +3160,8 @@ export function HomePage() {
                 ) : (
                   <p className="leave-history-empty">Henuz izin talebi yok.</p>
                 )}
-              </section>
+                </section>
+              </div>
             ) : null}
           </section>
         </div>
