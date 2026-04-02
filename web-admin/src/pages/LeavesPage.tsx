@@ -1,8 +1,8 @@
-﻿import { useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 
-import { createLeave, deleteLeave, getEmployees, getLeaves } from '../api/admin'
+import { createLeave, decideLeave, deleteLeave, getEmployees, getLeaves } from '../api/admin'
 import { parseApiError } from '../api/error'
 import { EmployeeAutocompleteField } from '../components/EmployeeAutocompleteField'
 import { ErrorBlock } from '../components/ErrorBlock'
@@ -22,9 +22,17 @@ const leaveSchema = z
     note: z.string().trim().optional(),
   })
   .refine((data) => data.end_date >= data.start_date, {
-    message: 'Bitiş tarihi başlangıç tarihinden küçük olamaz.',
+    message: 'Bitis tarihi baslangic tarihinden kucuk olamaz.',
     path: ['end_date'],
   })
+
+const leaveTypeLabels: Record<'ANNUAL' | 'SICK' | 'UNPAID' | 'EXCUSE' | 'PUBLIC_HOLIDAY', string> = {
+  ANNUAL: 'YILLIK IZIN',
+  SICK: 'RAPOR / HASTALIK',
+  UNPAID: 'UCRETSIZ IZIN',
+  EXCUSE: 'MAZERET IZNI',
+  PUBLIC_HOLIDAY: 'RESMI TATIL',
+}
 
 export function LeavesPage() {
   const queryClient = useQueryClient()
@@ -41,8 +49,13 @@ export function LeavesPage() {
   const [filterEmployeeId, setFilterEmployeeId] = useState('')
   const [filterYear, setFilterYear] = useState(String(new Date().getFullYear()))
   const [filterMonth, setFilterMonth] = useState(String(new Date().getMonth() + 1))
+  const [filterStatus, setFilterStatus] = useState<'all' | 'APPROVED' | 'PENDING' | 'REJECTED'>('all')
+  const [decisionNotes, setDecisionNotes] = useState<Record<number, string>>({})
 
-  const employeesQuery = useQuery({ queryKey: ['employees'], queryFn: () => getEmployees({ include_inactive: true, status: 'all' }) })
+  const employeesQuery = useQuery({
+    queryKey: ['employees'],
+    queryFn: () => getEmployees({ include_inactive: true, status: 'all' }),
+  })
 
   const leaveFilter = useMemo(() => {
     const parsedEmployee = Number(filterEmployeeId)
@@ -53,12 +66,18 @@ export function LeavesPage() {
       employee_id: Number.isFinite(parsedEmployee) && parsedEmployee > 0 ? parsedEmployee : undefined,
       year: Number.isFinite(parsedYear) && parsedYear > 0 ? parsedYear : undefined,
       month: Number.isFinite(parsedMonth) && parsedMonth > 0 ? parsedMonth : undefined,
+      status: filterStatus === 'all' ? undefined : filterStatus,
     }
-  }, [filterEmployeeId, filterYear, filterMonth])
+  }, [filterEmployeeId, filterMonth, filterStatus, filterYear])
 
   const leavesQuery = useQuery({
-    queryKey: ['leaves', leaveFilter.employee_id ?? 'all', leaveFilter.year ?? 'all', leaveFilter.month ?? 'all'],
+    queryKey: ['leaves', leaveFilter.employee_id ?? 'all', leaveFilter.year ?? 'all', leaveFilter.month ?? 'all', leaveFilter.status ?? 'all'],
     queryFn: () => getLeaves(leaveFilter),
+  })
+
+  const pendingRequestsQuery = useQuery({
+    queryKey: ['leaves', 'pending-employee-requests'],
+    queryFn: () => getLeaves({ status: 'PENDING', requested_by_employee: true }),
   })
 
   const createMutation = useMutation({
@@ -72,17 +91,43 @@ export function LeavesPage() {
       setFormError(null)
       pushToast({
         variant: 'success',
-        title: 'İzin kaydı oluşturuldu',
-        description: `İzin #${leave.id} kaydedildi.`,
+        title: 'Izin kaydi olusturuldu',
+        description: `Izin #${leave.id} kaydedildi.`,
       })
       void queryClient.invalidateQueries({ queryKey: ['leaves'] })
     },
     onError: (error) => {
-      const parsed = parseApiError(error, 'İzin kaydı oluşturulamadı.')
+      const parsed = parseApiError(error, 'Izin kaydi olusturulamadi.')
       setFormError(parsed.message)
       pushToast({
         variant: 'error',
-        title: 'İzin oluşturulamadı',
+        title: 'Izin olusturulamadi',
+        description: parsed.message,
+      })
+    },
+  })
+
+  const decisionMutation = useMutation({
+    mutationFn: ({ leaveId, status, decision_note }: { leaveId: number; status: 'APPROVED' | 'REJECTED'; decision_note?: string | null }) =>
+      decideLeave(leaveId, { status, decision_note }),
+    onSuccess: (leave) => {
+      setDecisionNotes((current) => {
+        const next = { ...current }
+        delete next[leave.id]
+        return next
+      })
+      pushToast({
+        variant: 'success',
+        title: leave.status === 'APPROVED' ? 'Izin onaylandi' : 'Izin reddedildi',
+        description: `Izin #${leave.id} guncellendi.`,
+      })
+      void queryClient.invalidateQueries({ queryKey: ['leaves'] })
+    },
+    onError: (error) => {
+      const parsed = parseApiError(error, 'Izin talebi guncellenemedi.')
+      pushToast({
+        variant: 'error',
+        title: 'Izin karari kaydedilemedi',
         description: parsed.message,
       })
     },
@@ -93,16 +138,16 @@ export function LeavesPage() {
     onSuccess: (_, leaveId) => {
       pushToast({
         variant: 'success',
-        title: 'İzin kaydı silindi',
-        description: `İzin #${leaveId} silindi.`,
+        title: 'Izin kaydi silindi',
+        description: `Izin #${leaveId} silindi.`,
       })
       void queryClient.invalidateQueries({ queryKey: ['leaves'] })
     },
     onError: (error) => {
-      const parsed = parseApiError(error, 'İzin silinemedi.')
+      const parsed = parseApiError(error, 'Izin silinemedi.')
       pushToast({
         variant: 'error',
-        title: 'İzin silinemedi',
+        title: 'Izin silinemedi',
         description: parsed.message,
       })
     },
@@ -122,11 +167,11 @@ export function LeavesPage() {
     })
 
     if (!parsed.success) {
-      const message = parsed.error.issues[0]?.message ?? 'İzin formunu kontrol edin.'
+      const message = parsed.error.issues[0]?.message ?? 'Izin formunu kontrol edin.'
       setFormError(message)
       pushToast({
         variant: 'error',
-        title: 'Form hatası',
+        title: 'Form hatasi',
         description: message,
       })
       return
@@ -138,36 +183,144 @@ export function LeavesPage() {
     })
   }
 
+  const updateDecisionNote = (leaveId: number, value: string) => {
+    setDecisionNotes((current) => ({
+      ...current,
+      [leaveId]: value,
+    }))
+  }
+
+  const handleDecision = (leaveId: number, status: 'APPROVED' | 'REJECTED') => {
+    const decisionNote = decisionNotes[leaveId]?.trim() ?? ''
+    if (status === 'REJECTED' && decisionNote.length < 3) {
+      pushToast({
+        variant: 'info',
+        title: 'Ret sebebi gerekli',
+        description: 'Izin reddederken en az 3 karakter aciklama girin.',
+      })
+      return
+    }
+    decisionMutation.mutate({
+      leaveId,
+      status,
+      decision_note: decisionNote || null,
+    })
+  }
+
   if (employeesQuery.isLoading) {
     return <LoadingBlock />
   }
 
   if (employeesQuery.isError) {
-    return <ErrorBlock message="Çalışan listesi alınamadı." />
+    return <ErrorBlock message="Calisan listesi alinamadi." />
   }
 
   const employees = employeesQuery.data ?? []
   const leaveRows = leavesQuery.data ?? []
+  const pendingLeaveRows = pendingRequestsQuery.data ?? []
   const employeeNameById = new Map(employees.map((employee) => [employee.id, employee.full_name]))
+  const busyDecisionLeaveId = decisionMutation.isPending ? decisionMutation.variables?.leaveId ?? null : null
 
   return (
     <div className="space-y-4">
-      <PageHeader title="İzin Kayıtları" description="Yıllık izin, rapor ve mazeret kayıtlarını yönetin." />
+      <PageHeader title="Izin Kayitlari" description="Yillik izin, rapor ve mazeret kayitlarini yonetin." />
 
       <Panel>
-        <h4 className="text-base font-semibold text-slate-900">Yeni İzin Kaydı</h4>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h4 className="text-base font-semibold text-slate-900">Bekleyen Calisan Talepleri</h4>
+            <p className="mt-1 text-sm text-slate-500">
+              Employee uygulamasindan gelen izin taleplerini burada onaylayin veya reddedin.
+            </p>
+          </div>
+          <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+            {pendingLeaveRows.length} bekleyen talep
+          </span>
+        </div>
+
+        {pendingRequestsQuery.isLoading ? <LoadingBlock /> : null}
+        {pendingRequestsQuery.isError ? <ErrorBlock message="Bekleyen izin talepleri alinamadi." /> : null}
+
+        {!pendingRequestsQuery.isLoading && !pendingRequestsQuery.isError ? (
+          pendingLeaveRows.length > 0 ? (
+            <div className="mt-4 grid gap-3">
+              {pendingLeaveRows.map((leave) => {
+                const decisionNote = decisionNotes[leave.id] ?? ''
+                const isBusy = busyDecisionLeaveId === leave.id
+                return (
+                  <article key={leave.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">
+                          #{leave.id} - {employeeNameById.get(leave.employee_id) ?? leave.employee_id}
+                        </p>
+                        <p className="mt-1 text-sm text-slate-600">
+                          {leaveTypeLabels[leave.type]} | {leave.start_date} - {leave.end_date}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">Talep tarihi: {leave.created_at}</p>
+                      </div>
+                      <StatusBadge value={leave.status} />
+                    </div>
+
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      <div className="rounded-xl border border-slate-200 bg-white p-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Calisan Gerekcesi</p>
+                        <p className="mt-2 text-sm text-slate-700">{leave.note || 'Aciklama girilmedi.'}</p>
+                      </div>
+                      <label className="text-sm text-slate-700">
+                        Karar Notu
+                        <textarea
+                          value={decisionNote}
+                          onChange={(event) => updateDecisionNote(leave.id, event.target.value)}
+                          rows={3}
+                          placeholder="Reddederken aciklama girin. Onay verirken opsiyonel."
+                          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={decisionMutation.isPending}
+                        onClick={() => handleDecision(leave.id, 'APPROVED')}
+                        className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                      >
+                        {isBusy ? 'Kaydediliyor...' : 'Onayla'}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={decisionMutation.isPending}
+                        onClick={() => handleDecision(leave.id, 'REJECTED')}
+                        className="rounded-lg border border-rose-300 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+                      >
+                        {isBusy ? 'Kaydediliyor...' : 'Reddet'}
+                      </button>
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+          ) : (
+            <p className="mt-4 text-sm text-slate-500">Bekleyen calisan izin talebi yok.</p>
+          )
+        ) : null}
+      </Panel>
+
+      <Panel>
+        <h4 className="text-base font-semibold text-slate-900">Yeni Izin Kaydi</h4>
         <form onSubmit={onCreateLeave} className="mt-4 grid gap-3 md:grid-cols-3">
           <EmployeeAutocompleteField
-            label="Çalışan"
+            label="Calisan"
             employees={employees}
             value={employeeId}
             onChange={setEmployeeId}
-            emptyLabel="Seçiniz"
-            helperText="Ad-soyad veya ID ile arayın."
+            emptyLabel="Seciniz"
+            helperText="Ad-soyad veya ID ile arayin."
           />
 
           <label className="text-sm text-slate-700">
-            Başlangıç Tarihi
+            Baslangic Tarihi
             <input
               type="date"
               value={startDate}
@@ -177,7 +330,7 @@ export function LeavesPage() {
           </label>
 
           <label className="text-sm text-slate-700">
-            Bitiş Tarihi
+            Bitis Tarihi
             <input
               type="date"
               value={endDate}
@@ -187,7 +340,7 @@ export function LeavesPage() {
           </label>
 
           <label className="text-sm text-slate-700">
-            İzin Tipi
+            Izin Tipi
             <select
               value={leaveType}
               onChange={(event) =>
@@ -195,11 +348,11 @@ export function LeavesPage() {
               }
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
             >
-              <option value="ANNUAL">YILLIK İZİN</option>
+              <option value="ANNUAL">YILLIK IZIN</option>
               <option value="SICK">RAPOR / HASTALIK</option>
-              <option value="UNPAID">ÜCRETSİZ İZİN</option>
-              <option value="EXCUSE">MAZERET İZNİ</option>
-              <option value="PUBLIC_HOLIDAY">RESMİ TATİL</option>
+              <option value="UNPAID">UCRETSIZ IZIN</option>
+              <option value="EXCUSE">MAZERET IZNI</option>
+              <option value="PUBLIC_HOLIDAY">RESMI TATIL</option>
             </select>
           </label>
 
@@ -212,12 +365,12 @@ export function LeavesPage() {
             >
               <option value="APPROVED">ONAYLI</option>
               <option value="PENDING">BEKLEMEDE</option>
-              <option value="REJECTED">REDDEDİLDİ</option>
+              <option value="REJECTED">REDDEDILDI</option>
             </select>
           </label>
 
           <label className="text-sm text-slate-700 md:col-span-3">
-            Açıklama Notu
+            Aciklama Notu
             <textarea
               value={note}
               onChange={(event) => setNote(event.target.value)}
@@ -232,7 +385,7 @@ export function LeavesPage() {
               disabled={createMutation.isPending}
               className="btn-primary rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
             >
-              {createMutation.isPending ? 'Kaydediliyor...' : 'İzin Kaydını Oluştur'}
+              {createMutation.isPending ? 'Kaydediliyor...' : 'Izin Kaydini Olustur'}
             </button>
           </div>
         </form>
@@ -240,19 +393,19 @@ export function LeavesPage() {
       </Panel>
 
       <Panel>
-        <h4 className="text-base font-semibold text-slate-900">İzin Listesi Filtreleri</h4>
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <h4 className="text-base font-semibold text-slate-900">Izin Listesi Filtreleri</h4>
+        <div className="mt-4 grid gap-3 md:grid-cols-4">
           <EmployeeAutocompleteField
-            label="Çalışan"
+            label="Calisan"
             employees={employees}
             value={filterEmployeeId}
             onChange={setFilterEmployeeId}
-            emptyLabel="Tümü"
-            helperText="Çalışana göre filtreleyin."
+            emptyLabel="Tumu"
+            helperText="Calisana gore filtreleyin."
           />
 
           <label className="text-sm text-slate-700">
-            Yıl
+            Yil
             <input
               value={filterYear}
               onChange={(event) => setFilterYear(event.target.value)}
@@ -268,11 +421,25 @@ export function LeavesPage() {
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
             />
           </label>
+
+          <label className="text-sm text-slate-700">
+            Durum
+            <select
+              value={filterStatus}
+              onChange={(event) => setFilterStatus(event.target.value as 'all' | 'APPROVED' | 'PENDING' | 'REJECTED')}
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+            >
+              <option value="all">TUMU</option>
+              <option value="APPROVED">ONAYLI</option>
+              <option value="PENDING">BEKLEMEDE</option>
+              <option value="REJECTED">REDDEDILDI</option>
+            </select>
+          </label>
         </div>
       </Panel>
 
       {leavesQuery.isLoading ? <LoadingBlock /> : null}
-      {leavesQuery.isError ? <ErrorBlock message="İzin listesi alınamadı." /> : null}
+      {leavesQuery.isError ? <ErrorBlock message="Izin listesi alinamadi." /> : null}
 
       {!leavesQuery.isLoading && !leavesQuery.isError ? (
         <Panel>
@@ -280,12 +447,16 @@ export function LeavesPage() {
             <table className="min-w-full text-left text-sm">
               <thead className="text-xs uppercase text-slate-500">
                 <tr>
-                  <th className="py-2">İzin ID</th>
-                  <th className="py-2">Çalışan</th>
-                  <th className="py-2">İzin Tipi</th>
-                  <th className="py-2">Tarih Aralığı</th>
+                  <th className="py-2">Izin ID</th>
+                  <th className="py-2">Calisan</th>
+                  <th className="py-2">Kaynak</th>
+                  <th className="py-2">Izin Tipi</th>
+                  <th className="py-2">Tarih Araligi</th>
+                  <th className="py-2">Talep Notu</th>
+                  <th className="py-2">Karar Notu</th>
                   <th className="py-2">Durum</th>
-                  <th className="py-2">İşlem</th>
+                  <th className="py-2">Karar Zamani</th>
+                  <th className="py-2">Islem</th>
                 </tr>
               </thead>
               <tbody>
@@ -293,13 +464,17 @@ export function LeavesPage() {
                   <tr key={leave.id} className="border-t border-slate-100">
                     <td className="py-2">{leave.id}</td>
                     <td className="py-2">{employeeNameById.get(leave.employee_id) ?? leave.employee_id}</td>
-                    <td className="py-2">{leave.type}</td>
+                    <td className="py-2">{leave.requested_by_employee ? 'Calisan talebi' : 'Admin kaydi'}</td>
+                    <td className="py-2">{leaveTypeLabels[leave.type]}</td>
                     <td className="py-2">
                       {leave.start_date} - {leave.end_date}
                     </td>
+                    <td className="py-2 text-slate-600">{leave.note || '-'}</td>
+                    <td className="py-2 text-slate-600">{leave.decision_note || '-'}</td>
                     <td className="py-2">
                       <StatusBadge value={leave.status} />
                     </td>
+                    <td className="py-2 text-xs text-slate-500">{leave.decided_at || '-'}</td>
                     <td className="py-2">
                       <button
                         type="button"
@@ -314,7 +489,7 @@ export function LeavesPage() {
               </tbody>
             </table>
           </div>
-          {leaveRows.length === 0 ? <p className="mt-3 text-sm text-slate-500">İzin kaydı bulunamadı.</p> : null}
+          {leaveRows.length === 0 ? <p className="mt-3 text-sm text-slate-500">Izin kaydi bulunamadi.</p> : null}
         </Panel>
       ) : null}
     </div>

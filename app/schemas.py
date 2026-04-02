@@ -1049,6 +1049,38 @@ class LeaveCreateRequest(BaseModel):
     note: str | None = None
 
 
+class EmployeeLeaveRequestCreate(BaseModel):
+    device_fingerprint: str = Field(min_length=8, max_length=255)
+    start_date: date
+    end_date: date
+    type: LeaveType
+    note: str = Field(min_length=3, max_length=1000)
+
+    @model_validator(mode="after")
+    def _validate_range(self) -> "EmployeeLeaveRequestCreate":
+        if self.end_date < self.start_date:
+            raise ValueError("end_date must be greater than or equal to start_date")
+        self.note = self.note.strip()
+        if len(self.note) < 3:
+            raise ValueError("note must contain at least 3 characters")
+        return self
+
+
+class LeaveDecisionRequest(BaseModel):
+    status: LeaveStatus
+    decision_note: str | None = Field(default=None, max_length=1000)
+
+    @model_validator(mode="after")
+    def _validate_decision(self) -> "LeaveDecisionRequest":
+        if self.status == LeaveStatus.PENDING:
+            raise ValueError("Leave decision cannot stay pending.")
+        normalized_note = (self.decision_note or "").strip()
+        if self.status == LeaveStatus.REJECTED and len(normalized_note) < 3:
+            raise ValueError("decision_note must contain at least 3 characters when rejecting.")
+        self.decision_note = normalized_note or None
+        return self
+
+
 class LeaveRead(BaseModel):
     id: int
     employee_id: int
@@ -1057,6 +1089,9 @@ class LeaveRead(BaseModel):
     type: LeaveType
     status: LeaveStatus
     note: str | None
+    requested_by_employee: bool = False
+    decision_note: str | None = None
+    decided_at: datetime | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

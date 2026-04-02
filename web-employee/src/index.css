@@ -1396,6 +1396,147 @@ textarea:focus {
   color: #567083;
 }
 
+.leave-request-card,
+.leave-history-card {
+  display: grid;
+  gap: 0.7rem;
+  border-radius: 14px;
+  padding: 0.9rem;
+  border: 1px solid rgba(130, 173, 195, 0.26);
+  background:
+    radial-gradient(circle at 86% 16%, rgba(95, 214, 167, 0.12), transparent 30%),
+    linear-gradient(145deg, rgba(245, 253, 250, 0.96), rgba(248, 252, 255, 0.95));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.68),
+    0 12px 24px -24px rgba(9, 38, 52, 0.82);
+}
+
+.leave-request-head,
+.leave-history-head,
+.leave-history-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.leave-request-kicker,
+.leave-history-kicker {
+  margin: 0 0 0.2rem;
+  font-size: 0.66rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #587184;
+}
+
+.leave-request-title,
+.leave-history-title {
+  margin: 0;
+  font-size: 0.96rem;
+  color: #17384a;
+}
+
+.leave-request-count,
+.leave-history-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 4.4rem;
+  padding: 0.24rem 0.64rem;
+  border-radius: 999px;
+  background: rgba(19, 56, 74, 0.08);
+  color: #29485a;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.leave-request-copy,
+.leave-history-empty,
+.leave-history-footnote,
+.leave-history-note,
+.leave-history-decision,
+.leave-history-range {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: #567083;
+}
+
+.leave-request-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.leave-request-chip,
+.leave-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  padding: 0.28rem 0.68rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  background: rgba(19, 56, 74, 0.08);
+  color: #29485a;
+}
+
+.leave-request-chip-pending,
+.leave-status-badge-pending {
+  background: rgba(245, 158, 11, 0.14);
+  color: #a16207;
+}
+
+.leave-status-badge-approved {
+  background: rgba(34, 197, 94, 0.14);
+  color: #166534;
+}
+
+.leave-status-badge-rejected {
+  background: rgba(244, 63, 94, 0.14);
+  color: #be123c;
+}
+
+.leave-history-list {
+  display: grid;
+  gap: 0.56rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.leave-history-item {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.72rem;
+  border-radius: 12px;
+  background: rgba(242, 247, 250, 0.9);
+  border: 1px solid rgba(130, 173, 195, 0.18);
+}
+
+.leave-status-pending {
+  background: rgba(255, 247, 237, 0.92);
+  border-color: rgba(245, 158, 11, 0.2);
+}
+
+.leave-status-approved {
+  background: rgba(240, 253, 244, 0.92);
+  border-color: rgba(34, 197, 94, 0.18);
+}
+
+.leave-status-rejected {
+  background: rgba(255, 241, 242, 0.92);
+  border-color: rgba(244, 63, 94, 0.18);
+}
+
+.leave-history-main {
+  display: grid;
+  gap: 0.38rem;
+}
+
 .scanner-title {
   margin: 0 0 8px;
   font-size: 0.88rem;

@@ -4,7 +4,9 @@ import { Link } from 'react-router-dom'
 
 import {
   checkout,
+  createEmployeeLeaveRequest,
   getEmployeeDemoHistory,
+  getEmployeeLeaves,
   getEmployeePushConfig,
   getRecoveryCodeStatus,
   getEmployeeStatus,
@@ -24,7 +26,10 @@ import { useToast } from '../hooks/useToast'
 import type {
   AttendanceActionResponse,
   EmployeeDemoDayResponse,
+  EmployeeLeaveRecord,
   EmployeeStatusResponse,
+  LeaveStatus,
+  LeaveType,
 } from '../types/api'
 import {
   flagLabel,
@@ -101,6 +106,26 @@ const demoTimeFormatter = new Intl.DateTimeFormat('tr-TR', {
   minute: '2-digit',
 })
 
+const leaveDateFormatter = new Intl.DateTimeFormat('tr-TR', {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+})
+
+const leaveTypeLabels: Record<LeaveType, string> = {
+  ANNUAL: 'Yillik izin',
+  SICK: 'Rapor / hastalik',
+  UNPAID: 'Ucretsiz izin',
+  EXCUSE: 'Mazeret izni',
+  PUBLIC_HOLIDAY: 'Resmi tatil',
+}
+
+const leaveStatusLabels: Record<LeaveStatus, string> = {
+  APPROVED: 'Onaylandi',
+  PENDING: 'Beklemede',
+  REJECTED: 'Reddedildi',
+}
+
 const EMPTY_INSTALL_FUNNEL_SNAPSHOT: InstallFunnelSnapshot = {
   firstSeenAt: null,
   lastEventAt: null,
@@ -143,6 +168,24 @@ function formatDemoTime(value: string | null | undefined): string {
     return '--:--'
   }
   return demoTimeFormatter.format(parsed)
+}
+
+function formatLeaveDate(value: string | null | undefined): string {
+  if (!value) {
+    return '--'
+  }
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    return value
+  }
+  return leaveDateFormatter.format(parsed)
+}
+
+function formatLeaveRange(startDate: string, endDate: string): string {
+  if (startDate === endDate) {
+    return formatLeaveDate(startDate)
+  }
+  return `${formatLeaveDate(startDate)} - ${formatLeaveDate(endDate)}`
 }
 
 function loadInstallFunnelSnapshot(): InstallFunnelSnapshot {
@@ -661,6 +704,17 @@ export function HomePage() {
   const [demoHistory, setDemoHistory] = useState<EmployeeDemoDayResponse | null>(null)
   const [isDemoHistoryLoading, setIsDemoHistoryLoading] = useState(false)
   const [isDemoHistoryReady, setIsDemoHistoryReady] = useState(false)
+  const [leaveHistory, setLeaveHistory] = useState<EmployeeLeaveRecord[]>([])
+  const [isLeaveHistoryLoading, setIsLeaveHistoryLoading] = useState(false)
+  const [isLeaveHistoryReady, setIsLeaveHistoryReady] = useState(false)
+  const [leaveRefreshToken, setLeaveRefreshToken] = useState(0)
+  const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false)
+  const [isLeaveSubmitting, setIsLeaveSubmitting] = useState(false)
+  const [leaveStartDate, setLeaveStartDate] = useState('')
+  const [leaveEndDate, setLeaveEndDate] = useState('')
+  const [leaveType, setLeaveType] = useState<LeaveType>('ANNUAL')
+  const [leaveNote, setLeaveNote] = useState('')
+  const [leaveFormError, setLeaveFormError] = useState<string | null>(null)
   const [isHelpOpen, setIsHelpOpen] = useState(false)
   const [isCheckoutConfirmOpen, setIsCheckoutConfirmOpen] = useState(false)
   const [isDemoConfirmOpen, setIsDemoConfirmOpen] = useState(false)
@@ -802,6 +856,19 @@ export function HomePage() {
       durationMs: 5000,
     })
   }, [emitToast, recoveryNotice])
+
+  useEffect(() => {
+    if (!leaveFormError) {
+      emitToast('leaveFormError', null, null)
+      return
+    }
+    emitToast('leaveFormError', leaveFormError, {
+      title: 'Izin talebi',
+      description: leaveFormError,
+      variant: 'warning',
+      durationMs: 5200,
+    })
+  }, [emitToast, leaveFormError])
 
   useEffect(() => {
     if (!pushNotice) {
@@ -1127,6 +1194,9 @@ export function HomePage() {
       setDemoHistory(null)
       setIsDemoHistoryLoading(false)
       setIsDemoHistoryReady(false)
+      setLeaveHistory([])
+      setIsLeaveHistoryLoading(false)
+      setIsLeaveHistoryReady(false)
       return
     }
 
@@ -1194,6 +1264,49 @@ export function HomePage() {
     statusSnapshot?.last_demo_started_at_utc,
     statusSnapshot?.last_demo_ended_at_utc,
   ])
+
+  useEffect(() => {
+    if (!deviceFingerprint) {
+      setLeaveHistory([])
+      setIsLeaveHistoryLoading(false)
+      setIsLeaveHistoryReady(false)
+      return
+    }
+
+    let cancelled = false
+    setIsLeaveHistoryLoading(true)
+    const loadLeaveHistory = async () => {
+      try {
+        const leaveRows = await getEmployeeLeaves(deviceFingerprint)
+        if (!cancelled) {
+          const orderedRows = [...leaveRows].sort((left, right) => {
+            const leftKey = left.created_at || left.start_date
+            const rightKey = right.created_at || right.start_date
+            return rightKey.localeCompare(leftKey)
+          })
+          setLeaveHistory(orderedRows)
+          setIsLeaveHistoryReady(true)
+        }
+      } catch (error) {
+        const parsed = parseApiError(error, 'Izin talepleri alinamadi.')
+        if (!cancelled) {
+          if (!handleDeviceNotClaimed(parsed)) {
+            setLeaveHistory([])
+            setIsLeaveHistoryReady(false)
+          }
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLeaveHistoryLoading(false)
+        }
+      }
+    }
+
+    void loadLeaveHistory()
+    return () => {
+      cancelled = true
+    }
+  }, [deviceFingerprint, handleDeviceNotClaimed, leaveRefreshToken])
 
   useEffect(() => {
     if (!deviceFingerprint) {
@@ -1378,6 +1491,19 @@ export function HomePage() {
   const visibleDemoSessions = demoSessions.slice(0, 4)
   const hiddenDemoSessionCount = Math.max(0, demoSessions.length - visibleDemoSessions.length)
   const demoHistorySummary = demoHistory ? `${demoHistory.session_count} kayit` : 'Bugun'
+  const leaveRequests = leaveHistory
+  const visibleLeaveRequests = leaveRequests.slice(0, 4)
+  const hiddenLeaveRequestCount = Math.max(0, leaveRequests.length - visibleLeaveRequests.length)
+  const pendingLeaveCount = leaveRequests.filter((item) => item.status === 'PENDING').length
+  const approvedLeaveCount = leaveRequests.filter((item) => item.status === 'APPROVED').length
+  const leaveHistorySummary = leaveRequests.length > 0 ? `${leaveRequests.length} kayit` : 'Henuz yok'
+  const leaveActionHint =
+    pendingLeaveCount > 0
+      ? `${pendingLeaveCount} talep admin onayi bekliyor.`
+      : approvedLeaveCount > 0
+        ? `${approvedLeaveCount} izin kaydin gorunuyor.`
+        : 'Tarih araligi ve gerekce girerek izin talebi olusturabilirsin.'
+  const canOpenLeaveRequest = Boolean(deviceFingerprint) && !isLeaveSubmitting
 
   const currentHour = new Date().getHours()
   const shouldShowEveningReminder = useMemo(() => {
@@ -1416,6 +1542,73 @@ export function HomePage() {
     setInstallNotice(null)
     setAndroidInstallOnboardingOpen(true)
   }, [])
+
+  const openLeaveRequestModal = useCallback(() => {
+    setLeaveFormError(null)
+    setIsLeaveModalOpen(true)
+  }, [])
+
+  const closeLeaveRequestModal = useCallback(() => {
+    if (isLeaveSubmitting) {
+      return
+    }
+    setIsLeaveModalOpen(false)
+    setLeaveFormError(null)
+  }, [isLeaveSubmitting])
+
+  const submitLeaveRequest = useCallback(async () => {
+    const startDate = leaveStartDate.trim()
+    const endDate = leaveEndDate.trim()
+    const note = leaveNote.trim()
+    if (!deviceFingerprint) {
+      setLeaveFormError('Cihaz bagli degil. Davet linki ile kurulumu tamamla.')
+      return
+    }
+    if (!startDate || !endDate) {
+      setLeaveFormError('Baslangic ve bitis tarihini gir.')
+      return
+    }
+    if (endDate < startDate) {
+      setLeaveFormError('Bitis tarihi baslangic tarihinden once olamaz.')
+      return
+    }
+    if (note.length < 3) {
+      setLeaveFormError('Izin gerekcesi en az 3 karakter olmali.')
+      return
+    }
+
+    setIsLeaveSubmitting(true)
+    setLeaveFormError(null)
+    try {
+      const leave = await createEmployeeLeaveRequest({
+        device_fingerprint: deviceFingerprint,
+        start_date: startDate,
+        end_date: endDate,
+        type: leaveType,
+        note,
+      })
+      setIsLeaveModalOpen(false)
+      setLeaveStartDate('')
+      setLeaveEndDate('')
+      setLeaveType('ANNUAL')
+      setLeaveNote('')
+      setActionNotice({
+        tone: 'success',
+        text: `Izin talebin gonderildi. Durum: ${leaveStatusLabels[leave.status]}.`,
+      })
+      setLeaveRefreshToken((current) => current + 1)
+      pushToast({
+        variant: 'success',
+        title: 'Izin talebi gonderildi',
+        description: 'Talebin admin onayina iletildi.',
+      })
+    } catch (error) {
+      const parsed = parseApiError(error, 'Izin talebi gonderilemedi.')
+      setLeaveFormError(parsed.message)
+    } finally {
+      setIsLeaveSubmitting(false)
+    }
+  }, [deviceFingerprint, leaveEndDate, leaveNote, leaveStartDate, leaveType, pushToast])
 
   const copyPortalLinkForSafari = useCallback(async () => {
     if (typeof window === 'undefined') {
@@ -1551,6 +1744,7 @@ export function HomePage() {
     isIosFamilyDevice() &&
     !isStandaloneApp &&
     !scannerActive &&
+    !isLeaveModalOpen &&
     !isHelpOpen &&
     !showPushGateModal
   const showAndroidInstallOnboarding =
@@ -1558,6 +1752,7 @@ export function HomePage() {
     isAndroidDevice() &&
     !isStandaloneApp &&
     !scannerActive &&
+    !isLeaveModalOpen &&
     !isHelpOpen &&
     !showPushGateModal
   const showIosInstallDock =
@@ -1566,6 +1761,7 @@ export function HomePage() {
     iosInstallOnboardingDismissed &&
     !iosInstallOnboardingOpen &&
     !scannerActive &&
+    !isLeaveModalOpen &&
     !isHelpOpen
   const installPrimaryLabel =
     isIosFamilyDevice() && !installPromptEvent
@@ -1655,7 +1851,7 @@ export function HomePage() {
   }, [installFunnelSnapshot.lastAttemptAt])
 
   const showIosBrowserWarning =
-    iosInAppBrowserBlocked && !scannerActive && !isHelpOpen && !showPushGateModal
+    iosInAppBrowserBlocked && !scannerActive && !isLeaveModalOpen && !isHelpOpen && !showPushGateModal
 
   useEffect(() => {
     if (showInstallBanner && !installBannerVisiblePrevRef.current) {
@@ -1690,6 +1886,7 @@ export function HomePage() {
     }
     if (
       scannerActive ||
+      isLeaveModalOpen ||
       isHelpOpen ||
       showPushGateModal ||
       showIosInstallOnboarding ||
@@ -1710,7 +1907,7 @@ export function HomePage() {
     if (!fullyVisible) {
       actionPanel.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
-  }, [isHelpOpen, scannerActive, showAndroidInstallOnboarding, showIosInstallOnboarding, showPushGateModal])
+  }, [isHelpOpen, isLeaveModalOpen, scannerActive, showAndroidInstallOnboarding, showIosInstallOnboarding, showPushGateModal])
 
   const runPasskeyRegistration = async () => {
     if (!deviceFingerprint) {
@@ -2763,6 +2960,15 @@ export function HomePage() {
                     'Mesaiyi Güvenli Bitir'
                   )}
                 </button>
+
+                <button
+                  type="button"
+                  className="btn btn-soft btn-lg"
+                  disabled={!canOpenLeaveRequest}
+                  onClick={openLeaveRequestModal}
+                >
+                  {isLeaveSubmitting ? 'Talep hazirlaniyor...' : 'Izin Talebi Olustur'}
+                </button>
               </div>
 
               <ol className="action-flow">
@@ -2825,6 +3031,33 @@ export function HomePage() {
             </section>
 
             {deviceFingerprint ? (
+              <section className="leave-request-card" aria-labelledby="leave-request-title">
+                <div className="leave-request-head">
+                  <div>
+                    <p className="leave-request-kicker">IZIN AKISI</p>
+                    <h3 id="leave-request-title" className="leave-request-title">
+                      Izin Talebi
+                    </h3>
+                  </div>
+                  <span className="leave-request-count">{leaveHistorySummary}</span>
+                </div>
+                <p className="leave-request-copy">{leaveActionHint}</p>
+                <div className="leave-request-stats">
+                  <span className="leave-request-chip leave-request-chip-pending">Bekleyen: {pendingLeaveCount}</span>
+                  <span className="leave-request-chip">Toplam: {leaveRequests.length}</span>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-lg demo-visit-btn"
+                  disabled={!canOpenLeaveRequest}
+                  onClick={openLeaveRequestModal}
+                >
+                  {isLeaveSubmitting ? 'Gonderiliyor...' : 'Izin Talebi Gonder'}
+                </button>
+              </section>
+            ) : null}
+
+            {deviceFingerprint ? (
               <section className="demo-history-card" aria-labelledby="demo-history-title">
                 <div className="demo-history-head">
                   <div>
@@ -2863,6 +3096,51 @@ export function HomePage() {
                   </>
                 ) : (
                   <p className="demo-history-empty">Bugun demo kaydi yok.</p>
+                )}
+              </section>
+            ) : null}
+
+            {deviceFingerprint ? (
+              <section className="leave-history-card" aria-labelledby="leave-history-title">
+                <div className="leave-history-head">
+                  <div>
+                    <p className="leave-history-kicker">IZIN GECMISI</p>
+                    <h3 id="leave-history-title" className="leave-history-title">
+                      Son Talepler
+                    </h3>
+                  </div>
+                  <span className="leave-history-count">{leaveHistorySummary}</span>
+                </div>
+
+                {isLeaveHistoryLoading && !isLeaveHistoryReady ? (
+                  <p className="leave-history-empty">Liste hazirlaniyor...</p>
+                ) : visibleLeaveRequests.length > 0 ? (
+                  <>
+                    <ol className="leave-history-list">
+                      {visibleLeaveRequests.map((leave) => (
+                        <li key={leave.id} className={`leave-history-item leave-status-${leave.status.toLowerCase()}`}>
+                          <div className="leave-history-main">
+                            <div className="leave-history-row">
+                              <strong>{leaveTypeLabels[leave.type]}</strong>
+                              <span className={`leave-status-badge leave-status-badge-${leave.status.toLowerCase()}`}>
+                                {leaveStatusLabels[leave.status]}
+                              </span>
+                            </div>
+                            <p className="leave-history-range">{formatLeaveRange(leave.start_date, leave.end_date)}</p>
+                            <p className="leave-history-note">{leave.note || 'Gerekce girilmedi.'}</p>
+                            {leave.decision_note ? (
+                              <p className="leave-history-decision">Karar notu: {leave.decision_note}</p>
+                            ) : null}
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                    {hiddenLeaveRequestCount > 0 ? (
+                      <p className="leave-history-footnote">+{hiddenLeaveRequestCount} talep daha var.</p>
+                    ) : null}
+                  </>
+                ) : (
+                  <p className="leave-history-empty">Henuz izin talebi yok.</p>
                 )}
               </section>
             ) : null}
@@ -3166,6 +3444,64 @@ export function HomePage() {
               </button>
               <button type="button" className="btn btn-soft" onClick={dismissAndroidInstallOnboarding}>
                 Simdilik Kapat
+              </button>
+            </div>
+          </EmployeeFocusModal>
+        ) : null}
+
+        {isLeaveModalOpen ? (
+          <EmployeeFocusModal
+            titleId="leave-request-modal-title"
+            descriptionId="leave-request-modal-description"
+            title="Izin Talebi Olustur"
+            kicker="CALISAN IZIN TALEBI"
+            panelClassName="employee-focus-modal--wide"
+            onClose={closeLeaveRequestModal}
+          >
+            <p id="leave-request-modal-description">
+              Izin gerekcesini ve tarih araligini gir. Talebin admin onayina dusunce sana bildirim gider.
+            </p>
+            <div className="stack">
+              <label className="field">
+                <span>Izin tipi</span>
+                <select value={leaveType} onChange={(event) => setLeaveType(event.target.value as LeaveType)}>
+                  <option value="ANNUAL">Yillik izin</option>
+                  <option value="SICK">Rapor / hastalik</option>
+                  <option value="UNPAID">Ucretsiz izin</option>
+                  <option value="EXCUSE">Mazeret izni</option>
+                  <option value="PUBLIC_HOLIDAY">Resmi tatil</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>Baslangic tarihi</span>
+                <input type="date" value={leaveStartDate} onChange={(event) => setLeaveStartDate(event.target.value)} />
+              </label>
+              <label className="field">
+                <span>Bitis tarihi</span>
+                <input type="date" value={leaveEndDate} onChange={(event) => setLeaveEndDate(event.target.value)} />
+              </label>
+              <label className="field">
+                <span>Izin gerekcesi</span>
+                <textarea
+                  value={leaveNote}
+                  onChange={(event) => setLeaveNote(event.target.value)}
+                  rows={4}
+                  placeholder="Ornek: Hastane randevusu, aile isi, resmi islem..."
+                />
+              </label>
+            </div>
+            {leaveFormError ? <p className="small-text">{leaveFormError}</p> : null}
+            <div className="stack">
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={isLeaveSubmitting}
+                onClick={() => void submitLeaveRequest()}
+              >
+                {isLeaveSubmitting ? 'Gonderiliyor...' : 'Talebi Gonder'}
+              </button>
+              <button type="button" className="btn btn-soft" disabled={isLeaveSubmitting} onClick={closeLeaveRequestModal}>
+                Vazgec
               </button>
             </div>
           </EmployeeFocusModal>

@@ -412,10 +412,17 @@ export interface CreateLeavePayload {
   note?: string | null;
 }
 
+export interface DecideLeavePayload {
+  status: "APPROVED" | "REJECTED";
+  decision_note?: string | null;
+}
+
 export interface LeavesParams {
   employee_id?: number;
   year?: number;
   month?: number;
+  status?: "APPROVED" | "PENDING" | "REJECTED";
+  requested_by_employee?: boolean;
 }
 
 export interface DeviceInvitePayload {
@@ -1709,6 +1716,17 @@ export async function createLeave(
 
 export async function deleteLeave(leaveId: number): Promise<void> {
   await apiClient.delete(`/api/admin/leaves/${leaveId}`);
+}
+
+export async function decideLeave(
+  leaveId: number,
+  payload: DecideLeavePayload,
+): Promise<LeaveRecord> {
+  const response = await apiClient.patch<LeaveRecord>(
+    `/api/admin/leaves/${leaveId}`,
+    payload,
+  );
+  return response.data;
 }
 
 export async function createDeviceInvite(

@@ -602,6 +602,9 @@ export interface LeaveRecord {
   type: LeaveType
   status: LeaveStatus
   note: string | null
+  requested_by_employee: boolean
+  decision_note: string | null
+  decided_at: string | null
   created_at: string
 }
 

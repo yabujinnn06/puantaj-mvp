@@ -37,6 +37,7 @@ from app.models import (
     DevicePushSubscription,
     Employee,
     EmployeeLocation,
+    LeaveStatus,
     LocationEventSource,
     LocationStatus,
     ManualDayOverride,
@@ -160,6 +161,7 @@ from app.schemas import (
     EmployeeRead,
     EmployeePushConfigResponse,
     LeaveCreateRequest,
+    LeaveDecisionRequest,
     LeaveRead,
     LaborProfileRead,
     LaborProfileUpsertRequest,
@@ -220,7 +222,7 @@ from app.services.exports import (
     build_puantaj_range_xlsx_bytes,
     build_puantaj_xlsx_bytes,
 )
-from app.services.leaves import create_leave, delete_leave, list_leaves
+from app.services.leaves import create_leave, decide_leave, delete_leave, list_leaves
 from app.services.manual_overrides import (
     delete_manual_day_override,
     list_manual_day_overrides,
@@ -5370,25 +5372,31 @@ def update_compliance_settings(
     "/api/admin/leaves",
     response_model=LeaveRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_admin_permission("leaves", write=True))],
 )
 def create_leave_endpoint(
     payload: LeaveCreateRequest,
     request: Request,
+    claims: dict[str, Any] = Depends(require_admin_permission("leaves", write=True)),
     db: Session = Depends(get_db),
 ) -> LeaveRead:
     leave = create_leave(db, payload)
+    actor_id, actor_admin_user_id = _normalized_admin_actor_from_claims(claims)
     log_audit(
         db,
         actor_type=AuditActorType.ADMIN,
-        actor_id="admin",
+        actor_id=actor_id,
         action="LEAVE_CREATED",
         success=True,
         entity_type="leave",
         entity_id=str(leave.id),
         ip=_client_ip(request),
         user_agent=_user_agent(request),
-        details={"employee_id": leave.employee_id, "type": leave.type.value},
+        details={
+            "employee_id": leave.employee_id,
+            "type": leave.type.value,
+            "status": leave.status.value,
+            "actor_admin_user_id": actor_admin_user_id,
+        },
         request_id=getattr(request.state, "request_id", None),
     )
     return leave
@@ -5403,6 +5411,8 @@ def list_leaves_endpoint(
     employee_id: int | None = Query(default=None, ge=1),
     year: int | None = Query(default=None, ge=1970),
     month: int | None = Query(default=None, ge=1, le=12),
+    leave_status: LeaveStatus | None = Query(default=None, alias="status"),
+    requested_by_employee: bool | None = Query(default=None),
     db: Session = Depends(get_db),
 ) -> list[LeaveRead]:
     return list_leaves(
@@ -5410,30 +5420,68 @@ def list_leaves_endpoint(
         employee_id=employee_id,
         year=year,
         month=month,
+        status_filter=leave_status,
+        requested_by_employee=requested_by_employee,
     )
+
+
+@router.patch(
+    "/api/admin/leaves/{leave_id}",
+    response_model=LeaveRead,
+)
+def decide_leave_endpoint(
+    leave_id: int,
+    payload: LeaveDecisionRequest,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin_permission("leaves", write=True)),
+    db: Session = Depends(get_db),
+) -> LeaveRead:
+    leave = decide_leave(db, leave_id=leave_id, payload=payload)
+    actor_id, actor_admin_user_id = _normalized_admin_actor_from_claims(claims)
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=actor_id,
+        action="LEAVE_DECIDED",
+        success=True,
+        entity_type="leave",
+        entity_id=str(leave.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "employee_id": leave.employee_id,
+            "status": leave.status.value,
+            "decision_note": leave.decision_note,
+            "actor_admin_user_id": actor_admin_user_id,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return leave
 
 
 @router.delete(
     "/api/admin/leaves/{leave_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_admin_permission("leaves", write=True))],
 )
 def delete_leave_endpoint(
     leave_id: int,
     request: Request,
+    claims: dict[str, Any] = Depends(require_admin_permission("leaves", write=True)),
     db: Session = Depends(get_db),
 ) -> None:
     delete_leave(db, leave_id)
+    actor_id, actor_admin_user_id = _normalized_admin_actor_from_claims(claims)
     log_audit(
         db,
         actor_type=AuditActorType.ADMIN,
-        actor_id="admin",
+        actor_id=actor_id,
         action="LEAVE_DELETED",
         success=True,
         entity_type="leave",
         entity_id=str(leave_id),
         ip=_client_ip(request),
         user_agent=_user_agent(request),
+        details={"actor_admin_user_id": actor_admin_user_id},
         request_id=getattr(request.state, "request_id", None),
     )
 

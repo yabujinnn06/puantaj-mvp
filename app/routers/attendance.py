@@ -23,6 +23,7 @@ from app.schemas import (
     EmployeeDemoDayResponse,
     EmployeeAppPresencePingRequest,
     EmployeeAppPresencePingResponse,
+    EmployeeLeaveRequestCreate,
     EmployeeHomeLocationSetRequest,
     EmployeeHomeLocationSetResponse,
     EmployeePushConfigResponse,
@@ -35,6 +36,7 @@ from app.schemas import (
     EmployeeQrScanDeniedResponse,
     EmployeeQrScanRequest,
     EmployeeStatusResponse,
+    LeaveRead,
     PasskeyRecoverOptionsResponse,
     PasskeyRecoverVerifyRequest,
     PasskeyRecoverVerifyResponse,
@@ -73,6 +75,7 @@ from app.services.attendance import (
     get_employee_demo_day_history_by_device,
     get_employee_status_by_device,
 )
+from app.services.leaves import create_employee_leave_request, list_leaves
 from app.services.passkeys import (
     create_recover_options,
     create_registration_options,
@@ -126,6 +129,31 @@ def _active_device_by_fingerprint(db: Session, *, device_fingerprint: str) -> De
             Device.is_active.is_(True),
         )
     )
+
+
+def _active_employee_from_device_or_error(db: Session, *, device_fingerprint: str) -> tuple[Employee, Device]:
+    device = _active_device_by_fingerprint(db, device_fingerprint=device_fingerprint)
+    if device is None:
+        raise ApiError(
+            status_code=404,
+            code="DEVICE_NOT_CLAIMED",
+            message="Device must be claimed first.",
+        )
+
+    employee = device.employee
+    if employee is None:
+        raise ApiError(
+            status_code=404,
+            code="EMPLOYEE_NOT_FOUND",
+            message="Employee not found for this device.",
+        )
+    if not employee.is_active:
+        raise ApiError(
+            status_code=403,
+            code="EMPLOYEE_INACTIVE",
+            message="Inactive employee cannot access this resource.",
+        )
+    return employee, device
 
 
 def _set_device_fingerprint_cookie(
@@ -895,6 +923,61 @@ def employee_demo_history(
         "active_session_count": demo_data["active_session_count"],
     }
     return EmployeeDemoDayResponse(**demo_data)
+
+
+@router.get("/api/employee/leaves", response_model=list[LeaveRead])
+def employee_leave_history(
+    device_fingerprint: str,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> list[LeaveRead]:
+    request.state.actor = "employee"
+    employee, _device = _active_employee_from_device_or_error(
+        db,
+        device_fingerprint=device_fingerprint,
+    )
+    request.state.employee_id = employee.id
+    request.state.flags = {"resource": "leave_history"}
+    return list_leaves(
+        db,
+        employee_id=employee.id,
+        year=None,
+        month=None,
+    )
+
+
+@router.post("/api/employee/leaves", response_model=LeaveRead, status_code=status.HTTP_201_CREATED)
+def create_employee_leave_request_endpoint(
+    payload: EmployeeLeaveRequestCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> LeaveRead:
+    request.state.actor = "employee"
+    leave = create_employee_leave_request(db, payload)
+    request.state.employee_id = leave.employee_id
+    request.state.flags = {
+        "leave_type": leave.type.value,
+        "leave_status": leave.status.value,
+    }
+    log_audit(
+        db,
+        actor_type=AuditActorType.SYSTEM,
+        actor_id=str(leave.employee_id),
+        action="EMPLOYEE_LEAVE_REQUEST_CREATED",
+        success=True,
+        entity_type="leave",
+        entity_id=str(leave.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "employee_id": leave.employee_id,
+            "start_date": leave.start_date.isoformat(),
+            "end_date": leave.end_date.isoformat(),
+            "type": leave.type.value,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return leave
 
 
 @router.post("/api/employee/app-presence/ping", response_model=EmployeeAppPresencePingResponse)

@@ -13,6 +13,8 @@ import type {
   EmployeeAppPresencePingResponse,
   EmployeeInstallFunnelEventRequest,
   EmployeeInstallFunnelEventResponse,
+  EmployeeLeaveRecord,
+  EmployeeLeaveRequest,
   EmployeeQrScanRequest,
   EmployeeQrScanDeniedResponse,
   EmployeePushConfigResponse,
@@ -77,6 +79,7 @@ const errorCodeMap: Record<string, string> = {
   QR_CODE_NOT_FOUND: 'QR kod bulunamadı veya pasif durumda.',
   QR_CODE_HAS_NO_ACTIVE_POINTS: 'Bu QR koda aktif konum noktası atanmadı.',
   QR_DOUBLE_SCAN_BLOCKED: 'Aynı çalışan için QR okutmalar arasında en az 5 dakika olmalıdır.',
+  LEAVE_OVERLAP: 'Bu tarihler icin zaten aktif bir izin talebi veya onayli izin var.',
   PUSH_NOT_CONFIGURED: 'Bildirim servisi şu anda aktif değil.',
   INVALID_PUSH_SUBSCRIPTION: 'Bildirim abonelik verisi geçersiz.',
   INVITE_ATTEMPTS_EXCEEDED: 'Davet linkinin deneme limiti doldu. Yeni bir link isteyin.',
@@ -202,6 +205,20 @@ export async function getEmployeeDemoHistory(deviceFingerprint: string): Promise
   const response = await apiClient.get<EmployeeDemoDayResponse>('/api/employee/demo-history', {
     params: { device_fingerprint: deviceFingerprint },
   })
+  return response.data
+}
+
+export async function getEmployeeLeaves(deviceFingerprint: string): Promise<EmployeeLeaveRecord[]> {
+  const response = await apiClient.get<EmployeeLeaveRecord[]>('/api/employee/leaves', {
+    params: { device_fingerprint: deviceFingerprint },
+  })
+  return response.data
+}
+
+export async function createEmployeeLeaveRequest(
+  payload: EmployeeLeaveRequest,
+): Promise<EmployeeLeaveRecord> {
+  const response = await apiClient.post<EmployeeLeaveRecord>('/api/employee/leaves', payload)
   return response.data
 }
 
