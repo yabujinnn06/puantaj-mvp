@@ -2964,13 +2964,7 @@ export function HomePage() {
                       İşlem yapılıyor...
                     </>
                   ) : (
-                    <>
-                      <span className="action-cta-copy">QR ile Islem Baslat</span>
-                      <span className="action-cta-visual action-cta-visual-qr" aria-hidden="true">
-                        <span className="action-cta-chip" />
-                        <span className="action-cta-scanline" />
-                      </span>
-                    </>
+                    <span className="action-cta-copy">QR ile İşlem Başlat</span>
                   )}
                 </button>
 
@@ -2986,13 +2980,7 @@ export function HomePage() {
                       İşlem yapılıyor...
                     </>
                   ) : (
-                    <>
-                      <span className="action-cta-copy">Mesaiyi Guvenli Bitir</span>
-                      <span className="action-cta-visual action-cta-visual-checkout" aria-hidden="true">
-                        <span className="action-cta-flow" />
-                        <span className="action-cta-chip" />
-                      </span>
-                    </>
+                    <span className="action-cta-copy">Mesaiyi Güvenli Bitir</span>
                   )}
                 </button>
 

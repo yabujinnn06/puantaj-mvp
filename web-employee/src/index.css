@@ -1234,159 +1234,120 @@ textarea:focus {
 }
 
 .action-panel > .stack > .action-cta-btn {
-  flex-basis: 192px;
+  flex-basis: 176px;
 }
 
 .action-cta-btn {
-  min-height: 2.62rem;
-  padding: 0.78rem 0.92rem;
-  border-radius: 14px;
-  justify-content: space-between;
-  gap: 0.75rem;
-  font-size: 0.92rem;
+  position: relative;
+  isolation: isolate;
+  min-height: 2.32rem;
+  padding: 0.62rem 0.84rem;
+  border-radius: 13px;
+  justify-content: center;
+  gap: 0.5rem;
+  font-size: 0.88rem;
   font-weight: 700;
   line-height: 1.1;
   overflow: hidden;
 }
 
-.action-cta-copy {
-  flex: 1 1 auto;
-  min-width: 0;
-  text-align: left;
+.action-cta-btn::before,
+.action-cta-btn::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  z-index: 0;
 }
 
-.action-cta-visual {
+.action-cta-btn::before {
+  inset: 1px;
+  border-radius: 12px;
+  background: linear-gradient(
+    118deg,
+    transparent 0%,
+    transparent 28%,
+    rgba(255, 255, 255, 0.14) 48%,
+    transparent 68%,
+    transparent 100%
+  );
+  transform: translateX(-30%);
+  opacity: 0.72;
+  animation: action-cta-glide 5.4s ease-in-out infinite;
+}
+
+.action-cta-btn::after {
+  width: 44%;
+  height: 130%;
+  top: -14%;
+  right: -10%;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.12), transparent 70%);
+  filter: blur(0.5px);
+  opacity: 0.42;
+  animation: action-cta-float 6.2s ease-in-out infinite;
+}
+
+.action-cta-btn.btn-outline::before {
+  background: linear-gradient(
+    118deg,
+    transparent 0%,
+    transparent 26%,
+    rgba(26, 88, 117, 0.06) 48%,
+    transparent 70%,
+    transparent 100%
+  );
+}
+
+.action-cta-btn.btn-outline::after {
+  background: radial-gradient(circle, rgba(26, 88, 117, 0.08), transparent 70%);
+  opacity: 0.38;
+}
+
+.action-cta-copy,
+.action-cta-btn .inline-spinner {
   position: relative;
+  z-index: 1;
+}
+
+.action-cta-copy {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.15rem;
-  height: 1.22rem;
-  flex-shrink: 0;
-  overflow: hidden;
-  border-radius: 999px;
+  min-width: 0;
+  text-align: center;
 }
 
-.action-cta-visual-qr {
-  background: rgba(255, 255, 255, 0.18);
-  border: 1px solid rgba(255, 255, 255, 0.26);
+.action-cta-btn:disabled::before {
+  opacity: 0.34;
+  animation-duration: 7s;
 }
 
-.action-cta-visual-checkout {
-  background: rgba(15, 94, 114, 0.08);
-  border: 1px solid rgba(26, 88, 117, 0.18);
+.action-cta-btn:disabled::after {
+  opacity: 0.22;
+  animation-duration: 7.4s;
 }
 
-.action-cta-chip,
-.action-cta-scanline,
-.action-cta-flow {
-  position: absolute;
-  display: block;
-}
-
-.action-cta-visual-qr .action-cta-chip {
-  width: 0.5rem;
-  height: 0.5rem;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  border-radius: 0.18rem;
-  background: rgba(255, 255, 255, 0.94);
-  box-shadow: 0 0 0.45rem rgba(255, 255, 255, 0.42);
-  animation: action-cta-pulse 1.9s ease-in-out infinite;
-}
-
-.action-cta-scanline {
-  left: 0.28rem;
-  right: 0.28rem;
-  top: 0.2rem;
-  height: 2px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.96), transparent);
-  animation: action-cta-scan 1.9s ease-in-out infinite;
-}
-
-.action-cta-visual-checkout .action-cta-chip {
-  width: 0.42rem;
-  height: 0.42rem;
-  top: 50%;
-  left: 0.34rem;
-  transform: translateY(-50%);
-  border-radius: 999px;
-  background: currentColor;
-  box-shadow: 0 0 0.35rem rgba(26, 88, 117, 0.28);
-  animation: action-cta-drive 1.9s ease-in-out infinite;
-}
-
-.action-cta-flow {
-  left: 0.34rem;
-  right: 0.34rem;
-  top: 50%;
-  height: 2px;
-  transform: translateY(-50%);
-  border-radius: 999px;
-  background: linear-gradient(90deg, rgba(26, 88, 117, 0.1), rgba(26, 88, 117, 0.76), rgba(26, 88, 117, 0.1));
-  opacity: 0.84;
-  animation: action-cta-breathe 1.9s ease-in-out infinite;
-}
-
-.action-cta-btn:disabled .action-cta-visual {
-  opacity: 0.76;
-}
-
-.action-cta-btn:disabled .action-cta-visual > * {
-  animation-duration: 2.6s;
-}
-
-@keyframes action-cta-pulse {
+@keyframes action-cta-glide {
   0%,
   100% {
-    transform: translate(-50%, -50%) scale(0.92);
-    opacity: 0.76;
+    transform: translateX(-30%);
   }
 
   50% {
-    transform: translate(-50%, -50%) scale(1.08);
-    opacity: 1;
+    transform: translateX(30%);
   }
 }
 
-@keyframes action-cta-scan {
+@keyframes action-cta-float {
   0%,
   100% {
-    top: 0.2rem;
-    opacity: 0.42;
+    transform: translate3d(0, 0, 0) scale(0.96);
+    opacity: 0.28;
   }
 
   50% {
-    top: calc(100% - 0.34rem);
-    opacity: 1;
-  }
-}
-
-@keyframes action-cta-drive {
-  0%,
-  100% {
-    left: 0.34rem;
-    transform: translateY(-50%) scale(0.94);
-  }
-
-  50% {
-    left: calc(100% - 0.76rem);
-    transform: translateY(-50%) scale(1.08);
-  }
-}
-
-@keyframes action-cta-breathe {
-  0%,
-  100% {
-    opacity: 0.42;
-    transform: translateY(-50%) scaleX(0.92);
-  }
-
-  50% {
-    opacity: 0.92;
-    transform: translateY(-50%) scaleX(1.04);
+    transform: translate3d(-12%, 4%, 0) scale(1.08);
+    opacity: 0.46;
   }
 }
 
@@ -3426,9 +3387,8 @@ textarea:focus {
   .employee-boot-loader-logo,
   .employee-boot-loader-core,
   .employee-boot-loader-shadow,
-  .action-cta-chip,
-  .action-cta-scanline,
-  .action-cta-flow,
+  .action-cta-btn::before,
+  .action-cta-btn::after,
   .scan-success-halo,
   .scan-success-ring,
   .scan-success-spark,
