@@ -1464,6 +1464,14 @@ textarea:focus {
   gap: 0.75rem;
 }
 
+.leave-history-head-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
 .leave-request-kicker,
 .leave-history-kicker {
   margin: 0 0 0.2rem;
@@ -1542,6 +1550,30 @@ textarea:focus {
 .leave-status-badge-rejected {
   background: rgba(244, 63, 94, 0.14);
   color: #be123c;
+}
+
+.leave-history-toggle {
+  border: 1px solid rgba(124, 188, 219, 0.42);
+  border-radius: 999px;
+  padding: 0.34rem 0.72rem;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #1a5875;
+  background: rgba(165, 214, 238, 0.22);
+  cursor: pointer;
+}
+
+.leave-history-body {
+  display: grid;
+  gap: 0.56rem;
+}
+
+.leave-history-collapsed {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: #567083;
 }
 
 .leave-history-list {

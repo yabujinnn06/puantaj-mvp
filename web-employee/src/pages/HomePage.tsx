@@ -709,6 +709,7 @@ export function HomePage() {
   const [isLeaveHistoryReady, setIsLeaveHistoryReady] = useState(false)
   const [leaveRefreshToken, setLeaveRefreshToken] = useState(0)
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false)
+  const [isLeaveHistoryExpanded, setIsLeaveHistoryExpanded] = useState(false)
   const [isLeaveSubmitting, setIsLeaveSubmitting] = useState(false)
   const [leaveStartDate, setLeaveStartDate] = useState('')
   const [leaveEndDate, setLeaveEndDate] = useState('')
@@ -1494,6 +1495,7 @@ export function HomePage() {
   const leaveRequests = leaveHistory
   const visibleLeaveRequests = leaveRequests.slice(0, 4)
   const hiddenLeaveRequestCount = Math.max(0, leaveRequests.length - visibleLeaveRequests.length)
+  const hasLeaveHistory = leaveRequests.length > 0
   const pendingLeaveCount = leaveRequests.filter((item) => item.status === 'PENDING').length
   const approvedLeaveCount = leaveRequests.filter((item) => item.status === 'APPROVED').length
   const leaveHistorySummary = leaveRequests.length > 0 ? `${leaveRequests.length} kayit` : 'Henuz yok'
@@ -1504,6 +1506,12 @@ export function HomePage() {
         ? `${approvedLeaveCount} izin kaydin gorunuyor.`
         : 'Tarih araligi ve gerekce girerek izin talebi olusturabilirsin.'
   const canOpenLeaveRequest = Boolean(deviceFingerprint) && !isLeaveSubmitting
+
+  useEffect(() => {
+    if (!leaveHistory.length) {
+      setIsLeaveHistoryExpanded(false)
+    }
+  }, [leaveHistory.length])
 
   const currentHour = new Date().getHours()
   const shouldShowEveningReminder = useMemo(() => {
@@ -2976,20 +2984,12 @@ export function HomePage() {
                   )}
                 </button>
 
-                <button
-                  type="button"
-                  className="btn btn-soft btn-lg"
-                  disabled={!canOpenLeaveRequest}
-                  onClick={openLeaveRequestModal}
-                >
-                  {isLeaveSubmitting ? 'Talep hazirlaniyor...' : 'Izin Talebi Olustur'}
-                </button>
               </div>
 
               <ol className="action-flow">
                 <li>QR okutun ve işlemi başlatın.</li>
                 <li>Mesai sonunda güvenli bitiş yapın.</li>
-                <li>Durum kartlarından anlık takibi doğrulayın.</li>
+                <li>Demo ve izin durumunu yandaki kartlardan yonetin.</li>
               </ol>
 
               <p className="muted small-text employee-flow-hint">
@@ -3127,36 +3127,57 @@ export function HomePage() {
                       Son Talepler
                     </h3>
                   </div>
-                  <span className="leave-history-count">{leaveHistorySummary}</span>
+                  <div className="leave-history-head-actions">
+                    <span className="leave-history-count">{leaveHistorySummary}</span>
+                    {hasLeaveHistory && !isLeaveHistoryLoading ? (
+                      <button
+                        type="button"
+                        className="leave-history-toggle"
+                        aria-expanded={isLeaveHistoryExpanded}
+                        aria-controls="leave-history-panel"
+                        onClick={() => setIsLeaveHistoryExpanded((current) => !current)}
+                      >
+                        {isLeaveHistoryExpanded ? 'Gizle' : 'Goster'}
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
 
                 {isLeaveHistoryLoading && !isLeaveHistoryReady ? (
                   <p className="leave-history-empty">Liste hazirlaniyor...</p>
-                ) : visibleLeaveRequests.length > 0 ? (
-                  <>
-                    <ol className="leave-history-list">
-                      {visibleLeaveRequests.map((leave) => (
-                        <li key={leave.id} className={`leave-history-item leave-status-${leave.status.toLowerCase()}`}>
-                          <div className="leave-history-main">
-                            <div className="leave-history-row">
-                              <strong>{leaveTypeLabels[leave.type]}</strong>
-                              <span className={`leave-status-badge leave-status-badge-${leave.status.toLowerCase()}`}>
-                                {leaveStatusLabels[leave.status]}
-                              </span>
-                            </div>
-                            <p className="leave-history-range">{formatLeaveRange(leave.start_date, leave.end_date)}</p>
-                            <p className="leave-history-note">{leave.note || 'Gerekce girilmedi.'}</p>
-                            {leave.decision_note ? (
-                              <p className="leave-history-decision">Karar notu: {leave.decision_note}</p>
-                            ) : null}
-                          </div>
-                        </li>
-                      ))}
-                    </ol>
-                    {hiddenLeaveRequestCount > 0 ? (
-                      <p className="leave-history-footnote">+{hiddenLeaveRequestCount} talep daha var.</p>
-                    ) : null}
-                  </>
+                ) : hasLeaveHistory ? (
+                  <div id="leave-history-panel" className="leave-history-body">
+                    {isLeaveHistoryExpanded ? (
+                      <>
+                        <ol className="leave-history-list">
+                          {visibleLeaveRequests.map((leave) => (
+                            <li key={leave.id} className={`leave-history-item leave-status-${leave.status.toLowerCase()}`}>
+                              <div className="leave-history-main">
+                                <div className="leave-history-row">
+                                  <strong>{leaveTypeLabels[leave.type]}</strong>
+                                  <span className={`leave-status-badge leave-status-badge-${leave.status.toLowerCase()}`}>
+                                    {leaveStatusLabels[leave.status]}
+                                  </span>
+                                </div>
+                                <p className="leave-history-range">{formatLeaveRange(leave.start_date, leave.end_date)}</p>
+                                <p className="leave-history-note">{leave.note || 'Gerekce girilmedi.'}</p>
+                                {leave.decision_note ? (
+                                  <p className="leave-history-decision">Karar notu: {leave.decision_note}</p>
+                                ) : null}
+                              </div>
+                            </li>
+                          ))}
+                        </ol>
+                        {hiddenLeaveRequestCount > 0 ? (
+                          <p className="leave-history-footnote">+{hiddenLeaveRequestCount} talep daha var.</p>
+                        ) : null}
+                      </>
+                    ) : (
+                      <p className="leave-history-collapsed">
+                        {leaveRequests.length} izin kaydi gizli. Gormek icin Goster butonuna dokun.
+                      </p>
+                    )}
+                  </div>
                 ) : (
                   <p className="leave-history-empty">Henuz izin talebi yok.</p>
                 )}
