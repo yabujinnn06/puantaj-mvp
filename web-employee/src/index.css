@@ -1124,12 +1124,29 @@ textarea:focus {
     0 18px 26px -24px rgba(6, 38, 55, 0.86);
 }
 
-.employee-surface-head,
+.employee-surface-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.employee-surface-head > :first-child {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
 .employee-action-layout,
-.employee-action-primary,
-.employee-live-grid,
 .employee-history-layout {
   display: grid;
+  gap: 10px;
+}
+
+.employee-action-primary,
+.employee-live-grid {
+  display: flex;
+  flex-direction: column;
   gap: 10px;
 }
 
@@ -1150,10 +1167,15 @@ textarea:focus {
 
 .employee-surface-copy {
   margin: 0;
+  flex: 1 1 260px;
   max-width: 58ch;
+  padding: 0.78rem 0.9rem;
+  border-radius: 12px;
   font-size: 0.79rem;
   line-height: 1.58;
   color: #567083;
+  background: rgba(235, 246, 251, 0.72);
+  border: 1px solid rgba(133, 172, 193, 0.22);
 }
 
 .employee-action-primary,
@@ -1173,6 +1195,10 @@ textarea:focus {
 }
 
 .action-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  height: 100%;
   margin-top: 0;
   border: 1px solid rgba(88, 153, 183, 0.34);
   border-radius: 12px;
@@ -1191,9 +1217,20 @@ textarea:focus {
 
 .action-panel-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 0.7rem;
+}
+
+.action-panel > .stack {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.action-panel > .stack > .btn {
+  flex: 1 1 220px;
 }
 
 .action-panel-kicker {
@@ -1211,10 +1248,11 @@ textarea:focus {
 }
 
 .action-flow {
-  margin: 10px 0 0;
+  margin: 0;
   padding-left: 1.1rem;
-  display: grid;
-  gap: 0.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
   color: #3b5f74;
   font-size: 0.78rem;
 }
@@ -1240,8 +1278,10 @@ textarea:focus {
 }
 
 .demo-visit-card {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 0.7rem;
+  height: 100%;
   border-radius: 14px;
   padding: 0.9rem;
   border: 1px solid rgba(130, 173, 195, 0.34);
@@ -1264,6 +1304,7 @@ textarea:focus {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 0.75rem;
 }
 
@@ -1314,6 +1355,8 @@ textarea:focus {
 }
 
 .demo-visit-btn {
+  width: 100%;
+  margin-top: auto;
   min-height: 3rem;
   background:
     linear-gradient(180deg, #ffcf57 0%, #f5a524 58%, #c97a0c 100%);
@@ -1335,8 +1378,10 @@ textarea:focus {
 }
 
 .demo-history-card {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 0.7rem;
+  height: 100%;
   border-radius: 14px;
   padding: 0.85rem 0.9rem;
   border: 1px solid rgba(130, 173, 195, 0.24);
@@ -1350,6 +1395,7 @@ textarea:focus {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 0.75rem;
 }
 
@@ -1382,7 +1428,8 @@ textarea:focus {
 }
 
 .demo-history-list {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 0.48rem;
   margin: 0;
   padding: 0;
@@ -1391,8 +1438,9 @@ textarea:focus {
 
 .demo-history-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 0.75rem;
   padding: 0.65rem 0.72rem;
   border-radius: 12px;
@@ -1408,6 +1456,7 @@ textarea:focus {
 .demo-history-range {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.42rem;
   min-width: 0;
   font-size: 0.88rem;
@@ -1425,6 +1474,7 @@ textarea:focus {
 }
 
 .demo-history-meta {
+  margin-left: auto;
   flex-shrink: 0;
   color: #5c7383;
   font-size: 0.76rem;
@@ -1442,8 +1492,10 @@ textarea:focus {
 
 .leave-request-card,
 .leave-history-card {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 0.7rem;
+  height: 100%;
   border-radius: 16px;
   padding: 1rem;
   border: 1px solid rgba(130, 173, 195, 0.26);
@@ -1461,6 +1513,7 @@ textarea:focus {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 0.75rem;
 }
 
@@ -1517,6 +1570,7 @@ textarea:focus {
 
 .leave-request-stats {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 0.5rem;
 }
@@ -1562,10 +1616,21 @@ textarea:focus {
   color: #1a5875;
   background: rgba(165, 214, 238, 0.22);
   cursor: pointer;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    transform 0.18s ease;
+}
+
+.leave-history-toggle:hover {
+  background: rgba(165, 214, 238, 0.32);
+  border-color: rgba(124, 188, 219, 0.58);
 }
 
 .leave-history-body {
-  display: grid;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
   gap: 0.56rem;
 }
 
@@ -1577,7 +1642,8 @@ textarea:focus {
 }
 
 .leave-history-list {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 0.56rem;
   margin: 0;
   padding: 0;
@@ -1585,7 +1651,8 @@ textarea:focus {
 }
 
 .leave-history-item {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 0.45rem;
   padding: 0.72rem;
   border-radius: 12px;
@@ -1609,7 +1676,8 @@ textarea:focus {
 }
 
 .leave-history-main {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 0.38rem;
 }
 
@@ -2031,6 +2099,36 @@ textarea:focus {
     left: max(12px, calc(env(safe-area-inset-left) + 8px));
     right: max(12px, calc(env(safe-area-inset-right) + 8px));
     width: auto;
+  }
+
+  .employee-surface-head {
+    align-items: flex-start;
+  }
+
+  .employee-surface-copy {
+    width: 100%;
+    flex-basis: 100%;
+    padding: 0.72rem 0.8rem;
+  }
+
+  .action-panel > .stack {
+    flex-direction: column;
+  }
+
+  .action-panel > .stack > .btn {
+    width: 100%;
+  }
+
+  .demo-history-item {
+    flex-direction: column;
+  }
+
+  .demo-history-meta {
+    margin-left: 0;
+  }
+
+  .leave-history-head-actions {
+    justify-content: flex-start;
   }
 }
 
@@ -3060,11 +3158,17 @@ textarea:focus {
 
 @media (min-width: 980px) {
   .employee-action-layout {
+    align-items: stretch;
     grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
   }
 
   .employee-history-layout {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: flex;
+    gap: 10px;
+  }
+
+  .employee-history-layout > * {
+    flex: 1 1 0;
   }
 }
 
