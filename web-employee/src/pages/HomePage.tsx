@@ -2936,7 +2936,7 @@ export function HomePage() {
               <div className="stack">
                 <button
                   type="button"
-                  className="btn btn-primary btn-lg"
+                  className="btn btn-primary action-cta-btn"
                   disabled={!canQrScan}
                   onClick={() => {
                     if (!canQrScan) {
@@ -2964,13 +2964,19 @@ export function HomePage() {
                       İşlem yapılıyor...
                     </>
                   ) : (
-                    'QR ile İşlem Başlat'
+                    <>
+                      <span className="action-cta-copy">QR ile Islem Baslat</span>
+                      <span className="action-cta-visual action-cta-visual-qr" aria-hidden="true">
+                        <span className="action-cta-chip" />
+                        <span className="action-cta-scanline" />
+                      </span>
+                    </>
                   )}
                 </button>
 
                 <button
                   type="button"
-                  className="btn btn-outline btn-lg"
+                  className="btn btn-outline action-cta-btn"
                   disabled={!canCheckout}
                   onClick={openCheckoutConfirmModal}
                 >
@@ -2980,7 +2986,13 @@ export function HomePage() {
                       İşlem yapılıyor...
                     </>
                   ) : (
-                    'Mesaiyi Güvenli Bitir'
+                    <>
+                      <span className="action-cta-copy">Mesaiyi Guvenli Bitir</span>
+                      <span className="action-cta-visual action-cta-visual-checkout" aria-hidden="true">
+                        <span className="action-cta-flow" />
+                        <span className="action-cta-chip" />
+                      </span>
+                    </>
                   )}
                 </button>
 
