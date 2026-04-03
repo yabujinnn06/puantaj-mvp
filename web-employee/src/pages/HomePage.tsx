@@ -3037,12 +3037,12 @@ export function HomePage() {
                 onClick={openDemoConfirmModal}
               >
                 {isSubmitting && pendingAction === 'demo' ? (
-                  <>
+                  <span className="demo-visit-btn-content">
                     <span className="inline-spinner" aria-hidden="true" />
-                    Kayit aliniyor...
-                  </>
+                    Kayıt alınıyor...
+                  </span>
                 ) : (
-                  demoButtonLabel
+                  <span className="demo-visit-btn-content">{demoButtonLabel}</span>
                 )}
               </button>
             </section>
@@ -3065,11 +3065,13 @@ export function HomePage() {
                 </div>
                 <button
                   type="button"
-                  className="btn btn-primary btn-lg demo-visit-btn"
+                  className="btn btn-primary btn-lg demo-visit-btn leave-request-btn"
                   disabled={!canOpenLeaveRequest}
                   onClick={openLeaveRequestModal}
                 >
-                  {isLeaveSubmitting ? 'Gonderiliyor...' : 'Izin Talebi Gonder'}
+                  <span className="demo-visit-btn-content">
+                    {isLeaveSubmitting ? 'Gönderiliyor...' : 'İzin Talebi Gönder'}
+                  </span>
                 </button>
               </section>
             ) : null}
