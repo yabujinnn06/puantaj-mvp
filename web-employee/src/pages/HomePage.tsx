@@ -3372,40 +3372,42 @@ export function HomePage() {
               chips={employeeHeaderMeta.map((item) => `${item.label}: ${item.value}`)}
             />
 
-            <MainActionCard
-              panelRef={actionPanelRef}
-              todayStatusClass={todayStatusClass}
-              todayStatusLabel={todayStatusLabel(todayStatus)}
-              todayStatusHintText={todayStatusHint(todayStatus)}
-              shiftSummary={employeeShiftSummary}
-              activityMeta={employeeHeroMeta}
-              focusText={mainActionFooterNote}
-              canQrScan={canQrScan}
-              canCheckout={canCheckout}
-              isSubmitting={isSubmitting}
-              pendingAction={pendingAction}
-              pushGateRequired={pushGateRequired}
-              onOpenScanner={() => {
-                if (!canQrScan) {
-                  setErrorMessage(todayStatusHint(todayStatus))
-                  return
-                }
-                if (pushGateRequired) {
-                  setPushGateDismissed(false)
-                  setPushGateRequestedByQr(true)
-                  setPushSecondChanceOpen(false)
-                  setErrorMessage(
-                    pushRequiresStandalone
-                      ? 'QR baslatmak icin once iPhone kurulumunu tamamlayip bildirimleri acin.'
-                      : 'QR baslatmak icin once bildirimleri acin.',
-                  )
-                  return
-                }
-                setScannerError(null)
-                setScannerActive(true)
-              }}
-              onOpenCheckout={openCheckoutConfirmModal}
-            />
+            {false ? (
+              <MainActionCard
+                panelRef={actionPanelRef}
+                todayStatusClass={todayStatusClass}
+                todayStatusLabel={todayStatusLabel(todayStatus)}
+                todayStatusHintText={todayStatusHint(todayStatus)}
+                shiftSummary={employeeShiftSummary}
+                activityMeta={employeeHeroMeta}
+                focusText={mainActionFooterNote}
+                canQrScan={canQrScan}
+                canCheckout={canCheckout}
+                isSubmitting={isSubmitting}
+                pendingAction={pendingAction}
+                pushGateRequired={pushGateRequired}
+                onOpenScanner={() => {
+                  if (!canQrScan) {
+                    setErrorMessage(todayStatusHint(todayStatus))
+                    return
+                  }
+                  if (pushGateRequired) {
+                    setPushGateDismissed(false)
+                    setPushGateRequestedByQr(true)
+                    setPushSecondChanceOpen(false)
+                    setErrorMessage(
+                      pushRequiresStandalone
+                        ? 'QR baslatmak icin once iPhone kurulumunu tamamlayip bildirimleri acin.'
+                        : 'QR baslatmak icin once bildirimleri acin.',
+                    )
+                    return
+                  }
+                  setScannerError(null)
+                  setScannerActive(true)
+                }}
+                onOpenCheckout={openCheckoutConfirmModal}
+              />
+            ) : null}
 
             <LastActionSummarySection
               summary={{
