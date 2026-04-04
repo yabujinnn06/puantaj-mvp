@@ -2,7 +2,7 @@ services:
   - type: web
     name: puantaj-mvp
     runtime: python
-    autoDeploy: false
+    autoDeploy: true
     healthCheckPath: /healthz
     buildCommand: pip install -r requirements.txt
     preDeployCommand: alembic upgrade head && python scripts/predeploy_guard.py
