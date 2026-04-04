@@ -1,4 +1,4 @@
-import { type ReactNode, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type ReactNode, type RefObject, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 
@@ -22,6 +22,14 @@ import {
   type ParsedApiError,
 } from '../api/attendance'
 import { BrandSignature } from '../components/BrandSignature'
+import {
+  EmployeeCriticalAlerts,
+  EmployeeHeader,
+  EmployeeLastActionSummary,
+  EmployeeMainActionCard,
+  SecondaryFeaturesSection,
+} from '../components/EmployeeHomeSections'
+import { UI_BRANDING } from '../config/ui'
 import { useToast } from '../hooks/useToast'
 import type {
   AttendanceActionResponse,
@@ -681,6 +689,350 @@ function EmployeeFocusModal({
       </div>
     </div>,
     document.body,
+  )
+}
+
+interface EmployeeHeaderSectionProps {
+  employeeDisplayName: string
+  contextLine: string
+  todayStatusClass: string
+  todayStatusLabel: string
+  chips: string[]
+}
+
+function EmployeeHeaderSection({
+  employeeDisplayName,
+  contextLine,
+  todayStatusClass,
+  todayStatusLabel,
+  chips,
+}: EmployeeHeaderSectionProps) {
+  return (
+    <section className="employee-home-header" aria-label="Calisan ozeti">
+      <div className="employee-home-header-top">
+        <div className="employee-home-header-copy">
+          <p className="employee-home-kicker">CALISAN</p>
+          <h2 className="employee-home-title">{employeeDisplayName}</h2>
+          <p className="employee-home-subtitle">{contextLine}</p>
+        </div>
+        <span className={`status-pill ${todayStatusClass} employee-home-status`}>{todayStatusLabel}</span>
+      </div>
+      {chips.length > 0 ? (
+        <div className="employee-home-chip-row">
+          {chips.map((chip) => (
+            <span key={chip} className="employee-home-chip">
+              {chip}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
+interface MainActionCardProps {
+  panelRef: RefObject<HTMLElement | null>
+  todayStatusClass: string
+  todayStatusLabel: string
+  todayStatusHintText: string
+  shiftSummary: string
+  activityMeta: string
+  focusText: string
+  canQrScan: boolean
+  canCheckout: boolean
+  isSubmitting: boolean
+  pendingAction: 'checkin' | 'checkout' | 'demo' | null
+  pushGateRequired: boolean
+  onOpenScanner: () => void
+  onOpenCheckout: () => void
+}
+
+function MainActionCard({
+  panelRef,
+  todayStatusClass,
+  todayStatusLabel,
+  todayStatusHintText,
+  shiftSummary,
+  activityMeta,
+  focusText,
+  canQrScan,
+  canCheckout,
+  isSubmitting,
+  pendingAction,
+  pushGateRequired,
+  onOpenScanner,
+  onOpenCheckout,
+}: MainActionCardProps) {
+  return (
+    <section className="action-panel employee-main-action-card" ref={panelRef}>
+      <div className="employee-main-action-head">
+        <div className="employee-main-action-copy">
+          <p className="employee-home-kicker">ANA ISLEMLER</p>
+          <h2 className="employee-main-action-title">Bugunku puantaj islemleri</h2>
+          <p className="employee-main-action-text">{todayStatusHintText}</p>
+        </div>
+        <span className={`status-pill ${todayStatusClass}`}>{todayStatusLabel}</span>
+      </div>
+
+      <div className="employee-main-action-meta">
+        <div className="employee-main-action-meta-item">
+          <span className="employee-main-action-meta-label">Atanan vardiya</span>
+          <strong className="employee-main-action-meta-value">{shiftSummary}</strong>
+        </div>
+        <div className="employee-main-action-meta-item">
+          <span className="employee-main-action-meta-label">Bugunku durum</span>
+          <strong className="employee-main-action-meta-value">{activityMeta}</strong>
+        </div>
+      </div>
+
+      <div className="employee-main-action-buttons">
+        <button
+          type="button"
+          className="btn btn-primary action-cta-btn"
+          disabled={!canQrScan}
+          onClick={onOpenScanner}
+        >
+          {isSubmitting && pendingAction === 'checkin' ? (
+            <>
+              <span className="inline-spinner" aria-hidden="true" />
+              Islem yapiliyor...
+            </>
+          ) : (
+            <span className="action-cta-copy">QR Kod Oku</span>
+          )}
+        </button>
+
+        <button
+          type="button"
+          className="btn btn-outline action-cta-btn"
+          disabled={!canCheckout}
+          onClick={onOpenCheckout}
+        >
+          {isSubmitting && pendingAction === 'checkout' ? (
+            <>
+              <span className="inline-spinner inline-spinner-dark" aria-hidden="true" />
+              Islem yapiliyor...
+            </>
+          ) : (
+            <span className="action-cta-copy">Mesaiyi Guvenli Bitir</span>
+          )}
+        </button>
+      </div>
+
+      <p className="employee-main-action-note">
+        {pushGateRequired
+          ? 'QR islemi oncesinde bildirim adimi zorunlu olarak acilir.'
+          : focusText}
+      </p>
+    </section>
+  )
+}
+
+type LastActionSummaryTone = 'neutral' | 'success' | 'warning'
+
+interface LastActionSummaryContent {
+  title: string
+  detail: string
+  note: string
+  tone: LastActionSummaryTone
+}
+
+interface LastActionSummarySectionProps {
+  summary: LastActionSummaryContent | null
+  lastAction: LastAction | null
+  duplicateDetected: boolean
+  manualCheckout: boolean
+  visibleFlags: Array<[string, unknown]>
+}
+
+function LastActionSummarySection({
+  summary,
+  lastAction,
+  duplicateDetected,
+  manualCheckout,
+  visibleFlags,
+}: LastActionSummarySectionProps) {
+  const toneClassName =
+    summary?.tone === 'success'
+      ? 'is-success'
+      : summary?.tone === 'warning'
+        ? 'is-warning'
+        : 'is-neutral'
+
+  return (
+    <section className={`result-box employee-last-action-card ${toneClassName}`} aria-label="Son islem ozeti">
+      <div className="employee-last-action-head">
+        <div className="employee-last-action-copy">
+          <p className="small-title">Son islem</p>
+          <h2 className="employee-last-action-title">{summary?.title ?? 'Henuz bir islem gorunmuyor'}</h2>
+        </div>
+        {summary ? <p className="employee-last-action-time">{summary.detail}</p> : null}
+      </div>
+
+      <p className="employee-last-action-note">
+        {summary?.note ?? 'Ilk QR okuma veya guvenli cikis sonrasinda ozet burada gorunur.'}
+      </p>
+
+      {duplicateDetected || manualCheckout ? (
+        <div className="chips">
+          {duplicateDetected ? <span className="status-pill state-warn">Mukerrer kayit</span> : null}
+          {manualCheckout ? <span className="manual-badge">Manuel cikis yapildi</span> : null}
+        </div>
+      ) : null}
+
+      {lastAction ? (
+        <details className="employee-last-action-details">
+          <summary>Teknik detaylari goster</summary>
+          <div className="employee-last-action-technical">
+            <ul className="employee-technical-list">
+              <li>
+                <span>Islem turu</span>
+                <strong>{eventTypeLabel(lastAction.response.event_type)}</strong>
+              </li>
+              <li>
+                <span>Kayit zamani</span>
+                <strong>{formatTs(lastAction.response.ts_utc)}</strong>
+              </li>
+              {lastAction.codeValue ? (
+                <li>
+                  <span>Okutulan kod</span>
+                  <strong>{lastAction.codeValue}</strong>
+                </li>
+              ) : null}
+            </ul>
+
+            {visibleFlags.length > 0 ? (
+              <div className="stack-tight">
+                <p className="small-title">Sistem notlari</p>
+                <ul className="flag-list">
+                  {visibleFlags.map(([key, value]) => (
+                    <li key={key}>
+                      <strong>{flagLabel(key, value)}</strong>: {prettyFlagValue(value)}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        </details>
+      ) : null}
+    </section>
+  )
+}
+
+interface CriticalAlertsSectionProps {
+  deviceFingerprint: string | null
+  hasOpenShift: boolean
+  openShiftCheckinTime: string | null
+  locationWarning: string | null
+  scannerError: string | null
+  errorMessage: string | null
+  requestId: string | null
+}
+
+function CriticalAlertsSection({
+  deviceFingerprint,
+  hasOpenShift,
+  openShiftCheckinTime,
+  locationWarning,
+  scannerError,
+  errorMessage,
+  requestId,
+}: CriticalAlertsSectionProps) {
+  if (!deviceFingerprint && !hasOpenShift && !locationWarning && !scannerError && !errorMessage) {
+    return null
+  }
+
+  return (
+    <section className="employee-alerts" aria-label="Onemli uyarilar">
+      <div className="employee-secondary-head">
+        <p className="employee-home-kicker">ONEMLI UYARILAR</p>
+        <h2 className="employee-secondary-title">Sadece hemen ilgilenmeniz gereken konular</h2>
+      </div>
+
+      {!deviceFingerprint ? (
+        <div className="warn-box">
+          <p>Cihaz bagli degil. Davet linki ile kurulumu tamamlayin veya kurtarma akisini kullanin.</p>
+          <div className="employee-inline-links">
+            <Link className="inline-link" to="/claim">
+              /claim ekranina git
+            </Link>
+            <Link className="inline-link" to="/recover">
+              /recover ekranina git
+            </Link>
+          </div>
+        </div>
+      ) : null}
+
+      {hasOpenShift ? (
+        <div className="notice-box notice-box-warning">
+          <p>
+            <span className="banner-icon" aria-hidden="true">
+              !
+            </span>
+            Acik vardiya var, cikis kaydi bekleniyor.
+          </p>
+          {openShiftCheckinTime ? <p className="small-text">Son giris: {formatTs(openShiftCheckinTime)}</p> : null}
+        </div>
+      ) : null}
+
+      {locationWarning ? (
+        <div className="warn-box banner-warning">
+          <p>
+            <span className="banner-icon" aria-hidden="true">
+              !
+            </span>
+            {locationWarning}
+          </p>
+        </div>
+      ) : null}
+
+      {scannerError ? (
+        <div className="warn-box banner-warning">
+          <p>
+            <span className="banner-icon" aria-hidden="true">
+              !
+            </span>
+            {scannerError}
+          </p>
+        </div>
+      ) : null}
+
+      {errorMessage ? (
+        <div className="error-box banner-error">
+          <p>
+            <span className="banner-icon" aria-hidden="true">
+              !
+            </span>
+            {errorMessage}
+          </p>
+          {requestId ? <p className="request-id">request_id: {requestId}</p> : null}
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
+interface SecondaryDisclosureProps {
+  title: string
+  description: string
+  badge?: string
+  open?: boolean
+  children: ReactNode
+}
+
+function SecondaryDisclosure({ title, description, badge, open, children }: SecondaryDisclosureProps) {
+  return (
+    <details className="employee-secondary-disclosure" open={open || undefined}>
+      <summary>
+        <div className="employee-secondary-disclosure-copy">
+          <span className="employee-secondary-disclosure-title">{title}</span>
+          <p className="employee-secondary-disclosure-text">{description}</p>
+        </div>
+        {badge ? <span className="employee-secondary-disclosure-badge">{badge}</span> : null}
+      </summary>
+      <div className="employee-secondary-disclosure-body">{children}</div>
+    </details>
   )
 }
 
@@ -2552,10 +2904,117 @@ export function HomePage() {
     return 'Sıradaki işlem: QR ile bugünkü kaydı başlat.'
   }, [deviceFingerprint, hasOpenShift])
 
+  const employeeSecuritySummary = useMemo(() => {
+    if (passkeyRegistered) {
+      return 'Passkey hazir'
+    }
+    if (recoveryReady) {
+      return 'Recovery hazir'
+    }
+    if (pushRegistered) {
+      return 'Bildirim acik'
+    }
+    return 'Kurulum gerekli'
+  }, [passkeyRegistered, pushRegistered, recoveryReady])
+
+  const employeeCompanyLabel = useMemo(() => {
+    const brandParts = [UI_BRANDING.signatureText, UI_BRANDING.signatureTagline].filter(
+      (value) => Boolean(value),
+    )
+    return brandParts.join(' · ') || 'Calisan Portali'
+  }, [])
+
+  const employeeHeaderSubtitle = useMemo(() => {
+    const parts = [statusSnapshot?.department_name?.trim(), statusSnapshot?.region_name?.trim()].filter(
+      (value) => Boolean(value),
+    )
+    if (parts.length > 0) {
+      return parts.join(' · ')
+    }
+    return deviceFingerprint ? 'Gunluk yoklama ve vardiya islemleri' : 'Cihaz baglantisi tamamlanmadi'
+  }, [deviceFingerprint, statusSnapshot?.department_name, statusSnapshot?.region_name])
+
+  const employeeHeaderMeta = useMemo(
+    () => [
+      { label: 'Bolge', value: statusSnapshot?.region_name ?? 'Atanmamis' },
+      { label: 'Departman', value: statusSnapshot?.department_name ?? 'Atanmamis' },
+      { label: 'Vardiya', value: employeeShiftSummary },
+      { label: 'Guvenlik', value: employeeSecuritySummary },
+    ],
+    [employeeSecuritySummary, employeeShiftSummary, statusSnapshot?.department_name, statusSnapshot?.region_name],
+  )
+
+  const mainActionFooterNote = useMemo(() => {
+    if (!deviceFingerprint) {
+      return 'Bu ekrani kullanmadan once cihaz baglantisini tamamlayin.'
+    }
+    if (pushGateRequired) {
+      return pushRequiresStandalone
+        ? 'QR islemi icin once Ana Ekrana Ekle kurulumu ve bildirim izni tamamlanmali.'
+        : 'QR islemi oncesinde bildirim izni verilmelidir.'
+    }
+    if (hasOpenShift) {
+      return 'Vardiyaniz acik. QR ile yeni islem baslatabilir veya mesaiyi guvenli sekilde bitirebilirsiniz.'
+    }
+    return 'Ilk once QR kodu okutun. Isiniz bittiginde ayni ekrandan mesaiyi guvenli sekilde kapatin.'
+  }, [deviceFingerprint, hasOpenShift, pushGateRequired, pushRequiresStandalone])
+
+  const lastActionCard = useMemo(() => {
+    if (lastAction) {
+      const isCheckin = lastAction.response.event_type === 'IN'
+      return {
+        title: resultMessage?.text ?? (isCheckin ? 'Giris kaydedildi' : 'Mesai bitisi kaydedildi'),
+        summary: isCheckin
+          ? 'En son QR islemiyle bugunku girisiniz basariyla kaydedildi.'
+          : 'En son islem olarak bugunku cikisiniz kaydedildi.',
+        timestampLabel: formatTs(lastAction.response.ts_utc),
+      }
+    }
+
+    if (statusSnapshot?.last_out_ts) {
+      return {
+        title: 'Son kayit: Cikis',
+        summary: 'Sistemde gorunen son hareket bugunku cikis kaydinizdir.',
+        timestampLabel: formatTs(statusSnapshot.last_out_ts),
+      }
+    }
+
+    if (statusSnapshot?.last_in_ts) {
+      return {
+        title: 'Son kayit: Giris',
+        summary: 'Sistemde gorunen son hareket bugunku giris kaydinizdir.',
+        timestampLabel: formatTs(statusSnapshot.last_in_ts),
+      }
+    }
+
+    return {
+      title: 'Bugun henuz islem yok',
+      summary: 'QR ile islem yaptiginizda son hareket ozeti burada gorunur.',
+      timestampLabel: null,
+    }
+  }, [lastAction, resultMessage, statusSnapshot?.last_in_ts, statusSnapshot?.last_out_ts])
+
+  const historySummaryLabel =
+    demoSessions.length + leaveRequests.length > 0
+      ? `${demoSessions.length + leaveRequests.length} kayit`
+      : 'Henuz yok'
+
+  const showActivitySectionOpen = Boolean(actionNotice || isDemoActive || pendingLeaveCount > 0 || hasLeaveHistory)
+  const showSecuritySectionOpen = Boolean(
+    passkeyNotice || pushNotice || !passkeyRegistered || !recoveryReady || pushGateRequired || !deviceFingerprint,
+  )
+  const showInstallSection = Boolean(
+    showInstallBanner || showInstallPromotions || showIosInstallDock || installNotice || showIosBrowserWarning,
+  )
+  const showInstallSectionOpen = Boolean(installNotice || showInstallBanner || showIosBrowserWarning)
+  const hasCriticalAlerts = Boolean(
+    showIosBrowserWarning || shouldShowEveningReminder || locationWarning || scannerError || errorMessage,
+  )
+
   return (
     <main className="phone-shell employee-shell">
       <div className="employee-layout">
-        {showInstallPromotions ? (
+        {resultMessage && false ? (
           <aside className="promo-rail promo-rail-left" aria-label="Uygulama indirme paneli">
             <p className="promo-rail-kicker">YABUJIN EMPLOYEE APP</p>
             <h2 className="promo-rail-title">Cepte kur, günü tek dokunuşla yönet.</h2>
@@ -2589,6 +3048,231 @@ export function HomePage() {
             Kurtarma
           </Link>
         </div>
+
+        <div className="employee-home-stack">
+          <EmployeeHeader
+            employeeName={employeeDisplayName}
+            companyName={employeeCompanyLabel}
+            statusClassName={todayStatusClass}
+            statusLabel={todayStatusLabel(todayStatus)}
+            subtitle={employeeHeaderSubtitle}
+            metaItems={employeeHeaderMeta}
+          />
+
+          <EmployeeMainActionCard
+            sectionRef={actionPanelRef}
+            statusClassName={todayStatusClass}
+            statusLabel={todayStatusLabel(todayStatus)}
+            title={employeeHeroFocus}
+            hint={todayStatusHint(todayStatus)}
+            shiftSummary={employeeShiftSummary}
+            contextLine={employeeHeroMeta}
+            footerNote={mainActionFooterNote}
+            primaryAction={
+              <button
+                type="button"
+                className="btn btn-primary action-cta-btn employee-main-action-primary-btn"
+                disabled={!canQrScan}
+                onClick={() => {
+                  if (!canQrScan) {
+                    setErrorMessage(todayStatusHint(todayStatus))
+                    return
+                  }
+                  if (pushGateRequired) {
+                    setPushGateDismissed(false)
+                    setPushGateRequestedByQr(true)
+                    setPushSecondChanceOpen(false)
+                    setErrorMessage(
+                      pushRequiresStandalone
+                        ? 'QR baslatmak icin once iPhone kurulumunu tamamlayip bildirimleri acin.'
+                        : 'QR baslatmak icin once bildirimleri acin.',
+                    )
+                    return
+                  }
+                  setScannerError(null)
+                  setScannerActive(true)
+                }}
+              >
+                {isSubmitting && pendingAction === 'checkin' ? (
+                  <>
+                    <span className="inline-spinner" aria-hidden="true" />
+                    Islem yapiliyor...
+                  </>
+                ) : (
+                  <span className="action-cta-copy">QR Kod Oku</span>
+                )}
+              </button>
+            }
+            secondaryAction={
+              <button
+                type="button"
+                className="btn btn-outline action-cta-btn employee-main-action-secondary-btn"
+                disabled={!canCheckout}
+                onClick={openCheckoutConfirmModal}
+              >
+                {isSubmitting && pendingAction === 'checkout' ? (
+                  <>
+                    <span className="inline-spinner inline-spinner-dark" aria-hidden="true" />
+                    Islem yapiliyor...
+                  </>
+                ) : (
+                  <span className="action-cta-copy">Mesaiyi Guvenli Bitir</span>
+                )}
+              </button>
+            }
+          >
+            {hasOpenShift ? (
+              <div className="notice-box notice-box-warning employee-inline-notice">
+                <p>
+                  <span className="banner-icon" aria-hidden="true">
+                    !
+                  </span>
+                  Acik vardiya var, cikis kaydi bekleniyor.
+                </p>
+                {openShiftCheckinTime ? <p className="small-text">Son giris: {formatTs(openShiftCheckinTime)}</p> : null}
+              </div>
+            ) : null}
+
+            {!deviceFingerprint ? (
+              <div className="warn-box employee-inline-warning">
+                <p>Cihaz bagli degil. Once davet veya kurtarma akisini tamamlayin.</p>
+                <div className="employee-inline-link-row">
+                  <Link className="inline-link" to="/claim">
+                    /claim ekranina git
+                  </Link>
+                  <Link className="inline-link" to="/recover">
+                    /recover ekranina git
+                  </Link>
+                </div>
+              </div>
+            ) : null}
+          </EmployeeMainActionCard>
+
+          <EmployeeLastActionSummary
+            title={lastActionCard.title}
+            summary={lastActionCard.summary}
+            timestampLabel={lastActionCard.timestampLabel}
+            badges={
+              lastAction ? (
+                <>
+                  {duplicateDetected ? <span className="status-pill state-warn">Mukerrer kayit</span> : null}
+                  {manualCheckout ? <span className="manual-badge">Manuel cikis yapildi</span> : null}
+                </>
+              ) : null
+            }
+            details={
+              lastAction ? (
+                <details className="employee-inline-details">
+                  <summary>Teknik ayrintilar</summary>
+                  <div className="employee-technical-list">
+                    <p>
+                      Islem tipi: <strong>{eventTypeLabel(lastAction.response.event_type)}</strong>
+                    </p>
+                    {lastAction.codeValue ? (
+                      <p>
+                        QR metni: <strong>{lastAction.codeValue}</strong>
+                      </p>
+                    ) : null}
+                    <p>
+                      Kayit zamani: <strong>{formatTs(lastAction.response.ts_utc)}</strong>
+                    </p>
+                    {visibleFlags.length === 0 ? (
+                      <p className="muted">Ek bayrak yok.</p>
+                    ) : (
+                      <ul className="flag-list">
+                        {visibleFlags.map(([key, value]) => (
+                          <li key={key}>
+                            <strong>{flagLabel(key, value)}</strong>: {prettyFlagValue(value)}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </details>
+              ) : null
+            }
+          />
+
+          {hasCriticalAlerts ? (
+            <EmployeeCriticalAlerts>
+              {showIosBrowserWarning ? (
+                <div className="warn-box install-browser-warning">
+                  <p>
+                    <span className="banner-icon" aria-hidden="true">
+                      !
+                    </span>
+                    iPhone kurulumu icin Safari zorunlu. Simdi {iosBrowserContext.browserLabel} uzerindesiniz.
+                  </p>
+                  <div className="install-browser-warning-actions">
+                    <button type="button" className="btn btn-soft" onClick={openIosInstallOnboarding}>
+                      Safari adimlarini ac
+                    </button>
+                    <button type="button" className="btn btn-ghost" onClick={() => void copyPortalLinkForSafari()}>
+                      Linki kopyala
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              {shouldShowEveningReminder ? (
+                <div className="notice-box notice-box-warning">
+                  <p>
+                    <span className="banner-icon" aria-hidden="true">
+                      !
+                    </span>
+                    Hatirlatma: Mesaiyi bitirmeyi unutmayin.
+                  </p>
+                </div>
+              ) : null}
+
+              {locationWarning ? (
+                <div className="warn-box banner-warning">
+                  <p>
+                    <span className="banner-icon" aria-hidden="true">
+                      !
+                    </span>
+                    {locationWarning}
+                  </p>
+                </div>
+              ) : null}
+
+              {scannerError ? (
+                <div className="warn-box banner-warning">
+                  <p>
+                    <span className="banner-icon" aria-hidden="true">
+                      !
+                    </span>
+                    {scannerError}
+                  </p>
+                </div>
+              ) : null}
+
+              {errorMessage ? (
+                <div className="error-box banner-error">
+                  <p>
+                    <span className="banner-icon" aria-hidden="true">
+                      !
+                    </span>
+                    {errorMessage}
+                  </p>
+                  {requestId ? (
+                    <details className="employee-inline-details employee-inline-details-compact">
+                      <summary>Teknik bilgi</summary>
+                      <p className="request-id">request_id: {requestId}</p>
+                    </details>
+                  ) : null}
+                </div>
+              ) : null}
+            </EmployeeCriticalAlerts>
+          ) : null}
+
+          <SecondaryFeaturesSection
+            kicker="IKINCIL ALANLAR"
+            title="Ek ozellikler, gecmis ve kurulum"
+            description="Ana yoklama aksiyonlari yukarida kalir; diger alanlara ihtiyac oldugunda buradan ulasabilirsiniz."
+            defaultOpen={showActivitySectionOpen || showSecuritySectionOpen || showInstallSectionOpen}
+            badge={<span className="status-pill state-info">Daha fazla</span>}
+          >
 
         {showInstallBanner ? (
           <section className="install-banner" role="region" aria-label="Uygulama kurulumu">
@@ -2632,7 +3316,7 @@ export function HomePage() {
           </div>
         ) : null}
 
-        {showInstallPromotions ? (
+        {lastAction && false ? (
           <section className="install-health" role="region" aria-label="Kurulum durumu">
             <div className="install-health-head">
               <p className="install-health-kicker">KURULUM DURUMU</p>
@@ -2679,6 +3363,614 @@ export function HomePage() {
         ) : null}
 
         <div className="employee-workbench">
+          <div className={`employee-home-focus-shell ${hasCriticalAlerts ? 'has-alerts' : ''}`}>
+            <EmployeeHeaderSection
+              employeeDisplayName={employeeDisplayName}
+              contextLine={`${employeeCompanyLabel} · ${employeeHeaderSubtitle}`}
+              todayStatusClass={todayStatusClass}
+              todayStatusLabel={todayStatusLabel(todayStatus)}
+              chips={employeeHeaderMeta.map((item) => `${item.label}: ${item.value}`)}
+            />
+
+            <MainActionCard
+              panelRef={actionPanelRef}
+              todayStatusClass={todayStatusClass}
+              todayStatusLabel={todayStatusLabel(todayStatus)}
+              todayStatusHintText={todayStatusHint(todayStatus)}
+              shiftSummary={employeeShiftSummary}
+              activityMeta={employeeHeroMeta}
+              focusText={mainActionFooterNote}
+              canQrScan={canQrScan}
+              canCheckout={canCheckout}
+              isSubmitting={isSubmitting}
+              pendingAction={pendingAction}
+              pushGateRequired={pushGateRequired}
+              onOpenScanner={() => {
+                if (!canQrScan) {
+                  setErrorMessage(todayStatusHint(todayStatus))
+                  return
+                }
+                if (pushGateRequired) {
+                  setPushGateDismissed(false)
+                  setPushGateRequestedByQr(true)
+                  setPushSecondChanceOpen(false)
+                  setErrorMessage(
+                    pushRequiresStandalone
+                      ? 'QR baslatmak icin once iPhone kurulumunu tamamlayip bildirimleri acin.'
+                      : 'QR baslatmak icin once bildirimleri acin.',
+                  )
+                  return
+                }
+                setScannerError(null)
+                setScannerActive(true)
+              }}
+              onOpenCheckout={openCheckoutConfirmModal}
+            />
+
+            <LastActionSummarySection
+              summary={{
+                title: lastActionCard.title,
+                detail: lastActionCard.timestampLabel ?? 'Henuz kayit yok',
+                note: actionNotice?.text ?? lastActionCard.summary,
+                tone: lastAction
+                  ? lastAction.response.event_type === 'IN'
+                    ? 'success'
+                    : 'warning'
+                  : 'neutral',
+              }}
+              lastAction={lastAction}
+              duplicateDetected={duplicateDetected}
+              manualCheckout={manualCheckout}
+              visibleFlags={visibleFlags}
+            />
+
+            {shouldShowEveningReminder ? (
+              <div className="notice-box notice-box-warning">
+                <p>
+                  <span className="banner-icon" aria-hidden="true">
+                    !
+                  </span>
+                  Hatirlatma: Mesaiyi bitirmeyi unutmayin.
+                </p>
+              </div>
+            ) : null}
+
+            <CriticalAlertsSection
+              deviceFingerprint={deviceFingerprint}
+              hasOpenShift={hasOpenShift}
+              openShiftCheckinTime={openShiftCheckinTime}
+              locationWarning={locationWarning}
+              scannerError={scannerError}
+              errorMessage={errorMessage}
+              requestId={requestId}
+            />
+
+            <section className="employee-secondary-section" aria-labelledby="employee-secondary-title">
+              <div className="employee-secondary-head">
+                <p className="employee-home-kicker">IKINCIL OZELLIKLER</p>
+                <h2 id="employee-secondary-title" className="employee-secondary-title">
+                  Diger islemler ve ayarlar
+                </h2>
+                <p className="employee-secondary-copy">
+                  Ana puantaj aksiyonlari yukarida kalir. Demo, izin, cihaz ayarlari ve gecmis kayitlar burada toplanir.
+                </p>
+              </div>
+
+              <SecondaryDisclosure
+                title="Ek islemler"
+                description="Demo kaydi ve izin taleplerini buradan yonetin."
+                badge={isDemoActive ? 'Demo aktif' : pendingLeaveCount > 0 ? `${pendingLeaveCount} bekleyen` : 'Istege bagli'}
+                open={showActivitySectionOpen}
+              >
+                <div className="employee-secondary-grid">
+                  <section className={`demo-visit-card ${isDemoActive ? 'is-live' : 'is-idle'}`}>
+                    <div className="demo-visit-head">
+                      <div>
+                        <p className="demo-visit-kicker">GUN ICI DEMO</p>
+                        <h3 className="demo-visit-title">{demoButtonLabel}</h3>
+                      </div>
+                      <span className={`demo-visit-state ${isDemoActive ? 'state-live' : 'state-ready'}`}>
+                        {isDemoActive ? 'AKTIF' : 'HAZIR'}
+                      </span>
+                    </div>
+                    <p className="demo-visit-copy">{demoButtonHint}</p>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-lg demo-visit-btn"
+                      disabled={!canDemoMark}
+                      onClick={openDemoConfirmModal}
+                    >
+                      {isSubmitting && pendingAction === 'demo' ? (
+                        <span className="demo-visit-btn-content">
+                          <span className="inline-spinner" aria-hidden="true" />
+                          Kayit aliniyor...
+                        </span>
+                      ) : (
+                        <span className="demo-visit-btn-content">{demoButtonLabel}</span>
+                      )}
+                    </button>
+                  </section>
+
+                  {deviceFingerprint ? (
+                    <section className="leave-request-card" aria-labelledby="focus-leave-request-title">
+                      <div className="leave-request-head">
+                        <div>
+                          <p className="leave-request-kicker">IZIN AKISI</p>
+                          <h3 id="focus-leave-request-title" className="leave-request-title">
+                            Izin Talebi
+                          </h3>
+                        </div>
+                        <span className="leave-request-count">{leaveHistorySummary}</span>
+                      </div>
+                      <p className="leave-request-copy">{leaveActionHint}</p>
+                      <div className="leave-request-stats">
+                        <span className="leave-request-chip leave-request-chip-pending">Bekleyen: {pendingLeaveCount}</span>
+                        <span className="leave-request-chip">Toplam: {leaveRequests.length}</span>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-lg demo-visit-btn leave-request-btn"
+                        disabled={!canOpenLeaveRequest}
+                        onClick={openLeaveRequestModal}
+                      >
+                        <span className="demo-visit-btn-content">
+                          {isLeaveSubmitting ? 'Gonderiliyor...' : 'Izin Talebi Gonder'}
+                        </span>
+                      </button>
+                    </section>
+                  ) : (
+                    <div className="warn-box">
+                      <p>Izin talebi ve ek islemler cihaz baglantisi tamamlandiginda acilir.</p>
+                    </div>
+                  )}
+                </div>
+              </SecondaryDisclosure>
+
+              {showInstallSection ? (
+                <SecondaryDisclosure
+                  title="Uygulama kurulumu"
+                  description="Kurulum ve tarayici yonlendirmelerini daha sakin bir alanda topladik."
+                  badge={showInstallPromotions ? installRailPrimaryLabel : 'Kurulum'}
+                  open={showInstallSectionOpen}
+                >
+                  <div className="employee-install-stack">
+                    {showInstallBanner ? (
+                      <section className="install-banner" role="region" aria-label="Uygulama kurulumu">
+                        <div className="install-banner-copy">
+                          <p className="install-banner-kicker">YABUJIN APP</p>
+                          <p className="install-banner-title">Ana ekrana ekleyip uygulama gibi kullanin</p>
+                          <p className="install-banner-subtitle">{installBannerHint}</p>
+                        </div>
+                        <div className="install-banner-actions">
+                          <button
+                            type="button"
+                            className="btn btn-primary install-banner-btn"
+                            disabled={isInstallPromptBusy}
+                            onClick={() => void runInstallPrompt()}
+                          >
+                            {isInstallPromptBusy ? 'Aciliyor...' : installPrimaryLabel}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost install-banner-dismiss"
+                            onClick={dismissInstallBanner}
+                          >
+                            Daha Sonra
+                          </button>
+                        </div>
+                      </section>
+                    ) : null}
+
+                    {showIosBrowserWarning ? (
+                      <div className="warn-box install-browser-warning">
+                        <p>
+                          <span className="banner-icon" aria-hidden="true">
+                            !
+                          </span>
+                          iPhone kurulumu icin Safari zorunlu. Simdi {iosBrowserContext.browserLabel} uzerindesiniz.
+                        </p>
+                        <div className="install-browser-warning-actions">
+                          <button type="button" className="btn btn-soft" onClick={openIosInstallOnboarding}>
+                            Safari Adimlarini Ac
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost"
+                            onClick={() => void copyPortalLinkForSafari()}
+                          >
+                            Linki Kopyala
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {showInstallPromotions ? (
+                      <section className="install-health" role="region" aria-label="Kurulum durumu">
+                        <div className="install-health-head">
+                          <p className="install-health-kicker">KURULUM DURUMU</p>
+                          <span className="status-pill state-warn">
+                            {installFunnelSteps.completed}/{installFunnelSteps.total}
+                          </span>
+                        </div>
+                        <p className="install-health-text">{installHealthHint}</p>
+                        <ul className="install-health-list">
+                          {installFunnelSteps.steps.map((step) => (
+                            <li key={step.id} className={`install-health-step ${step.done ? 'done' : 'pending'}`}>
+                              <span className="install-health-step-icon" aria-hidden="true">
+                                {step.done ? '+' : '•'}
+                              </span>
+                              <span>{step.label}</span>
+                            </li>
+                          ))}
+                        </ul>
+                        <p className="install-health-meta">
+                          Son deneme: <strong>{installLastAttemptLabel}</strong>
+                        </p>
+                        <button
+                          type="button"
+                          className="btn btn-primary install-banner-btn"
+                          disabled={isInstallPromptBusy || isStandaloneApp}
+                          onClick={() => void runDownloadInstallAction()}
+                        >
+                          {installRailPrimaryLabel}
+                        </button>
+                      </section>
+                    ) : null}
+
+                    {showIosInstallDock ? (
+                      <div className="ios-install-dock" role="region" aria-label="Ana ekrana ekleme kisayolu">
+                        <div>
+                          <p className="ios-install-dock-title">Ana Ekrana Ekle</p>
+                          <p className="ios-install-dock-subtitle">
+                            {iosInAppBrowserBlocked
+                              ? 'Once Safari ile acin, sonra Paylas > Ana Ekrana Ekle adimini tamamlayin.'
+                              : 'Uygulama gibi kullanmak icin kurulumu tamamlayin.'}
+                          </p>
+                        </div>
+                        <div className="ios-install-dock-actions">
+                          <button
+                            type="button"
+                            className="btn btn-soft ios-install-dock-btn"
+                            onClick={openIosInstallOnboarding}
+                          >
+                            Ana Ekrana Ekle
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost ios-install-dock-btn"
+                            onClick={() => void copyPortalLinkForSafari()}
+                          >
+                            Linki Kopyala
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {installNotice ? (
+                      <div className="notice-box notice-box-warning">
+                        <p>{installNotice}</p>
+                      </div>
+                    ) : null}
+                  </div>
+                </SecondaryDisclosure>
+              ) : null}
+
+              <SecondaryDisclosure
+                title="Cihaz ve guvenlik"
+                description="Bildirim, passkey, recovery ve teknik cihaz bilgileri bu alanda."
+                badge={!deviceFingerprint ? 'Cihaz gerekli' : passkeyRegistered && recoveryReady && pushRegistered ? 'Hazir' : 'Kontrol et'}
+                open={showSecuritySectionOpen}
+              >
+                {passkeyNotice ? (
+                  <div className="notice-box notice-box-success">
+                    <p>{passkeyNotice}</p>
+                  </div>
+                ) : null}
+
+                {pushNotice ? (
+                  <div className="notice-box notice-box-success">
+                    <p>{pushNotice}</p>
+                  </div>
+                ) : null}
+
+                <div className="status-grid employee-secondary-status-grid">
+                  <article className="status-card">
+                    <p className="small-title">Passkey</p>
+                    <span className={`status-pill ${passkeyRegistered ? 'state-ok' : 'state-warn'}`}>
+                      {passkeyRegistered ? 'Kurulu' : 'Kurulu degil'}
+                    </span>
+                  </article>
+
+                  <article className="status-card">
+                    <p className="small-title">Bildirim</p>
+                    <span className={`status-pill ${pushRegistered ? 'state-ok' : pushEnabled && pushRuntimeSupported ? 'state-warn' : 'state-err'}`}>
+                      {pushRegistered ? 'Acik' : !pushRuntimeSupported ? 'Destek yok' : pushEnabled ? 'Kapali' : 'Servis kapali'}
+                    </span>
+                  </article>
+
+                  <article className="status-card">
+                    <p className="small-title">Recovery</p>
+                    <span className={`status-pill ${recoveryReady ? 'state-ok' : 'state-warn'}`}>
+                      {recoveryStatusLabel}
+                    </span>
+                  </article>
+                </div>
+
+                {!passkeyRegistered ? (
+                  <section className="passkey-brief passkey-brief-setup" aria-live="polite">
+                    <p className="passkey-brief-kicker">GUVENLIK ADIMI</p>
+                    <h3 className="passkey-brief-title">Passkey kurulumunu tamamlayin</h3>
+                    <p className="passkey-brief-text">
+                      Cihaz verisi silinse bile hesabinizi geri yukleyip QR ile mesaiye kesintisiz devam edebilirsiniz.
+                    </p>
+                    <ul className="passkey-brief-list">
+                      <li>Tarayici verisi silinirse hesabinizi geri kazanirsiniz.</li>
+                      <li>Sifre ezberlemeden biyometrik dogrulama kullanirsiniz.</li>
+                      <li>Yeni cihazda kurtarma suresi ciddi sekilde kisalir.</li>
+                    </ul>
+                    <div className="passkey-brief-actions">
+                      <button
+                        type="button"
+                        className="btn btn-primary passkey-brief-btn"
+                        disabled={!deviceFingerprint || isPasskeyBusy || isSubmitting}
+                        onClick={() => void runPasskeyRegistration()}
+                      >
+                        {isPasskeyBusy ? 'Passkey kuruluyor...' : 'Passkey Kur'}
+                      </button>
+                      <Link className="inline-link passkey-brief-link" to="/recover">
+                        Kurtarma ekranini gor
+                      </Link>
+                    </div>
+                  </section>
+                ) : (
+                  <section className="passkey-brief passkey-brief-ready">
+                    <p className="passkey-brief-kicker">PASSKEY AKTIF</p>
+                    <p className="passkey-brief-text">
+                      Cihaz verisi silinirse <strong>/recover</strong> ekrani ile kimligini geri yukleyebilirsin.
+                    </p>
+                  </section>
+                )}
+
+                <section className={`passkey-brief ${recoveryReady ? 'passkey-brief-ready' : 'passkey-brief-setup'}`}>
+                  <p className="passkey-brief-kicker">RECOVERY FALLBACK</p>
+                  <h3 className="passkey-brief-title">Passkey zorunlu degil, Recovery Code kullan</h3>
+                  <p className="passkey-brief-text">
+                    iPhone dahil tum cihazlarda recovery code + PIN ile cihaz kimligini geri yukleyebilirsin.
+                  </p>
+                  {recoveryExpiresAt ? (
+                    <p className="small-text">
+                      Son gecerlilik: <strong>{formatTs(recoveryExpiresAt)}</strong>
+                    </p>
+                  ) : null}
+                  <div className="passkey-brief-actions">
+                    <button
+                      type="button"
+                      className="btn btn-primary passkey-brief-btn"
+                      disabled={!deviceFingerprint || isRecoveryBusy || isSubmitting}
+                      onClick={() => void runRecoveryCodeIssue()}
+                    >
+                      {isRecoveryBusy
+                        ? 'Recovery kodlari uretiliyor...'
+                        : recoveryReady
+                          ? 'Recovery Kodlarini Yenile'
+                          : 'Recovery Kodu Olustur'}
+                    </button>
+                    <Link className="inline-link passkey-brief-link" to="/recover">
+                      Kurtarma ekranina git
+                    </Link>
+                  </div>
+                  {recoveryReady ? (
+                    <div className="recovery-vault">
+                      <p className="recovery-vault-title">Mevcut recovery tokenini ac</p>
+                      <p className="recovery-vault-text">
+                        Bu kodlar telefon degisirse, cihaz sifirlanirsa veya tarayici verisi silinirse hesabi
+                        kurtarmak icin gereklidir. Gormek icin daha once belirledigin recovery PIN&apos;ini gir.
+                      </p>
+                      <div className="recovery-vault-form">
+                        <label className="field" htmlFor="focusRecoveryRevealPinInput">
+                          <span>Recovery PIN</span>
+                          <input
+                            id="focusRecoveryRevealPinInput"
+                            type="password"
+                            inputMode="numeric"
+                            autoComplete="one-time-code"
+                            value={recoveryRevealPin}
+                            onChange={(event) => setRecoveryRevealPin(event.target.value)}
+                            placeholder="6-12 hane"
+                            disabled={isRecoveryRevealBusy || isRecoveryBusy}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          className="btn btn-soft recovery-vault-btn"
+                          disabled={!deviceFingerprint || isRecoveryRevealBusy || isRecoveryBusy}
+                          onClick={() => void runRecoveryCodeReveal()}
+                        >
+                          {isRecoveryRevealBusy ? 'Kodlar aciliyor...' : 'Tokeni Goster'}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                  {recoveryNotice ? <p className="small-text mt-2">{recoveryNotice}</p> : null}
+                  {recoveryCodesPreview && recoveryCodesPreview.length > 0 ? (
+                    <div className="notice-box notice-box-warning mt-2">
+                      <p className="small-text">
+                        Aktif recovery kodlari. Bunlar cihaz kurtarma icin gereklidir, guvenli yerde saklayin:
+                      </p>
+                      <p className="small-text">
+                        <strong>{recoveryCodesPreview.join(' | ')}</strong>
+                      </p>
+                    </div>
+                  ) : null}
+                </section>
+
+                <div className="status-cta-row status-cta-row-compact">
+                  <button type="button" className="btn btn-ghost" onClick={() => setIsHelpOpen(true)}>
+                    Nasil calisir?
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn btn-soft"
+                    disabled={
+                      !deviceFingerprint ||
+                      isPushBusy ||
+                      isSubmitting ||
+                      pushRegistered ||
+                      !pushEnabled ||
+                      !pushRuntimeSupported
+                    }
+                    onClick={() => {
+                      if (pushRequiresStandalone) {
+                        openIosInstallOnboarding()
+                        return
+                      }
+                      void runPushSubscription()
+                    }}
+                  >
+                    {isPushBusy
+                      ? 'Bildirim aciliyor...'
+                      : pushRegistered
+                        ? 'Bildirimler Acik'
+                        : pushRequiresStandalone
+                          ? 'Ana Ekrana Ekle'
+                          : 'Bildirimleri Ac'}
+                  </button>
+                </div>
+
+                {deviceFingerprint ? (
+                  <details className="employee-last-action-details">
+                    <summary>Teknik cihaz bilgileri</summary>
+                    <div className="employee-last-action-technical">
+                      <ul className="employee-technical-list">
+                        <li>
+                          <span>Cihaz parmak izi</span>
+                          <strong>{deviceFingerprint}</strong>
+                        </li>
+                      </ul>
+                    </div>
+                  </details>
+                ) : null}
+              </SecondaryDisclosure>
+
+              {deviceFingerprint ? (
+                <SecondaryDisclosure
+                  title="Gecmis ve talepler"
+                  description="Demo oturumlari ve onceki izin kayitlari bu bolumde."
+                  badge={historySummaryLabel}
+                >
+                  <div className="employee-history-layout">
+                    <section className="demo-history-card" aria-labelledby="focus-demo-history-title">
+                      <div className="demo-history-head">
+                        <div>
+                          <p className="demo-history-kicker">GUNLUK OZET</p>
+                          <h3 id="focus-demo-history-title" className="demo-history-title">
+                            Bugunun Demolari
+                          </h3>
+                        </div>
+                        <span className="demo-history-count">{demoHistorySummary}</span>
+                      </div>
+
+                      {isDemoHistoryLoading && !isDemoHistoryReady ? (
+                        <p className="demo-history-empty">Liste hazirlaniyor...</p>
+                      ) : visibleDemoSessions.length > 0 ? (
+                        <>
+                          <ol className="demo-history-list">
+                            {visibleDemoSessions.map((session, index) => (
+                              <li
+                                key={`${session.started_at_utc}-${session.ended_at_utc ?? 'active'}-${index}-focus`}
+                                className={`demo-history-item ${session.is_active ? 'is-active' : ''}`}
+                              >
+                                <div className="demo-history-range">
+                                  <strong>{formatDemoTime(session.started_at_utc)}</strong>
+                                  <span className="demo-history-separator">-</span>
+                                  <strong>{session.ended_at_utc ? formatDemoTime(session.ended_at_utc) : 'Devam ediyor'}</strong>
+                                </div>
+                                <span className="demo-history-meta">
+                                  {session.is_active ? 'AKTIF' : `${session.duration_minutes} dk`}
+                                </span>
+                              </li>
+                            ))}
+                          </ol>
+                          {hiddenDemoSessionCount > 0 ? (
+                            <p className="demo-history-footnote">+{hiddenDemoSessionCount} kayit daha var.</p>
+                          ) : null}
+                        </>
+                      ) : (
+                        <p className="demo-history-empty">Bugun demo kaydi yok.</p>
+                      )}
+                    </section>
+
+                    <section className="leave-history-card" aria-labelledby="focus-leave-history-title">
+                      <div className="leave-history-head">
+                        <div>
+                          <p className="leave-history-kicker">IZIN GECMISI</p>
+                          <h3 id="focus-leave-history-title" className="leave-history-title">
+                            Son Talepler
+                          </h3>
+                        </div>
+                        <div className="leave-history-head-actions">
+                          <span className="leave-history-count">{leaveHistorySummary}</span>
+                          {hasLeaveHistory && !isLeaveHistoryLoading ? (
+                            <button
+                              type="button"
+                              className="leave-history-toggle"
+                              aria-expanded={isLeaveHistoryExpanded}
+                              aria-controls="focus-leave-history-panel"
+                              onClick={() => setIsLeaveHistoryExpanded((current) => !current)}
+                            >
+                              {isLeaveHistoryExpanded ? 'Gizle' : 'Goster'}
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      {isLeaveHistoryLoading && !isLeaveHistoryReady ? (
+                        <p className="leave-history-empty">Liste hazirlaniyor...</p>
+                      ) : hasLeaveHistory ? (
+                        <div id="focus-leave-history-panel" className="leave-history-body">
+                          {isLeaveHistoryExpanded ? (
+                            <>
+                              <ol className="leave-history-list">
+                                {visibleLeaveRequests.map((leave) => (
+                                  <li key={`${leave.id}-focus`} className={`leave-history-item leave-status-${leave.status.toLowerCase()}`}>
+                                    <div className="leave-history-main">
+                                      <div className="leave-history-row">
+                                        <strong>{leaveTypeLabels[leave.type]}</strong>
+                                        <span className={`leave-status-badge leave-status-badge-${leave.status.toLowerCase()}`}>
+                                          {leaveStatusLabels[leave.status]}
+                                        </span>
+                                      </div>
+                                      <p className="leave-history-range">{formatLeaveRange(leave.start_date, leave.end_date)}</p>
+                                      <p className="leave-history-note">{leave.note || 'Gerekce girilmedi.'}</p>
+                                      {leave.decision_note ? (
+                                        <p className="leave-history-decision">Karar notu: {leave.decision_note}</p>
+                                      ) : null}
+                                    </div>
+                                  </li>
+                                ))}
+                              </ol>
+                              {hiddenLeaveRequestCount > 0 ? (
+                                <p className="leave-history-footnote">+{hiddenLeaveRequestCount} talep daha var.</p>
+                              ) : null}
+                            </>
+                          ) : (
+                            <p className="leave-history-collapsed">
+                              {leaveRequests.length} izin kaydi gizli. Gormek icin Goster butonuna dokun.
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="leave-history-empty">Henuz izin talebi yok.</p>
+                      )}
+                    </section>
+                  </div>
+                </SecondaryDisclosure>
+              ) : null}
+
+              <BrandSignature />
+            </section>
+          </div>
           <section className="employee-command-surface">
             <div className="employee-hero">
               <div className="employee-hero-copy">
@@ -2928,7 +4220,7 @@ export function HomePage() {
 
             <div className="employee-action-layout">
               <div className="employee-action-primary">
-                <section className="action-panel" ref={actionPanelRef}>
+                <section className="action-panel">
               <div className="action-panel-head">
                 <p className="small-title">Komut Merkezi</p>
                 <span className="action-panel-kicker">Hızlı İşlemler</span>
@@ -3200,6 +4492,9 @@ export function HomePage() {
           </div>
         ) : null}
 
+          </SecondaryFeaturesSection>
+        </div>
+
         {scannerActive && typeof document !== 'undefined'
           ? createPortal(
               <div
@@ -3281,17 +4576,6 @@ export function HomePage() {
           </div>
         ) : null}
 
-        {locationWarning ? (
-          <div className="warn-box banner-warning">
-            <p>
-              <span className="banner-icon" aria-hidden="true">
-                !
-              </span>
-              {locationWarning}
-            </p>
-          </div>
-        ) : null}
-
         {actionNotice ? (
           <div className={`notice-box ${actionNotice.tone === 'success' ? 'notice-box-success' : 'notice-box-warning'} mt-3`}>
             <p>
@@ -3300,29 +4584,6 @@ export function HomePage() {
               </span>
               {actionNotice.text}
             </p>
-          </div>
-        ) : null}
-
-        {scannerError ? (
-          <div className="warn-box banner-warning">
-            <p>
-              <span className="banner-icon" aria-hidden="true">
-                !
-              </span>
-              {scannerError}
-            </p>
-          </div>
-        ) : null}
-
-        {errorMessage ? (
-          <div className="error-box banner-error">
-            <p>
-              <span className="banner-icon" aria-hidden="true">
-                !
-              </span>
-              {errorMessage}
-            </p>
-            {requestId ? <p className="request-id">request_id: {requestId}</p> : null}
           </div>
         ) : null}
 
@@ -3368,13 +4629,13 @@ export function HomePage() {
             )
           : null}
 
-        {resultMessage ? (
-          <div className={`notice-box ${resultMessage.tone === 'success' ? 'notice-box-success' : 'notice-box-warning'}`}>
+        {false ? (
+          <div className={`notice-box ${resultMessage!.tone === 'success' ? 'notice-box-success' : 'notice-box-warning'}`}>
             <p>
               <span className="banner-icon" aria-hidden="true">
-                {resultMessage.tone === 'success' ? '+' : '!'}
+                {resultMessage!.tone === 'success' ? '+' : '!'}
               </span>
-              {resultMessage.text}
+              {resultMessage!.text}
             </p>
             <div className="chips">
               {duplicateDetected ? <span className="status-pill state-warn">Mükerrer kayıt</span> : null}
@@ -3383,19 +4644,19 @@ export function HomePage() {
           </div>
         ) : null}
 
-        {lastAction ? (
+        {false ? (
           <section className="result-box">
             <h2>Son İşlem</h2>
             <p>
-              event_type: <strong>{lastAction.response.event_type}</strong> ({eventTypeLabel(lastAction.response.event_type)})
+              event_type: <strong>{lastAction!.response.event_type}</strong> ({eventTypeLabel(lastAction!.response.event_type)})
             </p>
-            {lastAction.codeValue ? (
+            {lastAction!.codeValue ? (
               <p>
-                code_value: <strong>{lastAction.codeValue}</strong>
+                code_value: <strong>{lastAction!.codeValue}</strong>
               </p>
             ) : null}
             <p>
-              ts_utc: <strong>{formatTs(lastAction.response.ts_utc)}</strong>
+              ts_utc: <strong>{formatTs(lastAction!.response.ts_utc)}</strong>
             </p>
 
             <div className="stack-tight">
@@ -3789,7 +5050,7 @@ export function HomePage() {
         ) : null}
       </div>
 
-      {showInstallPromotions ? (
+      {false ? (
         <div className="promo-mobile-dock" role="region" aria-label="Hizli uygulama indirme">
           <p className="promo-mobile-text">Uygulamayı indir, portalı daha hızlı ve stabil kullan.</p>
           <button
