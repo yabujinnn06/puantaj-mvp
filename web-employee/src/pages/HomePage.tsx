@@ -4221,7 +4221,8 @@ export function HomePage() {
             </div>
 
             <div className="employee-action-layout">
-              <div className="employee-action-primary">
+              {false ? (
+                <div className="employee-action-primary">
                 <section className="action-panel">
               <div className="action-panel-head">
                 <p className="small-title">Komut Merkezi</p>
@@ -4310,7 +4311,8 @@ export function HomePage() {
                 </Link>
               </div>
             )}
-              </div>
+                </div>
+              ) : null}
 
               <div className="employee-live-grid">
                 <section className={`demo-visit-card ${isDemoActive ? 'is-live' : 'is-idle'}`}>
