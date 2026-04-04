@@ -1,4 +1,6 @@
 export type LocationStatus = 'VERIFIED_HOME' | 'UNVERIFIED_LOCATION' | 'NO_LOCATION'
+export type LeaveType = 'ANNUAL' | 'SICK' | 'UNPAID' | 'EXCUSE' | 'PUBLIC_HOLIDAY'
+export type LeaveStatus = 'APPROVED' | 'PENDING' | 'REJECTED'
 
 export interface DeviceClaimRequest {
   token: string
@@ -107,6 +109,28 @@ export interface EmployeeDemoDayResponse {
   active_session_count: number
   total_minutes: number
   sessions: EmployeeDemoSessionResponse[]
+}
+
+export interface EmployeeLeaveRequest {
+  device_fingerprint: string
+  start_date: string
+  end_date: string
+  type: LeaveType
+  note: string
+}
+
+export interface EmployeeLeaveRecord {
+  id: number
+  employee_id: number
+  start_date: string
+  end_date: string
+  type: LeaveType
+  status: LeaveStatus
+  note: string | null
+  requested_by_employee: boolean
+  decision_note: string | null
+  decided_at: string | null
+  created_at: string
 }
 
 export interface EmployeeAppPresencePingRequest {
