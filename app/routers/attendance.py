@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 import hashlib
 from math import ceil
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -20,10 +20,15 @@ from app.schemas import (
     AttendanceEventRead,
     DeviceClaimRequest,
     DeviceClaimResponse,
+    EmployeeConversationCreateRequest,
+    EmployeeConversationMessageCreateRequest,
+    EmployeeConversationRead,
+    EmployeeConversationThreadRead,
     EmployeeDemoDayResponse,
     EmployeeAppPresencePingRequest,
     EmployeeAppPresencePingResponse,
     EmployeeLeaveRequestCreate,
+    EmployeeLeaveMessageCreateRequest,
     EmployeeHomeLocationSetRequest,
     EmployeeHomeLocationSetResponse,
     EmployeePushConfigResponse,
@@ -37,6 +42,7 @@ from app.schemas import (
     EmployeeQrScanRequest,
     EmployeeStatusResponse,
     LeaveRead,
+    LeaveThreadRead,
     PasskeyRecoverOptionsResponse,
     PasskeyRecoverVerifyRequest,
     PasskeyRecoverVerifyResponse,
@@ -75,7 +81,20 @@ from app.services.attendance import (
     get_employee_demo_day_history_by_device,
     get_employee_status_by_device,
 )
-from app.services.leaves import create_employee_leave_request, list_leaves
+from app.services.communications import (
+    create_employee_conversation,
+    create_employee_conversation_message,
+    get_employee_conversation_thread,
+    list_employee_conversations,
+)
+from app.services.leaves import (
+    LeaveAttachmentPayload,
+    create_employee_leave_message,
+    create_employee_leave_request,
+    get_leave_attachment_for_employee,
+    get_leave_thread_for_employee,
+    list_leaves,
+)
 from app.services.passkeys import (
     create_recover_options,
     create_registration_options,
@@ -93,6 +112,18 @@ router = APIRouter(tags=["attendance"])
 settings = get_settings()
 DEVICE_FINGERPRINT_COOKIE = "pf_device_fingerprint"
 DEVICE_FINGERPRINT_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365 * 3
+
+
+async def _read_leave_attachment_upload(upload: UploadFile | None) -> LeaveAttachmentPayload | None:
+    if upload is None:
+        return None
+    file_data = await upload.read()
+    return LeaveAttachmentPayload(
+        file_name=upload.filename or "belge",
+        content_type=upload.content_type or "application/octet-stream",
+        file_size_bytes=len(file_data),
+        file_data=file_data,
+    )
 
 
 def _client_ip(request: Request) -> str | None:
@@ -978,6 +1009,281 @@ def create_employee_leave_request_endpoint(
         request_id=getattr(request.state, "request_id", None),
     )
     return leave
+
+
+@router.post(
+    "/api/employee/leaves/submit",
+    response_model=LeaveRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_employee_leave_request_with_attachment_endpoint(
+    request: Request,
+    device_fingerprint: str = Form(...),
+    start_date: str = Form(...),
+    end_date: str = Form(...),
+    type: str = Form(...),
+    note: str = Form(...),
+    question: str | None = Form(default=None),
+    attachment: UploadFile | None = File(default=None),
+    db: Session = Depends(get_db),
+) -> LeaveRead:
+    request.state.actor = "employee"
+    payload = EmployeeLeaveRequestCreate(
+        device_fingerprint=device_fingerprint,
+        start_date=start_date,
+        end_date=end_date,
+        type=type,
+        note=note,
+        question=question,
+    )
+    attachment_payload = await _read_leave_attachment_upload(attachment)
+    leave = create_employee_leave_request(db, payload, attachment=attachment_payload)
+    request.state.employee_id = leave.employee_id
+    request.state.flags = {
+        "leave_type": leave.type.value,
+        "leave_status": leave.status.value,
+        "attachment_count": leave.attachment_count,
+        "message_count": leave.message_count,
+    }
+    log_audit(
+        db,
+        actor_type=AuditActorType.SYSTEM,
+        actor_id=str(leave.employee_id),
+        action="EMPLOYEE_LEAVE_REQUEST_CREATED",
+        success=True,
+        entity_type="leave",
+        entity_id=str(leave.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "employee_id": leave.employee_id,
+            "start_date": leave.start_date.isoformat(),
+            "end_date": leave.end_date.isoformat(),
+            "type": leave.type.value,
+            "has_attachment": bool(attachment_payload is not None),
+            "has_question": bool((question or "").strip()),
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return leave
+
+
+@router.get("/api/employee/leaves/{leave_id}/thread", response_model=LeaveThreadRead)
+def employee_leave_thread(
+    leave_id: int,
+    device_fingerprint: str,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> LeaveThreadRead:
+    request.state.actor = "employee"
+    leave = get_leave_thread_for_employee(
+        db,
+        leave_id=leave_id,
+        device_fingerprint=device_fingerprint,
+    )
+    request.state.employee_id = leave.employee_id
+    request.state.flags = {
+        "leave_id": leave.id,
+        "message_count": leave.message_count,
+        "attachment_count": leave.attachment_count,
+    }
+    return LeaveThreadRead(
+        leave=leave,
+        attachments=list(leave.leave_attachments or []),
+        messages=list(leave.leave_messages or []),
+    )
+
+
+@router.post("/api/employee/leaves/{leave_id}/messages", response_model=LeaveThreadRead)
+def employee_leave_message_create(
+    leave_id: int,
+    payload: EmployeeLeaveMessageCreateRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> LeaveThreadRead:
+    request.state.actor = "employee"
+    leave = create_employee_leave_message(db, leave_id=leave_id, payload=payload)
+    request.state.employee_id = leave.employee_id
+    request.state.flags = {
+        "leave_id": leave.id,
+        "message_count": leave.message_count,
+    }
+    log_audit(
+        db,
+        actor_type=AuditActorType.SYSTEM,
+        actor_id=str(leave.employee_id),
+        action="EMPLOYEE_LEAVE_MESSAGE_CREATED",
+        success=True,
+        entity_type="leave",
+        entity_id=str(leave.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={"message_count": leave.message_count},
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return LeaveThreadRead(
+        leave=leave,
+        attachments=list(leave.leave_attachments or []),
+        messages=list(leave.leave_messages or []),
+    )
+
+
+@router.get("/api/employee/leaves/{leave_id}/attachments/{attachment_id}/download")
+def employee_leave_attachment_download(
+    leave_id: int,
+    attachment_id: int,
+    device_fingerprint: str,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Response:
+    request.state.actor = "employee"
+    attachment = get_leave_attachment_for_employee(
+        db,
+        leave_id=leave_id,
+        attachment_id=attachment_id,
+        device_fingerprint=device_fingerprint,
+    )
+    request.state.employee_id = attachment.employee_id
+    request.state.flags = {
+        "leave_id": leave_id,
+        "attachment_id": attachment.id,
+    }
+    log_audit(
+        db,
+        actor_type=AuditActorType.SYSTEM,
+        actor_id=str(attachment.employee_id),
+        action="EMPLOYEE_LEAVE_ATTACHMENT_DOWNLOADED",
+        success=True,
+        entity_type="leave_attachment",
+        entity_id=str(attachment.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={"leave_id": leave_id, "content_type": attachment.content_type},
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return Response(
+        content=attachment.file_data,
+        media_type=attachment.content_type,
+        headers={"Content-Disposition": f'attachment; filename="{attachment.file_name}"'},
+    )
+
+
+@router.get("/api/employee/communications", response_model=list[EmployeeConversationRead])
+def employee_conversation_list(
+    device_fingerprint: str,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> list[EmployeeConversationRead]:
+    request.state.actor = "employee"
+    rows = list_employee_conversations(db, device_fingerprint=device_fingerprint)
+    if rows:
+        request.state.employee_id = rows[0].employee_id
+    request.state.flags = {"resource": "employee_communications", "conversation_count": len(rows)}
+    return rows
+
+
+@router.post(
+    "/api/employee/communications",
+    response_model=EmployeeConversationThreadRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def employee_conversation_create_endpoint(
+    payload: EmployeeConversationCreateRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> EmployeeConversationThreadRead:
+    request.state.actor = "employee"
+    conversation = create_employee_conversation(db, payload)
+    request.state.employee_id = conversation.employee_id
+    request.state.flags = {
+        "conversation_id": conversation.id,
+        "category": conversation.category.value,
+        "message_count": conversation.message_count,
+    }
+    log_audit(
+        db,
+        actor_type=AuditActorType.SYSTEM,
+        actor_id=str(conversation.employee_id),
+        action="EMPLOYEE_CONVERSATION_CREATED",
+        success=True,
+        entity_type="employee_conversation",
+        entity_id=str(conversation.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "category": conversation.category.value,
+            "subject": conversation.subject,
+            "message_count": conversation.message_count,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return EmployeeConversationThreadRead(
+        conversation=conversation,
+        messages=list(conversation.messages or []),
+    )
+
+
+@router.get("/api/employee/communications/{conversation_id}/thread", response_model=EmployeeConversationThreadRead)
+def employee_conversation_thread_endpoint(
+    conversation_id: int,
+    device_fingerprint: str,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> EmployeeConversationThreadRead:
+    request.state.actor = "employee"
+    conversation = get_employee_conversation_thread(
+        db,
+        conversation_id=conversation_id,
+        device_fingerprint=device_fingerprint,
+    )
+    request.state.employee_id = conversation.employee_id
+    request.state.flags = {
+        "conversation_id": conversation.id,
+        "message_count": conversation.message_count,
+        "status": conversation.status.value,
+    }
+    return EmployeeConversationThreadRead(
+        conversation=conversation,
+        messages=list(conversation.messages or []),
+    )
+
+
+@router.post("/api/employee/communications/{conversation_id}/messages", response_model=EmployeeConversationThreadRead)
+def employee_conversation_message_create_endpoint(
+    conversation_id: int,
+    payload: EmployeeConversationMessageCreateRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> EmployeeConversationThreadRead:
+    request.state.actor = "employee"
+    conversation = create_employee_conversation_message(
+        db,
+        conversation_id=conversation_id,
+        payload=payload,
+    )
+    request.state.employee_id = conversation.employee_id
+    request.state.flags = {
+        "conversation_id": conversation.id,
+        "message_count": conversation.message_count,
+        "status": conversation.status.value,
+    }
+    log_audit(
+        db,
+        actor_type=AuditActorType.SYSTEM,
+        actor_id=str(conversation.employee_id),
+        action="EMPLOYEE_CONVERSATION_MESSAGE_CREATED",
+        success=True,
+        entity_type="employee_conversation",
+        entity_id=str(conversation.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={"message_count": conversation.message_count},
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return EmployeeConversationThreadRead(
+        conversation=conversation,
+        messages=list(conversation.messages or []),
+    )
 
 
 @router.post("/api/employee/app-presence/ping", response_model=EmployeeAppPresencePingResponse)

@@ -1,6 +1,8 @@
 export type LocationStatus = 'VERIFIED_HOME' | 'UNVERIFIED_LOCATION' | 'NO_LOCATION'
 export type LeaveType = 'ANNUAL' | 'SICK' | 'UNPAID' | 'EXCUSE' | 'PUBLIC_HOLIDAY'
 export type LeaveStatus = 'APPROVED' | 'PENDING' | 'REJECTED'
+export type EmployeeConversationCategory = 'ATTENDANCE' | 'SHIFT' | 'DEVICE' | 'DOCUMENT' | 'OTHER'
+export type EmployeeConversationStatus = 'OPEN' | 'CLOSED'
 
 export interface DeviceClaimRequest {
   token: string
@@ -117,6 +119,7 @@ export interface EmployeeLeaveRequest {
   end_date: string
   type: LeaveType
   note: string
+  question?: string | null
 }
 
 export interface EmployeeLeaveRecord {
@@ -131,6 +134,68 @@ export interface EmployeeLeaveRecord {
   decision_note: string | null
   decided_at: string | null
   created_at: string
+  attachment_count?: number
+  message_count?: number
+  last_message_at?: string | null
+  latest_message_preview?: string | null
+}
+
+export interface EmployeeLeaveAttachmentRecord {
+  id: number
+  leave_id: number
+  employee_id: number
+  uploaded_by_actor: string
+  uploaded_by_label: string
+  file_name: string
+  content_type: string
+  file_size_bytes: number
+  created_at: string
+}
+
+export interface EmployeeLeaveMessageRecord {
+  id: number
+  leave_id: number
+  employee_id: number
+  sender_actor: string
+  sender_label: string
+  message: string
+  created_at: string
+}
+
+export interface EmployeeLeaveThreadRecord {
+  leave: EmployeeLeaveRecord
+  attachments: EmployeeLeaveAttachmentRecord[]
+  messages: EmployeeLeaveMessageRecord[]
+}
+
+export interface EmployeeConversationRecord {
+  id: number
+  employee_id: number
+  employee_name: string
+  category: EmployeeConversationCategory
+  subject: string
+  status: EmployeeConversationStatus
+  created_at: string
+  updated_at: string
+  closed_at: string | null
+  last_message_at: string
+  message_count: number
+  latest_message_preview: string | null
+}
+
+export interface EmployeeConversationMessageRecord {
+  id: number
+  conversation_id: number
+  employee_id: number
+  sender_actor: string
+  sender_label: string
+  message: string
+  created_at: string
+}
+
+export interface EmployeeConversationThreadRecord {
+  conversation: EmployeeConversationRecord
+  messages: EmployeeConversationMessageRecord[]
 }
 
 export interface EmployeeAppPresencePingRequest {

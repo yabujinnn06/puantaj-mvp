@@ -1,11 +1,17 @@
 import { type ReactNode, type RefObject, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 
 import {
   checkout,
-  createEmployeeLeaveRequest,
+  createEmployeeConversation,
+  createEmployeeConversationMessage,
+  createEmployeeLeaveMessage,
+  downloadEmployeeLeaveAttachment,
+  getEmployeeConversationThread,
+  getEmployeeConversations,
   getEmployeeDemoHistory,
+  getEmployeeLeaveThread,
   getEmployeeLeaves,
   getEmployeePushConfig,
   getRecoveryCodeStatus,
@@ -17,6 +23,7 @@ import {
   parseApiError,
   revealRecoveryCodes,
   scanEmployeeQr,
+  submitEmployeeLeaveRequest,
   subscribeEmployeePush,
   verifyPasskeyRegistration,
   type ParsedApiError,
@@ -33,8 +40,12 @@ import { UI_BRANDING } from '../config/ui'
 import { useToast } from '../hooks/useToast'
 import type {
   AttendanceActionResponse,
+  EmployeeConversationCategory,
+  EmployeeConversationRecord,
+  EmployeeConversationThreadRecord,
   EmployeeDemoDayResponse,
   EmployeeLeaveRecord,
+  EmployeeLeaveThreadRecord,
   EmployeeStatusResponse,
   LeaveStatus,
   LeaveType,
@@ -134,6 +145,76 @@ const leaveStatusLabels: Record<LeaveStatus, string> = {
   REJECTED: 'Reddedildi',
 }
 
+const conversationCategoryLabels: Record<EmployeeConversationCategory, string> = {
+  ATTENDANCE: 'Puantaj',
+  SHIFT: 'Vardiya',
+  DEVICE: 'Cihaz',
+  DOCUMENT: 'Belge',
+  OTHER: 'Genel',
+}
+
+const communicationTemplates: Array<{
+  label: string
+  category: EmployeeConversationCategory
+  subject: string
+  message: string
+}> = [
+  {
+    label: 'Puantaj Bilgisi',
+    category: 'ATTENDANCE',
+    subject: 'Puantaj kaydım hakkında bilgi talebi',
+    message: 'Bugünkü puantaj kaydımın güncel durumu hakkında bilgi rica ediyorum.',
+  },
+  {
+    label: 'Vardiya Planı',
+    category: 'SHIFT',
+    subject: 'Vardiya planı hakkında bilgi talebi',
+    message: 'İlgili vardiya planım hakkında bilgi paylaşmanızı rica ediyorum.',
+  },
+  {
+    label: 'Belge Süreci',
+    category: 'DOCUMENT',
+    subject: 'Belge süreci hakkında bilgi talebi',
+    message: 'İlgili belge süreci için ek işlem gerekip gerekmediği hakkında bilgi rica ediyorum.',
+  },
+]
+
+const communicationReplyStarters = [
+  'Talebimin güncel durumu hakkında bilgi rica ediyorum.',
+  'İşlemin değerlendirme süreci hakkında bilgi paylaşabilir misiniz?',
+  'Gerekli ise ek belge veya işlem adımını iletebilir misiniz?',
+]
+
+const LEAVE_ATTACHMENT_ACCEPT = [
+  'application/pdf',
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+].join(',')
+
+function formatAttachmentSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return '0 KB'
+  }
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  }
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`
+}
+
+function triggerBlobDownload(blob: Blob, fileName: string): void {
+  const url = window.URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  window.URL.revokeObjectURL(url)
+}
+
 const EMPTY_INSTALL_FUNNEL_SNAPSHOT: InstallFunnelSnapshot = {
   firstSeenAt: null,
   lastEventAt: null,
@@ -194,6 +275,10 @@ function formatLeaveRange(startDate: string, endDate: string): string {
     return formatLeaveDate(startDate)
   }
   return `${formatLeaveDate(startDate)} - ${formatLeaveDate(endDate)}`
+}
+
+function conversationStatusLabel(status: 'OPEN' | 'CLOSED'): string {
+  return status === 'CLOSED' ? 'Kapalı' : 'Açık'
 }
 
 function loadInstallFunnelSnapshot(): InstallFunnelSnapshot {
@@ -1037,6 +1122,7 @@ function SecondaryDisclosure({ title, description, badge, open, children }: Seco
 }
 
 export function HomePage() {
+  const location = useLocation()
   const [deviceFingerprint, setDeviceFingerprint] = useState<string | null>(() =>
     getStoredDeviceFingerprint(),
   )
@@ -1067,7 +1153,31 @@ export function HomePage() {
   const [leaveEndDate, setLeaveEndDate] = useState('')
   const [leaveType, setLeaveType] = useState<LeaveType>('ANNUAL')
   const [leaveNote, setLeaveNote] = useState('')
+  const [leaveQuestion, setLeaveQuestion] = useState('')
+  const [leaveAttachmentFile, setLeaveAttachmentFile] = useState<File | null>(null)
   const [leaveFormError, setLeaveFormError] = useState<string | null>(null)
+  const [leaveThreadsById, setLeaveThreadsById] = useState<Record<number, EmployeeLeaveThreadRecord>>({})
+  const [activeLeaveThreadId, setActiveLeaveThreadId] = useState<number | null>(null)
+  const [leaveThreadLoadingId, setLeaveThreadLoadingId] = useState<number | null>(null)
+  const [leaveThreadErrorById, setLeaveThreadErrorById] = useState<Record<number, string | null>>({})
+  const [leaveReplyDrafts, setLeaveReplyDrafts] = useState<Record<number, string>>({})
+  const [leaveReplyBusyId, setLeaveReplyBusyId] = useState<number | null>(null)
+  const [communicationList, setCommunicationList] = useState<EmployeeConversationRecord[]>([])
+  const [isCommunicationLoading, setIsCommunicationLoading] = useState(false)
+  const [isCommunicationReady, setIsCommunicationReady] = useState(false)
+  const [communicationRefreshToken, setCommunicationRefreshToken] = useState(0)
+  const [isCommunicationModalOpen, setIsCommunicationModalOpen] = useState(false)
+  const [communicationCategory, setCommunicationCategory] = useState<EmployeeConversationCategory>('ATTENDANCE')
+  const [communicationSubject, setCommunicationSubject] = useState('')
+  const [communicationMessage, setCommunicationMessage] = useState('')
+  const [communicationFormError, setCommunicationFormError] = useState<string | null>(null)
+  const [isCommunicationSubmitting, setIsCommunicationSubmitting] = useState(false)
+  const [communicationThreadsById, setCommunicationThreadsById] = useState<Record<number, EmployeeConversationThreadRecord>>({})
+  const [activeCommunicationId, setActiveCommunicationId] = useState<number | null>(null)
+  const [communicationThreadLoadingId, setCommunicationThreadLoadingId] = useState<number | null>(null)
+  const [communicationThreadErrorById, setCommunicationThreadErrorById] = useState<Record<number, string | null>>({})
+  const [communicationReplyDrafts, setCommunicationReplyDrafts] = useState<Record<number, string>>({})
+  const [communicationReplyBusyId, setCommunicationReplyBusyId] = useState<number | null>(null)
   const [isHelpOpen, setIsHelpOpen] = useState(false)
   const [isCheckoutConfirmOpen, setIsCheckoutConfirmOpen] = useState(false)
   const [isDemoConfirmOpen, setIsDemoConfirmOpen] = useState(false)
@@ -1663,6 +1773,44 @@ export function HomePage() {
 
   useEffect(() => {
     if (!deviceFingerprint) {
+      setCommunicationList([])
+      setIsCommunicationLoading(false)
+      setIsCommunicationReady(false)
+      return
+    }
+
+    let cancelled = false
+    setIsCommunicationLoading(true)
+    const loadCommunicationList = async () => {
+      try {
+        const rows = await getEmployeeConversations(deviceFingerprint)
+        if (!cancelled) {
+          setCommunicationList(rows)
+          setIsCommunicationReady(true)
+        }
+      } catch (error) {
+        const parsed = parseApiError(error, 'Kurumsal yazışmalar alınamadı.')
+        if (!cancelled) {
+          if (!handleDeviceNotClaimed(parsed)) {
+            setCommunicationList([])
+            setIsCommunicationReady(false)
+          }
+        }
+      } finally {
+        if (!cancelled) {
+          setIsCommunicationLoading(false)
+        }
+      }
+    }
+
+    void loadCommunicationList()
+    return () => {
+      cancelled = true
+    }
+  }, [communicationRefreshToken, deviceFingerprint, handleDeviceNotClaimed])
+
+  useEffect(() => {
+    if (!deviceFingerprint) {
       setRecoveryReady(false)
       setRecoveryCodeCount(0)
       setRecoveryExpiresAt(null)
@@ -1858,12 +2006,36 @@ export function HomePage() {
         ? `${approvedLeaveCount} izin kaydin gorunuyor.`
         : 'Tarih araligi ve gerekce girerek izin talebi olusturabilirsin.'
   const canOpenLeaveRequest = Boolean(deviceFingerprint) && !isLeaveSubmitting
+  const visibleCommunications = communicationList.slice(0, 4)
+  const hiddenCommunicationCount = Math.max(0, communicationList.length - visibleCommunications.length)
+  const hasCommunicationHistory = communicationList.length > 0
+  const openCommunicationCount = communicationList.filter((item) => item.status === 'OPEN').length
+  const communicationSummary =
+    communicationList.length > 0 ? `${communicationList.length} kayıt` : 'Henüz yok'
+  const requestedConversationId = useMemo(() => {
+    const params = new URLSearchParams(location.search)
+    if (params.get('communication') !== '1') {
+      return null
+    }
+    const rawValue = params.get('conversation_id')
+    const parsed = Number(rawValue)
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      return null
+    }
+    return parsed
+  }, [location.search])
 
   useEffect(() => {
     if (!leaveHistory.length) {
       setIsLeaveHistoryExpanded(false)
     }
   }, [leaveHistory.length])
+
+  useEffect(() => {
+    if (!communicationList.length) {
+      setActiveCommunicationId(null)
+    }
+  }, [communicationList.length])
 
   const currentHour = new Date().getHours()
   const shouldShowEveningReminder = useMemo(() => {
@@ -1914,12 +2086,307 @@ export function HomePage() {
     }
     setIsLeaveModalOpen(false)
     setLeaveFormError(null)
+    setLeaveQuestion('')
+    setLeaveAttachmentFile(null)
   }, [isLeaveSubmitting])
+
+  const loadLeaveThread = useCallback(
+    async (leaveId: number) => {
+      if (!deviceFingerprint) {
+        return
+      }
+      setLeaveThreadLoadingId(leaveId)
+      setLeaveThreadErrorById((current) => ({ ...current, [leaveId]: null }))
+      try {
+        const thread = await getEmployeeLeaveThread(leaveId, deviceFingerprint)
+        setLeaveThreadsById((current) => ({ ...current, [leaveId]: thread }))
+      } catch (error) {
+        const parsed = parseApiError(error, 'Yazışma akışı alınamadı.')
+        setLeaveThreadErrorById((current) => ({ ...current, [leaveId]: parsed.message }))
+      } finally {
+        setLeaveThreadLoadingId((current) => (current === leaveId ? null : current))
+      }
+    },
+    [deviceFingerprint],
+  )
+
+  useEffect(() => {
+    if (!activeLeaveThreadId || !deviceFingerprint) {
+      return
+    }
+    void loadLeaveThread(activeLeaveThreadId)
+  }, [activeLeaveThreadId, deviceFingerprint, leaveRefreshToken, loadLeaveThread])
+
+  const toggleLeaveThread = useCallback(
+    (leaveId: number) => {
+      setActiveLeaveThreadId((current) => {
+        if (current === leaveId) {
+          return null
+        }
+        return leaveId
+      })
+      if (!leaveThreadsById[leaveId] || leaveThreadErrorById[leaveId]) {
+        void loadLeaveThread(leaveId)
+      }
+    },
+    [leaveThreadErrorById, leaveThreadsById, loadLeaveThread],
+  )
+
+  const updateLeaveReplyDraft = useCallback((leaveId: number, value: string) => {
+    setLeaveReplyDrafts((current) => ({
+      ...current,
+      [leaveId]: value,
+    }))
+  }, [])
+
+  const submitLeaveReply = useCallback(
+    async (leaveId: number) => {
+      const message = (leaveReplyDrafts[leaveId] || '').trim()
+      if (!deviceFingerprint) {
+        pushToast({
+          variant: 'error',
+          title: 'Cihaz bağlı değil',
+          description: 'Yazışma için önce cihaz kurulumunu tamamla.',
+        })
+        return
+      }
+      if (message.length < 1) {
+        setLeaveThreadErrorById((current) => ({ ...current, [leaveId]: 'Yöneticiye göndermek için bir mesaj yaz.' }))
+        return
+      }
+
+      setLeaveReplyBusyId(leaveId)
+      setLeaveThreadErrorById((current) => ({ ...current, [leaveId]: null }))
+      try {
+        const thread = await createEmployeeLeaveMessage(leaveId, {
+          device_fingerprint: deviceFingerprint,
+          message,
+        })
+        setLeaveThreadsById((current) => ({ ...current, [leaveId]: thread }))
+        setLeaveReplyDrafts((current) => ({ ...current, [leaveId]: '' }))
+        setLeaveRefreshToken((current) => current + 1)
+        pushToast({
+          variant: 'success',
+          title: 'Mesaj gönderildi',
+          description: 'Yöneticiye yeni mesajın iletildi.',
+        })
+      } catch (error) {
+        const parsed = parseApiError(error, 'Mesaj gönderilemedi.')
+        setLeaveThreadErrorById((current) => ({ ...current, [leaveId]: parsed.message }))
+      } finally {
+        setLeaveReplyBusyId((current) => (current === leaveId ? null : current))
+      }
+    },
+    [deviceFingerprint, leaveReplyDrafts, pushToast],
+  )
+
+  const handleLeaveAttachmentDownload = useCallback(
+    async (leaveId: number, attachmentId: number, fileName: string) => {
+      if (!deviceFingerprint) {
+        return
+      }
+      try {
+        const result = await downloadEmployeeLeaveAttachment(leaveId, attachmentId, deviceFingerprint)
+        triggerBlobDownload(result.blob, result.fileName || fileName || `leave-attachment-${attachmentId}`)
+      } catch (error) {
+        const parsed = parseApiError(error, 'Belge indirilemedi.')
+        setLeaveThreadErrorById((current) => ({ ...current, [leaveId]: parsed.message }))
+      }
+    },
+    [deviceFingerprint],
+  )
+
+  const openCommunicationModal = useCallback(() => {
+    setCommunicationFormError(null)
+    setIsCommunicationModalOpen(true)
+  }, [])
+
+  const closeCommunicationModal = useCallback(() => {
+    if (isCommunicationSubmitting) {
+      return
+    }
+    setIsCommunicationModalOpen(false)
+    setCommunicationFormError(null)
+    setCommunicationCategory('ATTENDANCE')
+    setCommunicationSubject('')
+    setCommunicationMessage('')
+  }, [isCommunicationSubmitting])
+
+  const loadCommunicationThread = useCallback(
+    async (conversationId: number) => {
+      if (!deviceFingerprint) {
+        return
+      }
+      setCommunicationThreadLoadingId(conversationId)
+      setCommunicationThreadErrorById((current) => ({ ...current, [conversationId]: null }))
+      try {
+        const thread = await getEmployeeConversationThread(conversationId, deviceFingerprint)
+        setCommunicationThreadsById((current) => ({ ...current, [conversationId]: thread }))
+      } catch (error) {
+        const parsed = parseApiError(error, 'Kurumsal yazışma akışı alınamadı.')
+        setCommunicationThreadErrorById((current) => ({ ...current, [conversationId]: parsed.message }))
+      } finally {
+        setCommunicationThreadLoadingId((current) => (current === conversationId ? null : current))
+      }
+    },
+    [deviceFingerprint],
+  )
+
+  const toggleCommunicationThread = useCallback(
+    (conversationId: number) => {
+      setActiveCommunicationId((current) => {
+        if (current === conversationId) {
+          return null
+        }
+        return conversationId
+      })
+      if (!communicationThreadsById[conversationId] || communicationThreadErrorById[conversationId]) {
+        void loadCommunicationThread(conversationId)
+      }
+    },
+    [communicationThreadErrorById, communicationThreadsById, loadCommunicationThread],
+  )
+
+  const updateCommunicationReplyDraft = useCallback((conversationId: number, value: string) => {
+    setCommunicationReplyDrafts((current) => ({
+      ...current,
+      [conversationId]: value,
+    }))
+  }, [])
+
+  const applyCommunicationTemplate = useCallback(
+    (template: (typeof communicationTemplates)[number]) => {
+      setCommunicationCategory(template.category)
+      setCommunicationSubject(template.subject)
+      setCommunicationMessage(template.message)
+    },
+    [],
+  )
+
+  const applyCommunicationReplyStarter = useCallback((conversationId: number, starter: string) => {
+    setCommunicationReplyDrafts((current) => {
+      const existing = (current[conversationId] ?? '').trim()
+      return {
+        ...current,
+        [conversationId]: existing ? `${existing}\n\n${starter}` : starter,
+      }
+    })
+  }, [])
+
+  const submitCommunicationReply = useCallback(
+    async (conversationId: number) => {
+      const message = (communicationReplyDrafts[conversationId] || '').trim()
+      if (!deviceFingerprint) {
+        pushToast({
+          variant: 'error',
+          title: 'Cihaz bağlı değil',
+          description: 'Yazışma için önce cihaz kurulumunu tamamla.',
+        })
+        return
+      }
+      if (message.length < 12) {
+        setCommunicationThreadErrorById((current) => ({
+          ...current,
+          [conversationId]: 'Mesajını resmi ve net biçimde en az 12 karakter olacak şekilde yaz.',
+        }))
+        return
+      }
+      setCommunicationReplyBusyId(conversationId)
+      setCommunicationThreadErrorById((current) => ({ ...current, [conversationId]: null }))
+      try {
+        const thread = await createEmployeeConversationMessage(conversationId, {
+          device_fingerprint: deviceFingerprint,
+          message,
+        })
+        setCommunicationThreadsById((current) => ({ ...current, [conversationId]: thread }))
+        setCommunicationReplyDrafts((current) => ({ ...current, [conversationId]: '' }))
+        setCommunicationRefreshToken((current) => current + 1)
+        pushToast({
+          variant: 'success',
+          title: 'Kurumsal mesaj gönderildi',
+          description: 'Yönetime resmi mesajın iletildi.',
+        })
+      } catch (error) {
+        const parsed = parseApiError(error, 'Kurumsal mesaj gönderilemedi.')
+        setCommunicationThreadErrorById((current) => ({ ...current, [conversationId]: parsed.message }))
+      } finally {
+        setCommunicationReplyBusyId((current) => (current === conversationId ? null : current))
+      }
+    },
+    [communicationReplyDrafts, deviceFingerprint, pushToast],
+  )
+
+  const submitCommunication = useCallback(async () => {
+    const subject = communicationSubject.trim()
+    const message = communicationMessage.trim()
+    if (!deviceFingerprint) {
+      setCommunicationFormError('Cihaz bağlı değil. Kurumsal mesaj için önce kurulumu tamamla.')
+      return
+    }
+    if (subject.length < 6) {
+      setCommunicationFormError('Başlık en az 6 karakter olmalı.')
+      return
+    }
+    if (message.length < 12) {
+      setCommunicationFormError('Mesajını resmi ve net biçimde en az 12 karakter olacak şekilde yaz.')
+      return
+    }
+
+    setIsCommunicationSubmitting(true)
+    setCommunicationFormError(null)
+    try {
+      const thread = await createEmployeeConversation({
+        device_fingerprint: deviceFingerprint,
+        category: communicationCategory,
+        subject,
+        message,
+      })
+      setCommunicationThreadsById((current) => ({ ...current, [thread.conversation.id]: thread }))
+      setActiveCommunicationId(thread.conversation.id)
+      setCommunicationRefreshToken((current) => current + 1)
+      setIsCommunicationModalOpen(false)
+      setCommunicationCategory('ATTENDANCE')
+      setCommunicationSubject('')
+      setCommunicationMessage('')
+      pushToast({
+        variant: 'success',
+        title: 'Kurumsal yazışma açıldı',
+        description: 'Mesajın yönetime iletildi ve yeni iletişim kaydı oluşturuldu.',
+      })
+    } catch (error) {
+      const parsed = parseApiError(error, 'Kurumsal mesaj oluşturulamadı.')
+      setCommunicationFormError(parsed.message)
+    } finally {
+      setIsCommunicationSubmitting(false)
+    }
+  }, [
+    communicationCategory,
+    communicationMessage,
+    communicationSubject,
+    deviceFingerprint,
+    pushToast,
+  ])
+
+  useEffect(() => {
+    if (!activeCommunicationId || !deviceFingerprint) {
+      return
+    }
+    void loadCommunicationThread(activeCommunicationId)
+  }, [activeCommunicationId, communicationRefreshToken, deviceFingerprint, loadCommunicationThread])
+
+  useEffect(() => {
+    if (!requestedConversationId || !deviceFingerprint) {
+      return
+    }
+    setActiveCommunicationId(requestedConversationId)
+    void loadCommunicationThread(requestedConversationId)
+  }, [deviceFingerprint, loadCommunicationThread, requestedConversationId])
 
   const submitLeaveRequest = useCallback(async () => {
     const startDate = leaveStartDate.trim()
     const endDate = leaveEndDate.trim()
     const note = leaveNote.trim()
+    const question = leaveQuestion.trim()
     if (!deviceFingerprint) {
       setLeaveFormError('Cihaz bagli degil. Davet linki ile kurulumu tamamla.')
       return
@@ -1936,22 +2403,34 @@ export function HomePage() {
       setLeaveFormError('Izin gerekcesi en az 3 karakter olmali.')
       return
     }
+    if (leaveAttachmentFile && leaveAttachmentFile.size > 8 * 1024 * 1024) {
+      setLeaveFormError('Belge boyutu 8 MB sinirini asamaz.')
+      return
+    }
 
     setIsLeaveSubmitting(true)
     setLeaveFormError(null)
     try {
-      const leave = await createEmployeeLeaveRequest({
-        device_fingerprint: deviceFingerprint,
-        start_date: startDate,
-        end_date: endDate,
-        type: leaveType,
-        note,
-      })
+      const formData = new FormData()
+      formData.append('device_fingerprint', deviceFingerprint)
+      formData.append('start_date', startDate)
+      formData.append('end_date', endDate)
+      formData.append('type', leaveType)
+      formData.append('note', note)
+      if (question) {
+        formData.append('question', question)
+      }
+      if (leaveAttachmentFile) {
+        formData.append('attachment', leaveAttachmentFile)
+      }
+      const leave = await submitEmployeeLeaveRequest(formData)
       setIsLeaveModalOpen(false)
       setLeaveStartDate('')
       setLeaveEndDate('')
       setLeaveType('ANNUAL')
       setLeaveNote('')
+      setLeaveQuestion('')
+      setLeaveAttachmentFile(null)
       setActionNotice({
         tone: 'success',
         text: `Izin talebin gonderildi. Durum: ${leaveStatusLabels[leave.status]}.`,
@@ -1960,7 +2439,10 @@ export function HomePage() {
       pushToast({
         variant: 'success',
         title: 'Izin talebi gonderildi',
-        description: 'Talebin admin onayina iletildi.',
+        description:
+          question || leaveAttachmentFile
+            ? 'Talebin, ek notun ve varsa belgen admin ekranina iletildi.'
+            : 'Talebin admin onayina iletildi.',
       })
     } catch (error) {
       const parsed = parseApiError(error, 'Izin talebi gonderilemedi.')
@@ -1968,7 +2450,7 @@ export function HomePage() {
     } finally {
       setIsLeaveSubmitting(false)
     }
-  }, [deviceFingerprint, leaveEndDate, leaveNote, leaveStartDate, leaveType, pushToast])
+  }, [deviceFingerprint, leaveAttachmentFile, leaveEndDate, leaveNote, leaveQuestion, leaveStartDate, leaveType, pushToast])
 
   const copyPortalLinkForSafari = useCallback(async () => {
     if (typeof window === 'undefined') {
@@ -3967,8 +4449,99 @@ export function HomePage() {
                                       </div>
                                       <p className="leave-history-range">{formatLeaveRange(leave.start_date, leave.end_date)}</p>
                                       <p className="leave-history-note">{leave.note || 'Gerekçe girilmedi.'}</p>
+                                      {leave.latest_message_preview ? (
+                                        <p className="leave-history-decision">Son mesaj: {leave.latest_message_preview}</p>
+                                      ) : null}
                                       {leave.decision_note ? (
                                         <p className="leave-history-decision">Karar notu: {leave.decision_note}</p>
+                                      ) : null}
+                                      <div className="leave-thread-summary-row">
+                                        <div className="leave-thread-summary-chips">
+                                          <span className="leave-request-chip">Mesaj: {leave.message_count ?? 0}</span>
+                                          <span className="leave-request-chip">Belge: {leave.attachment_count ?? 0}</span>
+                                        </div>
+                                        <button
+                                          type="button"
+                                          className="btn btn-soft leave-thread-toggle-btn"
+                                          onClick={() => toggleLeaveThread(leave.id)}
+                                        >
+                                          {activeLeaveThreadId === leave.id ? 'Yazışmayı Kapat' : 'Yazışmayı Aç'}
+                                        </button>
+                                      </div>
+                                      {activeLeaveThreadId === leave.id ? (
+                                        <div className="leave-thread-panel">
+                                          {leaveThreadLoadingId === leave.id && !leaveThreadsById[leave.id] ? (
+                                            <p className="small-text">Yazışma yükleniyor...</p>
+                                          ) : null}
+                                          {leaveThreadErrorById[leave.id] ? (
+                                            <p className="small-text">{leaveThreadErrorById[leave.id]}</p>
+                                          ) : null}
+                                          {leaveThreadsById[leave.id] ? (
+                                            <>
+                                              {leaveThreadsById[leave.id].attachments.length > 0 ? (
+                                                <div className="leave-thread-attachments">
+                                                  <p className="small-title">Eklenen belgeler</p>
+                                                  <div className="leave-thread-attachment-list">
+                                                    {leaveThreadsById[leave.id].attachments.map((attachment) => (
+                                                      <button
+                                                        key={attachment.id}
+                                                        type="button"
+                                                        className="btn btn-ghost leave-thread-attachment-btn"
+                                                        onClick={() =>
+                                                          void handleLeaveAttachmentDownload(leave.id, attachment.id, attachment.file_name)
+                                                        }
+                                                      >
+                                                        {attachment.file_name} · {formatAttachmentSize(attachment.file_size_bytes)}
+                                                      </button>
+                                                    ))}
+                                                  </div>
+                                                </div>
+                                              ) : null}
+                                              <div className="leave-thread-messages">
+                                                <p className="small-title">Yönetici yazışması</p>
+                                                {leaveThreadsById[leave.id].messages.length > 0 ? (
+                                                  <ol className="leave-thread-message-list">
+                                                    {leaveThreadsById[leave.id].messages.map((messageRow) => (
+                                                      <li
+                                                        key={messageRow.id}
+                                                        className={`leave-thread-message ${
+                                                          messageRow.sender_actor === 'ADMIN' ? 'is-admin' : 'is-employee'
+                                                        }`}
+                                                      >
+                                                        <div className="leave-thread-message-head">
+                                                          <strong>{messageRow.sender_label}</strong>
+                                                          <span>{formatTs(messageRow.created_at)}</span>
+                                                        </div>
+                                                        <p>{messageRow.message}</p>
+                                                      </li>
+                                                    ))}
+                                                  </ol>
+                                                ) : (
+                                                  <p className="small-text">Henüz bir yazışma yok. İstersen yöneticiye soru bırakabilirsin.</p>
+                                                )}
+                                              </div>
+                                              <div className="leave-thread-reply-box">
+                                                <label className="field">
+                                                  <span>Yöneticiye mesaj gönder</span>
+                                                  <textarea
+                                                    rows={3}
+                                                    value={leaveReplyDrafts[leave.id] ?? ''}
+                                                    onChange={(event) => updateLeaveReplyDraft(leave.id, event.target.value)}
+                                                    placeholder="Talebinle ilgili kısa bir soru veya açıklama yaz..."
+                                                  />
+                                                </label>
+                                                <button
+                                                  type="button"
+                                                  className="btn btn-primary leave-thread-reply-btn"
+                                                  disabled={leaveReplyBusyId === leave.id}
+                                                  onClick={() => void submitLeaveReply(leave.id)}
+                                                >
+                                                  {leaveReplyBusyId === leave.id ? 'Gönderiliyor...' : 'Mesaj Gönder'}
+                                                </button>
+                                              </div>
+                                            </>
+                                          ) : null}
+                                        </div>
                                       ) : null}
                                     </div>
                                   </li>
@@ -3991,6 +4564,177 @@ export function HomePage() {
                   </div>
                 </SecondaryDisclosure>
               ) : null}
+
+              <SecondaryDisclosure
+                title="Kurumsal iletişim"
+                description="Yönetime iş odaklı, resmi mesajlarını bu alandan ilet."
+                badge={openCommunicationCount > 0 ? `${openCommunicationCount} açık` : communicationSummary}
+                open={Boolean(requestedConversationId)}
+              >
+                <section className="employee-communication-card" aria-labelledby="employee-communication-title">
+                  <div className="employee-communication-head">
+                    <div>
+                      <p className="employee-communication-kicker">RESMİ YAZIŞMA</p>
+                      <h3 id="employee-communication-title" className="employee-communication-title">
+                        Yöneticiyle kurumsal iletişim
+                      </h3>
+                    </div>
+                    <span className="employee-communication-count">{communicationSummary}</span>
+                  </div>
+
+                  <p className="employee-communication-copy">
+                    Bu alan günlük sohbet için değil, iş süreci iletişimi içindir. Konunu seç, kısa bir başlık yaz ve
+                    ihtiyacını resmi, net bir dille ilet.
+                  </p>
+
+                  <div className="employee-communication-guidance">
+                    <span className="employee-communication-guidance-label">Kurumsal format</span>
+                    <span className="leave-request-chip">Konu seÃ§</span>
+                    <span className="leave-request-chip">BaÅŸlÄ±ÄŸÄ± net yaz</span>
+                    <span className="leave-request-chip">Talebi resmi dille ilet</span>
+                  </div>
+
+                  {deviceFingerprint ? (
+                    <div className="employee-communication-actions">
+                      <button
+                        type="button"
+                        className="btn btn-primary employee-communication-open-btn"
+                        onClick={openCommunicationModal}
+                      >
+                        Kurumsal Mesaj Oluştur
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="warn-box">
+                      <p>Kurumsal yazışma için önce cihaz bağlantısını tamamla.</p>
+                    </div>
+                  )}
+
+                  {isCommunicationLoading && !isCommunicationReady ? (
+                    <p className="leave-history-empty">Yazışma listesi hazırlanıyor...</p>
+                  ) : hasCommunicationHistory ? (
+                    <>
+                      <ol className="employee-communication-list">
+                        {visibleCommunications.map((conversation) => (
+                          <li
+                            key={conversation.id}
+                            className={`employee-communication-item ${
+                              conversation.status === 'CLOSED' ? 'is-closed' : 'is-open'
+                            }`}
+                          >
+                            <div className="employee-communication-item-head">
+                              <div>
+                                <div className="employee-communication-item-row">
+                                  <strong>{conversation.subject}</strong>
+                                  <span
+                                    className={`employee-communication-status employee-communication-status-${conversation.status.toLowerCase()}`}
+                                  >
+                                    {conversationStatusLabel(conversation.status)}
+                                  </span>
+                                </div>
+                                <p className="employee-communication-meta">
+                                  {conversationCategoryLabels[conversation.category]} · Son güncelleme:{' '}
+                                  {formatTs(conversation.last_message_at)}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                className="btn btn-soft leave-thread-toggle-btn"
+                                onClick={() => toggleCommunicationThread(conversation.id)}
+                              >
+                                {activeCommunicationId === conversation.id ? 'Yazışmayı Kapat' : 'Yazışmayı Aç'}
+                              </button>
+                            </div>
+                            {conversation.latest_message_preview ? (
+                              <p className="employee-communication-preview">{conversation.latest_message_preview}</p>
+                            ) : null}
+                            <div className="leave-thread-summary-chips">
+                              <span className="leave-request-chip">Mesaj: {conversation.message_count}</span>
+                              <span className="leave-request-chip">
+                                Durum: {conversationStatusLabel(conversation.status)}
+                              </span>
+                            </div>
+
+                            {activeCommunicationId === conversation.id ? (
+                              <div className="employee-communication-thread">
+                                {communicationThreadLoadingId === conversation.id && !communicationThreadsById[conversation.id] ? (
+                                  <p className="small-text">Kurumsal yazışma yükleniyor...</p>
+                                ) : null}
+                                {communicationThreadErrorById[conversation.id] ? (
+                                  <p className="small-text">{communicationThreadErrorById[conversation.id]}</p>
+                                ) : null}
+                                {communicationThreadsById[conversation.id] ? (
+                                  <>
+                                    <ol className="leave-thread-message-list">
+                                      {communicationThreadsById[conversation.id].messages.map((messageRow) => (
+                                        <li
+                                          key={messageRow.id}
+                                          className={`leave-thread-message ${
+                                            messageRow.sender_actor === 'ADMIN' ? 'is-admin' : 'is-employee'
+                                          }`}
+                                        >
+                                          <div className="leave-thread-message-head">
+                                            <strong>{messageRow.sender_label}</strong>
+                                            <span>{formatTs(messageRow.created_at)}</span>
+                                          </div>
+                                          <p>{messageRow.message}</p>
+                                        </li>
+                                      ))}
+                                    </ol>
+
+                                    {communicationThreadsById[conversation.id].conversation.status === 'OPEN' ? (
+                                      <div className="leave-thread-reply-box">
+                                        <label className="field">
+                                          <span>Kurumsal yanıt yaz</span>
+                                          <textarea
+                                            rows={3}
+                                            value={communicationReplyDrafts[conversation.id] ?? ''}
+                                            onChange={(event) => updateCommunicationReplyDraft(conversation.id, event.target.value)}
+                                            placeholder="Örnek: 12 Nisan vardiya değişikliğim için onay sürecini öğrenmek istiyorum."
+                                          />
+                                        </label>
+                                        <div className="employee-communication-starters">
+                                          {communicationReplyStarters.map((starter) => (
+                                            <button
+                                              key={starter}
+                                              type="button"
+                                              className="employee-communication-starter-btn"
+                                              onClick={() => applyCommunicationReplyStarter(conversation.id, starter)}
+                                            >
+                                              {starter}
+                                            </button>
+                                          ))}
+                                        </div>
+                                        <button
+                                          type="button"
+                                          className="btn btn-primary leave-thread-reply-btn"
+                                          disabled={communicationReplyBusyId === conversation.id}
+                                          onClick={() => void submitCommunicationReply(conversation.id)}
+                                        >
+                                          {communicationReplyBusyId === conversation.id ? 'Gönderiliyor...' : 'Resmi Mesaj Gönder'}
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <p className="small-text">
+                                        Bu iletişim kaydı kapatıldı. Gerekirse yeni bir kurumsal mesaj oluşturabilirsin.
+                                      </p>
+                                    )}
+                                  </>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ol>
+                      {hiddenCommunicationCount > 0 ? (
+                        <p className="leave-history-footnote">+{hiddenCommunicationCount} iletişim kaydı daha var.</p>
+                      ) : null}
+                    </>
+                  ) : (
+                    <p className="leave-history-empty">Henüz kurumsal iletişim kaydı yok.</p>
+                  )}
+                </section>
+              </SecondaryDisclosure>
             </section>
           </div>
           <section className="employee-command-surface">
@@ -4786,35 +5530,72 @@ export function HomePage() {
             onClose={closeLeaveRequestModal}
           >
             <p id="leave-request-modal-description">
-              Izin gerekcesini ve tarih araligini gir. Talebin admin onayina dusunce sana bildirim gider.
+              İzin gerekçesini ve tarih aralığını gir. İstersen belge ekleyip yöneticiye ilk sorunu da aynı anda iletebilirsin.
             </p>
+            <div className="employee-communication-template-grid">
+              {communicationTemplates.map((template) => (
+                <button
+                  key={template.label}
+                  type="button"
+                  className="employee-communication-template-btn"
+                  onClick={() => applyCommunicationTemplate(template)}
+                >
+                  {template.label}
+                </button>
+              ))}
+            </div>
             <div className="stack">
               <label className="field">
-                <span>Izin tipi</span>
+                <span>İzin tipi</span>
                 <select value={leaveType} onChange={(event) => setLeaveType(event.target.value as LeaveType)}>
-                  <option value="ANNUAL">Yillik izin</option>
-                  <option value="SICK">Rapor / hastalik</option>
-                  <option value="UNPAID">Ucretsiz izin</option>
+                  <option value="ANNUAL">Yıllık izin</option>
+                  <option value="SICK">Rapor / hastalık</option>
+                  <option value="UNPAID">Ücretsiz izin</option>
                   <option value="EXCUSE">Mazeret izni</option>
                   <option value="PUBLIC_HOLIDAY">Resmi tatil</option>
                 </select>
               </label>
               <label className="field">
-                <span>Baslangic tarihi</span>
+                <span>Başlangıç tarihi</span>
                 <input type="date" value={leaveStartDate} onChange={(event) => setLeaveStartDate(event.target.value)} />
               </label>
               <label className="field">
-                <span>Bitis tarihi</span>
+                <span>Bitiş tarihi</span>
                 <input type="date" value={leaveEndDate} onChange={(event) => setLeaveEndDate(event.target.value)} />
               </label>
               <label className="field">
-                <span>Izin gerekcesi</span>
+                <span>İzin gerekçesi</span>
                 <textarea
                   value={leaveNote}
                   onChange={(event) => setLeaveNote(event.target.value)}
                   rows={4}
-                  placeholder="Ornek: Hastane randevusu, aile isi, resmi islem..."
+                  placeholder="Örnek: Hastane randevusu, aile işi, resmi işlem..."
                 />
+              </label>
+              <label className="field">
+                <span>Yöneticiye not / soru</span>
+                <textarea
+                  value={leaveQuestion}
+                  onChange={(event) => setLeaveQuestion(event.target.value)}
+                  rows={3}
+                  placeholder="Örnek: Raporu ekledim, onay için başka belge gerekiyor mu?"
+                />
+              </label>
+              <label className="field">
+                <span>Belge ekle</span>
+                <input
+                  type="file"
+                  accept={LEAVE_ATTACHMENT_ACCEPT}
+                  onChange={(event) => setLeaveAttachmentFile(event.target.files?.[0] ?? null)}
+                />
+                <span className="small-text">
+                  PDF, görsel veya Word belgesi yükleyebilirsin. Üst sınır: 8 MB.
+                </span>
+                {leaveAttachmentFile ? (
+                  <span className="small-text">
+                    Seçilen dosya: <strong>{leaveAttachmentFile.name}</strong> ({formatAttachmentSize(leaveAttachmentFile.size)})
+                  </span>
+                ) : null}
               </label>
             </div>
             {leaveFormError ? <p className="small-text">{leaveFormError}</p> : null}
@@ -4825,10 +5606,76 @@ export function HomePage() {
                 disabled={isLeaveSubmitting}
                 onClick={() => void submitLeaveRequest()}
               >
-                {isLeaveSubmitting ? 'Gonderiliyor...' : 'Talebi Gonder'}
+                {isLeaveSubmitting ? 'Gönderiliyor...' : 'Talebi Gönder'}
               </button>
               <button type="button" className="btn btn-soft" disabled={isLeaveSubmitting} onClick={closeLeaveRequestModal}>
-                Vazgec
+                Vazgeç
+              </button>
+            </div>
+          </EmployeeFocusModal>
+        ) : null}
+
+        {isCommunicationModalOpen ? (
+          <EmployeeFocusModal
+            titleId="employee-communication-modal-title"
+            descriptionId="employee-communication-modal-description"
+            title="Kurumsal Mesaj Oluştur"
+            kicker="YÖNETİCİ İLETİŞİMİ"
+            panelClassName="employee-focus-modal--wide"
+            onClose={closeCommunicationModal}
+          >
+            <p id="employee-communication-modal-description">
+              Bu alan resmi iş iletişimi içindir. Günlük sohbet dili yerine konu, başlık ve ihtiyacını açık şekilde yaz.
+            </p>
+            <div className="stack">
+              <label className="field">
+                <span>Konu</span>
+                <select
+                  value={communicationCategory}
+                  onChange={(event) => setCommunicationCategory(event.target.value as EmployeeConversationCategory)}
+                >
+                  <option value="ATTENDANCE">Puantaj</option>
+                  <option value="SHIFT">Vardiya</option>
+                  <option value="DEVICE">Cihaz</option>
+                  <option value="DOCUMENT">Belge</option>
+                  <option value="OTHER">Genel</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>Başlık</span>
+                <input
+                  value={communicationSubject}
+                  onChange={(event) => setCommunicationSubject(event.target.value)}
+                  placeholder="Örnek: 12 Nisan vardiya değişikliği talebi"
+                />
+              </label>
+              <label className="field">
+                <span>Resmi mesaj</span>
+                <textarea
+                  value={communicationMessage}
+                  onChange={(event) => setCommunicationMessage(event.target.value)}
+                  rows={5}
+                  placeholder="Örnek: 12 Nisan 2026 vardiya planım ile ilgili bilgi rica ediyorum. Müsaitseniz güncel durumu paylaşabilir misiniz?"
+                />
+              </label>
+            </div>
+            {communicationFormError ? <p className="small-text">{communicationFormError}</p> : null}
+            <div className="stack">
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={isCommunicationSubmitting}
+                onClick={() => void submitCommunication()}
+              >
+                {isCommunicationSubmitting ? 'Gönderiliyor...' : 'Kurumsal Mesaj Gönder'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-soft"
+                disabled={isCommunicationSubmitting}
+                onClick={closeCommunicationModal}
+              >
+                Vazgeç
               </button>
             </div>
           </EmployeeFocusModal>

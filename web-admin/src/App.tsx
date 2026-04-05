@@ -13,6 +13,7 @@ import { ComplianceSettingsPage } from './pages/ComplianceSettingsPage'
 import { ArchivePasswordDownloadPage } from './pages/ArchivePasswordDownloadPage'
 import { AttendanceExtraCheckinApprovalPage } from './pages/AttendanceExtraCheckinApprovalPage'
 import { AdminUsersPage } from './pages/AdminUsersPage'
+import { CommunicationsPage } from './pages/CommunicationsPage'
 import { EmployeeDetailPage } from './pages/EmployeeDetailPage'
 import { EmployeeMonthlyReportPage } from './pages/EmployeeMonthlyReportPage'
 import { EmployeesPage } from './pages/EmployeesPage'
@@ -173,6 +174,14 @@ function App() {
             element={
               <PermissionRoute permission="notifications">
                 <NotificationsPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/communications"
+            element={
+              <PermissionRoute permission="notifications">
+                <CommunicationsPage />
               </PermissionRoute>
             }
           />

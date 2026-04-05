@@ -1,3 +1,4 @@
+import re
 from datetime import date, datetime, time
 from typing import Any, Literal
 
@@ -7,6 +8,8 @@ from app.models import (
     AttendanceEventSource,
     AttendanceType,
     AuditActorType,
+    EmployeeConversationCategory,
+    EmployeeConversationStatus,
     GeofenceStatus,
     LeaveStatus,
     LeaveType,
@@ -17,6 +20,27 @@ from app.models import (
     QRCodeType,
     SchedulePlanTargetType,
 )
+
+_CASUAL_MESSAGE_PATTERN = re.compile(r"\b(amk|mk|knk|kanka|abi|lol|slm|mrb|nbr|naber)\b", re.IGNORECASE)
+_EMOJI_PATTERN = re.compile(r"[\U0001F300-\U0001FAFF]")
+
+
+def _normalize_subject(value: str) -> str:
+    normalized = " ".join((value or "").strip().split())
+    if len(normalized) < 6:
+        raise ValueError("subject must contain at least 6 characters")
+    return normalized
+
+
+def _normalize_corporate_message(value: str, *, min_length: int = 12) -> str:
+    normalized = (value or "").strip()
+    if len(normalized) < min_length:
+        raise ValueError(f"message must contain at least {min_length} characters")
+    if _CASUAL_MESSAGE_PATTERN.search(normalized) or _EMOJI_PATTERN.search(normalized):
+        raise ValueError("message must use a formal work-focused tone")
+    if normalized.count("!") > 2:
+        raise ValueError("message must use a formal work-focused tone")
+    return normalized
 
 
 class RegionCreate(BaseModel):
@@ -1055,6 +1079,7 @@ class EmployeeLeaveRequestCreate(BaseModel):
     end_date: date
     type: LeaveType
     note: str = Field(min_length=3, max_length=1000)
+    question: str | None = Field(default=None, max_length=2000)
 
     @model_validator(mode="after")
     def _validate_range(self) -> "EmployeeLeaveRequestCreate":
@@ -1063,6 +1088,8 @@ class EmployeeLeaveRequestCreate(BaseModel):
         self.note = self.note.strip()
         if len(self.note) < 3:
             raise ValueError("note must contain at least 3 characters")
+        normalized_question = (self.question or "").strip()
+        self.question = normalized_question or None
         return self
 
 
@@ -1093,8 +1120,139 @@ class LeaveRead(BaseModel):
     decision_note: str | None = None
     decided_at: datetime | None = None
     created_at: datetime
+    attachment_count: int = 0
+    message_count: int = 0
+    last_message_at: datetime | None = None
+    latest_message_preview: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class LeaveAttachmentRead(BaseModel):
+    id: int
+    leave_id: int
+    employee_id: int
+    uploaded_by_actor: str
+    uploaded_by_label: str
+    file_name: str
+    content_type: str
+    file_size_bytes: int
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LeaveMessageRead(BaseModel):
+    id: int
+    leave_id: int
+    employee_id: int
+    sender_actor: str
+    sender_label: str
+    message: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LeaveThreadRead(BaseModel):
+    leave: LeaveRead
+    attachments: list[LeaveAttachmentRead] = Field(default_factory=list)
+    messages: list[LeaveMessageRead] = Field(default_factory=list)
+
+
+class EmployeeLeaveMessageCreateRequest(BaseModel):
+    device_fingerprint: str = Field(min_length=8, max_length=255)
+    message: str = Field(min_length=1, max_length=2000)
+
+    @model_validator(mode="after")
+    def _normalize_message(self) -> "EmployeeLeaveMessageCreateRequest":
+        self.message = self.message.strip()
+        if len(self.message) < 1:
+            raise ValueError("message must contain at least 1 character")
+        return self
+
+
+class AdminLeaveMessageCreateRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=2000)
+
+    @model_validator(mode="after")
+    def _normalize_message(self) -> "AdminLeaveMessageCreateRequest":
+        self.message = self.message.strip()
+        if len(self.message) < 1:
+            raise ValueError("message must contain at least 1 character")
+        return self
+
+
+class EmployeeConversationCreateRequest(BaseModel):
+    device_fingerprint: str = Field(min_length=8, max_length=255)
+    category: EmployeeConversationCategory
+    subject: str = Field(min_length=6, max_length=160)
+    message: str = Field(min_length=12, max_length=2000)
+
+    @model_validator(mode="after")
+    def _normalize_fields(self) -> "EmployeeConversationCreateRequest":
+        self.subject = _normalize_subject(self.subject)
+        self.message = _normalize_corporate_message(self.message)
+        return self
+
+
+class EmployeeConversationMessageCreateRequest(BaseModel):
+    device_fingerprint: str = Field(min_length=8, max_length=255)
+    message: str = Field(min_length=12, max_length=2000)
+
+    @model_validator(mode="after")
+    def _normalize_message(self) -> "EmployeeConversationMessageCreateRequest":
+        self.message = _normalize_corporate_message(self.message)
+        return self
+
+
+class AdminConversationMessageCreateRequest(BaseModel):
+    message: str = Field(min_length=3, max_length=2000)
+
+    @model_validator(mode="after")
+    def _normalize_message(self) -> "AdminConversationMessageCreateRequest":
+        self.message = self.message.strip()
+        if len(self.message) < 3:
+            raise ValueError("message must contain at least 3 characters")
+        return self
+
+
+class AdminConversationStatusUpdateRequest(BaseModel):
+    status: EmployeeConversationStatus
+
+
+class EmployeeConversationRead(BaseModel):
+    id: int
+    employee_id: int
+    employee_name: str
+    category: EmployeeConversationCategory
+    subject: str
+    status: EmployeeConversationStatus
+    created_at: datetime
+    updated_at: datetime
+    closed_at: datetime | None = None
+    last_message_at: datetime
+    message_count: int = 0
+    latest_message_preview: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class EmployeeConversationMessageRead(BaseModel):
+    id: int
+    conversation_id: int
+    employee_id: int
+    sender_actor: str
+    sender_label: str
+    message: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class EmployeeConversationThreadRead(BaseModel):
+    conversation: EmployeeConversationRead
+    messages: list[EmployeeConversationMessageRead] = Field(default_factory=list)
 
 
 class EmployeeLocationUpsert(BaseModel):

@@ -8,6 +8,8 @@ import type {
   AttendanceCheckoutRequest,
   DeviceClaimRequest,
   DeviceClaimResponse,
+  EmployeeConversationRecord,
+  EmployeeConversationThreadRecord,
   EmployeeDemoDayResponse,
   EmployeeAppPresencePingRequest,
   EmployeeAppPresencePingResponse,
@@ -15,6 +17,7 @@ import type {
   EmployeeInstallFunnelEventResponse,
   EmployeeLeaveRecord,
   EmployeeLeaveRequest,
+  EmployeeLeaveThreadRecord,
   EmployeeQrScanRequest,
   EmployeeQrScanDeniedResponse,
   EmployeePushConfigResponse,
@@ -219,6 +222,99 @@ export async function createEmployeeLeaveRequest(
   payload: EmployeeLeaveRequest,
 ): Promise<EmployeeLeaveRecord> {
   const response = await apiClient.post<EmployeeLeaveRecord>('/api/employee/leaves', payload)
+  return response.data
+}
+
+export async function submitEmployeeLeaveRequest(
+  payload: FormData,
+): Promise<EmployeeLeaveRecord> {
+  const response = await apiClient.post<EmployeeLeaveRecord>('/api/employee/leaves/submit', payload, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  })
+  return response.data
+}
+
+export async function getEmployeeLeaveThread(
+  leaveId: number,
+  deviceFingerprint: string,
+): Promise<EmployeeLeaveThreadRecord> {
+  const response = await apiClient.get<EmployeeLeaveThreadRecord>(`/api/employee/leaves/${leaveId}/thread`, {
+    params: { device_fingerprint: deviceFingerprint },
+  })
+  return response.data
+}
+
+export async function createEmployeeLeaveMessage(
+  leaveId: number,
+  payload: { device_fingerprint: string; message: string },
+): Promise<EmployeeLeaveThreadRecord> {
+  const response = await apiClient.post<EmployeeLeaveThreadRecord>(`/api/employee/leaves/${leaveId}/messages`, payload)
+  return response.data
+}
+
+export async function downloadEmployeeLeaveAttachment(
+  leaveId: number,
+  attachmentId: number,
+  deviceFingerprint: string,
+): Promise<{ blob: Blob; fileName: string | null; contentType: string | null }> {
+  const response = await apiClient.get<Blob>(`/api/employee/leaves/${leaveId}/attachments/${attachmentId}/download`, {
+    params: { device_fingerprint: deviceFingerprint },
+    responseType: 'blob',
+  })
+  const contentDisposition = response.headers['content-disposition']
+  const fileNameMatch =
+    typeof contentDisposition === 'string'
+      ? /filename="?([^";]+)"?/i.exec(contentDisposition)
+      : null
+  return {
+    blob: response.data,
+    fileName: fileNameMatch?.[1] ?? null,
+    contentType: response.headers['content-type'] ?? null,
+  }
+}
+
+export async function getEmployeeConversations(deviceFingerprint: string): Promise<EmployeeConversationRecord[]> {
+  const response = await apiClient.get<EmployeeConversationRecord[]>('/api/employee/communications', {
+    params: { device_fingerprint: deviceFingerprint },
+  })
+  return response.data
+}
+
+export async function createEmployeeConversation(
+  payload: {
+    device_fingerprint: string
+    category: string
+    subject: string
+    message: string
+  },
+): Promise<EmployeeConversationThreadRecord> {
+  const response = await apiClient.post<EmployeeConversationThreadRecord>('/api/employee/communications', payload)
+  return response.data
+}
+
+export async function getEmployeeConversationThread(
+  conversationId: number,
+  deviceFingerprint: string,
+): Promise<EmployeeConversationThreadRecord> {
+  const response = await apiClient.get<EmployeeConversationThreadRecord>(
+    `/api/employee/communications/${conversationId}/thread`,
+    {
+      params: { device_fingerprint: deviceFingerprint },
+    },
+  )
+  return response.data
+}
+
+export async function createEmployeeConversationMessage(
+  conversationId: number,
+  payload: { device_fingerprint: string; message: string },
+): Promise<EmployeeConversationThreadRecord> {
+  const response = await apiClient.post<EmployeeConversationThreadRecord>(
+    `/api/employee/communications/${conversationId}/messages`,
+    payload,
+  )
   return response.data
 }
 

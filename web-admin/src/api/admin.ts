@@ -43,11 +43,15 @@ import type {
   EmployeeDeviceOverview,
   DeviceInviteCreateResponse,
   Employee,
+  EmployeeConversationRecord,
+  EmployeeConversationStatus,
+  EmployeeConversationThreadRecord,
   EmployeeDetail,
   EmployeeLocation,
   EmployeeStatusFilter,
   LaborProfile,
   LeaveRecord,
+  LeaveThreadRecord,
   LocationStatus,
   LocationMonitorMapResponse,
   LocationMonitorSummaryResponse,
@@ -1724,6 +1728,86 @@ export async function decideLeave(
 ): Promise<LeaveRecord> {
   const response = await apiClient.patch<LeaveRecord>(
     `/api/admin/leaves/${leaveId}`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function getLeaveThread(
+  leaveId: number,
+): Promise<LeaveThreadRecord> {
+  const response = await apiClient.get<LeaveThreadRecord>(
+    `/api/admin/leaves/${leaveId}/thread`,
+  );
+  return response.data;
+}
+
+export async function createAdminLeaveMessage(
+  leaveId: number,
+  payload: { message: string },
+): Promise<LeaveThreadRecord> {
+  const response = await apiClient.post<LeaveThreadRecord>(
+    `/api/admin/leaves/${leaveId}/messages`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function downloadAdminLeaveAttachment(
+  leaveId: number,
+  attachmentId: number,
+): Promise<{ blob: Blob; file_name: string | null }> {
+  const response = await apiClient.get<Blob>(
+    `/api/admin/leaves/${leaveId}/attachments/${attachmentId}/download`,
+    { responseType: "blob" },
+  );
+  const contentDisposition = response.headers["content-disposition"];
+  const fileNameMatch =
+    typeof contentDisposition === "string"
+      ? /filename="?([^";]+)"?/i.exec(contentDisposition)
+      : null;
+  return {
+    blob: response.data,
+    file_name: fileNameMatch?.[1] ?? null,
+  };
+}
+
+export async function getAdminConversations(
+  params: { employee_id?: number; status?: EmployeeConversationStatus } = {},
+): Promise<EmployeeConversationRecord[]> {
+  const response = await apiClient.get<EmployeeConversationRecord[]>(
+    "/api/admin/communications",
+    { params },
+  );
+  return response.data;
+}
+
+export async function getAdminConversationThread(
+  conversationId: number,
+): Promise<EmployeeConversationThreadRecord> {
+  const response = await apiClient.get<EmployeeConversationThreadRecord>(
+    `/api/admin/communications/${conversationId}/thread`,
+  );
+  return response.data;
+}
+
+export async function createAdminConversationMessage(
+  conversationId: number,
+  payload: { message: string },
+): Promise<EmployeeConversationThreadRecord> {
+  const response = await apiClient.post<EmployeeConversationThreadRecord>(
+    `/api/admin/communications/${conversationId}/messages`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function updateAdminConversationStatus(
+  conversationId: number,
+  payload: { status: EmployeeConversationStatus },
+): Promise<EmployeeConversationRecord> {
+  const response = await apiClient.patch<EmployeeConversationRecord>(
+    `/api/admin/communications/${conversationId}/status`,
     payload,
   );
   return response.data;

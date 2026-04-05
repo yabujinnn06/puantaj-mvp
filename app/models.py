@@ -82,6 +82,19 @@ class LeaveStatus(str, enum.Enum):
     REJECTED = "REJECTED"
 
 
+class EmployeeConversationCategory(str, enum.Enum):
+    ATTENDANCE = "ATTENDANCE"
+    SHIFT = "SHIFT"
+    DEVICE = "DEVICE"
+    DOCUMENT = "DOCUMENT"
+    OTHER = "OTHER"
+
+
+class EmployeeConversationStatus(str, enum.Enum):
+    OPEN = "OPEN"
+    CLOSED = "CLOSED"
+
+
 class AuditActorType(str, enum.Enum):
     ADMIN = "ADMIN"
     SYSTEM = "SYSTEM"
@@ -981,6 +994,248 @@ class Leave(Base):
     )
 
     employee: Mapped[Employee] = relationship(back_populates="leaves")
+    leave_attachments: Mapped[list["LeaveAttachment"]] = relationship(
+        back_populates="leave",
+        cascade="all, delete-orphan",
+        order_by="LeaveAttachment.created_at.asc()",
+    )
+    leave_messages: Mapped[list["LeaveMessage"]] = relationship(
+        back_populates="leave",
+        cascade="all, delete-orphan",
+        order_by="LeaveMessage.created_at.asc()",
+    )
+
+    @property
+    def attachment_count(self) -> int:
+        return len(self.leave_attachments or [])
+
+    @property
+    def message_count(self) -> int:
+        return len(self.leave_messages or [])
+
+    @property
+    def last_message_at(self) -> datetime | None:
+        if not self.leave_messages:
+            return None
+        return self.leave_messages[-1].created_at
+
+    @property
+    def latest_message_preview(self) -> str | None:
+        if not self.leave_messages:
+            return None
+        message = (self.leave_messages[-1].message or "").strip()
+        if len(message) <= 140:
+            return message or None
+        return f"{message[:137].rstrip()}..."
+
+
+class LeaveAttachment(Base):
+    __tablename__ = "leave_attachments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    leave_id: Mapped[int] = mapped_column(
+        ForeignKey("leaves.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    employee_id: Mapped[int] = mapped_column(
+        ForeignKey("employees.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    uploaded_by_actor: Mapped[str] = mapped_column(String(20), nullable=False, default="EMPLOYEE")
+    uploaded_by_admin_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("admin_users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    file_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    file_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    leave: Mapped[Leave] = relationship(back_populates="leave_attachments")
+    employee: Mapped[Employee] = relationship()
+    uploaded_by_admin_user: Mapped["AdminUser | None"] = relationship()
+
+    @property
+    def uploaded_by_label(self) -> str:
+        if self.uploaded_by_actor == "ADMIN":
+            admin_name = (
+                self.uploaded_by_admin_user.full_name
+                if self.uploaded_by_admin_user is not None and self.uploaded_by_admin_user.full_name
+                else (
+                    self.uploaded_by_admin_user.username
+                    if self.uploaded_by_admin_user is not None
+                    else "Admin"
+                )
+            )
+            return admin_name
+        return "Çalışan"
+
+
+class LeaveMessage(Base):
+    __tablename__ = "leave_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    leave_id: Mapped[int] = mapped_column(
+        ForeignKey("leaves.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    employee_id: Mapped[int] = mapped_column(
+        ForeignKey("employees.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    sender_actor: Mapped[str] = mapped_column(String(20), nullable=False, default="EMPLOYEE")
+    sender_admin_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("admin_users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    leave: Mapped[Leave] = relationship(back_populates="leave_messages")
+    employee: Mapped[Employee] = relationship()
+    sender_admin_user: Mapped["AdminUser | None"] = relationship()
+
+    @property
+    def sender_label(self) -> str:
+        if self.sender_actor == "ADMIN":
+            admin_name = (
+                self.sender_admin_user.full_name
+                if self.sender_admin_user is not None and self.sender_admin_user.full_name
+                else (
+                    self.sender_admin_user.username
+                    if self.sender_admin_user is not None
+                    else "Admin"
+                )
+            )
+            return admin_name
+        return self.employee.full_name if self.employee is not None and self.employee.full_name else "Çalışan"
+
+
+class EmployeeConversation(Base):
+    __tablename__ = "employee_conversations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    employee_id: Mapped[int] = mapped_column(
+        ForeignKey("employees.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    category: Mapped[EmployeeConversationCategory] = mapped_column(
+        Enum(EmployeeConversationCategory, name="employee_conversation_category"),
+        nullable=False,
+    )
+    subject: Mapped[str] = mapped_column(String(160), nullable=False)
+    status: Mapped[EmployeeConversationStatus] = mapped_column(
+        Enum(EmployeeConversationStatus, name="employee_conversation_status"),
+        nullable=False,
+        default=EmployeeConversationStatus.OPEN,
+        server_default=text("'OPEN'"),
+    )
+    last_message_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    employee: Mapped[Employee] = relationship()
+    messages: Mapped[list["EmployeeConversationMessage"]] = relationship(
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+        order_by="EmployeeConversationMessage.created_at.asc()",
+    )
+
+    @property
+    def employee_name(self) -> str:
+        if self.employee is not None and (self.employee.full_name or "").strip():
+            return str(self.employee.full_name).strip()
+        return f"Çalışan #{self.employee_id}"
+
+    @property
+    def message_count(self) -> int:
+        return len(self.messages or [])
+
+    @property
+    def latest_message_preview(self) -> str | None:
+        if not self.messages:
+            return None
+        message = (self.messages[-1].message or "").strip()
+        if len(message) <= 140:
+            return message or None
+        return f"{message[:137].rstrip()}..."
+
+
+class EmployeeConversationMessage(Base):
+    __tablename__ = "employee_conversation_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    conversation_id: Mapped[int] = mapped_column(
+        ForeignKey("employee_conversations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    employee_id: Mapped[int] = mapped_column(
+        ForeignKey("employees.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    sender_actor: Mapped[str] = mapped_column(String(20), nullable=False, default="EMPLOYEE")
+    sender_admin_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("admin_users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    conversation: Mapped[EmployeeConversation] = relationship(back_populates="messages")
+    employee: Mapped[Employee] = relationship()
+    sender_admin_user: Mapped["AdminUser | None"] = relationship()
+
+    @property
+    def sender_label(self) -> str:
+        if self.sender_actor == "ADMIN":
+            admin_name = (
+                self.sender_admin_user.full_name
+                if self.sender_admin_user is not None and self.sender_admin_user.full_name
+                else (
+                    self.sender_admin_user.username
+                    if self.sender_admin_user is not None
+                    else "Admin"
+                )
+            )
+            return admin_name
+        return self.employee.full_name if self.employee is not None and self.employee.full_name else "Çalışan"
 
 
 class ManualDayOverride(Base):

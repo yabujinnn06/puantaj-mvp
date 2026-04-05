@@ -36,6 +36,7 @@ from app.models import (
     DeviceInvite,
     DevicePushSubscription,
     Employee,
+    EmployeeConversationStatus,
     EmployeeLocation,
     LeaveStatus,
     LocationEventSource,
@@ -51,6 +52,8 @@ from app.models import (
     WorkRule,
 )
 from app.schemas import (
+    AdminConversationMessageCreateRequest,
+    AdminConversationStatusUpdateRequest,
     AdminManualNotificationSendRequest,
     AdminManualNotificationSendResponse,
     AdminDeviceHealRequest,
@@ -97,6 +100,7 @@ from app.schemas import (
     AdminAttendanceExtraCheckinApprovalApproveRequest,
     AdminAttendanceExtraCheckinApprovalApproveResponse,
     AdminAttendanceExtraCheckinApprovalRead,
+    AdminLeaveMessageCreateRequest,
     AuditLogRead,
     AuditLogPageResponse,
     AttendanceEventRead,
@@ -143,6 +147,8 @@ from app.schemas import (
     DashboardEmployeeMonthMetricsRead,
     DashboardEmployeeSnapshotRead,
     EmployeeDetailResponse,
+    EmployeeConversationRead,
+    EmployeeConversationThreadRead,
     EmployeeDeviceDetailRead,
     EmployeeShiftUpdateRequest,
     EmployeeLocationRead,
@@ -163,6 +169,7 @@ from app.schemas import (
     LeaveCreateRequest,
     LeaveDecisionRequest,
     LeaveRead,
+    LeaveThreadRead,
     LaborProfileRead,
     LaborProfileUpsertRequest,
     ManualDayOverrideRead,
@@ -222,7 +229,21 @@ from app.services.exports import (
     build_puantaj_range_xlsx_bytes,
     build_puantaj_xlsx_bytes,
 )
-from app.services.leaves import create_leave, decide_leave, delete_leave, list_leaves
+from app.services.communications import (
+    create_admin_conversation_message,
+    get_admin_conversation_thread,
+    list_admin_conversations,
+    update_admin_conversation_status,
+)
+from app.services.leaves import (
+    create_admin_leave_message,
+    create_leave,
+    decide_leave,
+    delete_leave,
+    get_leave_attachment_for_admin,
+    get_leave_thread_for_admin,
+    list_leaves,
+)
 from app.services.manual_overrides import (
     delete_manual_day_override,
     list_manual_day_overrides,
@@ -5425,6 +5446,114 @@ def list_leaves_endpoint(
     )
 
 
+@router.get(
+    "/api/admin/leaves/{leave_id}/thread",
+    response_model=LeaveThreadRead,
+    dependencies=[Depends(require_admin_permission("leaves"))],
+)
+def admin_leave_thread_endpoint(
+    leave_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> LeaveThreadRead:
+    leave = get_leave_thread_for_admin(db, leave_id=leave_id)
+    request.state.flags = {
+        "leave_id": leave.id,
+        "employee_id": leave.employee_id,
+        "message_count": leave.message_count,
+        "attachment_count": leave.attachment_count,
+    }
+    return LeaveThreadRead(
+        leave=leave,
+        attachments=list(leave.leave_attachments or []),
+        messages=list(leave.leave_messages or []),
+    )
+
+
+@router.post(
+    "/api/admin/leaves/{leave_id}/messages",
+    response_model=LeaveThreadRead,
+)
+def admin_leave_message_create_endpoint(
+    leave_id: int,
+    payload: AdminLeaveMessageCreateRequest,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin_permission("leaves", write=True)),
+    db: Session = Depends(get_db),
+) -> LeaveThreadRead:
+    actor_id, actor_admin_user_id = _normalized_admin_actor_from_claims(claims)
+    leave = create_admin_leave_message(
+        db,
+        leave_id=leave_id,
+        payload=payload,
+        admin_username=actor_id,
+        admin_user_id=actor_admin_user_id,
+    )
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=actor_id,
+        action="ADMIN_LEAVE_MESSAGE_CREATED",
+        success=True,
+        entity_type="leave",
+        entity_id=str(leave.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "employee_id": leave.employee_id,
+            "message_count": leave.message_count,
+            "actor_admin_user_id": actor_admin_user_id,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return LeaveThreadRead(
+        leave=leave,
+        attachments=list(leave.leave_attachments or []),
+        messages=list(leave.leave_messages or []),
+    )
+
+
+@router.get(
+    "/api/admin/leaves/{leave_id}/attachments/{attachment_id}/download",
+)
+def admin_leave_attachment_download_endpoint(
+    leave_id: int,
+    attachment_id: int,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin_permission("leaves")),
+    db: Session = Depends(get_db),
+) -> Response:
+    actor_id, actor_admin_user_id = _normalized_admin_actor_from_claims(claims)
+    attachment = get_leave_attachment_for_admin(
+        db,
+        leave_id=leave_id,
+        attachment_id=attachment_id,
+    )
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=actor_id,
+        action="ADMIN_LEAVE_ATTACHMENT_DOWNLOADED",
+        success=True,
+        entity_type="leave_attachment",
+        entity_id=str(attachment.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "leave_id": leave_id,
+            "employee_id": attachment.employee_id,
+            "actor_admin_user_id": actor_admin_user_id,
+            "content_type": attachment.content_type,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return Response(
+        content=attachment.file_data,
+        media_type=attachment.content_type,
+        headers={"Content-Disposition": f'attachment; filename="{attachment.file_name}"'},
+    )
+
+
 @router.patch(
     "/api/admin/leaves/{leave_id}",
     response_model=LeaveRead,
@@ -5484,6 +5613,124 @@ def delete_leave_endpoint(
         details={"actor_admin_user_id": actor_admin_user_id},
         request_id=getattr(request.state, "request_id", None),
     )
+
+
+@router.get(
+    "/api/admin/communications",
+    response_model=list[EmployeeConversationRead],
+    dependencies=[Depends(require_admin_permission("notifications"))],
+)
+def list_admin_conversations_endpoint(
+    employee_id: int | None = Query(default=None, ge=1),
+    conversation_status: EmployeeConversationStatus | None = Query(default=None, alias="status"),
+    db: Session = Depends(get_db),
+) -> list[EmployeeConversationRead]:
+    return list_admin_conversations(
+        db,
+        employee_id=employee_id,
+        status_filter=conversation_status,
+    )
+
+
+@router.get(
+    "/api/admin/communications/{conversation_id}/thread",
+    response_model=EmployeeConversationThreadRead,
+    dependencies=[Depends(require_admin_permission("notifications"))],
+)
+def admin_conversation_thread_endpoint(
+    conversation_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> EmployeeConversationThreadRead:
+    conversation = get_admin_conversation_thread(db, conversation_id=conversation_id)
+    request.state.flags = {
+        "conversation_id": conversation.id,
+        "employee_id": conversation.employee_id,
+        "message_count": conversation.message_count,
+        "status": conversation.status.value,
+    }
+    return EmployeeConversationThreadRead(
+        conversation=conversation,
+        messages=list(conversation.messages or []),
+    )
+
+
+@router.post(
+    "/api/admin/communications/{conversation_id}/messages",
+    response_model=EmployeeConversationThreadRead,
+)
+def admin_conversation_message_create_endpoint(
+    conversation_id: int,
+    payload: AdminConversationMessageCreateRequest,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin_permission("notifications", write=True)),
+    db: Session = Depends(get_db),
+) -> EmployeeConversationThreadRead:
+    actor_id, actor_admin_user_id = _normalized_admin_actor_from_claims(claims)
+    conversation = create_admin_conversation_message(
+        db,
+        conversation_id=conversation_id,
+        payload=payload,
+        admin_user_id=actor_admin_user_id,
+    )
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=actor_id,
+        action="ADMIN_CONVERSATION_MESSAGE_CREATED",
+        success=True,
+        entity_type="employee_conversation",
+        entity_id=str(conversation.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "employee_id": conversation.employee_id,
+            "message_count": conversation.message_count,
+            "actor_admin_user_id": actor_admin_user_id,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return EmployeeConversationThreadRead(
+        conversation=conversation,
+        messages=list(conversation.messages or []),
+    )
+
+
+@router.patch(
+    "/api/admin/communications/{conversation_id}/status",
+    response_model=EmployeeConversationRead,
+)
+def admin_conversation_status_update_endpoint(
+    conversation_id: int,
+    payload: AdminConversationStatusUpdateRequest,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin_permission("notifications", write=True)),
+    db: Session = Depends(get_db),
+) -> EmployeeConversationRead:
+    actor_id, actor_admin_user_id = _normalized_admin_actor_from_claims(claims)
+    conversation = update_admin_conversation_status(
+        db,
+        conversation_id=conversation_id,
+        status_value=payload.status,
+    )
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=actor_id,
+        action="ADMIN_CONVERSATION_STATUS_UPDATED",
+        success=True,
+        entity_type="employee_conversation",
+        entity_id=str(conversation.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "employee_id": conversation.employee_id,
+            "status": conversation.status.value,
+            "actor_admin_user_id": actor_admin_user_id,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return conversation
 
 
 @router.get(

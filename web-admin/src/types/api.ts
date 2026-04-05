@@ -15,6 +15,8 @@ export type SchedulePlanTargetType = 'DEPARTMENT' | 'DEPARTMENT_EXCEPT_EMPLOYEE'
 
 export type LeaveType = 'ANNUAL' | 'SICK' | 'UNPAID' | 'EXCUSE' | 'PUBLIC_HOLIDAY'
 export type LeaveStatus = 'APPROVED' | 'PENDING' | 'REJECTED'
+export type EmployeeConversationCategory = 'ATTENDANCE' | 'SHIFT' | 'DEVICE' | 'DOCUMENT' | 'OTHER'
+export type EmployeeConversationStatus = 'OPEN' | 'CLOSED'
 
 export interface Region {
   id: number
@@ -606,6 +608,68 @@ export interface LeaveRecord {
   decision_note: string | null
   decided_at: string | null
   created_at: string
+  attachment_count?: number
+  message_count?: number
+  last_message_at?: string | null
+  latest_message_preview?: string | null
+}
+
+export interface LeaveAttachmentRecord {
+  id: number
+  leave_id: number
+  employee_id: number
+  uploaded_by_actor: string
+  uploaded_by_label: string
+  file_name: string
+  content_type: string
+  file_size_bytes: number
+  created_at: string
+}
+
+export interface LeaveMessageRecord {
+  id: number
+  leave_id: number
+  employee_id: number
+  sender_actor: string
+  sender_label: string
+  message: string
+  created_at: string
+}
+
+export interface LeaveThreadRecord {
+  leave: LeaveRecord
+  attachments: LeaveAttachmentRecord[]
+  messages: LeaveMessageRecord[]
+}
+
+export interface EmployeeConversationRecord {
+  id: number
+  employee_id: number
+  employee_name: string
+  category: EmployeeConversationCategory
+  subject: string
+  status: EmployeeConversationStatus
+  created_at: string
+  updated_at: string
+  closed_at: string | null
+  last_message_at: string
+  message_count: number
+  latest_message_preview: string | null
+}
+
+export interface EmployeeConversationMessageRecord {
+  id: number
+  conversation_id: number
+  employee_id: number
+  sender_actor: string
+  sender_label: string
+  message: string
+  created_at: string
+}
+
+export interface EmployeeConversationThreadRecord {
+  conversation: EmployeeConversationRecord
+  messages: EmployeeConversationMessageRecord[]
 }
 
 export interface DeviceInviteCreateResponse {
