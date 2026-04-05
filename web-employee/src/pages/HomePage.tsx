@@ -6,7 +6,6 @@ import {
   checkout,
   createEmployeeConversation,
   createEmployeeConversationMessage,
-  createEmployeeLeaveMessage,
   downloadEmployeeLeaveAttachment,
   getEmployeeConversationThread,
   getEmployeeConversations,
@@ -1153,15 +1152,12 @@ export function HomePage() {
   const [leaveEndDate, setLeaveEndDate] = useState('')
   const [leaveType, setLeaveType] = useState<LeaveType>('ANNUAL')
   const [leaveNote, setLeaveNote] = useState('')
-  const [leaveQuestion, setLeaveQuestion] = useState('')
   const [leaveAttachmentFile, setLeaveAttachmentFile] = useState<File | null>(null)
   const [leaveFormError, setLeaveFormError] = useState<string | null>(null)
   const [leaveThreadsById, setLeaveThreadsById] = useState<Record<number, EmployeeLeaveThreadRecord>>({})
   const [activeLeaveThreadId, setActiveLeaveThreadId] = useState<number | null>(null)
   const [leaveThreadLoadingId, setLeaveThreadLoadingId] = useState<number | null>(null)
   const [leaveThreadErrorById, setLeaveThreadErrorById] = useState<Record<number, string | null>>({})
-  const [leaveReplyDrafts, setLeaveReplyDrafts] = useState<Record<number, string>>({})
-  const [leaveReplyBusyId, setLeaveReplyBusyId] = useState<number | null>(null)
   const [communicationList, setCommunicationList] = useState<EmployeeConversationRecord[]>([])
   const [isCommunicationLoading, setIsCommunicationLoading] = useState(false)
   const [isCommunicationReady, setIsCommunicationReady] = useState(false)
@@ -2010,8 +2006,10 @@ export function HomePage() {
   const hiddenCommunicationCount = Math.max(0, communicationList.length - visibleCommunications.length)
   const hasCommunicationHistory = communicationList.length > 0
   const openCommunicationCount = communicationList.filter((item) => item.status === 'OPEN').length
+  const closedCommunicationCount = Math.max(0, communicationList.length - openCommunicationCount)
   const communicationSummary =
     communicationList.length > 0 ? `${communicationList.length} kayıt` : 'Henüz yok'
+  const latestCommunicationAt = communicationList[0]?.last_message_at ?? null
   const requestedConversationId = useMemo(() => {
     const params = new URLSearchParams(location.search)
     if (params.get('communication') !== '1') {
@@ -2086,7 +2084,6 @@ export function HomePage() {
     }
     setIsLeaveModalOpen(false)
     setLeaveFormError(null)
-    setLeaveQuestion('')
     setLeaveAttachmentFile(null)
   }, [isLeaveSubmitting])
 
@@ -2132,54 +2129,6 @@ export function HomePage() {
     [leaveThreadErrorById, leaveThreadsById, loadLeaveThread],
   )
 
-  const updateLeaveReplyDraft = useCallback((leaveId: number, value: string) => {
-    setLeaveReplyDrafts((current) => ({
-      ...current,
-      [leaveId]: value,
-    }))
-  }, [])
-
-  const submitLeaveReply = useCallback(
-    async (leaveId: number) => {
-      const message = (leaveReplyDrafts[leaveId] || '').trim()
-      if (!deviceFingerprint) {
-        pushToast({
-          variant: 'error',
-          title: 'Cihaz bağlı değil',
-          description: 'Yazışma için önce cihaz kurulumunu tamamla.',
-        })
-        return
-      }
-      if (message.length < 1) {
-        setLeaveThreadErrorById((current) => ({ ...current, [leaveId]: 'Yöneticiye göndermek için bir mesaj yaz.' }))
-        return
-      }
-
-      setLeaveReplyBusyId(leaveId)
-      setLeaveThreadErrorById((current) => ({ ...current, [leaveId]: null }))
-      try {
-        const thread = await createEmployeeLeaveMessage(leaveId, {
-          device_fingerprint: deviceFingerprint,
-          message,
-        })
-        setLeaveThreadsById((current) => ({ ...current, [leaveId]: thread }))
-        setLeaveReplyDrafts((current) => ({ ...current, [leaveId]: '' }))
-        setLeaveRefreshToken((current) => current + 1)
-        pushToast({
-          variant: 'success',
-          title: 'Mesaj gönderildi',
-          description: 'Yöneticiye yeni mesajın iletildi.',
-        })
-      } catch (error) {
-        const parsed = parseApiError(error, 'Mesaj gönderilemedi.')
-        setLeaveThreadErrorById((current) => ({ ...current, [leaveId]: parsed.message }))
-      } finally {
-        setLeaveReplyBusyId((current) => (current === leaveId ? null : current))
-      }
-    },
-    [deviceFingerprint, leaveReplyDrafts, pushToast],
-  )
-
   const handleLeaveAttachmentDownload = useCallback(
     async (leaveId: number, attachmentId: number, fileName: string) => {
       if (!deviceFingerprint) {
@@ -2198,6 +2147,18 @@ export function HomePage() {
 
   const openCommunicationModal = useCallback(() => {
     setCommunicationFormError(null)
+    setIsCommunicationModalOpen(true)
+  }, [])
+
+  const openLeaveCommunicationModal = useCallback((leave?: EmployeeLeaveRecord) => {
+    const leaveRange = leave ? formatLeaveRange(leave.start_date, leave.end_date) : null
+    setCommunicationFormError(null)
+    setCommunicationCategory('DOCUMENT')
+    setCommunicationSubject(leaveRange ? `${leaveRange} izin talebi hakkında` : 'İzin talebi hakkında bilgi talebi')
+    setCommunicationMessage(
+      leaveRange ? `${leaveRange} tarihli izin talebim hakkında bilgi rica ediyorum.` : 'İzin talebim hakkında bilgi rica ediyorum.',
+    )
+    setIsLeaveModalOpen(false)
     setIsCommunicationModalOpen(true)
   }, [])
 
@@ -2287,7 +2248,7 @@ export function HomePage() {
       if (message.length < 12) {
         setCommunicationThreadErrorById((current) => ({
           ...current,
-          [conversationId]: 'Mesajını resmi ve net biçimde en az 12 karakter olacak şekilde yaz.',
+          [conversationId]: 'Mesajını resmî ve net biçimde en az 12 karakter olacak şekilde yaz.',
         }))
         return
       }
@@ -2304,7 +2265,7 @@ export function HomePage() {
         pushToast({
           variant: 'success',
           title: 'Kurumsal mesaj gönderildi',
-          description: 'Yönetime resmi mesajın iletildi.',
+          description: 'Yönetime resmî mesajın iletildi.',
         })
       } catch (error) {
         const parsed = parseApiError(error, 'Kurumsal mesaj gönderilemedi.')
@@ -2328,7 +2289,7 @@ export function HomePage() {
       return
     }
     if (message.length < 12) {
-      setCommunicationFormError('Mesajını resmi ve net biçimde en az 12 karakter olacak şekilde yaz.')
+      setCommunicationFormError('Mesajını resmî ve net biçimde en az 12 karakter olacak şekilde yaz.')
       return
     }
 
@@ -2386,7 +2347,6 @@ export function HomePage() {
     const startDate = leaveStartDate.trim()
     const endDate = leaveEndDate.trim()
     const note = leaveNote.trim()
-    const question = leaveQuestion.trim()
     if (!deviceFingerprint) {
       setLeaveFormError('Cihaz bagli degil. Davet linki ile kurulumu tamamla.')
       return
@@ -2417,9 +2377,6 @@ export function HomePage() {
       formData.append('end_date', endDate)
       formData.append('type', leaveType)
       formData.append('note', note)
-      if (question) {
-        formData.append('question', question)
-      }
       if (leaveAttachmentFile) {
         formData.append('attachment', leaveAttachmentFile)
       }
@@ -2429,7 +2386,6 @@ export function HomePage() {
       setLeaveEndDate('')
       setLeaveType('ANNUAL')
       setLeaveNote('')
-      setLeaveQuestion('')
       setLeaveAttachmentFile(null)
       setActionNotice({
         tone: 'success',
@@ -2440,9 +2396,7 @@ export function HomePage() {
         variant: 'success',
         title: 'Izin talebi gonderildi',
         description:
-          question || leaveAttachmentFile
-            ? 'Talebin, ek notun ve varsa belgen admin ekranina iletildi.'
-            : 'Talebin admin onayina iletildi.',
+          leaveAttachmentFile ? 'Talebin ve eklediğin belge admin ekranına iletildi.' : 'Talebin admin onayına iletildi.',
       })
     } catch (error) {
       const parsed = parseApiError(error, 'Izin talebi gonderilemedi.')
@@ -2450,7 +2404,7 @@ export function HomePage() {
     } finally {
       setIsLeaveSubmitting(false)
     }
-  }, [deviceFingerprint, leaveAttachmentFile, leaveEndDate, leaveNote, leaveQuestion, leaveStartDate, leaveType, pushToast])
+  }, [deviceFingerprint, leaveAttachmentFile, leaveEndDate, leaveNote, leaveStartDate, leaveType, pushToast])
 
   const copyPortalLinkForSafari = useCallback(async () => {
     if (typeof window === 'undefined') {
@@ -4450,28 +4404,41 @@ export function HomePage() {
                                       <p className="leave-history-range">{formatLeaveRange(leave.start_date, leave.end_date)}</p>
                                       <p className="leave-history-note">{leave.note || 'Gerekçe girilmedi.'}</p>
                                       {leave.latest_message_preview ? (
-                                        <p className="leave-history-decision">Son mesaj: {leave.latest_message_preview}</p>
+                                        <p className="leave-history-decision">Yönetici güncellemesi: {leave.latest_message_preview}</p>
                                       ) : null}
                                       {leave.decision_note ? (
                                         <p className="leave-history-decision">Karar notu: {leave.decision_note}</p>
                                       ) : null}
                                       <div className="leave-thread-summary-row">
                                         <div className="leave-thread-summary-chips">
-                                          <span className="leave-request-chip">Mesaj: {leave.message_count ?? 0}</span>
                                           <span className="leave-request-chip">Belge: {leave.attachment_count ?? 0}</span>
+                                          {(leave.message_count ?? 0) > 0 ? (
+                                            <span className="leave-request-chip">Güncelleme: {leave.message_count}</span>
+                                          ) : null}
                                         </div>
-                                        <button
-                                          type="button"
-                                          className="btn btn-soft leave-thread-toggle-btn"
-                                          onClick={() => toggleLeaveThread(leave.id)}
-                                        >
-                                          {activeLeaveThreadId === leave.id ? 'Yazışmayı Kapat' : 'Yazışmayı Aç'}
-                                        </button>
+                                        <div className="leave-thread-summary-chips">
+                                          <button
+                                            type="button"
+                                            className="btn btn-soft leave-thread-toggle-btn"
+                                            onClick={() => toggleLeaveThread(leave.id)}
+                                          >
+                                            {activeLeaveThreadId === leave.id ? 'Detayı Gizle' : 'Detayı Gör'}
+                                          </button>
+                                          {deviceFingerprint ? (
+                                            <button
+                                              type="button"
+                                              className="btn btn-ghost leave-thread-toggle-btn"
+                                              onClick={() => openLeaveCommunicationModal(leave)}
+                                            >
+                                              Kurumsal Mesaj Aç
+                                            </button>
+                                          ) : null}
+                                        </div>
                                       </div>
                                       {activeLeaveThreadId === leave.id ? (
                                         <div className="leave-thread-panel">
                                           {leaveThreadLoadingId === leave.id && !leaveThreadsById[leave.id] ? (
-                                            <p className="small-text">Yazışma yükleniyor...</p>
+                                            <p className="small-text">Talep detayı yükleniyor...</p>
                                           ) : null}
                                           {leaveThreadErrorById[leave.id] ? (
                                             <p className="small-text">{leaveThreadErrorById[leave.id]}</p>
@@ -4498,7 +4465,7 @@ export function HomePage() {
                                                 </div>
                                               ) : null}
                                               <div className="leave-thread-messages">
-                                                <p className="small-title">Yönetici yazışması</p>
+                                                <p className="small-title">Talep güncellemeleri</p>
                                                 {leaveThreadsById[leave.id].messages.length > 0 ? (
                                                   <ol className="leave-thread-message-list">
                                                     {leaveThreadsById[leave.id].messages.map((messageRow) => (
@@ -4517,27 +4484,8 @@ export function HomePage() {
                                                     ))}
                                                   </ol>
                                                 ) : (
-                                                  <p className="small-text">Henüz bir yazışma yok. İstersen yöneticiye soru bırakabilirsin.</p>
+                                                  <p className="small-text">Henüz talebe eklenmiş bir yönetici güncellemesi yok.</p>
                                                 )}
-                                              </div>
-                                              <div className="leave-thread-reply-box">
-                                                <label className="field">
-                                                  <span>Yöneticiye mesaj gönder</span>
-                                                  <textarea
-                                                    rows={3}
-                                                    value={leaveReplyDrafts[leave.id] ?? ''}
-                                                    onChange={(event) => updateLeaveReplyDraft(leave.id, event.target.value)}
-                                                    placeholder="Talebinle ilgili kısa bir soru veya açıklama yaz..."
-                                                  />
-                                                </label>
-                                                <button
-                                                  type="button"
-                                                  className="btn btn-primary leave-thread-reply-btn"
-                                                  disabled={leaveReplyBusyId === leave.id}
-                                                  onClick={() => void submitLeaveReply(leave.id)}
-                                                >
-                                                  {leaveReplyBusyId === leave.id ? 'Gönderiliyor...' : 'Mesaj Gönder'}
-                                                </button>
                                               </div>
                                             </>
                                           ) : null}
@@ -4567,53 +4515,91 @@ export function HomePage() {
 
               <SecondaryDisclosure
                 title="Kurumsal iletişim"
-                description="Yönetime iş odaklı, resmi mesajlarını bu alandan ilet."
+                description="Yönetime iş odaklı, resmî mesajlarını bu alandan ilet."
                 badge={openCommunicationCount > 0 ? `${openCommunicationCount} açık` : communicationSummary}
                 open={Boolean(requestedConversationId)}
               >
                 <section className="employee-communication-card" aria-labelledby="employee-communication-title">
-                  <div className="employee-communication-head">
-                    <div>
-                      <p className="employee-communication-kicker">RESMİ YAZIŞMA</p>
-                      <h3 id="employee-communication-title" className="employee-communication-title">
-                        Yöneticiyle kurumsal iletişim
-                      </h3>
+                  <div className="employee-communication-hero">
+                    <div className="employee-communication-head">
+                      <div className="employee-communication-heading">
+                        <p className="employee-communication-kicker">RESMÎ YAZIŞMA</p>
+                        <h3 id="employee-communication-title" className="employee-communication-title">
+                          Yöneticiyle kurumsal iletişim
+                        </h3>
+                      </div>
+                      <span className="employee-communication-count">{communicationSummary}</span>
                     </div>
-                    <span className="employee-communication-count">{communicationSummary}</span>
+
+                    <p className="employee-communication-copy">
+                      Bu alan günlük sohbet için değil, iş süreci iletişimi içindir. Konuyu seç, kısa bir başlık yaz ve
+                      ihtiyacını resmî, net bir dille ilet.
+                    </p>
+
+                    <div className="employee-communication-guidance">
+                      <span className="employee-communication-guidance-label">Kurumsal format</span>
+                      <span className="employee-communication-chip">Konu seç</span>
+                      <span className="employee-communication-chip">Başlığı net yaz</span>
+                      <span className="employee-communication-chip">Talebi resmî dille ilet</span>
+                    </div>
+
+                    <div className="employee-communication-overview">
+                      <article className="employee-communication-stat">
+                        <span className="employee-communication-stat-label">Açık kayıt</span>
+                        <strong className="employee-communication-stat-value">{openCommunicationCount}</strong>
+                        <p className="employee-communication-stat-note">Yanıt bekleyen veya devam eden yazışmalar.</p>
+                      </article>
+                      <article className="employee-communication-stat">
+                        <span className="employee-communication-stat-label">Kapanan kayıt</span>
+                        <strong className="employee-communication-stat-value">{closedCommunicationCount}</strong>
+                        <p className="employee-communication-stat-note">Tamamlanan ya da sonuçlanan görüşmeler.</p>
+                      </article>
+                      <article className="employee-communication-stat">
+                        <span className="employee-communication-stat-label">Son hareket</span>
+                        <strong className="employee-communication-stat-value">
+                          {latestCommunicationAt ? formatTs(latestCommunicationAt) : 'Henüz yok'}
+                        </strong>
+                        <p className="employee-communication-stat-note">En son mesaj veya yönetici güncellemesi.</p>
+                      </article>
+                    </div>
+
+                    {deviceFingerprint ? (
+                      <div className="employee-communication-cta-card">
+                        <div className="employee-communication-cta-copy-wrap">
+                          <p className="employee-communication-cta-kicker">YENİ YAZIŞMA</p>
+                          <p className="employee-communication-cta-copy">
+                            İzin, vardiya, puantaj veya belge süreci için yönetime tek ekrandan resmî mesaj gönder.
+                          </p>
+                        </div>
+                        <div className="employee-communication-actions">
+                          <button
+                            type="button"
+                            className="btn btn-primary employee-communication-open-btn"
+                            onClick={openCommunicationModal}
+                          >
+                            Kurumsal Mesaj Oluştur
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="warn-box">
+                        <p>Kurumsal yazışma için önce cihaz bağlantısını tamamla.</p>
+                      </div>
+                    )}
                   </div>
-
-                  <p className="employee-communication-copy">
-                    Bu alan günlük sohbet için değil, iş süreci iletişimi içindir. Konunu seç, kısa bir başlık yaz ve
-                    ihtiyacını resmi, net bir dille ilet.
-                  </p>
-
-                  <div className="employee-communication-guidance">
-                    <span className="employee-communication-guidance-label">Kurumsal format</span>
-                    <span className="leave-request-chip">Konu seÃ§</span>
-                    <span className="leave-request-chip">BaÅŸlÄ±ÄŸÄ± net yaz</span>
-                    <span className="leave-request-chip">Talebi resmi dille ilet</span>
-                  </div>
-
-                  {deviceFingerprint ? (
-                    <div className="employee-communication-actions">
-                      <button
-                        type="button"
-                        className="btn btn-primary employee-communication-open-btn"
-                        onClick={openCommunicationModal}
-                      >
-                        Kurumsal Mesaj Oluştur
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="warn-box">
-                      <p>Kurumsal yazışma için önce cihaz bağlantısını tamamla.</p>
-                    </div>
-                  )}
 
                   {isCommunicationLoading && !isCommunicationReady ? (
                     <p className="leave-history-empty">Yazışma listesi hazırlanıyor...</p>
                   ) : hasCommunicationHistory ? (
-                    <>
+                    <div className="employee-communication-list-shell">
+                      <div className="employee-communication-list-head">
+                        <div>
+                          <p className="employee-communication-list-kicker">KAYITLAR</p>
+                          <h4 className="employee-communication-list-title">Açık ve geçmiş kurumsal yazışmalar</h4>
+                        </div>
+                        <span className="employee-communication-list-count">{communicationSummary}</span>
+                      </div>
+
                       <ol className="employee-communication-list">
                         {visibleCommunications.map((conversation) => (
                           <li
@@ -4622,41 +4608,53 @@ export function HomePage() {
                               conversation.status === 'CLOSED' ? 'is-closed' : 'is-open'
                             }`}
                           >
-                            <div className="employee-communication-item-head">
-                              <div>
-                                <div className="employee-communication-item-row">
-                                  <strong>{conversation.subject}</strong>
-                                  <span
-                                    className={`employee-communication-status employee-communication-status-${conversation.status.toLowerCase()}`}
-                                  >
-                                    {conversationStatusLabel(conversation.status)}
-                                  </span>
-                                </div>
-                                <p className="employee-communication-meta">
-                                  {conversationCategoryLabels[conversation.category]} · Son güncelleme:{' '}
-                                  {formatTs(conversation.last_message_at)}
-                                </p>
+                            <div className="employee-communication-item-top">
+                              <div className="employee-communication-item-badges">
+                                <span className="employee-communication-topic-chip">
+                                  {conversationCategoryLabels[conversation.category]}
+                                </span>
+                                <span
+                                  className={`employee-communication-status employee-communication-status-${conversation.status.toLowerCase()}`}
+                                >
+                                  {conversationStatusLabel(conversation.status)}
+                                </span>
+                              </div>
+                              <span className="employee-communication-item-time">{formatTs(conversation.last_message_at)}</span>
+                            </div>
+
+                            <div className="employee-communication-item-body">
+                              <h5 className="employee-communication-subject">{conversation.subject}</h5>
+                              <p className="employee-communication-preview">
+                                {conversation.latest_message_preview || 'Henüz ön izleme oluşmadı. Yazışma detayından inceleyebilirsin.'}
+                              </p>
+                            </div>
+
+                            <div className="employee-communication-item-footer">
+                              <div className="employee-communication-metrics">
+                                <span className="employee-communication-metric-pill">Mesaj: {conversation.message_count}</span>
+                                <span className="employee-communication-metric-pill">
+                                  Durum: {conversationStatusLabel(conversation.status)}
+                                </span>
                               </div>
                               <button
                                 type="button"
-                                className="btn btn-soft leave-thread-toggle-btn"
+                                className="btn btn-soft employee-communication-toggle-btn"
                                 onClick={() => toggleCommunicationThread(conversation.id)}
                               >
-                                {activeCommunicationId === conversation.id ? 'Yazışmayı Kapat' : 'Yazışmayı Aç'}
+                                {activeCommunicationId === conversation.id ? 'Akışı Gizle' : 'Akışı Aç'}
                               </button>
-                            </div>
-                            {conversation.latest_message_preview ? (
-                              <p className="employee-communication-preview">{conversation.latest_message_preview}</p>
-                            ) : null}
-                            <div className="leave-thread-summary-chips">
-                              <span className="leave-request-chip">Mesaj: {conversation.message_count}</span>
-                              <span className="leave-request-chip">
-                                Durum: {conversationStatusLabel(conversation.status)}
-                              </span>
                             </div>
 
                             {activeCommunicationId === conversation.id ? (
                               <div className="employee-communication-thread">
+                                <div className="employee-communication-thread-head">
+                                  <div>
+                                    <p className="employee-communication-thread-kicker">YAZIŞMA AKIŞI</p>
+                                    <p className="employee-communication-thread-note">
+                                      Mesajlarını kısa, kurumsal ve konuya odaklı biçimde yaz.
+                                    </p>
+                                  </div>
+                                </div>
                                 {communicationThreadLoadingId === conversation.id && !communicationThreadsById[conversation.id] ? (
                                   <p className="small-text">Kurumsal yazışma yükleniyor...</p>
                                 ) : null}
@@ -4665,7 +4663,7 @@ export function HomePage() {
                                 ) : null}
                                 {communicationThreadsById[conversation.id] ? (
                                   <>
-                                    <ol className="leave-thread-message-list">
+                                    <ol className="leave-thread-message-list employee-communication-message-list">
                                       {communicationThreadsById[conversation.id].messages.map((messageRow) => (
                                         <li
                                           key={messageRow.id}
@@ -4683,14 +4681,14 @@ export function HomePage() {
                                     </ol>
 
                                     {communicationThreadsById[conversation.id].conversation.status === 'OPEN' ? (
-                                      <div className="leave-thread-reply-box">
+                                      <div className="leave-thread-reply-box employee-communication-reply-box">
                                         <label className="field">
                                           <span>Kurumsal yanıt yaz</span>
                                           <textarea
                                             rows={3}
                                             value={communicationReplyDrafts[conversation.id] ?? ''}
                                             onChange={(event) => updateCommunicationReplyDraft(conversation.id, event.target.value)}
-                                            placeholder="Örnek: 12 Nisan vardiya değişikliğim için onay sürecini öğrenmek istiyorum."
+                                            placeholder="Örnek: 12 Nisan vardiya değişikliği talebimin güncel durumunu paylaşabilir misiniz?"
                                           />
                                         </label>
                                         <div className="employee-communication-starters">
@@ -4711,7 +4709,7 @@ export function HomePage() {
                                           disabled={communicationReplyBusyId === conversation.id}
                                           onClick={() => void submitCommunicationReply(conversation.id)}
                                         >
-                                          {communicationReplyBusyId === conversation.id ? 'Gönderiliyor...' : 'Resmi Mesaj Gönder'}
+                                          {communicationReplyBusyId === conversation.id ? 'Gönderiliyor...' : 'Resmî Mesaj Gönder'}
                                         </button>
                                       </div>
                                     ) : (
@@ -4729,9 +4727,23 @@ export function HomePage() {
                       {hiddenCommunicationCount > 0 ? (
                         <p className="leave-history-footnote">+{hiddenCommunicationCount} iletişim kaydı daha var.</p>
                       ) : null}
-                    </>
+                    </div>
                   ) : (
-                    <p className="leave-history-empty">Henüz kurumsal iletişim kaydı yok.</p>
+                    <div className="employee-communication-empty">
+                      <p className="employee-communication-empty-title">Henüz kurumsal iletişim kaydı yok.</p>
+                      <p className="employee-communication-empty-copy">
+                        İzin, vardiya, puantaj veya belge süreciyle ilgili ilk resmî mesajını buradan oluşturabilirsin.
+                      </p>
+                      {deviceFingerprint ? (
+                        <button
+                          type="button"
+                          className="btn btn-primary employee-communication-open-btn"
+                          onClick={openCommunicationModal}
+                        >
+                          İlk Kurumsal Mesajı Oluştur
+                        </button>
+                      ) : null}
+                    </div>
                   )}
                 </section>
               </SecondaryDisclosure>
@@ -5524,26 +5536,15 @@ export function HomePage() {
           <EmployeeFocusModal
             titleId="leave-request-modal-title"
             descriptionId="leave-request-modal-description"
-            title="Izin Talebi Olustur"
-            kicker="CALISAN IZIN TALEBI"
+            title="İzin Talebi Oluştur"
+            kicker="ÇALIŞAN İZİN TALEBİ"
             panelClassName="employee-focus-modal--wide"
             onClose={closeLeaveRequestModal}
           >
             <p id="leave-request-modal-description">
-              İzin gerekçesini ve tarih aralığını gir. İstersen belge ekleyip yöneticiye ilk sorunu da aynı anda iletebilirsin.
+              İzin gerekçesini ve tarih aralığını gir. Belgen varsa ekle; yöneticiye soru sormak için ayrı kurumsal iletişim
+              akışını kullan.
             </p>
-            <div className="employee-communication-template-grid">
-              {communicationTemplates.map((template) => (
-                <button
-                  key={template.label}
-                  type="button"
-                  className="employee-communication-template-btn"
-                  onClick={() => applyCommunicationTemplate(template)}
-                >
-                  {template.label}
-                </button>
-              ))}
-            </div>
             <div className="stack">
               <label className="field">
                 <span>İzin tipi</span>
@@ -5573,15 +5574,6 @@ export function HomePage() {
                 />
               </label>
               <label className="field">
-                <span>Yöneticiye not / soru</span>
-                <textarea
-                  value={leaveQuestion}
-                  onChange={(event) => setLeaveQuestion(event.target.value)}
-                  rows={3}
-                  placeholder="Örnek: Raporu ekledim, onay için başka belge gerekiyor mu?"
-                />
-              </label>
-              <label className="field">
                 <span>Belge ekle</span>
                 <input
                   type="file"
@@ -5597,6 +5589,19 @@ export function HomePage() {
                   </span>
                 ) : null}
               </label>
+              <div className="warn-box">
+                <p>Yöneticiye soru veya ek açıklama göndermek için ayrı Kurumsal İletişim alanını kullan.</p>
+                {deviceFingerprint ? (
+                  <button
+                    type="button"
+                    className="btn btn-soft"
+                    disabled={isLeaveSubmitting}
+                    onClick={() => openLeaveCommunicationModal()}
+                  >
+                    Kurumsal İletişimi Aç
+                  </button>
+                ) : null}
+              </div>
             </div>
             {leaveFormError ? <p className="small-text">{leaveFormError}</p> : null}
             <div className="stack">
@@ -5625,8 +5630,23 @@ export function HomePage() {
             onClose={closeCommunicationModal}
           >
             <p id="employee-communication-modal-description">
-              Bu alan resmi iş iletişimi içindir. Günlük sohbet dili yerine konu, başlık ve ihtiyacını açık şekilde yaz.
+              Bu alan resmî iş iletişimi içindir. Günlük sohbet dili yerine konu, başlık ve ihtiyacını açık şekilde yaz.
             </p>
+            <p className="employee-communication-modal-note">
+              Hızlı başlamak istersen aşağıdaki şablonlardan birini seçip sonra metni kendi durumuna göre düzenleyebilirsin.
+            </p>
+            <div className="employee-communication-template-grid">
+              {communicationTemplates.map((template) => (
+                <button
+                  key={template.label}
+                  type="button"
+                  className="employee-communication-template-btn"
+                  onClick={() => applyCommunicationTemplate(template)}
+                >
+                  {template.label}
+                </button>
+              ))}
+            </div>
             <div className="stack">
               <label className="field">
                 <span>Konu</span>
@@ -5650,7 +5670,7 @@ export function HomePage() {
                 />
               </label>
               <label className="field">
-                <span>Resmi mesaj</span>
+                <span>Resmî mesaj</span>
                 <textarea
                   value={communicationMessage}
                   onChange={(event) => setCommunicationMessage(event.target.value)}
