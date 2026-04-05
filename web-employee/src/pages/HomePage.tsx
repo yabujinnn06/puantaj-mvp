@@ -270,6 +270,31 @@ function formatLeaveRange(startDate: string, endDate: string): string {
   return `${formatLeaveDate(startDate)} - ${formatLeaveDate(endDate)}`
 }
 
+function areCommunicationListsEquivalent(
+  left: EmployeeConversationRecord[],
+  right: EmployeeConversationRecord[],
+): boolean {
+  if (left.length !== right.length) {
+    return false
+  }
+  return left.every((item, index) => {
+    const candidate = right[index]
+    if (!candidate) {
+      return false
+    }
+    return (
+      item.id === candidate.id
+      && item.status === candidate.status
+      && item.category === candidate.category
+      && item.subject === candidate.subject
+      && item.last_message_at === candidate.last_message_at
+      && item.message_count === candidate.message_count
+      && item.latest_message_preview === candidate.latest_message_preview
+      && item.updated_at === candidate.updated_at
+    )
+  })
+}
+
 function conversationStatusLabel(status: 'OPEN' | 'CLOSED'): string {
   return status === 'CLOSED' ? 'Kapalı' : 'Açık'
 }
@@ -1219,6 +1244,8 @@ export function HomePage() {
   const androidOnboardingVisiblePrevRef = useRef(false)
   const iosInAppBrowserLoggedRef = useRef(false)
   const supportModalHistoryKeyRef = useRef<string | null>(null)
+  const communicationThreadsRef = useRef<Record<number, EmployeeConversationThreadRecord>>({})
+  const communicationFeedSyncBusyRef = useRef(false)
   const iosBrowserContext = useMemo(() => detectIosBrowserContext(), [])
   const installFunnelLastSentRef = useRef<Record<string, number>>({})
   const toastDedupRef = useRef<Record<string, string | null>>({})
@@ -1248,6 +1275,10 @@ export function HomePage() {
     },
     [pushToast],
   )
+
+  useEffect(() => {
+    communicationThreadsRef.current = communicationThreadsById
+  }, [communicationThreadsById])
 
   useEffect(() => {
     if (!errorMessage) {
@@ -1770,22 +1801,29 @@ export function HomePage() {
       setIsCommunicationReady(false)
       return
     }
+    if (!isCommunicationModalOpen) {
+      return
+    }
 
     let cancelled = false
-    setIsCommunicationLoading(true)
+    if (!isCommunicationReady) {
+      setIsCommunicationLoading(true)
+    }
     const loadCommunicationList = async () => {
       try {
         const rows = await getEmployeeConversations(deviceFingerprint)
         if (!cancelled) {
-          setCommunicationList(rows)
+          setCommunicationList((current) => (areCommunicationListsEquivalent(current, rows) ? current : rows))
           setIsCommunicationReady(true)
         }
       } catch (error) {
         const parsed = parseApiError(error, 'Canlı destek kayıtları alınamadı.')
         if (!cancelled) {
           if (!handleDeviceNotClaimed(parsed)) {
-            setCommunicationList([])
-            setIsCommunicationReady(false)
+            if (!isCommunicationReady) {
+              setCommunicationList([])
+              setIsCommunicationReady(false)
+            }
           }
         }
       } finally {
@@ -1799,7 +1837,7 @@ export function HomePage() {
     return () => {
       cancelled = true
     }
-  }, [communicationRefreshToken, deviceFingerprint, handleDeviceNotClaimed])
+  }, [communicationRefreshToken, deviceFingerprint, handleDeviceNotClaimed, isCommunicationModalOpen, isCommunicationReady])
 
   useEffect(() => {
     if (!deviceFingerprint) {
@@ -2325,27 +2363,84 @@ export function HomePage() {
     [deviceFingerprint],
   )
 
+  const refreshCommunicationFeed = useCallback(async () => {
+    if (!deviceFingerprint || !isCommunicationModalOpen || communicationFeedSyncBusyRef.current) {
+      return
+    }
+
+    communicationFeedSyncBusyRef.current = true
+    try {
+      const rows = await getEmployeeConversations(deviceFingerprint)
+      setCommunicationList((current) => (areCommunicationListsEquivalent(current, rows) ? current : rows))
+      setIsCommunicationReady(true)
+
+      const priorityConversationIds = new Set<number>(
+        [
+          activeCommunicationId,
+          ...rows.filter((item) => item.status === 'OPEN').map((item) => item.id),
+        ].filter((value): value is number => typeof value === 'number' && value > 0),
+      )
+
+      for (const conversation of rows) {
+        const existingThread = communicationThreadsRef.current[conversation.id]
+        const shouldRefreshThread =
+          (!existingThread && priorityConversationIds.has(conversation.id))
+          || existingThread?.conversation.last_message_at !== conversation.last_message_at
+          || existingThread.messages.length !== conversation.message_count
+          || existingThread.conversation.status !== conversation.status
+
+        if (shouldRefreshThread) {
+          await loadCommunicationThread(conversation.id)
+        }
+      }
+    } catch (error) {
+      const parsed = parseApiError(error, 'Canli destek mesajlari yenilenemedi.')
+      handleDeviceNotClaimed(parsed)
+    } finally {
+      communicationFeedSyncBusyRef.current = false
+    }
+  }, [activeCommunicationId, deviceFingerprint, handleDeviceNotClaimed, isCommunicationModalOpen, loadCommunicationThread])
+
   useEffect(() => {
     if (!isCommunicationModalOpen || !deviceFingerprint || !communicationList.length) {
       return
     }
     let cancelled = false
+    const prioritizedConversationIds = Array.from(
+      new Set(
+        [
+          activeCommunicationId,
+          ...communicationList.filter((item) => item.status === 'OPEN').map((item) => item.id),
+          ...communicationList.map((item) => item.id),
+        ].filter((value): value is number => typeof value === 'number' && value > 0),
+      ),
+    )
     const loadVisibleCommunicationTimeline = async () => {
-      for (const conversation of communicationList) {
+      for (const conversationId of prioritizedConversationIds) {
         if (cancelled) {
           return
         }
-        if (communicationThreadsById[conversation.id] || communicationThreadErrorById[conversation.id]) {
+        if (communicationThreadsById[conversationId] || communicationThreadErrorById[conversationId]) {
           continue
         }
-        await loadCommunicationThread(conversation.id)
+        await loadCommunicationThread(conversationId)
+        if (cancelled || typeof window === 'undefined') {
+          continue
+        }
+        await new Promise<void>((resolve) => {
+          window.setTimeout(resolve, 120)
+        })
       }
     }
-    void loadVisibleCommunicationTimeline()
+    const hydrateTimer = typeof window !== 'undefined' ? window.setTimeout(() => void loadVisibleCommunicationTimeline(), 140) : null
     return () => {
       cancelled = true
+      if (typeof window !== 'undefined' && hydrateTimer !== null) {
+        window.clearTimeout(hydrateTimer)
+      }
     }
   }, [
+    activeCommunicationId,
     communicationList,
     communicationThreadErrorById,
     communicationThreadsById,
@@ -2353,6 +2448,37 @@ export function HomePage() {
     isCommunicationModalOpen,
     loadCommunicationThread,
   ])
+
+  useEffect(() => {
+    if (!isCommunicationModalOpen || typeof window === 'undefined') {
+      return
+    }
+
+    void refreshCommunicationFeed()
+    const pollWindow = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) {
+        return
+      }
+      void refreshCommunicationFeed()
+    }, 6000)
+
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        void refreshCommunicationFeed()
+      }
+    }
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityChange)
+    }
+
+    return () => {
+      window.clearInterval(pollWindow)
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibilityChange)
+      }
+    }
+  }, [isCommunicationModalOpen, refreshCommunicationFeed])
 
   const toggleCommunicationThread = useCallback(
     (conversationId: number) => {
