@@ -2998,6 +2998,7 @@ export function HomePage() {
     demoSessions.length + leaveRequests.length > 0
       ? `${demoSessions.length + leaveRequests.length} kayıt`
       : 'Henüz yok'
+  const isQrRadarReady = canQrScan && !isSubmitting && !scannerActive && !pushGateRequired
 
   const showActivitySectionOpen = Boolean(actionNotice || isDemoActive || pendingLeaveCount > 0 || hasLeaveHistory)
   const showSecuritySectionOpen = Boolean(
@@ -3068,10 +3069,13 @@ export function HomePage() {
             shiftSummary={employeeShiftSummary}
             contextLine={employeeHeroMeta}
             footerNote={mainActionFooterNote}
+            isQrReady={isQrRadarReady}
             primaryAction={
               <button
                 type="button"
-                className="btn btn-primary action-cta-btn employee-main-action-primary-btn"
+                className={`btn btn-primary action-cta-btn employee-main-action-primary-btn ${
+                  isQrRadarReady ? 'is-radar-ready' : ''
+                }`}
                 disabled={!canQrScan}
                 onClick={() => {
                   if (!canQrScan) {
@@ -3152,6 +3156,7 @@ export function HomePage() {
             title={lastActionCard.title}
             summary={lastActionCard.summary}
             timestampLabel={lastActionCard.timestampLabel}
+            pulseKey={lastAction?.response.ts_utc ?? null}
             badges={
               lastAction ? (
                 <>

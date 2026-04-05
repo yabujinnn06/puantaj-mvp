@@ -1361,6 +1361,27 @@ textarea:focus {
   padding: 0 1rem 1rem;
 }
 
+.employee-secondary-disclosure[open] .employee-secondary-disclosure-body > * {
+  opacity: 0;
+  animation: employeeAccordionItemIn 380ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.employee-secondary-disclosure[open] .employee-secondary-disclosure-body > *:nth-child(1) {
+  animation-delay: 40ms;
+}
+
+.employee-secondary-disclosure[open] .employee-secondary-disclosure-body > *:nth-child(2) {
+  animation-delay: 90ms;
+}
+
+.employee-secondary-disclosure[open] .employee-secondary-disclosure-body > *:nth-child(3) {
+  animation-delay: 140ms;
+}
+
+.employee-secondary-disclosure[open] .employee-secondary-disclosure-body > *:nth-child(4) {
+  animation-delay: 190ms;
+}
+
 .employee-install-stack {
   display: grid;
   gap: 10px;
@@ -1426,6 +1447,115 @@ textarea:focus {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes employeeConstellationDrift {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+
+  50% {
+    opacity: 1;
+    transform: translate3d(-6px, -10px, 0) scale(1.04);
+  }
+}
+
+@keyframes employeeMetaCascade {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes employeeRadarSweep {
+  0%,
+  18%,
+  100% {
+    background-position: 150% 50%;
+    opacity: 0;
+  }
+
+  26% {
+    opacity: 0.72;
+  }
+
+  38% {
+    background-position: -40% 50%;
+    opacity: 0;
+  }
+}
+
+@keyframes employeeQrButtonSweep {
+  0%,
+  20%,
+  100% {
+    background-position: 180% 50%;
+    opacity: 0.2;
+  }
+
+  28% {
+    opacity: 0.92;
+  }
+
+  44% {
+    background-position: -30% 50%;
+    opacity: 0.16;
+  }
+}
+
+@keyframes employeeReceiptSettle {
+  0% {
+    transform: translateY(8px) scale(0.982);
+    box-shadow: 0 0 0 rgba(19, 91, 121, 0);
+  }
+
+  58% {
+    transform: translateY(-2px) scale(1.01);
+    box-shadow: 0 18px 28px -24px rgba(19, 91, 121, 0.34);
+  }
+
+  100% {
+    transform: translateY(0) scale(1);
+    box-shadow: 0 0 0 rgba(19, 91, 121, 0);
+  }
+}
+
+@keyframes employeeTimestampSnap {
+  0% {
+    transform: translateY(6px) scale(0.94);
+    opacity: 0.58;
+  }
+
+  60% {
+    transform: translateY(-1px) scale(1.03);
+    opacity: 1;
+  }
+
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes employeeAccordionItemIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+    filter: blur(2px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
   }
 }
 
@@ -1539,6 +1669,36 @@ textarea:focus {
   gap: 12px;
 }
 
+.employee-home-header-card-cascade::before {
+  background:
+    radial-gradient(circle at 18% 22%, rgba(255, 210, 122, 0.2), transparent 18%),
+    radial-gradient(circle at 72% 18%, rgba(141, 222, 255, 0.22), transparent 22%),
+    radial-gradient(circle at 48% 78%, rgba(155, 224, 255, 0.16), transparent 18%),
+    radial-gradient(circle, rgba(145, 216, 245, 0.18), transparent 68%);
+  animation: employeeAmbientFloat 9.5s ease-in-out infinite, employeeConstellationDrift 15s ease-in-out infinite;
+}
+
+.employee-home-header-card-cascade .employee-home-meta-item {
+  opacity: 0;
+  animation: employeeMetaCascade 620ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.employee-home-header-card-cascade .employee-home-meta-item:nth-child(1) {
+  animation-delay: 180ms;
+}
+
+.employee-home-header-card-cascade .employee-home-meta-item:nth-child(2) {
+  animation-delay: 240ms;
+}
+
+.employee-home-header-card-cascade .employee-home-meta-item:nth-child(3) {
+  animation-delay: 300ms;
+}
+
+.employee-home-header-card-cascade .employee-home-meta-item:nth-child(4) {
+  animation-delay: 360ms;
+}
+
 .employee-home-header-row {
   display: flex;
   align-items: flex-start;
@@ -1620,6 +1780,32 @@ textarea:focus {
 .employee-main-action-card {
   gap: 1rem;
   padding: 14px;
+}
+
+.employee-main-action-card.is-qr-ready {
+  border-color: rgba(91, 181, 221, 0.42);
+}
+
+.employee-main-action-card.is-qr-ready::before {
+  background:
+    radial-gradient(circle at 18% 24%, rgba(255, 211, 125, 0.18), transparent 20%),
+    radial-gradient(circle at 84% 18%, rgba(104, 212, 255, 0.24), transparent 26%),
+    radial-gradient(circle at 70% 82%, rgba(102, 194, 241, 0.16), transparent 24%);
+}
+
+.employee-main-action-card.is-qr-ready::after {
+  background:
+    linear-gradient(
+      112deg,
+      transparent 12%,
+      rgba(113, 214, 255, 0.08) 28%,
+      rgba(255, 255, 255, 0.28) 50%,
+      rgba(255, 217, 120, 0.14) 66%,
+      transparent 84%
+    );
+  background-size: 240% 100%;
+  background-position: 150% 50%;
+  animation: employeeRadarSweep 8.4s ease-in-out infinite;
 }
 
 .employee-main-action-head {
@@ -1737,6 +1923,30 @@ textarea:focus {
   transform: translateX(135%);
 }
 
+.employee-main-action-primary-btn.is-radar-ready::before {
+  background:
+    linear-gradient(
+      102deg,
+      transparent 0%,
+      transparent 24%,
+      rgba(117, 218, 255, 0.14) 40%,
+      rgba(255, 255, 255, 0.42) 50%,
+      rgba(255, 214, 112, 0.22) 62%,
+      transparent 82%
+    );
+  background-size: 220% 100%;
+  background-position: 180% 50%;
+  opacity: 0.88;
+  animation: employeeQrButtonSweep 6.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.employee-main-action-primary-btn.is-radar-ready::after {
+  background:
+    radial-gradient(circle at 78% 52%, rgba(255, 255, 255, 0.18), transparent 42%),
+    radial-gradient(circle at 18% 50%, rgba(98, 211, 255, 0.18), transparent 44%);
+  opacity: 0.52;
+}
+
 .employee-main-action-note {
   margin: 0;
   font-size: 0.78rem;
@@ -1765,6 +1975,10 @@ textarea:focus {
   padding: 14px;
   display: grid;
   gap: 0.95rem;
+}
+
+.employee-last-action-card.is-fresh {
+  animation: employeeReceiptSettle 920ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .employee-last-action-head {
@@ -1802,6 +2016,10 @@ textarea:focus {
   max-width: 100%;
   white-space: normal;
   text-align: left;
+}
+
+.employee-last-action-time.is-fresh {
+  animation: employeeTimestampSnap 760ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .employee-last-action-title {
@@ -2009,6 +2227,27 @@ textarea:focus {
 
 .employee-secondary-section[open] .employee-secondary-content {
   animation: employeeSectionBloom 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.employee-secondary-section[open] .employee-secondary-content > * {
+  opacity: 0;
+  animation: employeeAccordionItemIn 420ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.employee-secondary-section[open] .employee-secondary-content > *:nth-child(1) {
+  animation-delay: 50ms;
+}
+
+.employee-secondary-section[open] .employee-secondary-content > *:nth-child(2) {
+  animation-delay: 110ms;
+}
+
+.employee-secondary-section[open] .employee-secondary-content > *:nth-child(3) {
+  animation-delay: 170ms;
+}
+
+.employee-secondary-section[open] .employee-secondary-content > *:nth-child(4) {
+  animation-delay: 230ms;
 }
 
 .employee-secondary-stack {

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode, type Ref } from 'react'
+import { useEffect, useRef, useState, type ReactNode, type Ref } from 'react'
 
 interface EmployeeHeaderMetaItem {
   label: string
@@ -24,6 +24,7 @@ interface EmployeeMainActionCardProps {
   footerNote: string
   primaryAction: ReactNode
   secondaryAction: ReactNode
+  isQrReady?: boolean
   sectionRef?: Ref<HTMLElement>
   children?: ReactNode
 }
@@ -34,6 +35,7 @@ interface EmployeeLastActionSummaryProps {
   timestampLabel?: string | null
   badges?: ReactNode
   details?: ReactNode
+  pulseKey?: string | null
 }
 
 interface EmployeeCriticalAlertsProps {
@@ -58,7 +60,7 @@ export function EmployeeHeader({
   metaItems,
 }: EmployeeHeaderProps) {
   return (
-    <section className="employee-home-header-card" aria-label="Çalışan özeti">
+    <section className="employee-home-header-card employee-home-header-card-cascade" aria-label="Çalışan özeti">
       <div className="employee-home-header-row">
         <div className="employee-home-header-copy">
           <p className="employee-home-header-kicker">{companyName}</p>
@@ -90,11 +92,12 @@ export function EmployeeMainActionCard({
   footerNote,
   primaryAction,
   secondaryAction,
+  isQrReady = false,
   sectionRef,
   children,
 }: EmployeeMainActionCardProps) {
   return (
-    <section className="action-panel employee-main-action-card" ref={sectionRef}>
+    <section className={`action-panel employee-main-action-card ${isQrReady ? 'is-qr-ready' : ''}`} ref={sectionRef}>
       <div className="employee-main-action-head">
         <div>
           <p className="employee-main-action-kicker">ANA İŞLEM</p>
@@ -133,9 +136,35 @@ export function EmployeeLastActionSummary({
   timestampLabel,
   badges,
   details,
+  pulseKey,
 }: EmployeeLastActionSummaryProps) {
+  const [isFresh, setIsFresh] = useState(false)
+  const hasMountedRef = useRef(false)
+  const previousPulseKeyRef = useRef<string | null>(pulseKey ?? null)
+
+  useEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true
+      previousPulseKeyRef.current = pulseKey ?? null
+      return
+    }
+
+    if (pulseKey && pulseKey !== previousPulseKeyRef.current) {
+      setIsFresh(true)
+      const timeout = window.setTimeout(() => setIsFresh(false), 920)
+      previousPulseKeyRef.current = pulseKey
+      return () => window.clearTimeout(timeout)
+    }
+
+    previousPulseKeyRef.current = pulseKey ?? null
+    return undefined
+  }, [pulseKey])
+
   return (
-    <section className="result-box employee-last-action-card" aria-labelledby="employee-last-action-title">
+    <section
+      className={`result-box employee-last-action-card ${isFresh ? 'is-fresh' : ''}`}
+      aria-labelledby="employee-last-action-title"
+    >
       <div className="employee-last-action-head">
         <div className="employee-last-action-copy-wrap">
           <p className="employee-last-action-kicker">SON İŞLEM</p>
@@ -143,7 +172,9 @@ export function EmployeeLastActionSummary({
             {title}
           </h2>
         </div>
-        {timestampLabel ? <span className="employee-last-action-time">{timestampLabel}</span> : null}
+        {timestampLabel ? (
+          <span className={`employee-last-action-time ${isFresh ? 'is-fresh' : ''}`}>{timestampLabel}</span>
+        ) : null}
       </div>
 
       <p className="employee-last-action-copy">{summary}</p>
