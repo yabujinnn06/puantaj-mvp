@@ -2921,7 +2921,7 @@ export function HomePage() {
     const brandParts = [UI_BRANDING.signatureText, UI_BRANDING.signatureTagline].filter(
       (value) => Boolean(value),
     )
-    return brandParts.join(' · ') || 'Calisan Portali'
+    return brandParts.join(' · ') || 'Çalışan Portalı'
   }, [])
 
   const employeeHeaderSubtitle = useMemo(() => {
@@ -2931,73 +2931,73 @@ export function HomePage() {
     if (parts.length > 0) {
       return parts.join(' · ')
     }
-    return deviceFingerprint ? 'Gunluk yoklama ve vardiya islemleri' : 'Cihaz baglantisi tamamlanmadi'
+    return deviceFingerprint ? 'Günlük yoklama ve vardiya işlemleri' : 'Cihaz bağlantısı tamamlanmadı'
   }, [deviceFingerprint, statusSnapshot?.department_name, statusSnapshot?.region_name])
 
   const employeeHeaderMeta = useMemo(
     () => [
-      { label: 'Bolge', value: statusSnapshot?.region_name ?? 'Atanmamis' },
-      { label: 'Departman', value: statusSnapshot?.department_name ?? 'Atanmamis' },
+      { label: 'Bölge', value: statusSnapshot?.region_name ?? 'Atanmamış' },
+      { label: 'Departman', value: statusSnapshot?.department_name ?? 'Atanmamış' },
       { label: 'Vardiya', value: employeeShiftSummary },
-      { label: 'Guvenlik', value: employeeSecuritySummary },
+      { label: 'Güvenlik', value: employeeSecuritySummary },
     ],
     [employeeSecuritySummary, employeeShiftSummary, statusSnapshot?.department_name, statusSnapshot?.region_name],
   )
 
   const mainActionFooterNote = useMemo(() => {
     if (!deviceFingerprint) {
-      return 'Bu ekrani kullanmadan once cihaz baglantisini tamamlayin.'
+      return 'Bu ekranı kullanmadan önce cihaz bağlantısını tamamlayın.'
     }
     if (pushGateRequired) {
       return pushRequiresStandalone
-        ? 'QR islemi icin once Ana Ekrana Ekle kurulumu ve bildirim izni tamamlanmali.'
-        : 'QR islemi oncesinde bildirim izni verilmelidir.'
+        ? 'QR işlemi için önce Ana Ekrana Ekle kurulumu ve bildirim izni tamamlanmalı.'
+        : 'QR işlemi öncesinde bildirim izni verilmelidir.'
     }
     if (hasOpenShift) {
-      return 'Vardiyaniz acik. QR ile yeni islem baslatabilir veya mesaiyi guvenli sekilde bitirebilirsiniz.'
+      return 'Vardiyanız açık. QR ile yeni işlem başlatabilir veya mesaiyi güvenli şekilde bitirebilirsiniz.'
     }
-    return 'Ilk once QR kodu okutun. Isiniz bittiginde ayni ekrandan mesaiyi guvenli sekilde kapatin.'
+    return 'İlk önce QR kodu okutun. İşiniz bittiğinde aynı ekrandan mesaiyi güvenli şekilde kapatın.'
   }, [deviceFingerprint, hasOpenShift, pushGateRequired, pushRequiresStandalone])
 
   const lastActionCard = useMemo(() => {
     if (lastAction) {
       const isCheckin = lastAction.response.event_type === 'IN'
       return {
-        title: resultMessage?.text ?? (isCheckin ? 'Giris kaydedildi' : 'Mesai bitisi kaydedildi'),
+        title: resultMessage?.text ?? (isCheckin ? 'Giriş kaydedildi' : 'Mesai bitişi kaydedildi'),
         summary: isCheckin
-          ? 'En son QR islemiyle bugunku girisiniz basariyla kaydedildi.'
-          : 'En son islem olarak bugunku cikisiniz kaydedildi.',
+          ? 'En son QR işlemiyle bugünkü girişiniz başarıyla kaydedildi.'
+          : 'En son işlem olarak bugünkü çıkışınız kaydedildi.',
         timestampLabel: formatTs(lastAction.response.ts_utc),
       }
     }
 
     if (statusSnapshot?.last_out_ts) {
       return {
-        title: 'Son kayit: Cikis',
-        summary: 'Sistemde gorunen son hareket bugunku cikis kaydinizdir.',
+        title: 'Son kayıt: Çıkış',
+        summary: 'Sistemde görünen son hareket bugünkü çıkış kaydınızdır.',
         timestampLabel: formatTs(statusSnapshot.last_out_ts),
       }
     }
 
     if (statusSnapshot?.last_in_ts) {
       return {
-        title: 'Son kayit: Giris',
-        summary: 'Sistemde gorunen son hareket bugunku giris kaydinizdir.',
+        title: 'Son kayıt: Giriş',
+        summary: 'Sistemde görünen son hareket bugünkü giriş kaydınızdır.',
         timestampLabel: formatTs(statusSnapshot.last_in_ts),
       }
     }
 
     return {
-      title: 'Bugun henuz islem yok',
-      summary: 'QR ile islem yaptiginizda son hareket ozeti burada gorunur.',
+      title: 'Bugün henüz işlem yok',
+      summary: 'QR ile işlem yaptığınızda son hareket özeti burada görünür.',
       timestampLabel: null,
     }
   }, [lastAction, resultMessage, statusSnapshot?.last_in_ts, statusSnapshot?.last_out_ts])
 
   const historySummaryLabel =
     demoSessions.length + leaveRequests.length > 0
-      ? `${demoSessions.length + leaveRequests.length} kayit`
-      : 'Henuz yok'
+      ? `${demoSessions.length + leaveRequests.length} kayıt`
+      : 'Henüz yok'
 
   const showActivitySectionOpen = Boolean(actionNotice || isDemoActive || pendingLeaveCount > 0 || hasLeaveHistory)
   const showSecuritySectionOpen = Boolean(
@@ -3084,8 +3084,8 @@ export function HomePage() {
                     setPushSecondChanceOpen(false)
                     setErrorMessage(
                       pushRequiresStandalone
-                        ? 'QR baslatmak icin once iPhone kurulumunu tamamlayip bildirimleri acin.'
-                        : 'QR baslatmak icin once bildirimleri acin.',
+                        ? 'QR başlatmak için önce iPhone kurulumunu tamamlayıp bildirimleri açın.'
+                        : 'QR başlatmak için önce bildirimleri açın.',
                     )
                     return
                   }
@@ -3096,7 +3096,7 @@ export function HomePage() {
                 {isSubmitting && pendingAction === 'checkin' ? (
                   <>
                     <span className="inline-spinner" aria-hidden="true" />
-                    Islem yapiliyor...
+                    İşlem yapılıyor...
                   </>
                 ) : (
                   <span className="action-cta-copy">QR Kod Oku</span>
@@ -3113,10 +3113,10 @@ export function HomePage() {
                 {isSubmitting && pendingAction === 'checkout' ? (
                   <>
                     <span className="inline-spinner inline-spinner-dark" aria-hidden="true" />
-                    Islem yapiliyor...
+                    İşlem yapılıyor...
                   </>
                 ) : (
-                  <span className="action-cta-copy">Mesaiyi Guvenli Bitir</span>
+                  <span className="action-cta-copy">Mesaiyi Güvenli Bitir</span>
                 )}
               </button>
             }
@@ -3127,21 +3127,21 @@ export function HomePage() {
                   <span className="banner-icon" aria-hidden="true">
                     !
                   </span>
-                  Acik vardiya var, cikis kaydi bekleniyor.
+                  Açık vardiya var, çıkış kaydı bekleniyor.
                 </p>
-                {openShiftCheckinTime ? <p className="small-text">Son giris: {formatTs(openShiftCheckinTime)}</p> : null}
+                {openShiftCheckinTime ? <p className="small-text">Son giriş: {formatTs(openShiftCheckinTime)}</p> : null}
               </div>
             ) : null}
 
             {!deviceFingerprint ? (
               <div className="warn-box employee-inline-warning">
-                <p>Cihaz bagli degil. Once davet veya kurtarma akisini tamamlayin.</p>
+                <p>Cihaz bağlı değil. Önce davet veya kurtarma akışını tamamlayın.</p>
                 <div className="employee-inline-link-row">
                   <Link className="inline-link" to="/claim">
-                    /claim ekranina git
+                    /claim ekranına git
                   </Link>
                   <Link className="inline-link" to="/recover">
-                    /recover ekranina git
+                    /recover ekranına git
                   </Link>
                 </div>
               </div>
@@ -3155,18 +3155,18 @@ export function HomePage() {
             badges={
               lastAction ? (
                 <>
-                  {duplicateDetected ? <span className="status-pill state-warn">Mukerrer kayit</span> : null}
-                  {manualCheckout ? <span className="manual-badge">Manuel cikis yapildi</span> : null}
+                  {duplicateDetected ? <span className="status-pill state-warn">Mükerrer kayıt</span> : null}
+                  {manualCheckout ? <span className="manual-badge">Manuel çıkış yapıldı</span> : null}
                 </>
               ) : null
             }
             details={
               lastAction ? (
                 <details className="employee-inline-details">
-                  <summary>Teknik ayrintilar</summary>
+                  <summary>Teknik ayrıntılar</summary>
                   <div className="employee-technical-list">
                     <p>
-                      Islem tipi: <strong>{eventTypeLabel(lastAction.response.event_type)}</strong>
+                      İşlem tipi: <strong>{eventTypeLabel(lastAction.response.event_type)}</strong>
                     </p>
                     {lastAction.codeValue ? (
                       <p>
@@ -3174,7 +3174,7 @@ export function HomePage() {
                       </p>
                     ) : null}
                     <p>
-                      Kayit zamani: <strong>{formatTs(lastAction.response.ts_utc)}</strong>
+                      Kayıt zamanı: <strong>{formatTs(lastAction.response.ts_utc)}</strong>
                     </p>
                     {visibleFlags.length === 0 ? (
                       <p className="muted">Ek bayrak yok.</p>
@@ -3201,11 +3201,11 @@ export function HomePage() {
                     <span className="banner-icon" aria-hidden="true">
                       !
                     </span>
-                    iPhone kurulumu icin Safari zorunlu. Simdi {iosBrowserContext.browserLabel} uzerindesiniz.
+                    iPhone kurulumu için Safari zorunlu. Şimdi {iosBrowserContext.browserLabel} üzerindesiniz.
                   </p>
                   <div className="install-browser-warning-actions">
                     <button type="button" className="btn btn-soft" onClick={openIosInstallOnboarding}>
-                      Safari adimlarini ac
+                      Safari adımlarını aç
                     </button>
                     <button type="button" className="btn btn-ghost" onClick={() => void copyPortalLinkForSafari()}>
                       Linki kopyala
@@ -3220,7 +3220,7 @@ export function HomePage() {
                     <span className="banner-icon" aria-hidden="true">
                       !
                     </span>
-                    Hatirlatma: Mesaiyi bitirmeyi unutmayin.
+                    Hatırlatma: Mesaiyi bitirmeyi unutmayın.
                   </p>
                 </div>
               ) : null}
@@ -3267,9 +3267,9 @@ export function HomePage() {
           ) : null}
 
           <SecondaryFeaturesSection
-            kicker="IKINCIL ALANLAR"
-            title="Ek ozellikler, gecmis ve kurulum"
-            description="Ana yoklama aksiyonlari yukarida kalir; diger alanlara ihtiyac oldugunda buradan ulasabilirsiniz."
+            kicker="İKİNCİL ALANLAR"
+            title="Ek özellikler, geçmiş ve kurulum"
+            description="Ana yoklama aksiyonları yukarıda kalır; diğer alanlara ihtiyaç olduğunda buradan ulaşabilirsiniz."
             defaultOpen={showActivitySectionOpen || showSecuritySectionOpen || showInstallSectionOpen}
             badge={<span className="status-pill state-info">Daha fazla</span>}
           >
@@ -3456,23 +3456,23 @@ export function HomePage() {
               </>
             ) : null}
 
-            <section className="employee-secondary-stack" aria-label="Ikincil ozellikler">
+            <section className="employee-secondary-stack" aria-label="İkincil özellikler">
 
               <SecondaryDisclosure
-                title="Ek islemler"
-                description="Demo kaydi ve izin taleplerini buradan yonetin."
-                badge={isDemoActive ? 'Demo aktif' : pendingLeaveCount > 0 ? `${pendingLeaveCount} bekleyen` : 'Istege bagli'}
+                title="Ek işlemler"
+                description="Demo kaydı ve izin taleplerini buradan yönetin."
+                badge={isDemoActive ? 'Demo aktif' : pendingLeaveCount > 0 ? `${pendingLeaveCount} bekleyen` : 'İsteğe bağlı'}
                 open={showActivitySectionOpen}
               >
                 <div className="employee-secondary-grid">
                   <section className={`demo-visit-card ${isDemoActive ? 'is-live' : 'is-idle'}`}>
                     <div className="demo-visit-head">
                       <div>
-                        <p className="demo-visit-kicker">GUN ICI DEMO</p>
+                        <p className="demo-visit-kicker">GÜN İÇİ DEMO</p>
                         <h3 className="demo-visit-title">{demoButtonLabel}</h3>
                       </div>
                       <span className={`demo-visit-state ${isDemoActive ? 'state-live' : 'state-ready'}`}>
-                        {isDemoActive ? 'AKTIF' : 'HAZIR'}
+                        {isDemoActive ? 'AKTİF' : 'HAZIR'}
                       </span>
                     </div>
                     <p className="demo-visit-copy">{demoButtonHint}</p>
@@ -3485,7 +3485,7 @@ export function HomePage() {
                       {isSubmitting && pendingAction === 'demo' ? (
                         <span className="demo-visit-btn-content">
                           <span className="inline-spinner" aria-hidden="true" />
-                          Kayit aliniyor...
+                          Kayıt alınıyor...
                         </span>
                       ) : (
                         <span className="demo-visit-btn-content">{demoButtonLabel}</span>
@@ -3497,9 +3497,9 @@ export function HomePage() {
                     <section className="leave-request-card" aria-labelledby="focus-leave-request-title">
                       <div className="leave-request-head">
                         <div>
-                          <p className="leave-request-kicker">IZIN AKISI</p>
+                          <p className="leave-request-kicker">İZİN AKIŞI</p>
                           <h3 id="focus-leave-request-title" className="leave-request-title">
-                            Izin Talebi
+                            İzin Talebi
                           </h3>
                         </div>
                         <span className="leave-request-count">{leaveHistorySummary}</span>
@@ -3516,13 +3516,13 @@ export function HomePage() {
                         onClick={openLeaveRequestModal}
                       >
                         <span className="demo-visit-btn-content">
-                          {isLeaveSubmitting ? 'Gonderiliyor...' : 'Izin Talebi Gonder'}
+                          {isLeaveSubmitting ? 'Gönderiliyor...' : 'İzin Talebi Gönder'}
                         </span>
                       </button>
                     </section>
                   ) : (
                     <div className="warn-box">
-                      <p>Izin talebi ve ek islemler cihaz baglantisi tamamlandiginda acilir.</p>
+                      <p>İzin talebi ve ek işlemler cihaz bağlantısı tamamlandığında açılır.</p>
                     </div>
                   )}
                 </div>
@@ -3531,7 +3531,7 @@ export function HomePage() {
               {showInstallSection ? (
                 <SecondaryDisclosure
                   title="Uygulama kurulumu"
-                  description="Kurulum ve tarayici yonlendirmelerini daha sakin bir alanda topladik."
+                  description="Kurulum ve tarayıcı yönlendirmelerini daha sakin bir alanda topladık."
                   badge={showInstallPromotions ? installRailPrimaryLabel : 'Kurulum'}
                   open={showInstallSectionOpen}
                 >
@@ -3540,7 +3540,7 @@ export function HomePage() {
                       <section className="install-banner" role="region" aria-label="Uygulama kurulumu">
                         <div className="install-banner-copy">
                           <p className="install-banner-kicker">YABUJIN APP</p>
-                          <p className="install-banner-title">Ana ekrana ekleyip uygulama gibi kullanin</p>
+                          <p className="install-banner-title">Ana ekrana ekleyip uygulama gibi kullanın</p>
                           <p className="install-banner-subtitle">{installBannerHint}</p>
                         </div>
                         <div className="install-banner-actions">
@@ -3550,7 +3550,7 @@ export function HomePage() {
                             disabled={isInstallPromptBusy}
                             onClick={() => void runInstallPrompt()}
                           >
-                            {isInstallPromptBusy ? 'Aciliyor...' : installPrimaryLabel}
+                            {isInstallPromptBusy ? 'Açılıyor...' : installPrimaryLabel}
                           </button>
                           <button
                             type="button"
@@ -3569,11 +3569,11 @@ export function HomePage() {
                           <span className="banner-icon" aria-hidden="true">
                             !
                           </span>
-                          iPhone kurulumu icin Safari zorunlu. Simdi {iosBrowserContext.browserLabel} uzerindesiniz.
+                          iPhone kurulumu için Safari zorunlu. Şimdi {iosBrowserContext.browserLabel} üzerindesiniz.
                         </p>
                         <div className="install-browser-warning-actions">
                           <button type="button" className="btn btn-soft" onClick={openIosInstallOnboarding}>
-                            Safari Adimlarini Ac
+                            Safari Adımlarını Aç
                           </button>
                           <button
                             type="button"
@@ -3625,8 +3625,8 @@ export function HomePage() {
                           <p className="ios-install-dock-title">Ana Ekrana Ekle</p>
                           <p className="ios-install-dock-subtitle">
                             {iosInAppBrowserBlocked
-                              ? 'Once Safari ile acin, sonra Paylas > Ana Ekrana Ekle adimini tamamlayin.'
-                              : 'Uygulama gibi kullanmak icin kurulumu tamamlayin.'}
+                                ? 'Önce Safari ile açın, sonra Paylaş > Ana Ekrana Ekle adımını tamamlayın.'
+                                : 'Uygulama gibi kullanmak için kurulumu tamamlayın.'}
                           </p>
                         </div>
                         <div className="ios-install-dock-actions">
@@ -3658,9 +3658,9 @@ export function HomePage() {
               ) : null}
 
               <SecondaryDisclosure
-                title="Cihaz ve guvenlik"
+                title="Cihaz ve güvenlik"
                 description="Bildirim, passkey, recovery ve teknik cihaz bilgileri bu alanda."
-                badge={!deviceFingerprint ? 'Cihaz gerekli' : passkeyRegistered && recoveryReady && pushRegistered ? 'Hazir' : 'Kontrol et'}
+                badge={!deviceFingerprint ? 'Cihaz gerekli' : passkeyRegistered && recoveryReady && pushRegistered ? 'Hazır' : 'Kontrol et'}
                 open={showSecuritySectionOpen}
               >
                 {passkeyNotice ? (
@@ -3677,16 +3677,16 @@ export function HomePage() {
 
                 <div className="status-grid employee-secondary-status-grid">
                   <article className="status-card">
-                    <p className="small-title">Passkey</p>
-                    <span className={`status-pill ${passkeyRegistered ? 'state-ok' : 'state-warn'}`}>
-                      {passkeyRegistered ? 'Kurulu' : 'Kurulu degil'}
-                    </span>
+                      <p className="small-title">Passkey</p>
+                      <span className={`status-pill ${passkeyRegistered ? 'state-ok' : 'state-warn'}`}>
+                        {passkeyRegistered ? 'Kurulu' : 'Kurulu değil'}
+                      </span>
                   </article>
 
                   <article className="status-card">
                     <p className="small-title">Bildirim</p>
                     <span className={`status-pill ${pushRegistered ? 'state-ok' : pushEnabled && pushRuntimeSupported ? 'state-warn' : 'state-err'}`}>
-                      {pushRegistered ? 'Acik' : !pushRuntimeSupported ? 'Destek yok' : pushEnabled ? 'Kapali' : 'Servis kapali'}
+                        {pushRegistered ? 'Açık' : !pushRuntimeSupported ? 'Destek yok' : pushEnabled ? 'Kapalı' : 'Servis kapalı'}
                     </span>
                   </article>
 
@@ -3700,10 +3700,10 @@ export function HomePage() {
 
                 {!passkeyRegistered ? (
                   <section className="passkey-brief passkey-brief-setup" aria-live="polite">
-                    <p className="passkey-brief-kicker">GUVENLIK ADIMI</p>
-                    <h3 className="passkey-brief-title">Passkey kurulumunu tamamlayin</h3>
+                    <p className="passkey-brief-kicker">GÜVENLİK ADIMI</p>
+                    <h3 className="passkey-brief-title">Passkey kurulumunu tamamlayın</h3>
                     <p className="passkey-brief-text">
-                      Cihaz verisi silinse bile hesabinizi geri yukleyip QR ile mesaiye kesintisiz devam edebilirsiniz.
+                      Cihaz verisi silinse bile hesabınızı geri yükleyip QR ile mesaiye kesintisiz devam edebilirsiniz.
                     </p>
                     <ul className="passkey-brief-list">
                       <li>Tarayici verisi silinirse hesabinizi geri kazanirsiniz.</li>
@@ -3720,28 +3720,28 @@ export function HomePage() {
                         {isPasskeyBusy ? 'Passkey kuruluyor...' : 'Passkey Kur'}
                       </button>
                       <Link className="inline-link passkey-brief-link" to="/recover">
-                        Kurtarma ekranini gor
+                        Kurtarma ekranını gör
                       </Link>
                     </div>
                   </section>
                 ) : (
                   <section className="passkey-brief passkey-brief-ready">
-                    <p className="passkey-brief-kicker">PASSKEY AKTIF</p>
+                    <p className="passkey-brief-kicker">PASSKEY AKTİF</p>
                     <p className="passkey-brief-text">
-                      Cihaz verisi silinirse <strong>/recover</strong> ekrani ile kimligini geri yukleyebilirsin.
+                        Cihaz verisi silinirse <strong>/recover</strong> ekranı ile kimliğini geri yükleyebilirsin.
                     </p>
                   </section>
                 )}
 
                 <section className={`passkey-brief ${recoveryReady ? 'passkey-brief-ready' : 'passkey-brief-setup'}`}>
                   <p className="passkey-brief-kicker">RECOVERY FALLBACK</p>
-                  <h3 className="passkey-brief-title">Passkey zorunlu degil, Recovery Code kullan</h3>
+                  <h3 className="passkey-brief-title">Passkey zorunlu değil, Recovery Code kullan</h3>
                   <p className="passkey-brief-text">
                     iPhone dahil tum cihazlarda recovery code + PIN ile cihaz kimligini geri yukleyebilirsin.
                   </p>
                   {recoveryExpiresAt ? (
                     <p className="small-text">
-                      Son gecerlilik: <strong>{formatTs(recoveryExpiresAt)}</strong>
+                      Son geçerlilik: <strong>{formatTs(recoveryExpiresAt)}</strong>
                     </p>
                   ) : null}
                   <div className="passkey-brief-actions">
@@ -3752,21 +3752,21 @@ export function HomePage() {
                       onClick={() => void runRecoveryCodeIssue()}
                     >
                       {isRecoveryBusy
-                        ? 'Recovery kodlari uretiliyor...'
+                        ? 'Recovery kodları üretiliyor...'
                         : recoveryReady
-                          ? 'Recovery Kodlarini Yenile'
-                          : 'Recovery Kodu Olustur'}
+                          ? 'Recovery Kodlarını Yenile'
+                          : 'Recovery Kodu Oluştur'}
                     </button>
-                    <Link className="inline-link passkey-brief-link" to="/recover">
-                      Kurtarma ekranina git
-                    </Link>
+                      <Link className="inline-link passkey-brief-link" to="/recover">
+                        Kurtarma ekranına git
+                      </Link>
                   </div>
                   {recoveryReady ? (
                     <div className="recovery-vault">
-                      <p className="recovery-vault-title">Mevcut recovery tokenini ac</p>
+                      <p className="recovery-vault-title">Mevcut recovery tokenini aç</p>
                       <p className="recovery-vault-text">
-                        Bu kodlar telefon degisirse, cihaz sifirlanirsa veya tarayici verisi silinirse hesabi
-                        kurtarmak icin gereklidir. Gormek icin daha once belirledigin recovery PIN&apos;ini gir.
+                        Bu kodlar telefon değişirse, cihaz sıfırlanırsa veya tarayıcı verisi silinirse hesabı
+                        kurtarmak için gereklidir. Görmek için daha önce belirlediğin recovery PIN&apos;ini gir.
                       </p>
                       <div className="recovery-vault-form">
                         <label className="field" htmlFor="focusRecoveryRevealPinInput">
@@ -3788,7 +3788,7 @@ export function HomePage() {
                           disabled={!deviceFingerprint || isRecoveryRevealBusy || isRecoveryBusy}
                           onClick={() => void runRecoveryCodeReveal()}
                         >
-                          {isRecoveryRevealBusy ? 'Kodlar aciliyor...' : 'Tokeni Goster'}
+                          {isRecoveryRevealBusy ? 'Kodlar açılıyor...' : 'Tokeni Göster'}
                         </button>
                       </div>
                     </div>
@@ -3797,7 +3797,7 @@ export function HomePage() {
                   {recoveryCodesPreview && recoveryCodesPreview.length > 0 ? (
                     <div className="notice-box notice-box-warning mt-2">
                       <p className="small-text">
-                        Aktif recovery kodlari. Bunlar cihaz kurtarma icin gereklidir, guvenli yerde saklayin:
+                        Aktif recovery kodları. Bunlar cihaz kurtarma için gereklidir, güvenli yerde saklayın:
                       </p>
                       <p className="small-text">
                         <strong>{recoveryCodesPreview.join(' | ')}</strong>
@@ -3808,7 +3808,7 @@ export function HomePage() {
 
                 <div className="status-cta-row status-cta-row-compact">
                   <button type="button" className="btn btn-ghost" onClick={() => setIsHelpOpen(true)}>
-                    Nasil calisir?
+                    Nasıl çalışır?
                   </button>
 
                   <button
@@ -3831,12 +3831,12 @@ export function HomePage() {
                     }}
                   >
                     {isPushBusy
-                      ? 'Bildirim aciliyor...'
+                      ? 'Bildirim açılıyor...'
                       : pushRegistered
-                        ? 'Bildirimler Acik'
+                        ? 'Bildirimler Açık'
                         : pushRequiresStandalone
                           ? 'Ana Ekrana Ekle'
-                          : 'Bildirimleri Ac'}
+                          : 'Bildirimleri Aç'}
                   </button>
                 </div>
 
@@ -3857,17 +3857,17 @@ export function HomePage() {
 
               {deviceFingerprint ? (
                 <SecondaryDisclosure
-                  title="Gecmis ve talepler"
-                  description="Demo oturumlari ve onceki izin kayitlari bu bolumde."
+                  title="Geçmiş ve talepler"
+                  description="Demo oturumları ve önceki izin kayıtları bu bölümde."
                   badge={historySummaryLabel}
                 >
                   <div className="employee-history-layout">
                     <section className="demo-history-card" aria-labelledby="focus-demo-history-title">
                       <div className="demo-history-head">
                         <div>
-                          <p className="demo-history-kicker">GUNLUK OZET</p>
+                          <p className="demo-history-kicker">GÜNLÜK ÖZET</p>
                           <h3 id="focus-demo-history-title" className="demo-history-title">
-                            Bugunun Demolari
+                            Bugünün Demoları
                           </h3>
                         </div>
                         <span className="demo-history-count">{demoHistorySummary}</span>
@@ -3889,24 +3889,24 @@ export function HomePage() {
                                   <strong>{session.ended_at_utc ? formatDemoTime(session.ended_at_utc) : 'Devam ediyor'}</strong>
                                 </div>
                                 <span className="demo-history-meta">
-                                  {session.is_active ? 'AKTIF' : `${session.duration_minutes} dk`}
+                                  {session.is_active ? 'AKTİF' : `${session.duration_minutes} dk`}
                                 </span>
                               </li>
                             ))}
                           </ol>
                           {hiddenDemoSessionCount > 0 ? (
-                            <p className="demo-history-footnote">+{hiddenDemoSessionCount} kayit daha var.</p>
+                            <p className="demo-history-footnote">+{hiddenDemoSessionCount} kayıt daha var.</p>
                           ) : null}
                         </>
                       ) : (
-                        <p className="demo-history-empty">Bugun demo kaydi yok.</p>
+                        <p className="demo-history-empty">Bugün demo kaydı yok.</p>
                       )}
                     </section>
 
                     <section className="leave-history-card" aria-labelledby="focus-leave-history-title">
                       <div className="leave-history-head">
                         <div>
-                          <p className="leave-history-kicker">IZIN GECMISI</p>
+                          <p className="leave-history-kicker">İZİN GEÇMİŞİ</p>
                           <h3 id="focus-leave-history-title" className="leave-history-title">
                             Son Talepler
                           </h3>
@@ -3921,14 +3921,14 @@ export function HomePage() {
                               aria-controls="focus-leave-history-panel"
                               onClick={() => setIsLeaveHistoryExpanded((current) => !current)}
                             >
-                              {isLeaveHistoryExpanded ? 'Gizle' : 'Goster'}
+                              {isLeaveHistoryExpanded ? 'Gizle' : 'Göster'}
                             </button>
                           ) : null}
                         </div>
                       </div>
 
                       {isLeaveHistoryLoading && !isLeaveHistoryReady ? (
-                        <p className="leave-history-empty">Liste hazirlaniyor...</p>
+                        <p className="leave-history-empty">Liste hazırlanıyor...</p>
                       ) : hasLeaveHistory ? (
                         <div id="focus-leave-history-panel" className="leave-history-body">
                           {isLeaveHistoryExpanded ? (
@@ -3944,7 +3944,7 @@ export function HomePage() {
                                         </span>
                                       </div>
                                       <p className="leave-history-range">{formatLeaveRange(leave.start_date, leave.end_date)}</p>
-                                      <p className="leave-history-note">{leave.note || 'Gerekce girilmedi.'}</p>
+                                      <p className="leave-history-note">{leave.note || 'Gerekçe girilmedi.'}</p>
                                       {leave.decision_note ? (
                                         <p className="leave-history-decision">Karar notu: {leave.decision_note}</p>
                                       ) : null}
@@ -3958,12 +3958,12 @@ export function HomePage() {
                             </>
                           ) : (
                             <p className="leave-history-collapsed">
-                              {leaveRequests.length} izin kaydi gizli. Gormek icin Goster butonuna dokun.
+                              {leaveRequests.length} izin kaydı gizli. Görmek için Göster butonuna dokun.
                             </p>
                           )}
                         </div>
                       ) : (
-                        <p className="leave-history-empty">Henuz izin talebi yok.</p>
+                        <p className="leave-history-empty">Henüz izin talebi yok.</p>
                       )}
                     </section>
                   </div>

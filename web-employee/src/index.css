@@ -1284,6 +1284,9 @@ textarea:focus {
   gap: 0.9rem;
   padding: 0.95rem 1rem;
   flex-wrap: wrap;
+  transition:
+    background-color 220ms ease,
+    transform 220ms ease;
 }
 
 .employee-secondary-disclosure summary::-webkit-details-marker {
@@ -1304,10 +1307,15 @@ textarea:focus {
   color: #1a5875;
   background: rgba(181, 223, 243, 0.32);
   border: 1px solid rgba(124, 188, 219, 0.4);
+  transition:
+    transform 220ms ease,
+    background-color 220ms ease,
+    border-color 220ms ease;
 }
 
 .employee-secondary-disclosure[open] summary::after {
   content: '-';
+  transform: rotate(180deg);
 }
 
 .employee-secondary-disclosure-copy {
@@ -1384,6 +1392,137 @@ textarea:focus {
   margin-top: 12px;
   display: grid;
   gap: 14px;
+}
+
+@keyframes employeeCardReveal {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes employeeAmbientFloat {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+
+  50% {
+    transform: translate3d(-10px, -8px, 0) scale(1.06);
+  }
+}
+
+@keyframes employeeSectionBloom {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.employee-home-stack > * {
+  animation: employeeCardReveal 680ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.employee-home-stack > *:nth-child(1) {
+  animation-delay: 40ms;
+}
+
+.employee-home-stack > *:nth-child(2) {
+  animation-delay: 120ms;
+}
+
+.employee-home-stack > *:nth-child(3) {
+  animation-delay: 200ms;
+}
+
+.employee-home-stack > *:nth-child(4) {
+  animation-delay: 280ms;
+}
+
+.employee-home-stack > *:nth-child(5) {
+  animation-delay: 340ms;
+}
+
+.employee-home-header-card,
+.employee-main-action-card,
+.employee-last-action-card,
+.employee-alerts-card,
+.employee-secondary-section {
+  position: relative;
+  isolation: isolate;
+  transition:
+    transform 240ms ease,
+    box-shadow 240ms ease,
+    border-color 240ms ease;
+}
+
+.employee-home-header-card::before,
+.employee-main-action-card::before,
+.employee-last-action-card::before,
+.employee-alerts-card::before,
+.employee-secondary-section::before {
+  content: '';
+  position: absolute;
+  right: -72px;
+  bottom: -92px;
+  width: 196px;
+  height: 196px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(145, 216, 245, 0.22), transparent 68%);
+  opacity: 0.95;
+  pointer-events: none;
+  z-index: 0;
+  animation: employeeAmbientFloat 9.5s ease-in-out infinite;
+}
+
+.employee-home-header-card::after,
+.employee-main-action-card::after,
+.employee-last-action-card::after,
+.employee-alerts-card::after,
+.employee-secondary-section::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.18), transparent 42%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.employee-home-header-card > *,
+.employee-main-action-card > *,
+.employee-last-action-card > *,
+.employee-alerts-card > *,
+.employee-secondary-section > * {
+  position: relative;
+  z-index: 1;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .employee-home-header-card:hover,
+  .employee-main-action-card:hover,
+  .employee-last-action-card:hover,
+  .employee-alerts-card:hover,
+  .employee-secondary-section:hover {
+    transform: translateY(-3px);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.86),
+      0 22px 34px -28px rgba(10, 39, 54, 0.34);
+  }
+
+  .employee-secondary-summary:hover,
+  .employee-secondary-disclosure summary:hover {
+    background: rgba(255, 255, 255, 0.42);
+  }
 }
 
 .employee-home-header-card {
@@ -1568,6 +1707,34 @@ textarea:focus {
 .employee-main-action-secondary-btn {
   min-height: 3rem;
   font-size: 0.92rem;
+}
+
+.employee-main-action-primary-btn,
+.employee-main-action-secondary-btn {
+  position: relative;
+  overflow: hidden;
+  transition:
+    transform 220ms ease,
+    box-shadow 220ms ease,
+    border-color 220ms ease;
+}
+
+.employee-main-action-primary-btn::after,
+.employee-main-action-secondary-btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 10%, rgba(255, 255, 255, 0.26) 44%, transparent 74%);
+  transform: translateX(-135%);
+  transition: transform 720ms ease;
+  pointer-events: none;
+}
+
+.employee-main-action-primary-btn:hover::after,
+.employee-main-action-secondary-btn:hover::after,
+.employee-main-action-primary-btn:focus-visible::after,
+.employee-main-action-secondary-btn:focus-visible::after {
+  transform: translateX(135%);
 }
 
 .employee-main-action-note {
@@ -1757,6 +1924,9 @@ textarea:focus {
   gap: 1rem;
   padding: 1rem 1.05rem;
   flex-wrap: wrap;
+  transition:
+    background-color 220ms ease,
+    transform 220ms ease;
 }
 
 .employee-secondary-summary::-webkit-details-marker {
@@ -1776,6 +1946,10 @@ textarea:focus {
   color: #1a5875;
   font-size: 1rem;
   font-weight: 900;
+  transition:
+    transform 220ms ease,
+    background-color 220ms ease,
+    border-color 220ms ease;
 }
 
 .employee-secondary-section[open] .employee-secondary-summary {
@@ -1784,6 +1958,7 @@ textarea:focus {
 
 .employee-secondary-section[open] .employee-secondary-summary::after {
   content: '-';
+  transform: rotate(180deg);
 }
 
 .employee-secondary-summary-copy {
@@ -1830,6 +2005,10 @@ textarea:focus {
   display: grid;
   gap: 12px;
   padding: 0 1.05rem 1.05rem;
+}
+
+.employee-secondary-section[open] .employee-secondary-content {
+  animation: employeeSectionBloom 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .employee-secondary-stack {

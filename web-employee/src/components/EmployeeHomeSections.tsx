@@ -58,7 +58,7 @@ export function EmployeeHeader({
   metaItems,
 }: EmployeeHeaderProps) {
   return (
-    <section className="employee-home-header-card" aria-label="Calisan ozeti">
+    <section className="employee-home-header-card" aria-label="Çalışan özeti">
       <div className="employee-home-header-row">
         <div className="employee-home-header-copy">
           <p className="employee-home-header-kicker">{companyName}</p>
@@ -97,14 +97,14 @@ export function EmployeeMainActionCard({
     <section className="action-panel employee-main-action-card" ref={sectionRef}>
       <div className="employee-main-action-head">
         <div>
-          <p className="employee-main-action-kicker">ANA ISLEM</p>
+          <p className="employee-main-action-kicker">ANA İŞLEM</p>
           <h2 className="employee-main-action-title">{title}</h2>
           <p className="employee-main-action-hint">{hint}</p>
         </div>
         <span className={`status-pill employee-main-action-status ${statusClassName}`}>{statusLabel}</span>
       </div>
 
-      <div className="employee-main-action-stats" aria-label="Bugunku ozet">
+      <div className="employee-main-action-stats" aria-label="Bugünkü özet">
         <article className="employee-main-action-stat">
           <span className="employee-main-action-stat-label">Vardiya</span>
           <strong className="employee-main-action-stat-value">{shiftSummary}</strong>
@@ -138,7 +138,7 @@ export function EmployeeLastActionSummary({
     <section className="result-box employee-last-action-card" aria-labelledby="employee-last-action-title">
       <div className="employee-last-action-head">
         <div className="employee-last-action-copy-wrap">
-          <p className="employee-last-action-kicker">SON ISLEM</p>
+          <p className="employee-last-action-kicker">SON İŞLEM</p>
           <h2 id="employee-last-action-title" className="employee-last-action-title">
             {title}
           </h2>
@@ -159,7 +159,7 @@ export function EmployeeCriticalAlerts({ children }: EmployeeCriticalAlertsProps
     <section className="employee-alerts-card" aria-labelledby="employee-alerts-title">
       <div className="employee-alerts-head">
         <div>
-          <p className="employee-alerts-kicker">ONEMLI UYARILAR</p>
+          <p className="employee-alerts-kicker">ÖNEMLİ UYARILAR</p>
           <h2 id="employee-alerts-title" className="employee-alerts-title">
             Kontrol etmeniz gereken durumlar
           </h2>
