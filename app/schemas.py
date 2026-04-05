@@ -1187,22 +1187,22 @@ class EmployeeConversationCreateRequest(BaseModel):
     device_fingerprint: str = Field(min_length=8, max_length=255)
     category: EmployeeConversationCategory
     subject: str = Field(min_length=6, max_length=160)
-    message: str = Field(min_length=12, max_length=2000)
+    message: str = Field(min_length=3, max_length=2000)
 
     @model_validator(mode="after")
     def _normalize_fields(self) -> "EmployeeConversationCreateRequest":
         self.subject = _normalize_subject(self.subject)
-        self.message = _normalize_corporate_message(self.message)
+        self.message = _normalize_corporate_message(self.message, min_length=3)
         return self
 
 
 class EmployeeConversationMessageCreateRequest(BaseModel):
     device_fingerprint: str = Field(min_length=8, max_length=255)
-    message: str = Field(min_length=12, max_length=2000)
+    message: str = Field(min_length=3, max_length=2000)
 
     @model_validator(mode="after")
     def _normalize_message(self) -> "EmployeeConversationMessageCreateRequest":
-        self.message = _normalize_corporate_message(self.message)
+        self.message = _normalize_corporate_message(self.message, min_length=3)
         return self
 
 

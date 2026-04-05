@@ -2002,8 +2002,25 @@ export function HomePage() {
   const openCommunicationCount = communicationList.filter((item) => item.status === 'OPEN').length
   const communicationSummary =
     communicationList.length > 0 ? `${communicationList.length} kayıt` : 'Henüz yok'
-  const activeCommunication = communicationList.find((item) => item.id === activeCommunicationId) ?? null
-  const activeCommunicationThread = activeCommunication ? communicationThreadsById[activeCommunication.id] ?? null : null
+  const activeCommunicationNullable = communicationList.find((item) => item.id === activeCommunicationId) ?? null
+  const activeCommunication =
+    activeCommunicationNullable ?? {
+      id: 0,
+      employee_id: 0,
+      employee_name: '',
+      category: 'OTHER' as EmployeeConversationCategory,
+      subject: '',
+      status: 'OPEN' as const,
+      created_at: '',
+      updated_at: '',
+      closed_at: null,
+      last_message_at: '',
+      message_count: 0,
+      latest_message_preview: null,
+    }
+  const activeCommunicationThread = activeCommunicationNullable
+    ? communicationThreadsById[activeCommunicationNullable.id] ?? null
+    : null
   const showSupportComposer = isCommunicationComposerOpen || !hasCommunicationHistory
   const requestedConversationId = useMemo(() => {
     const params = new URLSearchParams(location.search)
@@ -2017,6 +2034,53 @@ export function HomePage() {
     }
     return parsed
   }, [location.search])
+  const replyCommunication = useMemo(() => {
+    if (requestedConversationId) {
+      const requestedConversation = communicationList.find((item) => item.id === requestedConversationId)
+      if (requestedConversation) {
+        return requestedConversation
+      }
+    }
+    if (activeCommunicationId) {
+      const currentConversation = communicationList.find((item) => item.id === activeCommunicationId)
+      if (currentConversation?.status === 'OPEN') {
+        return currentConversation
+      }
+    }
+    return communicationList.find((item) => item.status === 'OPEN') ?? communicationList[0] ?? null
+  }, [activeCommunicationId, communicationList, requestedConversationId])
+  const communicationTimeline = useMemo(
+    () =>
+      communicationList
+        .flatMap((conversation) =>
+          (communicationThreadsById[conversation.id]?.messages ?? []).map((messageRow) => ({
+            ...messageRow,
+            conversationStatus: conversation.status,
+            conversationId: conversation.id,
+          })),
+        )
+        .sort((left, right) => {
+          const timeDiff = new Date(left.created_at).getTime() - new Date(right.created_at).getTime()
+          if (timeDiff !== 0) {
+            return timeDiff
+          }
+          if (left.conversationId !== right.conversationId) {
+            return left.conversationId - right.conversationId
+          }
+          return left.id - right.id
+        }),
+    [communicationList, communicationThreadsById],
+  )
+  const communicationTimelineError = useMemo(
+    () => communicationList.map((item) => communicationThreadErrorById[item.id]).find((value) => Boolean(value)) ?? null,
+    [communicationList, communicationThreadErrorById],
+  )
+  const communicationLoadedThreadCount = useMemo(
+    () => communicationList.filter((item) => Boolean(communicationThreadsById[item.id])).length,
+    [communicationList, communicationThreadsById],
+  )
+  const isCommunicationTimelineLoading =
+    isCommunicationLoading || (communicationList.length > 0 && communicationLoadedThreadCount < communicationList.length)
 
   useEffect(() => {
     if (!leaveHistory.length) {
@@ -2032,6 +2096,10 @@ export function HomePage() {
     setActiveCommunicationId((current) => {
       if (requestedConversationId && communicationList.some((item) => item.id === requestedConversationId)) {
         return requestedConversationId
+      }
+      const openConversation = communicationList.find((item) => item.status === 'OPEN')
+      if (openConversation) {
+        return openConversation.id
       }
       if (current && communicationList.some((item) => item.id === current)) {
         return current
@@ -2160,7 +2228,7 @@ export function HomePage() {
       setCommunicationCategory(preset?.category ?? 'ATTENDANCE')
       setCommunicationSubject(preset?.subject ?? '')
       setCommunicationMessage(preset?.message ?? '')
-      setIsCommunicationComposerOpen(true)
+      setIsCommunicationComposerOpen(false)
       setIsCommunicationModalOpen(true)
     },
     [],
@@ -2176,9 +2244,9 @@ export function HomePage() {
 
   const openCommunicationModal = useCallback(() => {
     setCommunicationFormError(null)
-    setIsCommunicationComposerOpen(communicationList.length === 0)
+    setIsCommunicationComposerOpen(false)
     setIsCommunicationModalOpen(true)
-  }, [communicationList.length])
+  }, [])
 
   const openLeaveCommunicationModal = useCallback((leave?: EmployeeLeaveRecord) => {
     const leaveRange = leave ? formatLeaveRange(leave.start_date, leave.end_date) : null
@@ -2256,6 +2324,35 @@ export function HomePage() {
     },
     [deviceFingerprint],
   )
+
+  useEffect(() => {
+    if (!isCommunicationModalOpen || !deviceFingerprint || !communicationList.length) {
+      return
+    }
+    let cancelled = false
+    const loadVisibleCommunicationTimeline = async () => {
+      for (const conversation of communicationList) {
+        if (cancelled) {
+          return
+        }
+        if (communicationThreadsById[conversation.id] || communicationThreadErrorById[conversation.id]) {
+          continue
+        }
+        await loadCommunicationThread(conversation.id)
+      }
+    }
+    void loadVisibleCommunicationTimeline()
+    return () => {
+      cancelled = true
+    }
+  }, [
+    communicationList,
+    communicationThreadErrorById,
+    communicationThreadsById,
+    deviceFingerprint,
+    isCommunicationModalOpen,
+    loadCommunicationThread,
+  ])
 
   const toggleCommunicationThread = useCallback(
     (conversationId: number) => {
@@ -2376,6 +2473,69 @@ export function HomePage() {
     deviceFingerprint,
     pushToast,
   ])
+
+  const submitCommunicationChatMessage = useCallback(async () => {
+    const message = communicationMessage.trim()
+    if (!deviceFingerprint) {
+      setCommunicationFormError('Cihaz bagli degil. Canli destek icin once kurulumu tamamla.')
+      return
+    }
+    if (message.length < 3) {
+      setCommunicationFormError('Mesaj en az 3 karakter olmali.')
+      return
+    }
+
+    setIsCommunicationSubmitting(true)
+    setCommunicationFormError(null)
+    try {
+      const openConversation =
+        (activeCommunicationId
+          ? communicationList.find((item) => item.id === activeCommunicationId && item.status === 'OPEN')
+          : null)
+        ?? communicationList.find((item) => item.status === 'OPEN')
+        ?? null
+
+      const thread = openConversation
+        ? await createEmployeeConversationMessage(openConversation.id, {
+            device_fingerprint: deviceFingerprint,
+            message,
+          })
+        : await createEmployeeConversation({
+            device_fingerprint: deviceFingerprint,
+            category: 'OTHER',
+            subject: 'Canli destek',
+            message,
+          })
+
+      setCommunicationThreadsById((current) => ({ ...current, [thread.conversation.id]: thread }))
+      setCommunicationList((current) => {
+        const next = [thread.conversation, ...current.filter((item) => item.id !== thread.conversation.id)]
+        next.sort((left, right) => {
+          const timeDiff = new Date(right.last_message_at).getTime() - new Date(left.last_message_at).getTime()
+          if (timeDiff !== 0) {
+            return timeDiff
+          }
+          return right.id - left.id
+        })
+        return next
+      })
+      setActiveCommunicationId(thread.conversation.id)
+      setCommunicationRefreshToken((current) => current + 1)
+      setCommunicationMessage('')
+      setCommunicationCategory('ATTENDANCE')
+      setCommunicationSubject('')
+      pushToast({
+        variant: 'success',
+        title: 'Mesaj gonderildi',
+        description: 'Mesajin yoneticiye iletildi.',
+      })
+    } catch (error) {
+      const parsed = parseApiError(error, 'Mesaj gonderilemedi.')
+      setCommunicationFormError(parsed.message)
+    } finally {
+      setIsCommunicationSubmitting(false)
+    }
+  }, [activeCommunicationId, communicationList, communicationMessage, deviceFingerprint, pushToast])
 
   useEffect(() => {
     if (!activeCommunicationId || !deviceFingerprint) {
@@ -5709,6 +5869,96 @@ export function HomePage() {
                 <p>Canlı destek için önce cihaz bağlantısını tamamla.</p>
               </div>
             ) : (
+              <>
+                <div className="employee-support-chat employee-support-chat--modal employee-support-chat-shell">
+                  <header className="employee-support-chat-head">
+                    <div className="employee-support-chat-copy">
+                      <p className="employee-support-kicker">OZEL YAZISMA</p>
+                      <h4 className="employee-support-chat-title">Yonetici ile direkt mesajlasma</h4>
+                      <p className="employee-support-chat-meta">
+                        {communicationTimeline.length > 0
+                          ? `${communicationTimeline.length} mesaj burada gorunur.`
+                          : 'Tum eski ve yeni mesajlar burada tek ekranda gorunur.'}
+                      </p>
+                    </div>
+                    <div className="employee-support-chat-badges">
+                      <span className={`employee-support-thread-state is-${replyCommunication?.status?.toLowerCase?.() ?? 'open'}`}>
+                        {replyCommunication ? conversationStatusLabel(replyCommunication.status) : 'Yeni sohbet'}
+                      </span>
+                    </div>
+                  </header>
+
+                  <div className="employee-support-chat-body">
+                    {isCommunicationTimelineLoading ? (
+                      <p className="small-text employee-support-chat-inline-note">Mesaj gecmisi yukleniyor...</p>
+                    ) : null}
+                    {communicationTimelineError ? (
+                      <p className="small-text employee-support-chat-inline-note">{communicationTimelineError}</p>
+                    ) : null}
+
+                    {communicationTimeline.length > 0 ? (
+                      <ol className="employee-support-message-list">
+                        {communicationTimeline.map((messageRow) => (
+                          <li
+                            key={`${messageRow.conversationId}-${messageRow.id}`}
+                            className={`employee-support-message-row ${
+                              messageRow.sender_actor === 'ADMIN' ? 'is-admin' : 'is-employee'
+                            }`}
+                          >
+                            <div className="employee-support-message-meta">
+                              <strong className="employee-support-message-author">
+                                {messageRow.sender_actor === 'ADMIN' ? messageRow.sender_label : 'Siz'}
+                              </strong>
+                              <span>{formatTs(messageRow.created_at)}</span>
+                            </div>
+                            <div className="employee-support-message-bubble">
+                              <p>{messageRow.message}</p>
+                            </div>
+                          </li>
+                        ))}
+                      </ol>
+                    ) : !isCommunicationTimelineLoading ? (
+                      <div className="employee-support-chat-placeholder">
+                        <p className="employee-support-chat-placeholder-title">Sohbet buradan baslar.</p>
+                        <p className="employee-support-chat-placeholder-copy">
+                          Yoneticiye tek ekrandan yaz. Eski mesajlar da burada birikerek gorunur.
+                        </p>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="employee-support-composer">
+                    <label className="field">
+                      <span>Mesajin</span>
+                      <textarea
+                        rows={4}
+                        value={communicationMessage}
+                        onChange={(event) => setCommunicationMessage(event.target.value)}
+                        placeholder="Mesajinizi yazin..."
+                      />
+                    </label>
+
+                    {communicationFormError ? <p className="small-text">{communicationFormError}</p> : null}
+
+                    <div className="employee-support-composer-actions">
+                      <span className="employee-support-composer-note">
+                        {replyCommunication?.status === 'OPEN'
+                          ? 'Mesajin dogrudan aktif yazismaya eklenir.'
+                          : 'Mesajin yeni bir sohbet baslatir ve yoneticiye iletilir.'}
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn-primary employee-support-send-btn"
+                        disabled={isCommunicationSubmitting}
+                        onClick={() => void submitCommunicationChatMessage()}
+                      >
+                        {isCommunicationSubmitting ? 'Gonderiliyor...' : 'Mesaj Gonder'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {false ? (
               <div className="employee-support-workspace employee-support-workspace--modal">
                 <aside className="employee-support-sidebar" aria-label="Destek kayıtları">
                   <div className="employee-support-sidebar-head">
@@ -5859,30 +6109,30 @@ export function HomePage() {
                         <div className="employee-support-chat-copy">
                           <div className="employee-support-chat-badges">
                             <span className="employee-support-thread-topic">
-                              {conversationCategoryLabels[activeCommunication.category]}
+                              {conversationCategoryLabels[activeCommunication!.category]}
                             </span>
-                            <span className={`employee-support-thread-state is-${activeCommunication.status.toLowerCase()}`}>
-                              {conversationStatusLabel(activeCommunication.status)}
+                            <span className={`employee-support-thread-state is-${activeCommunication!.status.toLowerCase()}`}>
+                              {conversationStatusLabel(activeCommunication!.status)}
                             </span>
                           </div>
-                          <h4 className="employee-support-chat-title">{activeCommunication.subject}</h4>
+                          <h4 className="employee-support-chat-title">{activeCommunication!.subject}</h4>
                           <p className="employee-support-chat-meta">
-                            Son hareket: {formatTs(activeCommunication.last_message_at)}
+                            Son hareket: {formatTs(activeCommunication!.last_message_at)}
                           </p>
                         </div>
                       </header>
 
                       <div className="employee-support-chat-body">
-                        {communicationThreadLoadingId === activeCommunication.id && !activeCommunicationThread ? (
+                        {communicationThreadLoadingId === activeCommunication!.id && !activeCommunicationThread ? (
                           <p className="small-text">Destek görüşmesi yükleniyor...</p>
                         ) : null}
-                        {communicationThreadErrorById[activeCommunication.id] ? (
-                          <p className="small-text">{communicationThreadErrorById[activeCommunication.id]}</p>
+                        {communicationThreadErrorById[activeCommunication!.id] ? (
+                          <p className="small-text">{communicationThreadErrorById[activeCommunication!.id]}</p>
                         ) : null}
 
                         {activeCommunicationThread ? (
                           <ol className="employee-support-message-list">
-                            {activeCommunicationThread.messages.map((messageRow) => (
+                            {activeCommunicationThread!.messages.map((messageRow) => (
                               <li
                                 key={messageRow.id}
                                 className={`employee-support-message-row ${
@@ -5910,8 +6160,8 @@ export function HomePage() {
                             <span>Mesajın</span>
                             <textarea
                               rows={3}
-                              value={communicationReplyDrafts[activeCommunication.id] ?? ''}
-                              onChange={(event) => updateCommunicationReplyDraft(activeCommunication.id, event.target.value)}
+                              value={communicationReplyDrafts[activeCommunication!.id] ?? ''}
+                              onChange={(event) => updateCommunicationReplyDraft(activeCommunication!.id, event.target.value)}
                               placeholder="Örnek: Vardiya değişikliği talebimin güncel durumunu paylaşabilir misiniz?"
                             />
                           </label>
@@ -5922,8 +6172,8 @@ export function HomePage() {
                             <button
                               type="button"
                               className="btn btn-primary employee-support-send-btn"
-                              disabled={communicationReplyBusyId === activeCommunication.id}
-                              onClick={() => void submitCommunicationReply(activeCommunication.id)}
+                              disabled={communicationReplyBusyId === activeCommunication!.id}
+                              onClick={() => void submitCommunicationReply(activeCommunication!.id)}
                             >
                               {communicationReplyBusyId === activeCommunication.id ? 'Gönderiliyor...' : 'Mesajı Gönder'}
                             </button>
@@ -5953,6 +6203,8 @@ export function HomePage() {
                   )}
                 </div>
               </div>
+                ) : null}
+              </>
             )}
           </EmployeeFocusModal>
         ) : null}
