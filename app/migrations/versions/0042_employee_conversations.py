@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 revision = "0042_employee_conversations"
@@ -17,19 +18,21 @@ branch_labels = None
 depends_on = None
 
 
-employee_conversation_category = sa.Enum(
+employee_conversation_category = postgresql.ENUM(
     "ATTENDANCE",
     "SHIFT",
     "DEVICE",
     "DOCUMENT",
     "OTHER",
     name="employee_conversation_category",
+    create_type=False,
 )
 
-employee_conversation_status = sa.Enum(
+employee_conversation_status = postgresql.ENUM(
     "OPEN",
     "CLOSED",
     name="employee_conversation_status",
+    create_type=False,
 )
 
 
