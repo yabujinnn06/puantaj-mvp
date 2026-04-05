@@ -1,4 +1,4 @@
-import { type ReactNode, type RefObject, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type FormEvent, type ReactNode, type RefObject, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useLocation } from 'react-router-dom'
 
@@ -293,6 +293,21 @@ function areCommunicationListsEquivalent(
       && item.updated_at === candidate.updated_at
     )
   })
+}
+
+function upsertEmployeeConversation(
+  current: EmployeeConversationRecord[],
+  nextConversation: EmployeeConversationRecord,
+): EmployeeConversationRecord[] {
+  const next = [nextConversation, ...current.filter((item) => item.id !== nextConversation.id)]
+  next.sort((left, right) => {
+    const timeDiff = new Date(right.last_message_at).getTime() - new Date(left.last_message_at).getTime()
+    if (timeDiff !== 0) {
+      return timeDiff
+    }
+    return right.id - left.id
+  })
+  return next
 }
 
 function conversationStatusLabel(status: 'OPEN' | 'CLOSED'): string {
@@ -1120,13 +1135,47 @@ interface SecondaryDisclosureProps {
   title: string
   description: string
   badge?: string
-  open?: boolean
+  defaultOpen?: boolean
+  lazyMount?: boolean
+  onToggleOpen?: (isOpen: boolean) => void
   children: ReactNode
 }
 
-function SecondaryDisclosure({ title, description, badge, open, children }: SecondaryDisclosureProps) {
+function SecondaryDisclosure({
+  title,
+  description,
+  badge,
+  defaultOpen = false,
+  lazyMount = false,
+  onToggleOpen,
+  children,
+}: SecondaryDisclosureProps) {
+  const [isOpen, setIsOpen] = useState(defaultOpen)
+  const [hasBeenOpened, setHasBeenOpened] = useState(defaultOpen)
+
+  useEffect(() => {
+    if (defaultOpen) {
+      setIsOpen(true)
+      setHasBeenOpened(true)
+      onToggleOpen?.(true)
+    }
+  }, [defaultOpen, onToggleOpen])
+
+  const shouldRenderBody = !lazyMount || hasBeenOpened || isOpen
+
   return (
-    <details className="employee-secondary-disclosure" open={open || undefined}>
+    <details
+      className="employee-secondary-disclosure"
+      open={isOpen || undefined}
+      onToggle={(event) => {
+        const nextOpen = event.currentTarget.open
+        setIsOpen(nextOpen)
+        if (nextOpen) {
+          setHasBeenOpened(true)
+        }
+        onToggleOpen?.(nextOpen)
+      }}
+    >
       <summary>
         <div className="employee-secondary-disclosure-copy">
           <span className="employee-secondary-disclosure-title">{title}</span>
@@ -1134,7 +1183,7 @@ function SecondaryDisclosure({ title, description, badge, open, children }: Seco
         </div>
         {badge ? <span className="employee-secondary-disclosure-badge">{badge}</span> : null}
       </summary>
-      <div className="employee-secondary-disclosure-body">{children}</div>
+      {shouldRenderBody ? <div className="employee-secondary-disclosure-body">{children}</div> : null}
     </details>
   )
 }
@@ -1163,6 +1212,8 @@ export function HomePage() {
   const [leaveHistory, setLeaveHistory] = useState<EmployeeLeaveRecord[]>([])
   const [isLeaveHistoryLoading, setIsLeaveHistoryLoading] = useState(false)
   const [isLeaveHistoryReady, setIsLeaveHistoryReady] = useState(false)
+  const [isActivityDisclosureOpen, setIsActivityDisclosureOpen] = useState(false)
+  const [isHistoryDisclosureOpen, setIsHistoryDisclosureOpen] = useState(false)
   const [leaveRefreshToken, setLeaveRefreshToken] = useState(0)
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false)
   const [isLeaveHistoryExpanded, setIsLeaveHistoryExpanded] = useState(false)
@@ -1180,7 +1231,6 @@ export function HomePage() {
   const [communicationList, setCommunicationList] = useState<EmployeeConversationRecord[]>([])
   const [isCommunicationLoading, setIsCommunicationLoading] = useState(false)
   const [isCommunicationReady, setIsCommunicationReady] = useState(false)
-  const [communicationRefreshToken, setCommunicationRefreshToken] = useState(0)
   const [isCommunicationModalOpen, setIsCommunicationModalOpen] = useState(false)
   const [isCommunicationComposerOpen, setIsCommunicationComposerOpen] = useState(false)
   const [communicationCategory, setCommunicationCategory] = useState<EmployeeConversationCategory>('ATTENDANCE')
@@ -1244,8 +1294,13 @@ export function HomePage() {
   const androidOnboardingVisiblePrevRef = useRef(false)
   const iosInAppBrowserLoggedRef = useRef(false)
   const supportModalHistoryKeyRef = useRef<string | null>(null)
+  const supportChatBodyRef = useRef<HTMLDivElement | null>(null)
   const communicationThreadsRef = useRef<Record<number, EmployeeConversationThreadRecord>>({})
   const communicationFeedSyncBusyRef = useRef(false)
+  const shouldLoadDemoHistory = Boolean(deviceFingerprint) && isHistoryDisclosureOpen
+  const shouldLoadLeaveHistory =
+    Boolean(deviceFingerprint) &&
+    (isActivityDisclosureOpen || isHistoryDisclosureOpen || isLeaveModalOpen || activeLeaveThreadId !== null)
   const iosBrowserContext = useMemo(() => detectIosBrowserContext(), [])
   const installFunnelLastSentRef = useRef<Record<string, number>>({})
   const toastDedupRef = useRef<Record<string, string | null>>({})
@@ -1715,9 +1770,14 @@ export function HomePage() {
       setIsDemoHistoryReady(false)
       return
     }
+    if (!shouldLoadDemoHistory) {
+      return
+    }
 
     let cancelled = false
-    setIsDemoHistoryLoading(true)
+    if (!isDemoHistoryReady) {
+      setIsDemoHistoryLoading(true)
+    }
     const loadDemoHistory = async () => {
       try {
         const historyData = await getEmployeeDemoHistory(deviceFingerprint)
@@ -1747,6 +1807,8 @@ export function HomePage() {
   }, [
     deviceFingerprint,
     handleDeviceNotClaimed,
+    isDemoHistoryReady,
+    shouldLoadDemoHistory,
     statusSnapshot?.last_demo_started_at_utc,
     statusSnapshot?.last_demo_ended_at_utc,
   ])
@@ -1758,9 +1820,14 @@ export function HomePage() {
       setIsLeaveHistoryReady(false)
       return
     }
+    if (!shouldLoadLeaveHistory) {
+      return
+    }
 
     let cancelled = false
-    setIsLeaveHistoryLoading(true)
+    if (!isLeaveHistoryReady) {
+      setIsLeaveHistoryLoading(true)
+    }
     const loadLeaveHistory = async () => {
       try {
         const leaveRows = await getEmployeeLeaves(deviceFingerprint)
@@ -1792,7 +1859,7 @@ export function HomePage() {
     return () => {
       cancelled = true
     }
-  }, [deviceFingerprint, handleDeviceNotClaimed, leaveRefreshToken])
+  }, [deviceFingerprint, handleDeviceNotClaimed, isLeaveHistoryReady, leaveRefreshToken, shouldLoadLeaveHistory])
 
   useEffect(() => {
     if (!deviceFingerprint) {
@@ -1837,7 +1904,7 @@ export function HomePage() {
     return () => {
       cancelled = true
     }
-  }, [communicationRefreshToken, deviceFingerprint, handleDeviceNotClaimed, isCommunicationModalOpen, isCommunicationReady])
+  }, [deviceFingerprint, handleDeviceNotClaimed, isCommunicationModalOpen, isCommunicationReady])
 
   useEffect(() => {
     if (!deviceFingerprint) {
@@ -2021,16 +2088,30 @@ export function HomePage() {
   const demoSessions = demoHistory?.sessions ?? []
   const visibleDemoSessions = demoSessions.slice(0, 4)
   const hiddenDemoSessionCount = Math.max(0, demoSessions.length - visibleDemoSessions.length)
-  const demoHistorySummary = demoHistory ? `${demoHistory.session_count} kayit` : 'Bugun'
+  const demoHistorySummary = demoHistory
+    ? `${demoHistory.session_count} kayit`
+    : isDemoHistoryLoading
+      ? 'Yukleniyor'
+      : !isDemoHistoryReady && deviceFingerprint
+        ? 'Acilinca hazir'
+        : 'Bugun'
   const leaveRequests = leaveHistory
   const visibleLeaveRequests = leaveRequests.slice(0, 4)
   const hiddenLeaveRequestCount = Math.max(0, leaveRequests.length - visibleLeaveRequests.length)
   const hasLeaveHistory = leaveRequests.length > 0
   const pendingLeaveCount = leaveRequests.filter((item) => item.status === 'PENDING').length
   const approvedLeaveCount = leaveRequests.filter((item) => item.status === 'APPROVED').length
-  const leaveHistorySummary = leaveRequests.length > 0 ? `${leaveRequests.length} kayit` : 'Henuz yok'
+  const leaveHistorySummary = leaveRequests.length > 0
+    ? `${leaveRequests.length} kayit`
+    : isLeaveHistoryLoading
+      ? 'Yukleniyor'
+      : !isLeaveHistoryReady && deviceFingerprint
+        ? 'Acilinca hazir'
+        : 'Henuz yok'
   const leaveActionHint =
-    pendingLeaveCount > 0
+    !isLeaveHistoryReady && deviceFingerprint && !isLeaveHistoryLoading
+      ? 'Yeni talep olusturabilir, gecmisi bu alani actiginda yukleyebilirsin.'
+      : pendingLeaveCount > 0
       ? `${pendingLeaveCount} talep admin onayi bekliyor.`
       : approvedLeaveCount > 0
         ? `${approvedLeaveCount} izin kaydin gorunuyor.`
@@ -2088,8 +2169,11 @@ export function HomePage() {
     return communicationList.find((item) => item.status === 'OPEN') ?? communicationList[0] ?? null
   }, [activeCommunicationId, communicationList, requestedConversationId])
   const communicationTimeline = useMemo(
-    () =>
-      communicationList
+    () => {
+      if (!isCommunicationModalOpen || !communicationList.length) {
+        return []
+      }
+      return communicationList
         .flatMap((conversation) =>
           (communicationThreadsById[conversation.id]?.messages ?? []).map((messageRow) => ({
             ...messageRow,
@@ -2106,19 +2190,35 @@ export function HomePage() {
             return left.conversationId - right.conversationId
           }
           return left.id - right.id
-        }),
-    [communicationList, communicationThreadsById],
+        })
+    },
+    [communicationList, communicationThreadsById, isCommunicationModalOpen],
   )
   const communicationTimelineError = useMemo(
-    () => communicationList.map((item) => communicationThreadErrorById[item.id]).find((value) => Boolean(value)) ?? null,
-    [communicationList, communicationThreadErrorById],
+    () =>
+      isCommunicationModalOpen
+        ? communicationList.map((item) => communicationThreadErrorById[item.id]).find((value) => Boolean(value)) ?? null
+        : null,
+    [communicationList, communicationThreadErrorById, isCommunicationModalOpen],
   )
   const communicationLoadedThreadCount = useMemo(
-    () => communicationList.filter((item) => Boolean(communicationThreadsById[item.id])).length,
-    [communicationList, communicationThreadsById],
+    () => (isCommunicationModalOpen ? communicationList.filter((item) => Boolean(communicationThreadsById[item.id])).length : 0),
+    [communicationList, communicationThreadsById, isCommunicationModalOpen],
   )
   const isCommunicationTimelineLoading =
-    isCommunicationLoading || (communicationList.length > 0 && communicationLoadedThreadCount < communicationList.length)
+    isCommunicationModalOpen &&
+    (isCommunicationLoading || (communicationList.length > 0 && communicationLoadedThreadCount < communicationList.length))
+
+  useEffect(() => {
+    if (!isCommunicationModalOpen || typeof window === 'undefined' || !supportChatBodyRef.current) {
+      return
+    }
+    const chatBody = supportChatBodyRef.current
+    const frame = window.requestAnimationFrame(() => {
+      chatBody.scrollTop = chatBody.scrollHeight
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [communicationTimeline.length, isCommunicationModalOpen, replyCommunication?.id])
 
   useEffect(() => {
     if (!leaveHistory.length) {
@@ -2353,6 +2453,8 @@ export function HomePage() {
       try {
         const thread = await getEmployeeConversationThread(conversationId, deviceFingerprint)
         setCommunicationThreadsById((current) => ({ ...current, [conversationId]: thread }))
+        setCommunicationList((current) => upsertEmployeeConversation(current, thread.conversation))
+        setIsCommunicationReady(true)
       } catch (error) {
         const parsed = parseApiError(error, 'Destek görüşmesi yüklenemedi.')
         setCommunicationThreadErrorById((current) => ({ ...current, [conversationId]: parsed.message }))
@@ -2381,10 +2483,17 @@ export function HomePage() {
         ].filter((value): value is number => typeof value === 'number' && value > 0),
       )
 
+      for (const conversationId of priorityConversationIds) {
+        await loadCommunicationThread(conversationId)
+      }
+
       for (const conversation of rows) {
+        if (priorityConversationIds.has(conversation.id)) {
+          continue
+        }
         const existingThread = communicationThreadsRef.current[conversation.id]
         const shouldRefreshThread =
-          (!existingThread && priorityConversationIds.has(conversation.id))
+          !existingThread
           || existingThread?.conversation.last_message_at !== conversation.last_message_at
           || existingThread.messages.length !== conversation.message_count
           || existingThread.conversation.status !== conversation.status
@@ -2460,7 +2569,7 @@ export function HomePage() {
         return
       }
       void refreshCommunicationFeed()
-    }, 6000)
+    }, 3000)
 
     const handleVisibilityChange = () => {
       if (typeof document !== 'undefined' && !document.hidden) {
@@ -2532,8 +2641,10 @@ export function HomePage() {
           message,
         })
         setCommunicationThreadsById((current) => ({ ...current, [conversationId]: thread }))
+        setCommunicationList((current) => upsertEmployeeConversation(current, thread.conversation))
+        setActiveCommunicationId(thread.conversation.id)
+        setIsCommunicationReady(true)
         setCommunicationReplyDrafts((current) => ({ ...current, [conversationId]: '' }))
-        setCommunicationRefreshToken((current) => current + 1)
         pushToast({
           variant: 'success',
           title: 'Destek mesajı gönderildi',
@@ -2575,8 +2686,9 @@ export function HomePage() {
         message,
       })
       setCommunicationThreadsById((current) => ({ ...current, [thread.conversation.id]: thread }))
+      setCommunicationList((current) => upsertEmployeeConversation(current, thread.conversation))
       setActiveCommunicationId(thread.conversation.id)
-      setCommunicationRefreshToken((current) => current + 1)
+      setIsCommunicationReady(true)
       setIsCommunicationComposerOpen(false)
       setCommunicationCategory('ATTENDANCE')
       setCommunicationSubject('')
@@ -2634,19 +2746,9 @@ export function HomePage() {
           })
 
       setCommunicationThreadsById((current) => ({ ...current, [thread.conversation.id]: thread }))
-      setCommunicationList((current) => {
-        const next = [thread.conversation, ...current.filter((item) => item.id !== thread.conversation.id)]
-        next.sort((left, right) => {
-          const timeDiff = new Date(right.last_message_at).getTime() - new Date(left.last_message_at).getTime()
-          if (timeDiff !== 0) {
-            return timeDiff
-          }
-          return right.id - left.id
-        })
-        return next
-      })
+      setCommunicationList((current) => upsertEmployeeConversation(current, thread.conversation))
       setActiveCommunicationId(thread.conversation.id)
-      setCommunicationRefreshToken((current) => current + 1)
+      setIsCommunicationReady(true)
       setCommunicationMessage('')
       setCommunicationCategory('ATTENDANCE')
       setCommunicationSubject('')
@@ -2663,12 +2765,23 @@ export function HomePage() {
     }
   }, [activeCommunicationId, communicationList, communicationMessage, deviceFingerprint, pushToast])
 
+  const handleCommunicationChatSubmit = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault()
+      if (isCommunicationSubmitting) {
+        return
+      }
+      void submitCommunicationChatMessage()
+    },
+    [isCommunicationSubmitting, submitCommunicationChatMessage],
+  )
+
   useEffect(() => {
     if (!activeCommunicationId || !deviceFingerprint) {
       return
     }
     void loadCommunicationThread(activeCommunicationId)
-  }, [activeCommunicationId, communicationRefreshToken, deviceFingerprint, loadCommunicationThread])
+  }, [activeCommunicationId, deviceFingerprint, loadCommunicationThread])
 
   const submitLeaveRequest = useCallback(async () => {
     const startDate = leaveStartDate.trim()
@@ -4247,7 +4360,9 @@ export function HomePage() {
                 title="Ek işlemler"
                 description="Demo kaydı ve izin taleplerini buradan yönetin."
                 badge={isDemoActive ? 'Demo aktif' : pendingLeaveCount > 0 ? `${pendingLeaveCount} bekleyen` : 'İsteğe bağlı'}
-                open={showActivitySectionOpen}
+                defaultOpen={showActivitySectionOpen}
+                lazyMount
+                onToggleOpen={setIsActivityDisclosureOpen}
               >
                 <div className="employee-secondary-grid">
                   <section className={`demo-visit-card ${isDemoActive ? 'is-live' : 'is-idle'}`}>
@@ -4318,7 +4433,8 @@ export function HomePage() {
                   title="Uygulama kurulumu"
                   description="Kurulum ve tarayıcı yönlendirmelerini daha sakin bir alanda topladık."
                   badge={showInstallPromotions ? installRailPrimaryLabel : 'Kurulum'}
-                  open={showInstallSectionOpen}
+                  defaultOpen={showInstallSectionOpen}
+                  lazyMount
                 >
                   <div className="employee-install-stack">
                     {showInstallBanner ? (
@@ -4446,7 +4562,8 @@ export function HomePage() {
                 title="Cihaz ve güvenlik"
                 description="Bildirim, passkey, recovery ve teknik cihaz bilgileri bu alanda."
                 badge={!deviceFingerprint ? 'Cihaz gerekli' : passkeyRegistered && recoveryReady && pushRegistered ? 'Hazır' : 'Kontrol et'}
-                open={showSecuritySectionOpen}
+                defaultOpen={showSecuritySectionOpen}
+                lazyMount
               >
                 {passkeyNotice ? (
                   <div className="notice-box notice-box-success">
@@ -4645,6 +4762,8 @@ export function HomePage() {
                   title="Geçmiş ve talepler"
                   description="Demo oturumları ve önceki izin kayıtları bu bölümde."
                   badge={historySummaryLabel}
+                  lazyMount
+                  onToggleOpen={setIsHistoryDisclosureOpen}
                 >
                   <div className="employee-history-layout">
                     <section className="demo-history-card" aria-labelledby="focus-demo-history-title">
@@ -4845,7 +4964,7 @@ export function HomePage() {
                 title="Canlı destek"
                 description="Yönetim desteğine hızlıca yaz; görüşmen resmî kayıt altında tutulur."
                 badge={openCommunicationCount > 0 ? `${openCommunicationCount} açık` : communicationSummary}
-                open={hasCommunicationHistory || Boolean(requestedConversationId)}
+                defaultOpen={hasCommunicationHistory || Boolean(requestedConversationId)}
               >
                 <section className="employee-support-shell" aria-labelledby="employee-support-title">
                   <header className="employee-support-toolbar">
@@ -6014,7 +6133,7 @@ export function HomePage() {
                     </div>
                   </header>
 
-                  <div className="employee-support-chat-body">
+                  <div className="employee-support-chat-body" ref={supportChatBodyRef}>
                     {isCommunicationTimelineLoading ? (
                       <p className="small-text employee-support-chat-inline-note">Mesaj gecmisi yukleniyor...</p>
                     ) : null}
@@ -6053,7 +6172,7 @@ export function HomePage() {
                     ) : null}
                   </div>
 
-                  <div className="employee-support-composer">
+                  <form className="employee-support-composer" onSubmit={handleCommunicationChatSubmit}>
                     <label className="field">
                       <span>Mesajin</span>
                       <textarea
@@ -6073,15 +6192,14 @@ export function HomePage() {
                           : 'Mesajin yeni bir sohbet baslatir ve yoneticiye iletilir.'}
                       </span>
                       <button
-                        type="button"
+                        type="submit"
                         className="btn btn-primary employee-support-send-btn"
                         disabled={isCommunicationSubmitting}
-                        onClick={() => void submitCommunicationChatMessage()}
                       >
                         {isCommunicationSubmitting ? 'Gonderiliyor...' : 'Mesaj Gonder'}
                       </button>
                     </div>
-                  </div>
+                  </form>
                 </div>
 
                 {false ? (
