@@ -1218,6 +1218,7 @@ export function HomePage() {
   const iosOnboardingVisiblePrevRef = useRef(false)
   const androidOnboardingVisiblePrevRef = useRef(false)
   const iosInAppBrowserLoggedRef = useRef(false)
+  const supportModalHistoryKeyRef = useRef<string | null>(null)
   const iosBrowserContext = useMemo(() => detectIosBrowserContext(), [])
   const installFunnelLastSentRef = useRef<Record<string, number>>({})
   const toastDedupRef = useRef<Record<string, string | null>>({})
@@ -2165,6 +2166,14 @@ export function HomePage() {
     [],
   )
 
+  const resetCommunicationComposerState = useCallback(() => {
+    setIsCommunicationComposerOpen(false)
+    setCommunicationFormError(null)
+    setCommunicationCategory('ATTENDANCE')
+    setCommunicationSubject('')
+    setCommunicationMessage('')
+  }, [])
+
   const openCommunicationModal = useCallback(() => {
     setCommunicationFormError(null)
     setIsCommunicationComposerOpen(communicationList.length === 0)
@@ -2187,13 +2196,46 @@ export function HomePage() {
     if (isCommunicationSubmitting) {
       return
     }
+    if (
+      typeof window !== 'undefined'
+      && supportModalHistoryKeyRef.current
+      && window.history.state?.__employeeSupportModal === supportModalHistoryKeyRef.current
+    ) {
+      window.history.back()
+      return
+    }
+    supportModalHistoryKeyRef.current = null
     setIsCommunicationModalOpen(false)
-    setIsCommunicationComposerOpen(false)
-    setCommunicationFormError(null)
-    setCommunicationCategory('ATTENDANCE')
-    setCommunicationSubject('')
-    setCommunicationMessage('')
-  }, [isCommunicationSubmitting])
+    resetCommunicationComposerState()
+  }, [isCommunicationSubmitting, resetCommunicationComposerState])
+
+  useEffect(() => {
+    if (!isCommunicationModalOpen || typeof window === 'undefined') {
+      return
+    }
+
+    if (!supportModalHistoryKeyRef.current) {
+      const nextKey = `employee-support-${Date.now()}`
+      const historyState =
+        window.history.state && typeof window.history.state === 'object' ? window.history.state : {}
+      supportModalHistoryKeyRef.current = nextKey
+      window.history.pushState({ ...historyState, __employeeSupportModal: nextKey }, '')
+    }
+
+    const handleSupportModalPopState = () => {
+      if (!supportModalHistoryKeyRef.current) {
+        return
+      }
+      supportModalHistoryKeyRef.current = null
+      setIsCommunicationModalOpen(false)
+      resetCommunicationComposerState()
+    }
+
+    window.addEventListener('popstate', handleSupportModalPopState)
+    return () => {
+      window.removeEventListener('popstate', handleSupportModalPopState)
+    }
+  }, [isCommunicationModalOpen, resetCommunicationComposerState])
 
   const loadCommunicationThread = useCallback(
     async (conversationId: number) => {
@@ -5418,7 +5460,7 @@ export function HomePage() {
 
         <button
           type="button"
-          className={`employee-support-fab ${isCommunicationModalOpen ? 'is-open' : ''}`}
+          className="employee-support-fab employee-support-fab--legacy"
           aria-label="Canlı desteği aç"
           onClick={openCommunicationModal}
         >
@@ -5430,6 +5472,50 @@ export function HomePage() {
             <span>{openCommunicationCount > 0 ? `${openCommunicationCount} açık görüşme` : 'Yöneticiye yaz'}</span>
           </span>
         </button>
+
+        {!isCommunicationModalOpen && typeof document !== 'undefined'
+          ? createPortal(
+              <button
+                type="button"
+                className="employee-support-fab employee-support-fab--legacy"
+                aria-label="CanlÄ± desteÄŸi aÃ§"
+                aria-haspopup="dialog"
+                aria-expanded="false"
+                onClick={openCommunicationModal}
+              >
+                <span className="employee-support-fab-icon" aria-hidden="true">
+                  ?
+                </span>
+                <span className="employee-support-fab-copy">
+                  <strong>CanlÄ± destek</strong>
+                  <span>{openCommunicationCount > 0 ? `${openCommunicationCount} aÃ§Ä±k gÃ¶rÃ¼ÅŸme` : 'YÃ¶neticiye yaz'}</span>
+                </span>
+              </button>,
+              document.body,
+            )
+          : null}
+
+        {!isCommunicationModalOpen && typeof document !== 'undefined'
+          ? createPortal(
+              <button
+                type="button"
+                className="employee-support-fab"
+                aria-label="Canli destegi ac"
+                aria-haspopup="dialog"
+                aria-expanded="false"
+                onClick={openCommunicationModal}
+              >
+                <span className="employee-support-fab-icon" aria-hidden="true">
+                  ?
+                </span>
+                <span className="employee-support-fab-copy">
+                  <strong>Canli destek</strong>
+                  <span>{openCommunicationCount > 0 ? `${openCommunicationCount} acik gorusme` : 'Yoneticiye yaz'}</span>
+                </span>
+              </button>,
+              document.body,
+            )
+          : null}
 
         {showIosInstallOnboarding ? (
           <EmployeeFocusModal
@@ -5607,6 +5693,16 @@ export function HomePage() {
             <p id="employee-communication-modal-description" className="employee-support-modal-description">
               Adminle olan yazışmalarını buradan takip et. Yeni destek talebi açabilir veya mevcut sohbetine devam edebilirsin.
             </p>
+
+            <div className="employee-support-popup-actions">
+              <button
+                type="button"
+                className="btn btn-soft employee-support-popup-close-btn"
+                onClick={closeCommunicationModal}
+              >
+                Kapat
+              </button>
+            </div>
 
             {!deviceFingerprint ? (
               <div className="warn-box">

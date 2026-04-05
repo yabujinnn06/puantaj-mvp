@@ -4259,7 +4259,7 @@ textarea:focus {
   position: fixed;
   right: 1rem;
   bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
-  z-index: 45;
+  z-index: 57;
   display: inline-flex;
   align-items: center;
   gap: 0.72rem;
@@ -4279,6 +4279,7 @@ textarea:focus {
     transform 180ms ease,
     box-shadow 180ms ease,
     opacity 180ms ease;
+  touch-action: manipulation;
 }
 
 .employee-support-fab:hover,
@@ -4291,6 +4292,10 @@ textarea:focus {
 
 .employee-support-fab.is-open {
   opacity: 0.92;
+}
+
+.employee-support-fab--legacy {
+  display: none;
 }
 
 .employee-support-fab-icon {
@@ -4341,6 +4346,17 @@ textarea:focus {
   font-size: 0.82rem;
   line-height: 1.58;
   color: #49697b;
+}
+
+.employee-support-popup-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin: -0.2rem 0 0.95rem;
+}
+
+.employee-support-popup-close-btn {
+  min-height: 2.6rem;
+  min-width: 7.25rem;
 }
 
 .employee-support-toolbar {
@@ -4736,6 +4752,7 @@ textarea:focus {
   .employee-support-toolbar,
   .employee-support-chat-head,
   .employee-support-composer-actions,
+  .employee-support-popup-actions,
   .employee-support-sidebar-head,
   .employee-support-thread-top,
   .employee-support-compose-head {
@@ -4745,6 +4762,7 @@ textarea:focus {
 
   .employee-support-new-btn,
   .employee-support-sidebar-new-btn,
+  .employee-support-popup-close-btn,
   .employee-support-send-btn,
   .employee-support-thread-button {
     width: 100%;
