@@ -3103,7 +3103,24 @@ export function HomePage() {
                     İşlem yapılıyor...
                   </>
                 ) : (
-                  <span className="action-cta-copy">QR Kod Oku</span>
+                  <span className="employee-main-action-primary-shell">
+                    <span className="employee-main-action-primary-glyph" aria-hidden="true">
+                      <span className="employee-main-action-primary-glyph-ring employee-main-action-primary-glyph-ring-a" />
+                      <span className="employee-main-action-primary-glyph-ring employee-main-action-primary-glyph-ring-b" />
+                      <span className="employee-main-action-primary-glyph-core" />
+                      <span className="employee-main-action-primary-glyph-scan" />
+                    </span>
+                    <span className="employee-main-action-primary-copy">
+                      <span className="employee-main-action-primary-label">QR Kod Oku</span>
+                      <span className="employee-main-action-primary-meta">GİRİŞ / ÇIKIŞ İÇİN TARA</span>
+                    </span>
+                    <span className="employee-main-action-primary-brackets" aria-hidden="true">
+                      <span className="employee-main-action-primary-bracket employee-main-action-primary-bracket-tl" />
+                      <span className="employee-main-action-primary-bracket employee-main-action-primary-bracket-tr" />
+                      <span className="employee-main-action-primary-bracket employee-main-action-primary-bracket-bl" />
+                      <span className="employee-main-action-primary-bracket employee-main-action-primary-bracket-br" />
+                    </span>
+                  </span>
                 )}
               </button>
             }

@@ -1511,6 +1511,130 @@ textarea:focus {
   }
 }
 
+@keyframes employeeQrGlyphOrbit {
+  from {
+    transform: rotate(0deg) scale(1);
+    opacity: 0.82;
+  }
+
+  50% {
+    transform: rotate(180deg) scale(1.04);
+    opacity: 1;
+  }
+
+  to {
+    transform: rotate(360deg) scale(1);
+    opacity: 0.82;
+  }
+}
+
+@keyframes employeeQrGlyphOrbitReverse {
+  from {
+    transform: rotate(360deg) scale(0.98);
+    opacity: 0.48;
+  }
+
+  50% {
+    transform: rotate(180deg) scale(1.02);
+    opacity: 0.86;
+  }
+
+  to {
+    transform: rotate(0deg) scale(0.98);
+    opacity: 0.48;
+  }
+}
+
+@keyframes employeeQrGlyphPulse {
+  0%,
+  100% {
+    transform: scale(0.94);
+    box-shadow:
+      0 0 0 rgba(99, 208, 255, 0),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  }
+
+  50% {
+    transform: scale(1);
+    box-shadow:
+      0 0 18px rgba(111, 214, 255, 0.22),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+  }
+}
+
+@keyframes employeeQrGlyphScan {
+  0%,
+  100% {
+    transform: translateY(-110%);
+    opacity: 0;
+  }
+
+  18% {
+    opacity: 0;
+  }
+
+  30% {
+    opacity: 0.92;
+  }
+
+  52% {
+    transform: translateY(128%);
+    opacity: 0;
+  }
+}
+
+@keyframes employeeQrBracketPulse {
+  0%,
+  100% {
+    opacity: 0.48;
+    transform: scale(0.94);
+    filter: drop-shadow(0 0 0 rgba(113, 213, 255, 0));
+  }
+
+  35% {
+    opacity: 1;
+    transform: scale(1.08);
+    filter: drop-shadow(0 0 6px rgba(113, 213, 255, 0.32));
+  }
+
+  60% {
+    opacity: 0.72;
+    transform: scale(1);
+    filter: drop-shadow(0 0 2px rgba(255, 214, 112, 0.24));
+  }
+}
+
+@keyframes employeeQrLabelGlow {
+  0%,
+  100% {
+    text-shadow: 0 0 0 rgba(255, 255, 255, 0);
+    transform: translateY(0);
+  }
+
+  40% {
+    text-shadow:
+      0 0 10px rgba(255, 255, 255, 0.18),
+      0 0 18px rgba(116, 217, 255, 0.16);
+    transform: translateY(-1px);
+  }
+}
+
+@keyframes employeeQrButtonHalo {
+  0%,
+  100% {
+    box-shadow:
+      0 16px 28px -18px rgba(11, 59, 83, 0.34),
+      inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  }
+
+  50% {
+    box-shadow:
+      0 20px 34px -18px rgba(11, 59, 83, 0.44),
+      0 0 0 1px rgba(112, 214, 255, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.24);
+  }
+}
+
 @keyframes employeeReceiptSettle {
   0% {
     transform: translateY(8px) scale(0.982);
@@ -1886,8 +2010,14 @@ textarea:focus {
 }
 
 .employee-main-action-primary-btn {
-  min-height: 3.4rem;
+  min-height: 4.35rem;
+  padding: 0.85rem 1rem;
   font-size: 0.98rem;
+  border-radius: 18px;
+  justify-content: center;
+  box-shadow:
+    0 16px 28px -18px rgba(11, 59, 83, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
 }
 
 .employee-main-action-secondary-btn {
@@ -1942,9 +2072,268 @@ textarea:focus {
 
 .employee-main-action-primary-btn.is-radar-ready::after {
   background:
-    radial-gradient(circle at 78% 52%, rgba(255, 255, 255, 0.18), transparent 42%),
-    radial-gradient(circle at 18% 50%, rgba(98, 211, 255, 0.18), transparent 44%);
-  opacity: 0.52;
+    radial-gradient(circle at 84% 50%, rgba(255, 255, 255, 0.22), transparent 34%),
+    radial-gradient(circle at 18% 50%, rgba(98, 211, 255, 0.22), transparent 38%),
+    linear-gradient(90deg, rgba(255, 214, 112, 0.08), transparent 36%, transparent 100%);
+  opacity: 0.72;
+  transform: none;
+  transition: opacity 220ms ease;
+}
+
+.employee-main-action-primary-btn.is-radar-ready {
+  animation: employeeQrButtonHalo 5.8s ease-in-out infinite;
+}
+
+.employee-main-action-primary-shell {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.8rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.employee-main-action-primary-glyph {
+  position: relative;
+  width: 2.55rem;
+  height: 2.55rem;
+  flex: 0 0 auto;
+  border-radius: 0.9rem;
+  overflow: hidden;
+  background:
+    linear-gradient(145deg, rgba(5, 34, 47, 0.56), rgba(11, 57, 78, 0.3)),
+    radial-gradient(circle at 24% 24%, rgba(255, 214, 112, 0.18), transparent 30%),
+    radial-gradient(circle at 72% 76%, rgba(112, 214, 255, 0.2), transparent 34%);
+  border: 1px solid rgba(180, 234, 255, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 14px 22px -18px rgba(3, 20, 31, 0.65);
+}
+
+.employee-main-action-primary-glyph::before {
+  content: '';
+  position: absolute;
+  inset: 0.38rem;
+  border-radius: 0.72rem;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.09) 1px, transparent 1px),
+    linear-gradient(rgba(255, 255, 255, 0.09) 1px, transparent 1px);
+  background-size: 0.45rem 0.45rem;
+  opacity: 0.44;
+}
+
+.employee-main-action-primary-glyph::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.16), transparent 44%, transparent 100%);
+  opacity: 0.64;
+}
+
+.employee-main-action-primary-glyph-ring,
+.employee-main-action-primary-glyph-core,
+.employee-main-action-primary-glyph-scan {
+  position: absolute;
+  pointer-events: none;
+}
+
+.employee-main-action-primary-glyph-ring {
+  border-radius: 50%;
+}
+
+.employee-main-action-primary-glyph-ring-a {
+  inset: -24%;
+  border: 1px solid rgba(112, 214, 255, 0.22);
+  border-top-color: rgba(255, 255, 255, 0.74);
+  border-left-color: rgba(255, 214, 112, 0.56);
+}
+
+.employee-main-action-primary-glyph-ring-b {
+  inset: -7%;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-right-color: rgba(112, 214, 255, 0.5);
+  border-bottom-color: rgba(255, 214, 112, 0.36);
+}
+
+.employee-main-action-primary-glyph-core {
+  inset: 0.78rem;
+  border-radius: 0.46rem;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.92), rgba(135, 222, 255, 0.88) 42%, rgba(18, 113, 154, 0.24) 100%);
+}
+
+.employee-main-action-primary-glyph-scan {
+  inset: -18% 0 auto;
+  height: 46%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0), rgba(140, 226, 255, 0.9), rgba(255, 214, 112, 0.2), rgba(255, 255, 255, 0));
+  mix-blend-mode: screen;
+  filter: blur(1px);
+  opacity: 0;
+}
+
+.employee-main-action-primary-copy {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+  text-align: left;
+}
+
+.employee-main-action-primary-label,
+.employee-main-action-primary-meta {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.employee-main-action-primary-label {
+  font-size: 1rem;
+  line-height: 1.12;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+}
+
+.employee-main-action-primary-meta {
+  font-size: 0.68rem;
+  line-height: 1.3;
+  letter-spacing: 0.14em;
+  opacity: 0.82;
+}
+
+.employee-main-action-primary-brackets {
+  position: relative;
+  width: 1.95rem;
+  height: 1.95rem;
+  flex: 0 0 auto;
+  opacity: 0.88;
+  pointer-events: none;
+}
+
+.employee-main-action-primary-bracket {
+  position: absolute;
+  width: 0.64rem;
+  height: 0.64rem;
+  border-color: rgba(255, 255, 255, 0.82);
+  border-style: solid;
+}
+
+.employee-main-action-primary-bracket-tl {
+  top: 0;
+  left: 0;
+  border-width: 2px 0 0 2px;
+}
+
+.employee-main-action-primary-bracket-tr {
+  top: 0;
+  right: 0;
+  border-width: 2px 2px 0 0;
+}
+
+.employee-main-action-primary-bracket-bl {
+  bottom: 0;
+  left: 0;
+  border-width: 0 0 2px 2px;
+}
+
+.employee-main-action-primary-bracket-br {
+  right: 0;
+  bottom: 0;
+  border-width: 0 2px 2px 0;
+}
+
+.employee-main-action-primary-btn.is-radar-ready .employee-main-action-primary-glyph-ring-a {
+  animation: employeeQrGlyphOrbit 5.2s linear infinite;
+}
+
+.employee-main-action-primary-btn.is-radar-ready .employee-main-action-primary-glyph-ring-b {
+  animation: employeeQrGlyphOrbitReverse 6.6s linear infinite;
+}
+
+.employee-main-action-primary-btn.is-radar-ready .employee-main-action-primary-glyph-core {
+  animation: employeeQrGlyphPulse 3.2s ease-in-out infinite;
+}
+
+.employee-main-action-primary-btn.is-radar-ready .employee-main-action-primary-glyph-scan {
+  animation: employeeQrGlyphScan 3.5s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.employee-main-action-primary-btn.is-radar-ready .employee-main-action-primary-label {
+  animation: employeeQrLabelGlow 4.8s ease-in-out infinite;
+}
+
+.employee-main-action-primary-btn.is-radar-ready .employee-main-action-primary-bracket {
+  animation: employeeQrBracketPulse 3.6s ease-in-out infinite;
+}
+
+.employee-main-action-primary-btn.is-radar-ready .employee-main-action-primary-bracket-tr {
+  animation-delay: 120ms;
+}
+
+.employee-main-action-primary-btn.is-radar-ready .employee-main-action-primary-bracket-bl {
+  animation-delay: 240ms;
+}
+
+.employee-main-action-primary-btn.is-radar-ready .employee-main-action-primary-bracket-br {
+  animation-delay: 360ms;
+}
+
+.employee-main-action-primary-btn:disabled {
+  box-shadow: none;
+}
+
+.employee-main-action-primary-btn:disabled .employee-main-action-primary-shell {
+  opacity: 0.72;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .employee-main-action-primary-btn:hover {
+    transform: translateY(-2px) scale(1.01);
+  }
+
+  .employee-main-action-primary-btn:hover .employee-main-action-primary-glyph {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.16),
+      0 16px 24px -18px rgba(3, 20, 31, 0.75);
+  }
+
+  .employee-main-action-primary-btn:hover .employee-main-action-primary-brackets {
+    transform: scale(1.04);
+  }
+
+  .employee-main-action-primary-btn.is-radar-ready:hover::after,
+  .employee-main-action-primary-btn.is-radar-ready:focus-visible::after {
+    transform: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .employee-main-action-primary-btn {
+    min-height: 4.6rem;
+    padding: 0.9rem 0.92rem;
+  }
+
+  .employee-main-action-primary-shell {
+    gap: 0.68rem;
+  }
+
+  .employee-main-action-primary-glyph {
+    width: 2.35rem;
+    height: 2.35rem;
+  }
+
+  .employee-main-action-primary-brackets {
+    width: 1.72rem;
+    height: 1.72rem;
+  }
+
+  .employee-main-action-primary-label {
+    font-size: 0.95rem;
+  }
+
+  .employee-main-action-primary-meta {
+    letter-spacing: 0.1em;
+  }
 }
 
 .employee-main-action-note {
