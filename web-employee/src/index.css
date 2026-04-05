@@ -1279,10 +1279,11 @@ textarea:focus {
   list-style: none;
   cursor: pointer;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 0.9rem;
   padding: 0.95rem 1rem;
+  flex-wrap: wrap;
 }
 
 .employee-secondary-disclosure summary::-webkit-details-marker {
@@ -1319,6 +1320,7 @@ textarea:focus {
   font-size: 0.92rem;
   font-weight: 800;
   color: #12384a;
+  overflow-wrap: anywhere;
 }
 
 .employee-secondary-disclosure-text {
@@ -1326,6 +1328,7 @@ textarea:focus {
   font-size: 0.77rem;
   line-height: 1.44;
   color: #597384;
+  overflow-wrap: anywhere;
 }
 
 .employee-secondary-disclosure-badge {
@@ -1339,6 +1342,9 @@ textarea:focus {
   color: #174761;
   background: rgba(255, 255, 255, 0.9);
   border: 1px solid rgba(120, 176, 200, 0.34);
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
 }
 
 .employee-secondary-disclosure-body {
@@ -1399,6 +1405,7 @@ textarea:focus {
   align-items: flex-start;
   justify-content: space-between;
   gap: 0.9rem;
+  flex-wrap: wrap;
 }
 
 .employee-home-header-copy {
@@ -1421,6 +1428,7 @@ textarea:focus {
   font-size: clamp(1.18rem, 2.4vw, 1.6rem);
   line-height: 1.08;
   color: #153a4f;
+  overflow-wrap: anywhere;
 }
 
 .employee-home-header-subtitle {
@@ -1428,11 +1436,13 @@ textarea:focus {
   font-size: 0.82rem;
   line-height: 1.45;
   color: #446678;
+  overflow-wrap: anywhere;
 }
 
 .employee-home-header-status {
   flex-shrink: 0;
   align-self: flex-start;
+  max-width: 100%;
 }
 
 .employee-home-meta-grid {
@@ -1478,6 +1488,7 @@ textarea:focus {
   align-items: flex-start;
   justify-content: space-between;
   gap: 0.9rem;
+  flex-wrap: wrap;
 }
 
 .employee-main-action-kicker {
@@ -1494,6 +1505,7 @@ textarea:focus {
   font-size: 1.15rem;
   line-height: 1.18;
   color: #12384a;
+  overflow-wrap: anywhere;
 }
 
 .employee-main-action-hint {
@@ -1501,11 +1513,13 @@ textarea:focus {
   font-size: 0.84rem;
   line-height: 1.5;
   color: #4a697c;
+  overflow-wrap: anywhere;
 }
 
 .employee-main-action-status {
   flex-shrink: 0;
   align-self: flex-start;
+  max-width: 100%;
 }
 
 .employee-main-action-stats {
@@ -1591,6 +1605,11 @@ textarea:focus {
   align-items: flex-start;
   justify-content: space-between;
   gap: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.employee-last-action-copy-wrap {
+  min-width: 0;
 }
 
 .employee-last-action-kicker {
@@ -1613,6 +1632,17 @@ textarea:focus {
   font-size: 0.74rem;
   font-weight: 800;
   color: #456678;
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
+}
+
+.employee-last-action-title {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.28;
+  color: #17384a;
+  overflow-wrap: anywhere;
 }
 
 .employee-last-action-copy {
@@ -1620,6 +1650,7 @@ textarea:focus {
   font-size: 0.84rem;
   line-height: 1.54;
   color: #446678;
+  overflow-wrap: anywhere;
 }
 
 .employee-last-action-badges {
@@ -1725,6 +1756,7 @@ textarea:focus {
   justify-content: space-between;
   gap: 1rem;
   padding: 1rem 1.05rem;
+  flex-wrap: wrap;
 }
 
 .employee-secondary-summary::-webkit-details-marker {
@@ -1773,6 +1805,7 @@ textarea:focus {
   margin: 0;
   font-size: 1rem;
   color: #17384a;
+  overflow-wrap: anywhere;
 }
 
 .employee-secondary-description {
@@ -1780,16 +1813,28 @@ textarea:focus {
   font-size: 0.8rem;
   line-height: 1.5;
   color: #567083;
+  overflow-wrap: anywhere;
 }
 
 .employee-secondary-badge {
   flex: 0 0 auto;
+  max-width: 100%;
+}
+
+.employee-secondary-badge .status-pill {
+  white-space: normal;
+  text-align: left;
 }
 
 .employee-secondary-content {
   display: grid;
   gap: 12px;
   padding: 0 1.05rem 1.05rem;
+}
+
+.employee-secondary-stack {
+  display: grid;
+  gap: 12px;
 }
 
 .employee-secondary-content > * {
@@ -3248,13 +3293,15 @@ textarea:focus {
   .employee-home-header-row,
   .employee-main-action-head,
   .employee-last-action-head,
-  .employee-secondary-summary {
+  .employee-secondary-summary,
+  .employee-secondary-disclosure summary {
     flex-direction: column;
   }
 
   .employee-home-header-status,
   .employee-main-action-status,
-  .employee-last-action-time {
+  .employee-last-action-time,
+  .employee-secondary-disclosure-badge {
     align-self: flex-start;
   }
 

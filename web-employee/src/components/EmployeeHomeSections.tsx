@@ -137,9 +137,11 @@ export function EmployeeLastActionSummary({
   return (
     <section className="result-box employee-last-action-card" aria-labelledby="employee-last-action-title">
       <div className="employee-last-action-head">
-        <div>
+        <div className="employee-last-action-copy-wrap">
           <p className="employee-last-action-kicker">SON ISLEM</p>
-          <h2 id="employee-last-action-title">{title}</h2>
+          <h2 id="employee-last-action-title" className="employee-last-action-title">
+            {title}
+          </h2>
         </div>
         {timestampLabel ? <span className="employee-last-action-time">{timestampLabel}</span> : null}
       </div>

@@ -3274,6 +3274,8 @@ export function HomePage() {
             badge={<span className="status-pill state-info">Daha fazla</span>}
           >
 
+        {false ? (
+          <>
         {showInstallBanner ? (
           <section className="install-banner" role="region" aria-label="Uygulama kurulumu">
             <div className="install-banner-copy">
@@ -3361,9 +3363,13 @@ export function HomePage() {
             </div>
           </div>
         ) : null}
+          </>
+        ) : null}
 
         <div className="employee-workbench">
           <div className={`employee-home-focus-shell ${hasCriticalAlerts ? 'has-alerts' : ''}`}>
+            {false ? (
+              <>
             <EmployeeHeaderSection
               employeeDisplayName={employeeDisplayName}
               contextLine={`${employeeCompanyLabel} · ${employeeHeaderSubtitle}`}
@@ -3414,11 +3420,12 @@ export function HomePage() {
                 title: lastActionCard.title,
                 detail: lastActionCard.timestampLabel ?? 'Henuz kayit yok',
                 note: actionNotice?.text ?? lastActionCard.summary,
-                tone: lastAction
-                  ? lastAction.response.event_type === 'IN'
+                tone:
+                  lastAction?.response.event_type === 'IN'
                     ? 'success'
-                    : 'warning'
-                  : 'neutral',
+                    : lastAction
+                      ? 'warning'
+                      : 'neutral',
               }}
               lastAction={lastAction}
               duplicateDetected={duplicateDetected}
@@ -3446,17 +3453,10 @@ export function HomePage() {
               errorMessage={errorMessage}
               requestId={requestId}
             />
+              </>
+            ) : null}
 
-            <section className="employee-secondary-section" aria-labelledby="employee-secondary-title">
-              <div className="employee-secondary-head">
-                <p className="employee-home-kicker">IKINCIL OZELLIKLER</p>
-                <h2 id="employee-secondary-title" className="employee-secondary-title">
-                  Diger islemler ve ayarlar
-                </h2>
-                <p className="employee-secondary-copy">
-                  Ana puantaj aksiyonlari yukarida kalir. Demo, izin, cihaz ayarlari ve gecmis kayitlar burada toplanir.
-                </p>
-              </div>
+            <section className="employee-secondary-stack" aria-label="Ikincil ozellikler">
 
               <SecondaryDisclosure
                 title="Ek islemler"
@@ -3969,8 +3969,6 @@ export function HomePage() {
                   </div>
                 </SecondaryDisclosure>
               ) : null}
-
-              <BrandSignature />
             </section>
           </div>
           <section className="employee-command-surface">
