@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 
 import {
+  clearAdminConversationMessages,
   createAdminConversationMessage,
   getAdminConversationThread,
   getAdminConversations,
@@ -122,6 +123,28 @@ export function CommunicationsPage() {
     },
   })
 
+  const clearMessagesMutation = useMutation({
+    mutationFn: (conversationId: number) => clearAdminConversationMessages(conversationId),
+    onSuccess: (thread) => {
+      setReplyDraft('')
+      queryClient.setQueryData(['admin-conversation-thread', thread.conversation.id], thread)
+      void queryClient.invalidateQueries({ queryKey: ['admin-conversations'] })
+      pushToast({
+        variant: 'success',
+        title: 'Chat temizlendi',
+        description: `İletişim #${thread.conversation.id} içindeki mesajlar kaldırıldı.`,
+      })
+    },
+    onError: (error) => {
+      const parsed = parseApiError(error, 'Chat temizlenemedi.')
+      pushToast({
+        variant: 'error',
+        title: 'Chat temizlenemedi',
+        description: parsed.message,
+      })
+    },
+  })
+
   const allConversations = conversationsQuery.data ?? []
   const filteredConversations = useMemo(() => {
     const query = searchText.trim().toLocaleLowerCase('tr-TR')
@@ -164,6 +187,19 @@ export function CommunicationsPage() {
       return
     }
     messageMutation.mutate({ conversationId: focusedConversationId, message })
+  }
+
+  const handleClearMessages = () => {
+    if (!focusedConversationId || !activeConversation) {
+      return
+    }
+    const confirmed = window.confirm(
+      `"${activeConversation.subject}" yazışmasının tüm mesajları temizlensin mi? Bu işlem geri alınamaz.`,
+    )
+    if (!confirmed) {
+      return
+    }
+    clearMessagesMutation.mutate(focusedConversationId)
   }
 
   const activeThread = threadQuery.data
@@ -252,6 +288,14 @@ export function CommunicationsPage() {
               <div className="mt-4 flex flex-wrap gap-2">
                 <button
                   type="button"
+                  onClick={handleClearMessages}
+                  disabled={clearMessagesMutation.isPending || activeConversation.message_count === 0}
+                  className="rounded-xl border border-amber-300 px-3 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {clearMessagesMutation.isPending ? 'Temizleniyor...' : 'Chat’i Temizle'}
+                </button>
+                <button
+                  type="button"
                   onClick={() =>
                     statusMutation.mutate({
                       conversationId: activeConversation.id,
@@ -321,7 +365,7 @@ export function CommunicationsPage() {
                     <button
                       type="button"
                       onClick={submitReply}
-                      disabled={messageMutation.isPending}
+                      disabled={messageMutation.isPending || clearMessagesMutation.isPending}
                       className="rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {messageMutation.isPending ? 'Gönderiliyor...' : 'Yanıt Gönder'}

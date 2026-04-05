@@ -230,6 +230,7 @@ from app.services.exports import (
     build_puantaj_xlsx_bytes,
 )
 from app.services.communications import (
+    clear_admin_conversation_messages,
     create_admin_conversation_message,
     get_admin_conversation_thread,
     list_admin_conversations,
@@ -5731,6 +5732,44 @@ def admin_conversation_status_update_endpoint(
         request_id=getattr(request.state, "request_id", None),
     )
     return conversation
+
+
+@router.delete(
+    "/api/admin/communications/{conversation_id}/messages",
+    response_model=EmployeeConversationThreadRead,
+)
+def admin_conversation_messages_clear_endpoint(
+    conversation_id: int,
+    request: Request,
+    claims: dict[str, Any] = Depends(require_admin_permission("notifications", write=True)),
+    db: Session = Depends(get_db),
+) -> EmployeeConversationThreadRead:
+    actor_id, actor_admin_user_id = _normalized_admin_actor_from_claims(claims)
+    conversation = clear_admin_conversation_messages(
+        db,
+        conversation_id=conversation_id,
+    )
+    log_audit(
+        db,
+        actor_type=AuditActorType.ADMIN,
+        actor_id=actor_id,
+        action="ADMIN_CONVERSATION_MESSAGES_CLEARED",
+        success=True,
+        entity_type="employee_conversation",
+        entity_id=str(conversation.id),
+        ip=_client_ip(request),
+        user_agent=_user_agent(request),
+        details={
+            "employee_id": conversation.employee_id,
+            "message_count": conversation.message_count,
+            "actor_admin_user_id": actor_admin_user_id,
+        },
+        request_id=getattr(request.state, "request_id", None),
+    )
+    return EmployeeConversationThreadRead(
+        conversation=conversation,
+        messages=list(conversation.messages or []),
+    )
 
 
 @router.get(

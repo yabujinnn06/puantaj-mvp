@@ -21,6 +21,7 @@ from app.schemas import (
     EmployeeConversationMessageCreateRequest,
 )
 from app.services.communications import (
+    clear_admin_conversation_messages,
     create_admin_conversation_message,
     create_employee_conversation,
     create_employee_conversation_message,
@@ -257,6 +258,37 @@ class EmployeeCommunicationsServiceTests(unittest.TestCase):
 
         self.assertEqual(updated_conversation.status, EmployeeConversationStatus.CLOSED)
         self.assertIsNotNone(updated_conversation.closed_at)
+        self.assertEqual(fake_db.commit_count, 1)
+
+    def test_admin_can_clear_conversation_messages(self) -> None:
+        employee = _build_employee()
+        conversation = _build_conversation(employee)
+        conversation.messages = [
+            EmployeeConversationMessage(
+                id=901,
+                conversation_id=conversation.id,
+                employee_id=employee.id,
+                sender_actor="EMPLOYEE",
+                message="Talebimle ilgili güncel durumu öğrenmek istiyorum.",
+            ),
+            EmployeeConversationMessage(
+                id=902,
+                conversation_id=conversation.id,
+                employee_id=employee.id,
+                sender_actor="ADMIN",
+                message="İnceleme tamamlandıktan sonra sizi bilgilendireceğiz.",
+            ),
+        ]
+        fake_db = _FakeCommunicationDB(scalar_values=[conversation, conversation])
+
+        cleared_conversation = clear_admin_conversation_messages(
+            fake_db,  # type: ignore[arg-type]
+            conversation_id=conversation.id,
+        )
+
+        self.assertEqual(cleared_conversation.id, conversation.id)
+        self.assertEqual(cleared_conversation.message_count, 0)
+        self.assertEqual(cleared_conversation.messages, [])
         self.assertEqual(fake_db.commit_count, 1)
 
 

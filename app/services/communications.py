@@ -359,3 +359,16 @@ def update_admin_conversation_status(
     conversation.closed_at = _utcnow() if status_value == EmployeeConversationStatus.CLOSED else None
     db.commit()
     return _conversation_with_thread_or_404(db, conversation_id=conversation_id)
+
+
+def clear_admin_conversation_messages(
+    db: Session,
+    *,
+    conversation_id: int,
+) -> EmployeeConversation:
+    conversation = _conversation_with_thread_or_404(db, conversation_id=conversation_id)
+    if conversation.messages:
+        conversation.messages = []
+    conversation.last_message_at = conversation.created_at or _utcnow()
+    db.commit()
+    return _conversation_with_thread_or_404(db, conversation_id=conversation_id)

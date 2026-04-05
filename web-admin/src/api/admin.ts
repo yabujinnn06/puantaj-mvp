@@ -1802,6 +1802,15 @@ export async function createAdminConversationMessage(
   return response.data;
 }
 
+export async function clearAdminConversationMessages(
+  conversationId: number,
+): Promise<EmployeeConversationThreadRecord> {
+  const response = await apiClient.delete<EmployeeConversationThreadRecord>(
+    `/api/admin/communications/${conversationId}/messages`,
+  );
+  return response.data;
+}
+
 export async function updateAdminConversationStatus(
   conversationId: number,
   payload: { status: EmployeeConversationStatus },
