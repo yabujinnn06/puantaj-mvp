@@ -159,29 +159,29 @@ const communicationTemplates: Array<{
   message: string
 }> = [
   {
-    label: 'Puantaj Bilgisi',
+    label: 'Puantaj desteği',
     category: 'ATTENDANCE',
-    subject: 'Puantaj kaydım hakkında bilgi talebi',
-    message: 'Bugünkü puantaj kaydımın güncel durumu hakkında bilgi rica ediyorum.',
+    subject: 'Puantaj kaydım için destek talebi',
+    message: 'Puantaj kaydımla ilgili güncel durumu ve gerekirse yapılması gereken adımı paylaşabilir misiniz?',
   },
   {
-    label: 'Vardiya Planı',
+    label: 'Vardiya desteği',
     category: 'SHIFT',
-    subject: 'Vardiya planı hakkında bilgi talebi',
-    message: 'İlgili vardiya planım hakkında bilgi paylaşmanızı rica ediyorum.',
+    subject: 'Vardiya planım için destek talebi',
+    message: 'Vardiya planımla ilgili güncel bilgiyi ve varsa dikkat etmem gereken değişikliği paylaşabilir misiniz?',
   },
   {
-    label: 'Belge Süreci',
+    label: 'Belge desteği',
     category: 'DOCUMENT',
-    subject: 'Belge süreci hakkında bilgi talebi',
-    message: 'İlgili belge süreci için ek işlem gerekip gerekmediği hakkında bilgi rica ediyorum.',
+    subject: 'Belge süreci için destek talebi',
+    message: 'Belge sürecim için ek işlem veya ek belge gerekip gerekmediğini öğrenmek istiyorum.',
   },
 ]
 
 const communicationReplyStarters = [
   'Talebimin güncel durumu hakkında bilgi rica ediyorum.',
-  'İşlemin değerlendirme süreci hakkında bilgi paylaşabilir misiniz?',
-  'Gerekli ise ek belge veya işlem adımını iletebilir misiniz?',
+  'Bir sonraki adımı paylaşabilir misiniz?',
+  'Gerekliyse ek belge veya işlem adımını iletebilir misiniz?',
 ]
 
 const LEAVE_ATTACHMENT_ACCEPT = [
@@ -1785,7 +1785,7 @@ export function HomePage() {
           setIsCommunicationReady(true)
         }
       } catch (error) {
-        const parsed = parseApiError(error, 'Kurumsal yazışmalar alınamadı.')
+        const parsed = parseApiError(error, 'Canlı destek kayıtları alınamadı.')
         if (!cancelled) {
           if (!handleDeviceNotClaimed(parsed)) {
             setCommunicationList([])
@@ -2154,9 +2154,11 @@ export function HomePage() {
     const leaveRange = leave ? formatLeaveRange(leave.start_date, leave.end_date) : null
     setCommunicationFormError(null)
     setCommunicationCategory('DOCUMENT')
-    setCommunicationSubject(leaveRange ? `${leaveRange} izin talebi hakkında` : 'İzin talebi hakkında bilgi talebi')
+    setCommunicationSubject(leaveRange ? `${leaveRange} izin talebi için destek` : 'İzin talebim için destek')
     setCommunicationMessage(
-      leaveRange ? `${leaveRange} tarihli izin talebim hakkında bilgi rica ediyorum.` : 'İzin talebim hakkında bilgi rica ediyorum.',
+      leaveRange
+        ? `${leaveRange} tarihli izin talebim hakkında destek rica ediyorum. Güncel durumu paylaşabilir misiniz?`
+        : 'İzin talebim hakkında destek rica ediyorum. Güncel durumu paylaşabilir misiniz?',
     )
     setIsLeaveModalOpen(false)
     setIsCommunicationModalOpen(true)
@@ -2184,7 +2186,7 @@ export function HomePage() {
         const thread = await getEmployeeConversationThread(conversationId, deviceFingerprint)
         setCommunicationThreadsById((current) => ({ ...current, [conversationId]: thread }))
       } catch (error) {
-        const parsed = parseApiError(error, 'Kurumsal yazışma akışı alınamadı.')
+        const parsed = parseApiError(error, 'Destek görüşmesi yüklenemedi.')
         setCommunicationThreadErrorById((current) => ({ ...current, [conversationId]: parsed.message }))
       } finally {
         setCommunicationThreadLoadingId((current) => (current === conversationId ? null : current))
@@ -2248,7 +2250,7 @@ export function HomePage() {
       if (message.length < 12) {
         setCommunicationThreadErrorById((current) => ({
           ...current,
-          [conversationId]: 'Mesajını resmî ve net biçimde en az 12 karakter olacak şekilde yaz.',
+          [conversationId]: 'Mesajını kısa, net ve resmî biçimde en az 12 karakter olacak şekilde yaz.',
         }))
         return
       }
@@ -2264,11 +2266,11 @@ export function HomePage() {
         setCommunicationRefreshToken((current) => current + 1)
         pushToast({
           variant: 'success',
-          title: 'Kurumsal mesaj gönderildi',
-          description: 'Yönetime resmî mesajın iletildi.',
+          title: 'Destek mesajı gönderildi',
+          description: 'Mesajın destek hattına iletildi.',
         })
       } catch (error) {
-        const parsed = parseApiError(error, 'Kurumsal mesaj gönderilemedi.')
+        const parsed = parseApiError(error, 'Destek mesajı gönderilemedi.')
         setCommunicationThreadErrorById((current) => ({ ...current, [conversationId]: parsed.message }))
       } finally {
         setCommunicationReplyBusyId((current) => (current === conversationId ? null : current))
@@ -2281,7 +2283,7 @@ export function HomePage() {
     const subject = communicationSubject.trim()
     const message = communicationMessage.trim()
     if (!deviceFingerprint) {
-      setCommunicationFormError('Cihaz bağlı değil. Kurumsal mesaj için önce kurulumu tamamla.')
+      setCommunicationFormError('Cihaz bağlı değil. Canlı destek için önce kurulumu tamamla.')
       return
     }
     if (subject.length < 6) {
@@ -2289,7 +2291,7 @@ export function HomePage() {
       return
     }
     if (message.length < 12) {
-      setCommunicationFormError('Mesajını resmî ve net biçimde en az 12 karakter olacak şekilde yaz.')
+      setCommunicationFormError('Mesajını kısa, net ve resmî biçimde en az 12 karakter olacak şekilde yaz.')
       return
     }
 
@@ -2311,11 +2313,11 @@ export function HomePage() {
       setCommunicationMessage('')
       pushToast({
         variant: 'success',
-        title: 'Kurumsal yazışma açıldı',
-        description: 'Mesajın yönetime iletildi ve yeni iletişim kaydı oluşturuldu.',
+        title: 'Destek kaydı açıldı',
+        description: 'Mesajın iletildi ve yeni destek görüşmesi oluşturuldu.',
       })
     } catch (error) {
-      const parsed = parseApiError(error, 'Kurumsal mesaj oluşturulamadı.')
+      const parsed = parseApiError(error, 'Destek talebi oluşturulamadı.')
       setCommunicationFormError(parsed.message)
     } finally {
       setIsCommunicationSubmitting(false)
@@ -4430,7 +4432,7 @@ export function HomePage() {
                                               className="btn btn-ghost leave-thread-toggle-btn"
                                               onClick={() => openLeaveCommunicationModal(leave)}
                                             >
-                                              Kurumsal Mesaj Aç
+                                              Canlı Desteğe Yaz
                                             </button>
                                           ) : null}
                                         </div>
@@ -4514,8 +4516,8 @@ export function HomePage() {
               ) : null}
 
               <SecondaryDisclosure
-                title="Kurumsal iletişim"
-                description="Yönetime iş odaklı, resmî mesajlarını bu alandan ilet."
+                title="Canlı destek"
+                description="Yönetim desteğine hızlıca yaz; görüşmen resmî kayıt altında tutulur."
                 badge={openCommunicationCount > 0 ? `${openCommunicationCount} açık` : communicationSummary}
                 open={Boolean(requestedConversationId)}
               >
@@ -4523,52 +4525,54 @@ export function HomePage() {
                   <div className="employee-communication-hero">
                     <div className="employee-communication-head">
                       <div className="employee-communication-heading">
-                        <p className="employee-communication-kicker">RESMÎ YAZIŞMA</p>
+                        <p className="employee-communication-kicker">CANLI DESTEK</p>
                         <h3 id="employee-communication-title" className="employee-communication-title">
-                          Yöneticiyle kurumsal iletişim
+                          Destek masası ve yönetici hattı
                         </h3>
+                        <p className="employee-communication-copy">
+                          Puantaj, vardiya, izin veya belgeyle ilgili yardıma ihtiyacın olduğunda buradan yaz. Destek ekibi
+                          ve yöneticiler aynı kayıt üzerinden sana döner.
+                        </p>
                       </div>
-                      <span className="employee-communication-count">{communicationSummary}</span>
+                      <div className="employee-communication-presence">
+                        <span className="employee-communication-presence-dot" aria-hidden="true" />
+                        <span>Resmî destek kanalı</span>
+                      </div>
                     </div>
 
-                    <p className="employee-communication-copy">
-                      Bu alan günlük sohbet için değil, iş süreci iletişimi içindir. Konuyu seç, kısa bir başlık yaz ve
-                      ihtiyacını resmî, net bir dille ilet.
-                    </p>
-
                     <div className="employee-communication-guidance">
-                      <span className="employee-communication-guidance-label">Kurumsal format</span>
+                      <span className="employee-communication-guidance-label">Nasıl kullanılır</span>
                       <span className="employee-communication-chip">Konu seç</span>
                       <span className="employee-communication-chip">Başlığı net yaz</span>
-                      <span className="employee-communication-chip">Talebi resmî dille ilet</span>
+                      <span className="employee-communication-chip">Sorunu kısa anlat</span>
                     </div>
 
                     <div className="employee-communication-overview">
                       <article className="employee-communication-stat">
-                        <span className="employee-communication-stat-label">Açık kayıt</span>
+                        <span className="employee-communication-stat-label">Açık destek</span>
                         <strong className="employee-communication-stat-value">{openCommunicationCount}</strong>
-                        <p className="employee-communication-stat-note">Yanıt bekleyen veya devam eden yazışmalar.</p>
+                        <p className="employee-communication-stat-note">Yanıt bekleyen veya devam eden görüşmeler.</p>
                       </article>
                       <article className="employee-communication-stat">
-                        <span className="employee-communication-stat-label">Kapanan kayıt</span>
+                        <span className="employee-communication-stat-label">Kapanan görüşme</span>
                         <strong className="employee-communication-stat-value">{closedCommunicationCount}</strong>
-                        <p className="employee-communication-stat-note">Tamamlanan ya da sonuçlanan görüşmeler.</p>
+                        <p className="employee-communication-stat-note">Tamamlanmış veya sonuçlanmış destek kayıtları.</p>
                       </article>
                       <article className="employee-communication-stat">
-                        <span className="employee-communication-stat-label">Son hareket</span>
+                        <span className="employee-communication-stat-label">Son yanıt</span>
                         <strong className="employee-communication-stat-value">
                           {latestCommunicationAt ? formatTs(latestCommunicationAt) : 'Henüz yok'}
                         </strong>
-                        <p className="employee-communication-stat-note">En son mesaj veya yönetici güncellemesi.</p>
+                        <p className="employee-communication-stat-note">Destek hattındaki en güncel hareket zamanı.</p>
                       </article>
                     </div>
 
                     {deviceFingerprint ? (
                       <div className="employee-communication-cta-card">
                         <div className="employee-communication-cta-copy-wrap">
-                          <p className="employee-communication-cta-kicker">YENİ YAZIŞMA</p>
+                          <p className="employee-communication-cta-kicker">YENİ DESTEK KAYDI</p>
                           <p className="employee-communication-cta-copy">
-                            İzin, vardiya, puantaj veya belge süreci için yönetime tek ekrandan resmî mesaj gönder.
+                            Karışıklık yaşamadan konu seç, kısa başlık yaz ve destek talebini tek ekrandan ilet.
                           </p>
                         </div>
                         <div className="employee-communication-actions">
@@ -4577,25 +4581,25 @@ export function HomePage() {
                             className="btn btn-primary employee-communication-open-btn"
                             onClick={openCommunicationModal}
                           >
-                            Kurumsal Mesaj Oluştur
+                            Yeni Destek Talebi
                           </button>
                         </div>
                       </div>
                     ) : (
                       <div className="warn-box">
-                        <p>Kurumsal yazışma için önce cihaz bağlantısını tamamla.</p>
+                        <p>Canlı destek için önce cihaz bağlantısını tamamla.</p>
                       </div>
                     )}
                   </div>
 
                   {isCommunicationLoading && !isCommunicationReady ? (
-                    <p className="leave-history-empty">Yazışma listesi hazırlanıyor...</p>
+                    <p className="leave-history-empty">Destek görüşmeleri hazırlanıyor...</p>
                   ) : hasCommunicationHistory ? (
                     <div className="employee-communication-list-shell">
                       <div className="employee-communication-list-head">
                         <div>
-                          <p className="employee-communication-list-kicker">KAYITLAR</p>
-                          <h4 className="employee-communication-list-title">Açık ve geçmiş kurumsal yazışmalar</h4>
+                          <p className="employee-communication-list-kicker">GÖRÜŞMELERİN</p>
+                          <h4 className="employee-communication-list-title">Açık ve geçmiş destek kayıtların</h4>
                         </div>
                         <span className="employee-communication-list-count">{communicationSummary}</span>
                       </div>
@@ -4625,7 +4629,7 @@ export function HomePage() {
                             <div className="employee-communication-item-body">
                               <h5 className="employee-communication-subject">{conversation.subject}</h5>
                               <p className="employee-communication-preview">
-                                {conversation.latest_message_preview || 'Henüz ön izleme oluşmadı. Yazışma detayından inceleyebilirsin.'}
+                                {conversation.latest_message_preview || 'Henüz mesaj ön izlemesi yok. Akışı açıp detayları görebilirsin.'}
                               </p>
                             </div>
 
@@ -4641,7 +4645,7 @@ export function HomePage() {
                                 className="btn btn-soft employee-communication-toggle-btn"
                                 onClick={() => toggleCommunicationThread(conversation.id)}
                               >
-                                {activeCommunicationId === conversation.id ? 'Akışı Gizle' : 'Akışı Aç'}
+                                {activeCommunicationId === conversation.id ? 'Sohbeti Gizle' : 'Sohbeti Aç'}
                               </button>
                             </div>
 
@@ -4649,33 +4653,40 @@ export function HomePage() {
                               <div className="employee-communication-thread">
                                 <div className="employee-communication-thread-head">
                                   <div>
-                                    <p className="employee-communication-thread-kicker">YAZIŞMA AKIŞI</p>
+                                    <p className="employee-communication-thread-kicker">DESTEK GÖRÜŞMESİ</p>
                                     <p className="employee-communication-thread-note">
-                                      Mesajlarını kısa, kurumsal ve konuya odaklı biçimde yaz.
+                                      Bu kanal kayıt altındadır. Sorununu kısa, net ve resmî biçimde yaz.
                                     </p>
                                   </div>
+                                  <span className="employee-communication-thread-status">
+                                    {conversationStatusLabel(conversation.status)}
+                                  </span>
                                 </div>
                                 {communicationThreadLoadingId === conversation.id && !communicationThreadsById[conversation.id] ? (
-                                  <p className="small-text">Kurumsal yazışma yükleniyor...</p>
+                                  <p className="small-text">Destek görüşmesi yükleniyor...</p>
                                 ) : null}
                                 {communicationThreadErrorById[conversation.id] ? (
                                   <p className="small-text">{communicationThreadErrorById[conversation.id]}</p>
                                 ) : null}
                                 {communicationThreadsById[conversation.id] ? (
                                   <>
-                                    <ol className="leave-thread-message-list employee-communication-message-list">
+                                    <ol className="employee-communication-message-list">
                                       {communicationThreadsById[conversation.id].messages.map((messageRow) => (
                                         <li
                                           key={messageRow.id}
-                                          className={`leave-thread-message ${
+                                          className={`employee-communication-bubble-row ${
                                             messageRow.sender_actor === 'ADMIN' ? 'is-admin' : 'is-employee'
                                           }`}
                                         >
-                                          <div className="leave-thread-message-head">
-                                            <strong>{messageRow.sender_label}</strong>
+                                          <div className="employee-communication-bubble-meta">
+                                            <strong className="employee-communication-bubble-author">
+                                              {messageRow.sender_actor === 'ADMIN' ? messageRow.sender_label : 'Siz'}
+                                            </strong>
                                             <span>{formatTs(messageRow.created_at)}</span>
                                           </div>
-                                          <p>{messageRow.message}</p>
+                                          <div className="employee-communication-bubble">
+                                            <p>{messageRow.message}</p>
+                                          </div>
                                         </li>
                                       ))}
                                     </ol>
@@ -4683,12 +4694,12 @@ export function HomePage() {
                                     {communicationThreadsById[conversation.id].conversation.status === 'OPEN' ? (
                                       <div className="leave-thread-reply-box employee-communication-reply-box">
                                         <label className="field">
-                                          <span>Kurumsal yanıt yaz</span>
+                                          <span>Mesajını yaz</span>
                                           <textarea
                                             rows={3}
                                             value={communicationReplyDrafts[conversation.id] ?? ''}
                                             onChange={(event) => updateCommunicationReplyDraft(conversation.id, event.target.value)}
-                                            placeholder="Örnek: 12 Nisan vardiya değişikliği talebimin güncel durumunu paylaşabilir misiniz?"
+                                            placeholder="Örnek: Vardiya değişikliği talebimin güncel durumunu paylaşabilir misiniz?"
                                           />
                                         </label>
                                         <div className="employee-communication-starters">
@@ -4709,12 +4720,12 @@ export function HomePage() {
                                           disabled={communicationReplyBusyId === conversation.id}
                                           onClick={() => void submitCommunicationReply(conversation.id)}
                                         >
-                                          {communicationReplyBusyId === conversation.id ? 'Gönderiliyor...' : 'Resmî Mesaj Gönder'}
+                                          {communicationReplyBusyId === conversation.id ? 'Gönderiliyor...' : 'Mesajı Gönder'}
                                         </button>
                                       </div>
                                     ) : (
                                       <p className="small-text">
-                                        Bu iletişim kaydı kapatıldı. Gerekirse yeni bir kurumsal mesaj oluşturabilirsin.
+                                        Bu destek görüşmesi kapatıldı. Gerekirse yeni bir destek talebi açabilirsin.
                                       </p>
                                     )}
                                   </>
@@ -4725,14 +4736,14 @@ export function HomePage() {
                         ))}
                       </ol>
                       {hiddenCommunicationCount > 0 ? (
-                        <p className="leave-history-footnote">+{hiddenCommunicationCount} iletişim kaydı daha var.</p>
+                        <p className="leave-history-footnote">+{hiddenCommunicationCount} destek kaydı daha var.</p>
                       ) : null}
                     </div>
                   ) : (
                     <div className="employee-communication-empty">
-                      <p className="employee-communication-empty-title">Henüz kurumsal iletişim kaydı yok.</p>
+                      <p className="employee-communication-empty-title">Henüz destek kaydın yok.</p>
                       <p className="employee-communication-empty-copy">
-                        İzin, vardiya, puantaj veya belge süreciyle ilgili ilk resmî mesajını buradan oluşturabilirsin.
+                        İzin, vardiya, puantaj veya belge süreciyle ilgili ilk destek talebini buradan açabilirsin.
                       </p>
                       {deviceFingerprint ? (
                         <button
@@ -4740,7 +4751,7 @@ export function HomePage() {
                           className="btn btn-primary employee-communication-open-btn"
                           onClick={openCommunicationModal}
                         >
-                          İlk Kurumsal Mesajı Oluştur
+                          İlk Destek Talebini Aç
                         </button>
                       ) : null}
                     </div>
@@ -5542,7 +5553,7 @@ export function HomePage() {
             onClose={closeLeaveRequestModal}
           >
             <p id="leave-request-modal-description">
-              İzin gerekçesini ve tarih aralığını gir. Belgen varsa ekle; yöneticiye soru sormak için ayrı kurumsal iletişim
+              İzin gerekçesini ve tarih aralığını gir. Belgen varsa ekle; yöneticiye soru sormak için ayrı canlı destek
               akışını kullan.
             </p>
             <div className="stack">
@@ -5590,7 +5601,7 @@ export function HomePage() {
                 ) : null}
               </label>
               <div className="warn-box">
-                <p>Yöneticiye soru veya ek açıklama göndermek için ayrı Kurumsal İletişim alanını kullan.</p>
+                <p>Yöneticiye soru veya ek açıklama göndermek için ayrı canlı destek alanını kullan.</p>
                 {deviceFingerprint ? (
                   <button
                     type="button"
@@ -5598,7 +5609,7 @@ export function HomePage() {
                     disabled={isLeaveSubmitting}
                     onClick={() => openLeaveCommunicationModal()}
                   >
-                    Kurumsal İletişimi Aç
+                    Canlı Desteği Aç
                   </button>
                 ) : null}
               </div>
@@ -5624,13 +5635,13 @@ export function HomePage() {
           <EmployeeFocusModal
             titleId="employee-communication-modal-title"
             descriptionId="employee-communication-modal-description"
-            title="Kurumsal Mesaj Oluştur"
-            kicker="YÖNETİCİ İLETİŞİMİ"
+            title="Canlı Destek Talebi"
+            kicker="DESTEK MASASI"
             panelClassName="employee-focus-modal--wide"
             onClose={closeCommunicationModal}
           >
             <p id="employee-communication-modal-description">
-              Bu alan resmî iş iletişimi içindir. Günlük sohbet dili yerine konu, başlık ve ihtiyacını açık şekilde yaz.
+              Yardıma ihtiyacını kısa ve anlaşılır biçimde yaz. Mesajın destek kaydı olarak yönetime iletilir.
             </p>
             <p className="employee-communication-modal-note">
               Hızlı başlamak istersen aşağıdaki şablonlardan birini seçip sonra metni kendi durumuna göre düzenleyebilirsin.
@@ -5649,7 +5660,7 @@ export function HomePage() {
             </div>
             <div className="stack">
               <label className="field">
-                <span>Konu</span>
+                <span>Destek kategorisi</span>
                 <select
                   value={communicationCategory}
                   onChange={(event) => setCommunicationCategory(event.target.value as EmployeeConversationCategory)}
@@ -5662,20 +5673,20 @@ export function HomePage() {
                 </select>
               </label>
               <label className="field">
-                <span>Başlık</span>
+                <span>Kısa başlık</span>
                 <input
                   value={communicationSubject}
                   onChange={(event) => setCommunicationSubject(event.target.value)}
-                  placeholder="Örnek: 12 Nisan vardiya değişikliği talebi"
+                  placeholder="Örnek: 12 Nisan vardiya değişikliği desteği"
                 />
               </label>
               <label className="field">
-                <span>Resmî mesaj</span>
+                <span>Mesajın</span>
                 <textarea
                   value={communicationMessage}
                   onChange={(event) => setCommunicationMessage(event.target.value)}
                   rows={5}
-                  placeholder="Örnek: 12 Nisan 2026 vardiya planım ile ilgili bilgi rica ediyorum. Müsaitseniz güncel durumu paylaşabilir misiniz?"
+                  placeholder="Örnek: 12 Nisan 2026 vardiya planım için desteğe ihtiyacım var. Güncel durumu paylaşabilir misiniz?"
                 />
               </label>
             </div>
@@ -5687,7 +5698,7 @@ export function HomePage() {
                 disabled={isCommunicationSubmitting}
                 onClick={() => void submitCommunication()}
               >
-                {isCommunicationSubmitting ? 'Gönderiliyor...' : 'Kurumsal Mesaj Gönder'}
+                {isCommunicationSubmitting ? 'Gönderiliyor...' : 'Destek Talebi Gönder'}
               </button>
               <button
                 type="button"
