@@ -4255,6 +4255,94 @@ textarea:focus {
   gap: 0.95rem;
 }
 
+.employee-support-fab {
+  position: fixed;
+  right: 1rem;
+  bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  z-index: 45;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.72rem;
+  min-height: 3.65rem;
+  padding: 0.7rem 0.95rem;
+  border: 1px solid rgba(79, 156, 189, 0.24);
+  border-radius: 999px;
+  background:
+    linear-gradient(135deg, rgba(15, 57, 75, 0.98), rgba(25, 98, 129, 0.97)),
+    rgba(15, 57, 75, 0.96);
+  color: #f5fcff;
+  box-shadow:
+    0 24px 36px -26px rgba(8, 32, 44, 0.68),
+    0 10px 20px -18px rgba(12, 72, 98, 0.68);
+  cursor: pointer;
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    opacity 180ms ease;
+}
+
+.employee-support-fab:hover,
+.employee-support-fab:focus-visible {
+  transform: translateY(-2px);
+  box-shadow:
+    0 28px 40px -26px rgba(8, 32, 44, 0.72),
+    0 14px 24px -18px rgba(12, 72, 98, 0.7);
+}
+
+.employee-support-fab.is-open {
+  opacity: 0.92;
+}
+
+.employee-support-fab-icon {
+  width: 2.15rem;
+  height: 2.15rem;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  font-size: 1rem;
+  font-weight: 900;
+}
+
+.employee-support-fab-copy {
+  display: grid;
+  gap: 0.08rem;
+  text-align: left;
+}
+
+.employee-support-fab-copy strong,
+.employee-support-fab-copy span {
+  display: block;
+}
+
+.employee-support-fab-copy strong {
+  font-size: 0.84rem;
+}
+
+.employee-support-fab-copy span {
+  font-size: 0.7rem;
+  opacity: 0.88;
+}
+
+.employee-focus-modal.employee-support-popup {
+  width: min(100%, 1040px);
+  max-width: min(100%, 1040px);
+}
+
+.employee-support-popup h2 {
+  margin-bottom: 0.55rem;
+}
+
+.employee-support-modal-description {
+  margin: 0 0 0.95rem;
+  font-size: 0.82rem;
+  line-height: 1.58;
+  color: #49697b;
+}
+
 .employee-support-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -4327,6 +4415,23 @@ textarea:focus {
   background:
     linear-gradient(180deg, rgba(249, 252, 254, 0.98), rgba(241, 248, 252, 0.96)),
     rgba(249, 252, 254, 0.96);
+}
+
+.employee-support-sidebar-copy {
+  min-width: 0;
+  display: grid;
+  gap: 0.18rem;
+}
+
+.employee-support-sidebar-title {
+  margin: 0;
+  font-size: 0.86rem;
+  font-weight: 800;
+  color: #17384a;
+}
+
+.employee-support-sidebar-new-btn {
+  min-height: 2.65rem;
 }
 
 .employee-support-sidebar-head {
@@ -4464,6 +4569,14 @@ textarea:focus {
   background: rgba(255, 255, 255, 0.94);
 }
 
+.employee-support-workspace--modal {
+  min-height: min(72svh, 42rem);
+}
+
+.employee-support-chat--modal {
+  min-height: 0;
+}
+
 .employee-support-chat-head {
   padding: 1rem 1rem 0.9rem;
   border-bottom: 1px solid rgba(117, 176, 201, 0.14);
@@ -4569,6 +4682,26 @@ textarea:focus {
   background: rgba(249, 252, 254, 0.94);
 }
 
+.employee-support-compose-panel {
+  display: grid;
+  gap: 0.9rem;
+  align-content: start;
+  min-height: 100%;
+  padding: 1rem;
+}
+
+.employee-support-compose-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.employee-support-compose-close-btn {
+  min-height: 2.65rem;
+}
+
 .employee-support-composer-actions {
   display: flex;
   flex-wrap: wrap;
@@ -4593,16 +4726,25 @@ textarea:focus {
 }
 
 @media (max-width: 720px) {
+  .employee-support-fab {
+    right: 0.75rem;
+    left: 0.75rem;
+    bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+    justify-content: center;
+  }
+
   .employee-support-toolbar,
   .employee-support-chat-head,
   .employee-support-composer-actions,
   .employee-support-sidebar-head,
-  .employee-support-thread-top {
+  .employee-support-thread-top,
+  .employee-support-compose-head {
     flex-direction: column;
     align-items: stretch;
   }
 
   .employee-support-new-btn,
+  .employee-support-sidebar-new-btn,
   .employee-support-send-btn,
   .employee-support-thread-button {
     width: 100%;

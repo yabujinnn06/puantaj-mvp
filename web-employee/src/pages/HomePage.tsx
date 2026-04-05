@@ -1157,6 +1157,7 @@ export function HomePage() {
   const [isCommunicationReady, setIsCommunicationReady] = useState(false)
   const [communicationRefreshToken, setCommunicationRefreshToken] = useState(0)
   const [isCommunicationModalOpen, setIsCommunicationModalOpen] = useState(false)
+  const [isCommunicationComposerOpen, setIsCommunicationComposerOpen] = useState(false)
   const [communicationCategory, setCommunicationCategory] = useState<EmployeeConversationCategory>('ATTENDANCE')
   const [communicationSubject, setCommunicationSubject] = useState('')
   const [communicationMessage, setCommunicationMessage] = useState('')
@@ -2002,6 +2003,7 @@ export function HomePage() {
     communicationList.length > 0 ? `${communicationList.length} kayıt` : 'Henüz yok'
   const activeCommunication = communicationList.find((item) => item.id === activeCommunicationId) ?? null
   const activeCommunicationThread = activeCommunication ? communicationThreadsById[activeCommunication.id] ?? null : null
+  const showSupportComposer = isCommunicationComposerOpen || !hasCommunicationHistory
   const requestedConversationId = useMemo(() => {
     const params = new URLSearchParams(location.search)
     if (params.get('communication') !== '1') {
@@ -2147,30 +2149,46 @@ export function HomePage() {
     [deviceFingerprint],
   )
 
+  const openCommunicationComposer = useCallback(
+    (preset?: {
+      category?: EmployeeConversationCategory
+      subject?: string
+      message?: string
+    }) => {
+      setCommunicationFormError(null)
+      setCommunicationCategory(preset?.category ?? 'ATTENDANCE')
+      setCommunicationSubject(preset?.subject ?? '')
+      setCommunicationMessage(preset?.message ?? '')
+      setIsCommunicationComposerOpen(true)
+      setIsCommunicationModalOpen(true)
+    },
+    [],
+  )
+
   const openCommunicationModal = useCallback(() => {
     setCommunicationFormError(null)
+    setIsCommunicationComposerOpen(communicationList.length === 0)
     setIsCommunicationModalOpen(true)
-  }, [])
+  }, [communicationList.length])
 
   const openLeaveCommunicationModal = useCallback((leave?: EmployeeLeaveRecord) => {
     const leaveRange = leave ? formatLeaveRange(leave.start_date, leave.end_date) : null
-    setCommunicationFormError(null)
-    setCommunicationCategory('DOCUMENT')
-    setCommunicationSubject(leaveRange ? `${leaveRange} izin talebi için destek` : 'İzin talebim için destek')
-    setCommunicationMessage(
-      leaveRange
+    setIsLeaveModalOpen(false)
+    openCommunicationComposer({
+      category: 'DOCUMENT',
+      subject: leaveRange ? `${leaveRange} izin talebi için destek` : 'İzin talebim için destek',
+      message: leaveRange
         ? `${leaveRange} tarihli izin talebim hakkında destek rica ediyorum. Güncel durumu paylaşabilir misiniz?`
         : 'İzin talebim hakkında destek rica ediyorum. Güncel durumu paylaşabilir misiniz?',
-    )
-    setIsLeaveModalOpen(false)
-    setIsCommunicationModalOpen(true)
-  }, [])
+    })
+  }, [openCommunicationComposer])
 
   const closeCommunicationModal = useCallback(() => {
     if (isCommunicationSubmitting) {
       return
     }
     setIsCommunicationModalOpen(false)
+    setIsCommunicationComposerOpen(false)
     setCommunicationFormError(null)
     setCommunicationCategory('ATTENDANCE')
     setCommunicationSubject('')
@@ -2294,7 +2312,7 @@ export function HomePage() {
       setCommunicationThreadsById((current) => ({ ...current, [thread.conversation.id]: thread }))
       setActiveCommunicationId(thread.conversation.id)
       setCommunicationRefreshToken((current) => current + 1)
-      setIsCommunicationModalOpen(false)
+      setIsCommunicationComposerOpen(false)
       setCommunicationCategory('ATTENDANCE')
       setCommunicationSubject('')
       setCommunicationMessage('')
@@ -4494,7 +4512,8 @@ export function HomePage() {
                 </SecondaryDisclosure>
               ) : null}
 
-              <SecondaryDisclosure
+              {false ? (
+                <SecondaryDisclosure
                 title="Canlı destek"
                 description="Yönetim desteğine hızlıca yaz; görüşmen resmî kayıt altında tutulur."
                 badge={openCommunicationCount > 0 ? `${openCommunicationCount} açık` : communicationSummary}
@@ -4581,38 +4600,45 @@ export function HomePage() {
                       </aside>
 
                       <div className="employee-support-chat">
-                        {hasCommunicationHistory && activeCommunication ? (
-                          <>
+                        {hasCommunicationHistory && activeCommunication
+                          ? (() => {
+                              const conversation = activeCommunication!
+                              const thread = activeCommunicationThread
+                              const canReply = thread?.conversation.status === 'OPEN'
+                              const messages = thread?.messages ?? []
+
+                              return (
+                                <>
                             <header className="employee-support-chat-head">
                               <div className="employee-support-chat-copy">
                                 <div className="employee-support-chat-badges">
                                   <span className="employee-support-thread-topic">
-                                    {conversationCategoryLabels[activeCommunication.category]}
+                                    {conversationCategoryLabels[conversation.category]}
                                   </span>
                                   <span
-                                    className={`employee-support-thread-state is-${activeCommunication.status.toLowerCase()}`}
+                                    className={`employee-support-thread-state is-${conversation.status.toLowerCase()}`}
                                   >
-                                    {conversationStatusLabel(activeCommunication.status)}
+                                    {conversationStatusLabel(conversation.status)}
                                   </span>
                                 </div>
-                                <h4 className="employee-support-chat-title">{activeCommunication.subject}</h4>
+                                <h4 className="employee-support-chat-title">{conversation.subject}</h4>
                                 <p className="employee-support-chat-meta">
-                                  Son hareket: {formatTs(activeCommunication.last_message_at)}
+                                  Son hareket: {formatTs(conversation.last_message_at)}
                                 </p>
                               </div>
                             </header>
 
                             <div className="employee-support-chat-body">
-                              {communicationThreadLoadingId === activeCommunication.id && !activeCommunicationThread ? (
+                              {communicationThreadLoadingId === conversation.id && !thread ? (
                                 <p className="small-text">Destek görüşmesi yükleniyor...</p>
                               ) : null}
-                              {communicationThreadErrorById[activeCommunication.id] ? (
-                                <p className="small-text">{communicationThreadErrorById[activeCommunication.id]}</p>
+                              {communicationThreadErrorById[conversation.id] ? (
+                                <p className="small-text">{communicationThreadErrorById[conversation.id]}</p>
                               ) : null}
 
-                              {activeCommunicationThread ? (
+                              {thread ? (
                                 <ol className="employee-support-message-list">
-                                  {activeCommunicationThread.messages.map((messageRow) => (
+                                  {messages.map((messageRow) => (
                                     <li
                                       key={messageRow.id}
                                       className={`employee-support-message-row ${
@@ -4634,14 +4660,14 @@ export function HomePage() {
                               ) : null}
                             </div>
 
-                            {activeCommunicationThread?.conversation.status === 'OPEN' ? (
+                            {canReply ? (
                               <div className="employee-support-composer">
                                 <label className="field">
                                   <span>Mesajın</span>
                                   <textarea
                                     rows={3}
-                                    value={communicationReplyDrafts[activeCommunication.id] ?? ''}
-                                    onChange={(event) => updateCommunicationReplyDraft(activeCommunication.id, event.target.value)}
+                                    value={communicationReplyDrafts[conversation.id] ?? ''}
+                                    onChange={(event) => updateCommunicationReplyDraft(conversation.id, event.target.value)}
                                     placeholder="Örnek: Vardiya değişikliği talebimin güncel durumunu paylaşabilir misiniz?"
                                   />
                                 </label>
@@ -4652,10 +4678,10 @@ export function HomePage() {
                                   <button
                                     type="button"
                                     className="btn btn-primary employee-support-send-btn"
-                                    disabled={communicationReplyBusyId === activeCommunication.id}
-                                    onClick={() => void submitCommunicationReply(activeCommunication.id)}
+                                    disabled={communicationReplyBusyId === conversation.id}
+                                    onClick={() => void submitCommunicationReply(conversation.id)}
                                   >
-                                    {communicationReplyBusyId === activeCommunication.id ? 'Gönderiliyor...' : 'Mesajı Gönder'}
+                                    {communicationReplyBusyId === conversation.id ? 'Gönderiliyor...' : 'Mesajı Gönder'}
                                   </button>
                                 </div>
                               </div>
@@ -4664,8 +4690,10 @@ export function HomePage() {
                                 <p>Bu destek görüşmesi kapatıldı. Gerekirse yeni bir destek talebi açabilirsin.</p>
                               </div>
                             )}
-                          </>
-                        ) : (
+                                </>
+                              )
+                            })()
+                          : (
                           <div className="employee-support-chat-placeholder">
                             <p className="employee-support-chat-placeholder-title">Bir destek kaydı seç.</p>
                             <p className="employee-support-chat-placeholder-copy">
@@ -4677,7 +4705,8 @@ export function HomePage() {
                     </div>
                   )}
                 </section>
-              </SecondaryDisclosure>
+                </SecondaryDisclosure>
+              ) : null}
             </section>
           </div>
           <section className="employee-command-surface">
@@ -5387,6 +5416,21 @@ export function HomePage() {
           </section>
         ) : null}
 
+        <button
+          type="button"
+          className={`employee-support-fab ${isCommunicationModalOpen ? 'is-open' : ''}`}
+          aria-label="Canlı desteği aç"
+          onClick={openCommunicationModal}
+        >
+          <span className="employee-support-fab-icon" aria-hidden="true">
+            ?
+          </span>
+          <span className="employee-support-fab-copy">
+            <strong>Canlı destek</strong>
+            <span>{openCommunicationCount > 0 ? `${openCommunicationCount} açık görüşme` : 'Yöneticiye yaz'}</span>
+          </span>
+        </button>
+
         {showIosInstallOnboarding ? (
           <EmployeeFocusModal
             titleId="ios-install-onboarding-title"
@@ -5555,80 +5599,265 @@ export function HomePage() {
           <EmployeeFocusModal
             titleId="employee-communication-modal-title"
             descriptionId="employee-communication-modal-description"
-            title="Canlı Destek Talebi"
-            kicker="DESTEK MASASI"
-            panelClassName="employee-focus-modal--wide"
+            title="Canlı Destek"
+            kicker="YÖNETİCİ DESTEĞİ"
+            panelClassName="employee-focus-modal--wide employee-support-popup"
             onClose={closeCommunicationModal}
           >
-            <p id="employee-communication-modal-description">
-              Yardıma ihtiyacını kısa ve anlaşılır biçimde yaz. Mesajın destek kaydı olarak yönetime iletilir.
+            <p id="employee-communication-modal-description" className="employee-support-modal-description">
+              Adminle olan yazışmalarını buradan takip et. Yeni destek talebi açabilir veya mevcut sohbetine devam edebilirsin.
             </p>
-            <p className="employee-communication-modal-note">
-              Hızlı başlamak istersen aşağıdaki şablonlardan birini seçip sonra metni kendi durumuna göre düzenleyebilirsin.
-            </p>
-            <div className="employee-communication-template-grid">
-              {communicationTemplates.map((template) => (
-                <button
-                  key={template.label}
-                  type="button"
-                  className="employee-communication-template-btn"
-                  onClick={() => applyCommunicationTemplate(template)}
-                >
-                  {template.label}
-                </button>
-              ))}
-            </div>
-            <div className="stack">
-              <label className="field">
-                <span>Destek kategorisi</span>
-                <select
-                  value={communicationCategory}
-                  onChange={(event) => setCommunicationCategory(event.target.value as EmployeeConversationCategory)}
-                >
-                  <option value="ATTENDANCE">Puantaj</option>
-                  <option value="SHIFT">Vardiya</option>
-                  <option value="DEVICE">Cihaz</option>
-                  <option value="DOCUMENT">Belge</option>
-                  <option value="OTHER">Genel</option>
-                </select>
-              </label>
-              <label className="field">
-                <span>Kısa başlık</span>
-                <input
-                  value={communicationSubject}
-                  onChange={(event) => setCommunicationSubject(event.target.value)}
-                  placeholder="Örnek: 12 Nisan vardiya değişikliği desteği"
-                />
-              </label>
-              <label className="field">
-                <span>Mesajın</span>
-                <textarea
-                  value={communicationMessage}
-                  onChange={(event) => setCommunicationMessage(event.target.value)}
-                  rows={5}
-                  placeholder="Örnek: 12 Nisan 2026 vardiya planım için desteğe ihtiyacım var. Güncel durumu paylaşabilir misiniz?"
-                />
-              </label>
-            </div>
-            {communicationFormError ? <p className="small-text">{communicationFormError}</p> : null}
-            <div className="stack">
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={isCommunicationSubmitting}
-                onClick={() => void submitCommunication()}
-              >
-                {isCommunicationSubmitting ? 'Gönderiliyor...' : 'Destek Talebi Gönder'}
-              </button>
-              <button
-                type="button"
-                className="btn btn-soft"
-                disabled={isCommunicationSubmitting}
-                onClick={closeCommunicationModal}
-              >
-                Vazgeç
-              </button>
-            </div>
+
+            {!deviceFingerprint ? (
+              <div className="warn-box">
+                <p>Canlı destek için önce cihaz bağlantısını tamamla.</p>
+              </div>
+            ) : (
+              <div className="employee-support-workspace employee-support-workspace--modal">
+                <aside className="employee-support-sidebar" aria-label="Destek kayıtları">
+                  <div className="employee-support-sidebar-head">
+                    <div className="employee-support-sidebar-copy">
+                      <p className="employee-support-kicker">SOHBETLER</p>
+                      <p className="employee-support-sidebar-title">{communicationSummary}</p>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-primary employee-support-sidebar-new-btn"
+                      onClick={() => openCommunicationComposer()}
+                    >
+                      Yeni Talep
+                    </button>
+                  </div>
+
+                  {isCommunicationLoading && !isCommunicationReady ? (
+                    <p className="small-text">Destek görüşmeleri hazırlanıyor...</p>
+                  ) : hasCommunicationHistory ? (
+                    <ol className="employee-support-thread-list">
+                      {communicationList.map((conversation) => (
+                        <li key={conversation.id}>
+                          <button
+                            type="button"
+                            className={`employee-support-thread-button ${
+                              activeCommunicationId === conversation.id && !showSupportComposer ? 'is-active' : ''
+                            }`}
+                            onClick={() => {
+                              setIsCommunicationComposerOpen(false)
+                              toggleCommunicationThread(conversation.id)
+                            }}
+                          >
+                            <div className="employee-support-thread-top">
+                              <span className="employee-support-thread-topic">
+                                {conversationCategoryLabels[conversation.category]}
+                              </span>
+                              <span className={`employee-support-thread-state is-${conversation.status.toLowerCase()}`}>
+                                {conversationStatusLabel(conversation.status)}
+                              </span>
+                            </div>
+                            <strong className="employee-support-thread-subject">{conversation.subject}</strong>
+                            <p className="employee-support-thread-preview">
+                              {conversation.latest_message_preview || 'Mesaj akışı burada görünecek.'}
+                            </p>
+                            <span className="employee-support-thread-time">{formatTs(conversation.last_message_at)}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ol>
+                  ) : (
+                    <div className="employee-support-sidebar-empty">
+                      <p className="employee-support-sidebar-empty-title">Henüz destek kaydın yok.</p>
+                      <p className="employee-support-sidebar-empty-copy">
+                        İlk destek talebini açtığında yazışmaların burada listelenecek.
+                      </p>
+                    </div>
+                  )}
+                </aside>
+
+                <div className="employee-support-chat employee-support-chat--modal">
+                  {showSupportComposer ? (
+                    <div className="employee-support-compose-panel">
+                      <div className="employee-support-compose-head">
+                        <div className="employee-support-toolbar-copy">
+                          <p className="employee-support-kicker">YENİ DESTEK TALEBİ</p>
+                          <h3 className="employee-support-title">Yeni sohbet başlat</h3>
+                          <p className="employee-support-subtitle">
+                            Konuyu seç, kısa başlık yaz ve sorununu net biçimde ilet.
+                          </p>
+                        </div>
+                        {hasCommunicationHistory ? (
+                          <button
+                            type="button"
+                            className="btn btn-soft employee-support-compose-close-btn"
+                            disabled={isCommunicationSubmitting}
+                            onClick={() => setIsCommunicationComposerOpen(false)}
+                          >
+                            Sohbete Dön
+                          </button>
+                        ) : null}
+                      </div>
+
+                      <div className="employee-communication-template-grid">
+                        {communicationTemplates.map((template) => (
+                          <button
+                            key={template.label}
+                            type="button"
+                            className="employee-communication-template-btn"
+                            onClick={() => applyCommunicationTemplate(template)}
+                          >
+                            {template.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="stack">
+                        <label className="field">
+                          <span>Destek kategorisi</span>
+                          <select
+                            value={communicationCategory}
+                            onChange={(event) => setCommunicationCategory(event.target.value as EmployeeConversationCategory)}
+                          >
+                            <option value="ATTENDANCE">Puantaj</option>
+                            <option value="SHIFT">Vardiya</option>
+                            <option value="DEVICE">Cihaz</option>
+                            <option value="DOCUMENT">Belge</option>
+                            <option value="OTHER">Genel</option>
+                          </select>
+                        </label>
+                        <label className="field">
+                          <span>Kısa başlık</span>
+                          <input
+                            value={communicationSubject}
+                            onChange={(event) => setCommunicationSubject(event.target.value)}
+                            placeholder="Örnek: 12 Nisan vardiya değişikliği desteği"
+                          />
+                        </label>
+                        <label className="field">
+                          <span>Mesajın</span>
+                          <textarea
+                            value={communicationMessage}
+                            onChange={(event) => setCommunicationMessage(event.target.value)}
+                            rows={5}
+                            placeholder="Örnek: 12 Nisan 2026 vardiya planım için desteğe ihtiyacım var. Güncel durumu paylaşabilir misiniz?"
+                          />
+                        </label>
+                      </div>
+
+                      {communicationFormError ? <p className="small-text">{communicationFormError}</p> : null}
+
+                      <div className="employee-support-composer-actions">
+                        <span className="employee-support-composer-note">
+                          Mesajın destek kaydı olarak yönetime iletilir.
+                        </span>
+                        <button
+                          type="button"
+                          className="btn btn-primary employee-support-send-btn"
+                          disabled={isCommunicationSubmitting}
+                          onClick={() => void submitCommunication()}
+                        >
+                          {isCommunicationSubmitting ? 'Gönderiliyor...' : 'Destek Talebi Gönder'}
+                        </button>
+                      </div>
+                    </div>
+                  ) : hasCommunicationHistory && activeCommunication ? (
+                    <>
+                      <header className="employee-support-chat-head">
+                        <div className="employee-support-chat-copy">
+                          <div className="employee-support-chat-badges">
+                            <span className="employee-support-thread-topic">
+                              {conversationCategoryLabels[activeCommunication.category]}
+                            </span>
+                            <span className={`employee-support-thread-state is-${activeCommunication.status.toLowerCase()}`}>
+                              {conversationStatusLabel(activeCommunication.status)}
+                            </span>
+                          </div>
+                          <h4 className="employee-support-chat-title">{activeCommunication.subject}</h4>
+                          <p className="employee-support-chat-meta">
+                            Son hareket: {formatTs(activeCommunication.last_message_at)}
+                          </p>
+                        </div>
+                      </header>
+
+                      <div className="employee-support-chat-body">
+                        {communicationThreadLoadingId === activeCommunication.id && !activeCommunicationThread ? (
+                          <p className="small-text">Destek görüşmesi yükleniyor...</p>
+                        ) : null}
+                        {communicationThreadErrorById[activeCommunication.id] ? (
+                          <p className="small-text">{communicationThreadErrorById[activeCommunication.id]}</p>
+                        ) : null}
+
+                        {activeCommunicationThread ? (
+                          <ol className="employee-support-message-list">
+                            {activeCommunicationThread.messages.map((messageRow) => (
+                              <li
+                                key={messageRow.id}
+                                className={`employee-support-message-row ${
+                                  messageRow.sender_actor === 'ADMIN' ? 'is-admin' : 'is-employee'
+                                }`}
+                              >
+                                <div className="employee-support-message-meta">
+                                  <strong className="employee-support-message-author">
+                                    {messageRow.sender_actor === 'ADMIN' ? messageRow.sender_label : 'Siz'}
+                                  </strong>
+                                  <span>{formatTs(messageRow.created_at)}</span>
+                                </div>
+                                <div className="employee-support-message-bubble">
+                                  <p>{messageRow.message}</p>
+                                </div>
+                              </li>
+                            ))}
+                          </ol>
+                        ) : null}
+                      </div>
+
+                      {activeCommunicationThread?.conversation.status === 'OPEN' ? (
+                        <div className="employee-support-composer">
+                          <label className="field">
+                            <span>Mesajın</span>
+                            <textarea
+                              rows={3}
+                              value={communicationReplyDrafts[activeCommunication.id] ?? ''}
+                              onChange={(event) => updateCommunicationReplyDraft(activeCommunication.id, event.target.value)}
+                              placeholder="Örnek: Vardiya değişikliği talebimin güncel durumunu paylaşabilir misiniz?"
+                            />
+                          </label>
+                          <div className="employee-support-composer-actions">
+                            <span className="employee-support-composer-note">
+                              Mesajın destek kaydına eklenir ve yönetici ekranına düşer.
+                            </span>
+                            <button
+                              type="button"
+                              className="btn btn-primary employee-support-send-btn"
+                              disabled={communicationReplyBusyId === activeCommunication.id}
+                              onClick={() => void submitCommunicationReply(activeCommunication.id)}
+                            >
+                              {communicationReplyBusyId === activeCommunication.id ? 'Gönderiliyor...' : 'Mesajı Gönder'}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="employee-support-closed-note">
+                          <p>Bu destek görüşmesi kapatıldı. Gerekirse yeni bir destek talebi açabilirsin.</p>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="employee-support-chat-placeholder">
+                      <p className="employee-support-chat-placeholder-title">Yeni destek talebi aç.</p>
+                      <p className="employee-support-chat-placeholder-copy">
+                        Solda eski yazışmaların görünür. Sağ tarafta ise yeni talep açabilir veya seçili sohbeti
+                        görüntüleyebilirsin.
+                      </p>
+                      <button
+                        type="button"
+                        className="btn btn-primary employee-support-send-btn"
+                        onClick={() => openCommunicationComposer()}
+                      >
+                        Yeni Destek Talebi
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </EmployeeFocusModal>
         ) : null}
 
