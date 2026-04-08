@@ -89,6 +89,7 @@ class ExtraCheckinApprovalEndpointsTests(unittest.TestCase):
         self.assertEqual(body["status"], "PENDING")
 
     @patch("app.routers.admin.log_audit")
+    @patch("app.routers.admin.send_push_to_employees")
     @patch("app.routers.admin._authenticate_admin_identity_by_password")
     @patch("app.routers.admin._normalize_extra_checkin_approval_status")
     @patch("app.routers.admin._resolve_extra_checkin_approval_by_token")
@@ -97,6 +98,7 @@ class ExtraCheckinApprovalEndpointsTests(unittest.TestCase):
         mock_resolve_approval,
         _mock_normalize_status,
         mock_authenticate,
+        mock_send_push,
         _mock_log_audit,
     ) -> None:
         employee = Employee(id=1, full_name="Test Employee", is_active=True)
@@ -126,6 +128,13 @@ class ExtraCheckinApprovalEndpointsTests(unittest.TestCase):
         self.assertTrue(body["ok"])
         self.assertFalse(body["already_processed"])
         self.assertEqual(body["approval"]["status"], "APPROVED")
+        mock_send_push.assert_called_once()
+        _, kwargs = mock_send_push.call_args
+        self.assertEqual(kwargs["employee_ids"], [employee.id])
+        self.assertEqual(kwargs["title"], "Ikinci girisiniz onaylandi")
+        self.assertEqual(kwargs["data"]["type"], "ATTENDANCE_EXTRA_CHECKIN_APPROVED")
+        self.assertEqual(kwargs["data"]["approval_id"], approval.id)
+        self.assertEqual(kwargs["data"]["url"], "/employee/")
 
 
 if __name__ == "__main__":

@@ -850,6 +850,33 @@ def _to_attendance_extra_checkin_approval_read(
     )
 
 
+def _notify_employee_about_extra_checkin_approval(
+    db: Session,
+    *,
+    approval: AttendanceExtraCheckinApproval,
+    employee: Employee,
+) -> None:
+    try:
+        send_push_to_employees(
+            db,
+            employee_ids=[employee.id],
+            title="Ikinci girisiniz onaylandi",
+            body="Bugunku ikinci giris denemeniz admin tarafindan onaylandi. QR ile islemi tekrar tamamlayabilirsiniz.",
+            data={
+                "type": "ATTENDANCE_EXTRA_CHECKIN_APPROVED",
+                "approval_id": approval.id,
+                "employee_id": employee.id,
+                "local_day": approval.local_day.isoformat(),
+                "url": "/employee/",
+            },
+        )
+    except Exception:
+        logger.exception(
+            "attendance_extra_checkin_employee_push_failed",
+            extra={"approval_id": approval.id, "employee_id": employee.id},
+        )
+
+
 def _persist_refresh_token(
     db: Session,
     *,
@@ -7566,6 +7593,11 @@ def approve_attendance_extra_checkin_approval(
         approval.approved_by_admin_user_id = admin_user_id if isinstance(admin_user_id, int) else None
         db.commit()
         db.refresh(approval)
+        _notify_employee_about_extra_checkin_approval(
+            db,
+            approval=approval,
+            employee=employee,
+        )
 
     actor_id = str(identity.get("username") or identity.get("sub") or payload.username).strip() or "admin"
     request.state.actor = "admin"
