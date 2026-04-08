@@ -1,0 +1,1 @@
+import{r as t}from"./vendor-BJCYmYUG.js";function s(){const[i,n]=t.useState(()=>typeof document>"u"?!0:!document.hidden);return t.useEffect(()=>{if(typeof document>"u")return;const e=()=>{n(!document.hidden)};return document.addEventListener("visibilitychange",e),()=>{document.removeEventListener("visibilitychange",e)}},[]),i}export{s as u};

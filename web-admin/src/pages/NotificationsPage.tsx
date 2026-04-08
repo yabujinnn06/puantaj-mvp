@@ -34,6 +34,7 @@ import { Panel } from '../components/Panel'
 import { NotificationTaskManager } from '../components/notifications/NotificationTaskManager'
 import { TableSearchInput } from '../components/TableSearchInput'
 import { useAuth } from '../hooks/useAuth'
+import { usePageVisibility } from '../hooks/usePageVisibility'
 import { useToast } from '../hooks/useToast'
 import type {
   AdminDailyReportJobHealth,
@@ -226,6 +227,7 @@ async function ensureAdminPushSubscription(
 }
 
 export function NotificationsPage() {
+  const isPageVisible = usePageVisibility()
   const queryClient = useQueryClient()
   const { pushToast } = useToast()
   const { user } = useAuth()
@@ -294,7 +296,7 @@ export function NotificationsPage() {
   const dailyReportHealthQuery = useQuery({
     queryKey: ['admin-daily-report-health'],
     queryFn: getAdminDailyReportHealth,
-    refetchInterval: 30000,
+    refetchInterval: isPageVisible ? 60_000 : false,
     retry: false,
   })
   const emailTargetsQuery = useQuery({
@@ -305,7 +307,7 @@ export function NotificationsPage() {
   const adminSelfCheckQuery = useQuery({
     queryKey: ['admin-push-self-check'],
     queryFn: getAdminPushSelfCheck,
-    refetchInterval: 15000,
+    refetchInterval: isPageVisible ? 45_000 : false,
     retry: false,
   })
   const jobsQuery = useQuery({
@@ -333,7 +335,7 @@ export function NotificationsPage() {
         offset: (jobsPage - 1) * LIST_PAGE_SIZE,
         limit: LIST_PAGE_SIZE,
       }),
-    refetchInterval: 10000,
+    refetchInterval: isPageVisible ? 20_000 : false,
   })
   const deliveryLogsQuery = useQuery({
     queryKey: ['notification-delivery-logs', deliveryPage],
@@ -342,17 +344,17 @@ export function NotificationsPage() {
         offset: (deliveryPage - 1) * LIST_PAGE_SIZE,
         limit: LIST_PAGE_SIZE,
       }),
-    refetchInterval: 15000,
+    refetchInterval: isPageVisible ? 30_000 : false,
   })
   const employeeSubsQuery = useQuery({
     queryKey: ['notify-subs-emp'],
     queryFn: () => getNotificationSubscriptions({}),
-    refetchInterval: 15000,
+    refetchInterval: isPageVisible ? 45_000 : false,
   })
   const adminSubsQuery = useQuery({
     queryKey: ['notify-subs-admin'],
     queryFn: () => getAdminNotificationSubscriptions({}),
-    refetchInterval: 15000,
+    refetchInterval: isPageVisible ? 45_000 : false,
   })
 
   const selectedJob: NotificationJob | null = (() => {
@@ -382,7 +384,7 @@ export function NotificationsPage() {
       selectedJob.employee_id > 0 &&
       typeof selectedJob.local_day === 'string' &&
       selectedJob.local_day.length > 0,
-    refetchInterval: 15000,
+    refetchInterval: isPageVisible ? 30_000 : false,
   })
   const archivesQuery = useQuery({
     queryKey: [

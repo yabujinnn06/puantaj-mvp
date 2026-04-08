@@ -6625,6 +6625,44 @@ textarea:focus {
   }
 }
 
+/* Performance pass: keep the look, but stop nonstop loops from repainting the whole screen. */
+body::before {
+  animation-duration: 58s;
+}
+
+body::after {
+  animation-duration: 48s;
+}
+
+.phone-card::after {
+  animation-duration: 16s;
+}
+
+.employee-main-action-card::before,
+.employee-main-action-card::after,
+.employee-main-action-primary-btn.is-radar-ready,
+.employee-main-action-primary-btn.is-radar-ready::after,
+.employee-main-action-primary-btn.is-radar-ready .employee-main-action-primary-glyph-ring-a,
+.employee-main-action-primary-btn.is-radar-ready .employee-main-action-primary-glyph-ring-b,
+.employee-main-action-primary-btn.is-radar-ready .employee-main-action-primary-glyph-core,
+.employee-main-action-primary-btn.is-radar-ready .employee-main-action-primary-glyph-scan,
+.employee-main-action-primary-btn.is-radar-ready .employee-main-action-primary-label,
+.employee-main-action-primary-btn.is-radar-ready .employee-main-action-primary-bracket,
+.demo-visit-btn::before,
+.demo-visit-btn::after,
+.action-cta-btn::before,
+.action-cta-btn::after {
+  animation: none;
+}
+
+.employee-main-action-card.is-qr-ready::after {
+  animation: employeeRadarSweep 8.4s ease-in-out 1 both;
+}
+
+.employee-main-action-primary-btn.is-radar-ready::before {
+  animation: employeeQrButtonSweep 6.6s cubic-bezier(0.22, 1, 0.36, 1) 1 both;
+}
+
 @media (hover: none), (pointer: coarse) {
   body::before,
   body::after,

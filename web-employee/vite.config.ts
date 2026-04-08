@@ -63,4 +63,32 @@ export default defineConfig({
     }),
   ],
   base: '/employee/',
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => {
+          if (!id.includes('node_modules')) {
+            return undefined
+          }
+          if (id.includes('@zxing/')) {
+            return 'qr-vendor'
+          }
+          if (id.includes('@simplewebauthn/browser')) {
+            return 'auth-vendor'
+          }
+          if (
+            id.includes('react') ||
+            id.includes('react-dom') ||
+            id.includes('react-router-dom')
+          ) {
+            return 'app-vendor'
+          }
+          if (id.includes('axios')) {
+            return 'data-vendor'
+          }
+          return 'vendor'
+        },
+      },
+    },
+  },
 })

@@ -11051,6 +11051,24 @@ button[class*="bg-slate-900"] {
   }
 }
 
+/* Performance pass: keep the admin atmosphere, but reduce persistent paint-heavy loops. */
+body::before {
+  animation-duration: 40s;
+}
+
+body::after {
+  animation-duration: 32s;
+}
+
+.admin-panel::after {
+  animation-duration: 12s;
+}
+
+.dashboard-hero__pulse,
+.dashboard-hero__pulse-card {
+  animation: none;
+}
+
 @media (max-width: 900px), (hover: none), (pointer: coarse) {
   body::before,
   body::after,

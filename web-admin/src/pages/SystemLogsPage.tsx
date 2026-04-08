@@ -7,6 +7,7 @@ import { ErrorBlock } from '../components/ErrorBlock'
 import { LoadingBlock } from '../components/LoadingBlock'
 import { PageHeader } from '../components/PageHeader'
 import { Panel } from '../components/Panel'
+import { usePageVisibility } from '../hooks/usePageVisibility'
 import type { AuditLog, LocationStatus } from '../types/api'
 
 interface LogFilters {
@@ -195,6 +196,7 @@ function consoleMessageClass(level: ConsoleMessageLevel): string {
 }
 
 export function SystemLogsPage() {
+  const isPageVisible = usePageVisibility()
   const [draftFilters, setDraftFilters] = useState<LogFilters>(DEFAULT_FILTERS)
   const [appliedFilters, setAppliedFilters] = useState<LogFilters>(DEFAULT_FILTERS)
   const [logsPage, setLogsPage] = useState(1)
@@ -223,8 +225,8 @@ export function SystemLogsPage() {
   const logsQuery = useQuery({
     queryKey: ['audit-logs', queryParams],
     queryFn: () => getAuditLogs(queryParams),
-    refetchInterval: followLogs ? 8000 : false,
-    refetchIntervalInBackground: true,
+    refetchInterval: followLogs && isPageVisible ? 12_000 : false,
+    refetchIntervalInBackground: false,
   })
   const employeeContextQuery = useQuery({
     queryKey: ['audit-logs', 'employee-context', filteredEmployeeId],
