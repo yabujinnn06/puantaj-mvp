@@ -2168,6 +2168,7 @@ export function HomePage() {
     }
     return communicationList.find((item) => item.status === 'OPEN') ?? communicationList[0] ?? null
   }, [activeCommunicationId, communicationList, requestedConversationId])
+  const activeCommunicationFeedId = replyCommunication?.id ?? null
   const communicationTimeline = useMemo(
     () => {
       if (!isCommunicationModalOpen || !communicationList.length) {
@@ -2476,31 +2477,14 @@ export function HomePage() {
       setCommunicationList((current) => (areCommunicationListsEquivalent(current, rows) ? current : rows))
       setIsCommunicationReady(true)
 
-      const priorityConversationIds = new Set<number>(
-        [
-          activeCommunicationId,
-          ...rows.filter((item) => item.status === 'OPEN').map((item) => item.id),
-        ].filter((value): value is number => typeof value === 'number' && value > 0),
-      )
+      const targetConversationId =
+        activeCommunicationFeedId
+        ?? rows.find((item) => item.status === 'OPEN')?.id
+        ?? rows[0]?.id
+        ?? null
 
-      for (const conversationId of priorityConversationIds) {
-        await loadCommunicationThread(conversationId)
-      }
-
-      for (const conversation of rows) {
-        if (priorityConversationIds.has(conversation.id)) {
-          continue
-        }
-        const existingThread = communicationThreadsRef.current[conversation.id]
-        const shouldRefreshThread =
-          !existingThread
-          || existingThread?.conversation.last_message_at !== conversation.last_message_at
-          || existingThread.messages.length !== conversation.message_count
-          || existingThread.conversation.status !== conversation.status
-
-        if (shouldRefreshThread) {
-          await loadCommunicationThread(conversation.id)
-        }
+      if (targetConversationId) {
+        await loadCommunicationThread(targetConversationId)
       }
     } catch (error) {
       const parsed = parseApiError(error, 'Canli destek mesajlari yenilenemedi.')
@@ -2508,49 +2492,26 @@ export function HomePage() {
     } finally {
       communicationFeedSyncBusyRef.current = false
     }
-  }, [activeCommunicationId, deviceFingerprint, handleDeviceNotClaimed, isCommunicationModalOpen, loadCommunicationThread])
+  }, [activeCommunicationFeedId, deviceFingerprint, handleDeviceNotClaimed, isCommunicationModalOpen, loadCommunicationThread])
 
   useEffect(() => {
-    if (!isCommunicationModalOpen || !deviceFingerprint || !communicationList.length) {
+    if (!isCommunicationModalOpen || !deviceFingerprint || !activeCommunicationFeedId) {
       return
     }
-    let cancelled = false
-    const prioritizedConversationIds = Array.from(
-      new Set(
-        [
-          activeCommunicationId,
-          ...communicationList.filter((item) => item.status === 'OPEN').map((item) => item.id),
-          ...communicationList.map((item) => item.id),
-        ].filter((value): value is number => typeof value === 'number' && value > 0),
-      ),
-    )
-    const loadVisibleCommunicationTimeline = async () => {
-      for (const conversationId of prioritizedConversationIds) {
-        if (cancelled) {
-          return
-        }
-        if (communicationThreadsById[conversationId] || communicationThreadErrorById[conversationId]) {
-          continue
-        }
-        await loadCommunicationThread(conversationId)
-        if (cancelled || typeof window === 'undefined') {
-          continue
-        }
-        await new Promise<void>((resolve) => {
-          window.setTimeout(resolve, 120)
-        })
-      }
+    if (communicationThreadsById[activeCommunicationFeedId] && !communicationThreadErrorById[activeCommunicationFeedId]) {
+      return
     }
-    const hydrateTimer = typeof window !== 'undefined' ? window.setTimeout(() => void loadVisibleCommunicationTimeline(), 140) : null
+
+    const hydrateTimer = typeof window !== 'undefined'
+      ? window.setTimeout(() => void loadCommunicationThread(activeCommunicationFeedId), 120)
+      : null
     return () => {
-      cancelled = true
       if (typeof window !== 'undefined' && hydrateTimer !== null) {
         window.clearTimeout(hydrateTimer)
       }
     }
   }, [
-    activeCommunicationId,
-    communicationList,
+    activeCommunicationFeedId,
     communicationThreadErrorById,
     communicationThreadsById,
     deviceFingerprint,
@@ -2564,12 +2525,20 @@ export function HomePage() {
     }
 
     void refreshCommunicationFeed()
-    const pollWindow = window.setInterval(() => {
+    const threadPollWindow = activeCommunicationFeedId
+      ? window.setInterval(() => {
+          if (typeof document !== 'undefined' && document.hidden) {
+            return
+          }
+          void loadCommunicationThread(activeCommunicationFeedId)
+        }, 4000)
+      : null
+    const listPollWindow = window.setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) {
         return
       }
       void refreshCommunicationFeed()
-    }, 3000)
+    }, 15000)
 
     const handleVisibilityChange = () => {
       if (typeof document !== 'undefined' && !document.hidden) {
@@ -2582,12 +2551,15 @@ export function HomePage() {
     }
 
     return () => {
-      window.clearInterval(pollWindow)
+      if (threadPollWindow !== null) {
+        window.clearInterval(threadPollWindow)
+      }
+      window.clearInterval(listPollWindow)
       if (typeof document !== 'undefined') {
         document.removeEventListener('visibilitychange', handleVisibilityChange)
       }
     }
-  }, [isCommunicationModalOpen, refreshCommunicationFeed])
+  }, [activeCommunicationFeedId, isCommunicationModalOpen, loadCommunicationThread, refreshCommunicationFeed])
 
   const toggleCommunicationThread = useCallback(
     (conversationId: number) => {

@@ -10,6 +10,21 @@ export default defineConfig({
       output: {
         entryFileNames: 'assets/admin-app.js',
         chunkFileNames: 'assets/[name]-[hash].js',
+        manualChunks: (id) => {
+          if (!id.includes('node_modules')) {
+            return undefined
+          }
+          if (id.includes('leaflet') || id.includes('maplibre-gl')) {
+            return 'maps-vendor'
+          }
+          if (id.includes('@tanstack/react-query') || id.includes('axios') || id.includes('zod')) {
+            return 'data-vendor'
+          }
+          if (id.includes('qrcode')) {
+            return 'qr-vendor'
+          }
+          return 'vendor'
+        },
         assetFileNames: (assetInfo) => {
           const name = assetInfo.name ?? ''
           if (name.endsWith('.css')) {

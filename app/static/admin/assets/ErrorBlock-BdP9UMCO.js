@@ -1,0 +1,1 @@
+import{j as o}from"./vendor-BJCYmYUG.js";function s({message:r}){return o.jsx("div",{className:"error-block admin-panel rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 shadow-sm",children:r})}export{s as E};

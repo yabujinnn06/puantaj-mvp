@@ -1,56 +1,123 @@
+import { Suspense, lazy, type ComponentType } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 
 import { AppLayout } from './components/AppLayout'
+import { LoadingBlock } from './components/LoadingBlock'
 import { AuthGuard } from './auth/AuthGuard'
 import { DefaultAdminRoute, PermissionRoute } from './auth/PermissionRoute'
 import { PublicOnlyRoute } from './auth/PublicOnlyRoute'
-import { AdminDeviceClaimPage } from './pages/AdminDeviceClaimPage'
-import { AttendanceEventsPage } from './pages/AttendanceEventsPage'
-import { DepartmentSummaryReportPage } from './pages/DepartmentSummaryReportPage'
-import { DepartmentsPage } from './pages/DepartmentsPage'
-import { DevicesPage } from './pages/DevicesPage'
-import { ComplianceSettingsPage } from './pages/ComplianceSettingsPage'
-import { ArchivePasswordDownloadPage } from './pages/ArchivePasswordDownloadPage'
-import { AttendanceExtraCheckinApprovalPage } from './pages/AttendanceExtraCheckinApprovalPage'
-import { AdminUsersPage } from './pages/AdminUsersPage'
-import { CommunicationsPage } from './pages/CommunicationsPage'
-import { EmployeeDetailPage } from './pages/EmployeeDetailPage'
-import { EmployeeMonthlyReportPage } from './pages/EmployeeMonthlyReportPage'
-import { EmployeesPage } from './pages/EmployeesPage'
-import { LeavesPage } from './pages/LeavesPage'
-import { LoginPage } from './pages/LoginPage'
-import { LocationMonitorPage } from './pages/LocationMonitorPage'
-import { NotFoundPage } from './pages/NotFoundPage'
-import { PuantajExportPage } from './pages/PuantajExportPage'
-import { QrCodesPage } from './pages/QrCodesPage'
-import { QuickSetupPage } from './pages/QuickSetupPage'
-import { RegionsPage } from './pages/RegionsPage'
-import { NotificationsPage } from './pages/NotificationsPage'
-import { SystemLogsPage } from './pages/SystemLogsPage'
-import { WelcomePage } from './pages/WelcomePage'
-import { WorkRulesPage } from './pages/WorkRulesPage'
+
+function lazyPage<T extends ComponentType>(
+  loader: () => Promise<{ default: T }>,
+) {
+  return lazy(loader)
+}
+
+const AdminDeviceClaimPage = lazyPage(() =>
+  import('./pages/AdminDeviceClaimPage').then((module) => ({ default: module.AdminDeviceClaimPage })),
+)
+const AttendanceEventsPage = lazyPage(() =>
+  import('./pages/AttendanceEventsPage').then((module) => ({ default: module.AttendanceEventsPage })),
+)
+const DepartmentSummaryReportPage = lazyPage(() =>
+  import('./pages/DepartmentSummaryReportPage').then((module) => ({ default: module.DepartmentSummaryReportPage })),
+)
+const DepartmentsPage = lazyPage(() =>
+  import('./pages/DepartmentsPage').then((module) => ({ default: module.DepartmentsPage })),
+)
+const DevicesPage = lazyPage(() =>
+  import('./pages/DevicesPage').then((module) => ({ default: module.DevicesPage })),
+)
+const ComplianceSettingsPage = lazyPage(() =>
+  import('./pages/ComplianceSettingsPage').then((module) => ({ default: module.ComplianceSettingsPage })),
+)
+const ArchivePasswordDownloadPage = lazyPage(() =>
+  import('./pages/ArchivePasswordDownloadPage').then((module) => ({ default: module.ArchivePasswordDownloadPage })),
+)
+const AttendanceExtraCheckinApprovalPage = lazyPage(() =>
+  import('./pages/AttendanceExtraCheckinApprovalPage').then((module) => ({ default: module.AttendanceExtraCheckinApprovalPage })),
+)
+const AdminUsersPage = lazyPage(() =>
+  import('./pages/AdminUsersPage').then((module) => ({ default: module.AdminUsersPage })),
+)
+const CommunicationsPage = lazyPage(() =>
+  import('./pages/CommunicationsPage').then((module) => ({ default: module.CommunicationsPage })),
+)
+const EmployeeDetailPage = lazyPage(() =>
+  import('./pages/EmployeeDetailPage').then((module) => ({ default: module.EmployeeDetailPage })),
+)
+const EmployeeMonthlyReportPage = lazyPage(() =>
+  import('./pages/EmployeeMonthlyReportPage').then((module) => ({ default: module.EmployeeMonthlyReportPage })),
+)
+const EmployeesPage = lazyPage(() =>
+  import('./pages/EmployeesPage').then((module) => ({ default: module.EmployeesPage })),
+)
+const LeavesPage = lazyPage(() =>
+  import('./pages/LeavesPage').then((module) => ({ default: module.LeavesPage })),
+)
+const LoginPage = lazyPage(() =>
+  import('./pages/LoginPage').then((module) => ({ default: module.LoginPage })),
+)
+const LocationMonitorPage = lazyPage(() =>
+  import('./pages/LocationMonitorPage').then((module) => ({ default: module.LocationMonitorPage })),
+)
+const NotFoundPage = lazyPage(() =>
+  import('./pages/NotFoundPage').then((module) => ({ default: module.NotFoundPage })),
+)
+const PuantajExportPage = lazyPage(() =>
+  import('./pages/PuantajExportPage').then((module) => ({ default: module.PuantajExportPage })),
+)
+const QrCodesPage = lazyPage(() =>
+  import('./pages/QrCodesPage').then((module) => ({ default: module.QrCodesPage })),
+)
+const QuickSetupPage = lazyPage(() =>
+  import('./pages/QuickSetupPage').then((module) => ({ default: module.QuickSetupPage })),
+)
+const RegionsPage = lazyPage(() =>
+  import('./pages/RegionsPage').then((module) => ({ default: module.RegionsPage })),
+)
+const NotificationsPage = lazyPage(() =>
+  import('./pages/NotificationsPage').then((module) => ({ default: module.NotificationsPage })),
+)
+const SystemLogsPage = lazyPage(() =>
+  import('./pages/SystemLogsPage').then((module) => ({ default: module.SystemLogsPage })),
+)
+const WelcomePage = lazyPage(() =>
+  import('./pages/WelcomePage').then((module) => ({ default: module.WelcomePage })),
+)
+const WorkRulesPage = lazyPage(() =>
+  import('./pages/WorkRulesPage').then((module) => ({ default: module.WorkRulesPage })),
+)
+
+function renderLazyPage(PageComponent: ComponentType, label = 'Sayfa yukleniyor...') {
+  return (
+    <Suspense fallback={<LoadingBlock label={label} />}>
+      <PageComponent />
+    </Suspense>
+  )
+}
 
 function App() {
   return (
     <Routes>
       <Route element={<PublicOnlyRoute />}>
-        <Route path="/login" element={<LoginPage />} />
+        <Route path="/login" element={renderLazyPage(LoginPage)} />
       </Route>
 
-      <Route path="/device-claim" element={<AdminDeviceClaimPage />} />
-      <Route path="/archive-download" element={<ArchivePasswordDownloadPage />} />
-      <Route path="/attendance-extra-checkin-approval" element={<AttendanceExtraCheckinApprovalPage />} />
+      <Route path="/device-claim" element={renderLazyPage(AdminDeviceClaimPage)} />
+      <Route path="/archive-download" element={renderLazyPage(ArchivePasswordDownloadPage)} />
+      <Route path="/attendance-extra-checkin-approval" element={renderLazyPage(AttendanceExtraCheckinApprovalPage)} />
 
       <Route element={<AuthGuard />}>
         <Route element={<AppLayout />}>
           <Route path="/" element={<DefaultAdminRoute />} />
-          <Route path="/welcome" element={<WelcomePage />} />
+          <Route path="/welcome" element={renderLazyPage(WelcomePage)} />
           <Route path="/management-console" element={<Navigate to="/log" replace />} />
           <Route
             path="/log"
             element={
               <PermissionRoute permission="log">
-                <LocationMonitorPage />
+                {renderLazyPage(LocationMonitorPage)}
               </PermissionRoute>
             }
           />
@@ -61,7 +128,7 @@ function App() {
             path="/regions"
             element={
               <PermissionRoute permission="regions">
-                <RegionsPage />
+                {renderLazyPage(RegionsPage)}
               </PermissionRoute>
             }
           />
@@ -69,7 +136,7 @@ function App() {
             path="/departments"
             element={
               <PermissionRoute permission="departments">
-                <DepartmentsPage />
+                {renderLazyPage(DepartmentsPage)}
               </PermissionRoute>
             }
           />
@@ -77,7 +144,7 @@ function App() {
             path="/employees"
             element={
               <PermissionRoute permission="employees">
-                <EmployeesPage />
+                {renderLazyPage(EmployeesPage)}
               </PermissionRoute>
             }
           />
@@ -85,7 +152,7 @@ function App() {
             path="/employees/:id"
             element={
               <PermissionRoute permission="employees">
-                <EmployeeDetailPage />
+                {renderLazyPage(EmployeeDetailPage)}
               </PermissionRoute>
             }
           />
@@ -93,7 +160,7 @@ function App() {
             path="/quick-setup"
             element={
               <PermissionRoute permission="schedule">
-                <QuickSetupPage />
+                {renderLazyPage(QuickSetupPage)}
               </PermissionRoute>
             }
           />
@@ -101,7 +168,7 @@ function App() {
             path="/work-rules"
             element={
               <PermissionRoute permission="work_rules">
-                <WorkRulesPage />
+                {renderLazyPage(WorkRulesPage)}
               </PermissionRoute>
             }
           />
@@ -109,7 +176,7 @@ function App() {
             path="/attendance-events"
             element={
               <PermissionRoute permission="attendance_events">
-                <AttendanceEventsPage />
+                {renderLazyPage(AttendanceEventsPage)}
               </PermissionRoute>
             }
           />
@@ -117,7 +184,7 @@ function App() {
             path="/devices"
             element={
               <PermissionRoute permission="devices">
-                <DevicesPage />
+                {renderLazyPage(DevicesPage)}
               </PermissionRoute>
             }
           />
@@ -125,7 +192,7 @@ function App() {
             path="/compliance-settings"
             element={
               <PermissionRoute permission="compliance">
-                <ComplianceSettingsPage />
+                {renderLazyPage(ComplianceSettingsPage)}
               </PermissionRoute>
             }
           />
@@ -133,7 +200,7 @@ function App() {
             path="/leaves"
             element={
               <PermissionRoute permission="leaves">
-                <LeavesPage />
+                {renderLazyPage(LeavesPage)}
               </PermissionRoute>
             }
           />
@@ -141,7 +208,7 @@ function App() {
             path="/qr-kodlar"
             element={
               <PermissionRoute permission="qr_codes">
-                <QrCodesPage />
+                {renderLazyPage(QrCodesPage)}
               </PermissionRoute>
             }
           />
@@ -149,7 +216,7 @@ function App() {
             path="/reports/employee-monthly"
             element={
               <PermissionRoute permission="reports">
-                <EmployeeMonthlyReportPage />
+                {renderLazyPage(EmployeeMonthlyReportPage)}
               </PermissionRoute>
             }
           />
@@ -157,7 +224,7 @@ function App() {
             path="/reports/department-summary"
             element={
               <PermissionRoute permission="reports">
-                <DepartmentSummaryReportPage />
+                {renderLazyPage(DepartmentSummaryReportPage)}
               </PermissionRoute>
             }
           />
@@ -165,7 +232,7 @@ function App() {
             path="/reports/excel-export"
             element={
               <PermissionRoute permission="reports">
-                <PuantajExportPage />
+                {renderLazyPage(PuantajExportPage)}
               </PermissionRoute>
             }
           />
@@ -173,7 +240,7 @@ function App() {
             path="/notifications"
             element={
               <PermissionRoute permission="notifications">
-                <NotificationsPage />
+                {renderLazyPage(NotificationsPage)}
               </PermissionRoute>
             }
           />
@@ -181,7 +248,7 @@ function App() {
             path="/communications"
             element={
               <PermissionRoute permission="notifications">
-                <CommunicationsPage />
+                {renderLazyPage(CommunicationsPage)}
               </PermissionRoute>
             }
           />
@@ -189,7 +256,7 @@ function App() {
             path="/audit-logs"
             element={
               <PermissionRoute permission="audit_logs">
-                <SystemLogsPage />
+                {renderLazyPage(SystemLogsPage)}
               </PermissionRoute>
             }
           />
@@ -197,14 +264,14 @@ function App() {
             path="/admin-users"
             element={
               <PermissionRoute permission="admin_users">
-                <AdminUsersPage />
+                {renderLazyPage(AdminUsersPage)}
               </PermissionRoute>
             }
           />
         </Route>
       </Route>
 
-      <Route path="*" element={<NotFoundPage />} />
+      <Route path="*" element={renderLazyPage(NotFoundPage)} />
     </Routes>
   )
 }

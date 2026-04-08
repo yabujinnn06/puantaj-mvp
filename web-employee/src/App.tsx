@@ -10,6 +10,31 @@ import { getPendingClaimToken } from './utils/claimToken'
 import { getStoredDeviceFingerprint } from './utils/device'
 import { getCachedLocation, getCurrentLocation } from './utils/location'
 
+const EMPLOYEE_BOOT_LOADER_SESSION_KEY = 'pf_employee_boot_loader_seen_v2'
+const EMPLOYEE_BOOT_LOADER_MIN_MS = 450
+
+function shouldShowEmployeeBootLoader(): boolean {
+  if (typeof window === 'undefined') {
+    return false
+  }
+  try {
+    return window.sessionStorage.getItem(EMPLOYEE_BOOT_LOADER_SESSION_KEY) !== '1'
+  } catch {
+    return false
+  }
+}
+
+function markEmployeeBootLoaderSeen(): void {
+  if (typeof window === 'undefined') {
+    return
+  }
+  try {
+    window.sessionStorage.setItem(EMPLOYEE_BOOT_LOADER_SESSION_KEY, '1')
+  } catch {
+    // best effort
+  }
+}
+
 function EmployeeRouteGuard({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
   const location = useLocation()
@@ -169,16 +194,20 @@ function EmployeePresenceTracker() {
 }
 
 export default function App() {
-  const [showBootLoader, setShowBootLoader] = useState(true)
+  const [showBootLoader, setShowBootLoader] = useState(() => shouldShowEmployeeBootLoader())
 
   useEffect(() => {
+    if (!showBootLoader) {
+      return
+    }
+    markEmployeeBootLoaderSeen()
     const timer = window.setTimeout(() => {
       setShowBootLoader(false)
-    }, 3200)
+    }, EMPLOYEE_BOOT_LOADER_MIN_MS)
     return () => {
       window.clearTimeout(timer)
     }
-  }, [])
+  }, [showBootLoader])
 
   return (
     <>
