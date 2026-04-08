@@ -10,8 +10,8 @@ import { getPendingClaimToken } from './utils/claimToken'
 import { getStoredDeviceFingerprint } from './utils/device'
 import { getCachedLocation, getCurrentLocation } from './utils/location'
 
-const EMPLOYEE_BOOT_LOADER_SESSION_KEY = 'pf_employee_boot_loader_seen_v3'
-const EMPLOYEE_BOOT_LOADER_MIN_MS = 520
+const EMPLOYEE_BOOT_LOADER_SESSION_KEY = 'pf_employee_boot_loader_seen_v4'
+const EMPLOYEE_BOOT_LOADER_MIN_MS = 1000
 
 function shouldShowEmployeeBootLoader(): boolean {
   if (typeof window === 'undefined') {
