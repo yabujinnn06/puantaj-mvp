@@ -10,8 +10,8 @@ import { getPendingClaimToken } from './utils/claimToken'
 import { getStoredDeviceFingerprint } from './utils/device'
 import { getCachedLocation, getCurrentLocation } from './utils/location'
 
-const EMPLOYEE_BOOT_LOADER_SESSION_KEY = 'pf_employee_boot_loader_seen_v2'
-const EMPLOYEE_BOOT_LOADER_MIN_MS = 450
+const EMPLOYEE_BOOT_LOADER_SESSION_KEY = 'pf_employee_boot_loader_seen_v3'
+const EMPLOYEE_BOOT_LOADER_MIN_MS = 520
 
 function shouldShowEmployeeBootLoader(): boolean {
   if (typeof window === 'undefined') {
@@ -215,46 +215,28 @@ export default function App() {
 
       {showBootLoader ? (
         <div
-          className="employee-boot-loader"
+          className="employee-app-entry-loader"
           role="status"
           aria-live="polite"
           aria-label="Uygulama açılıyor"
         >
-          <div className="employee-boot-loader-center">
-            <div className="employee-boot-loader-stage" aria-hidden="true">
-              <div className="employee-boot-loader-shadow" />
-              <div className="employee-boot-loader-nebula employee-boot-loader-nebula--back" />
-              <div className="employee-boot-loader-nebula employee-boot-loader-nebula--front" />
-              <div className="employee-boot-loader-aura" />
-              <div className="employee-boot-loader-orbit employee-boot-loader-orbit--outer" />
-              <div className="employee-boot-loader-orbit employee-boot-loader-orbit--mid" />
-              <div className="employee-boot-loader-orbit employee-boot-loader-orbit--inner" />
-              <div className="employee-boot-loader-orbit employee-boot-loader-orbit--polar" />
-              <div className="employee-boot-loader-satellite employee-boot-loader-satellite--outer">
-                <div className="employee-boot-loader-satellite-core" />
-              </div>
-              <div className="employee-boot-loader-satellite employee-boot-loader-satellite--mid">
-                <div className="employee-boot-loader-satellite-core" />
-              </div>
-              <div className="employee-boot-loader-satellite employee-boot-loader-satellite--inner">
-                <div className="employee-boot-loader-satellite-core" />
-              </div>
-              <div className="employee-boot-loader-logo">
-                <div className="employee-boot-loader-logo-depth" />
-                <div className="employee-boot-loader-logo-halo" />
-                <div className="employee-boot-loader-ring employee-boot-loader-ring--back" />
-                <div className="employee-boot-loader-core">
-                  <span className="employee-boot-loader-monogram">Y</span>
-                  <span className="employee-boot-loader-brand">YABUJIN</span>
-                  <span className="employee-boot-loader-sub">EMPLOYEE CORE</span>
-                </div>
-                <div className="employee-boot-loader-ring employee-boot-loader-ring--front" />
-                <div className="employee-boot-loader-spark employee-boot-loader-spark--a" />
-                <div className="employee-boot-loader-spark employee-boot-loader-spark--b" />
+          <div className="employee-app-entry-loader-shell">
+            <div className="employee-app-entry-loader-signal" aria-hidden="true">
+              <div className="employee-app-entry-loader-halo" />
+              <div className="employee-app-entry-loader-ring" />
+              <div className="employee-app-entry-loader-ring employee-app-entry-loader-ring--inner" />
+              <div className="employee-app-entry-loader-ping" />
+              <div className="employee-app-entry-loader-scanline" />
+              <div className="employee-app-entry-loader-core">
+                <span className="employee-app-entry-loader-brand">YABUJIN</span>
+                <span className="employee-app-entry-loader-sub">QR READY</span>
               </div>
             </div>
-            <p className="employee-boot-loader-text">Sistem hazırlanıyor...</p>
-            <p className="employee-boot-loader-caption">Güvenli çalışma katmanı yükleniyor</p>
+            <div className="employee-app-entry-loader-copy">
+              <p className="employee-app-entry-loader-kicker">MAVİ GİRİŞ</p>
+              <p className="employee-app-entry-loader-text">Uygulama açılıyor</p>
+              <p className="employee-app-entry-loader-caption">QR çalışma ekranı hazırlanıyor</p>
+            </div>
           </div>
         </div>
       ) : null}
