@@ -40,9 +40,6 @@ const AttendanceExtraCheckinApprovalPage = lazyPage(() =>
 const AdminUsersPage = lazyPage(() =>
   import('./pages/AdminUsersPage').then((module) => ({ default: module.AdminUsersPage })),
 )
-const CommunicationsPage = lazyPage(() =>
-  import('./pages/CommunicationsPage').then((module) => ({ default: module.CommunicationsPage })),
-)
 const EmployeeDetailPage = lazyPage(() =>
   import('./pages/EmployeeDetailPage').then((module) => ({ default: module.EmployeeDetailPage })),
 )
@@ -244,14 +241,7 @@ function App() {
               </PermissionRoute>
             }
           />
-          <Route
-            path="/communications"
-            element={
-              <PermissionRoute permission="notifications">
-                {renderLazyPage(CommunicationsPage)}
-              </PermissionRoute>
-            }
-          />
+          <Route path="/communications" element={<Navigate to="/notifications" replace />} />
           <Route
             path="/audit-logs"
             element={

@@ -6408,6 +6408,58 @@ textarea:focus {
   }
 }
 
+@media (max-width: 900px), (hover: none), (pointer: coarse) {
+  .employee-boot-loader,
+  .employee-boot-loader-nebula,
+  .employee-boot-loader-aura,
+  .employee-boot-loader-orbit,
+  .employee-boot-loader-ring,
+  .employee-boot-loader-satellite,
+  .employee-boot-loader-spark,
+  .employee-boot-loader-logo,
+  .employee-boot-loader-core,
+  .employee-boot-loader-shadow,
+  .employee-home-header-card-cascade,
+  .employee-main-action-card,
+  .employee-main-action-card::before,
+  .employee-main-action-card::after,
+  .employee-main-action-primary-btn.is-radar-ready,
+  .employee-main-action-primary-btn.is-radar-ready::before,
+  .employee-main-action-primary-btn.is-radar-ready::after,
+  .employee-main-action-primary-btn.is-radar-ready .employee-main-action-primary-glyph-ring-a,
+  .employee-main-action-primary-btn.is-radar-ready .employee-main-action-primary-glyph-ring-b,
+  .employee-main-action-primary-btn.is-radar-ready .employee-main-action-primary-glyph-core,
+  .employee-main-action-primary-btn.is-radar-ready .employee-main-action-primary-glyph-scan,
+  .employee-main-action-primary-btn.is-radar-ready .employee-main-action-primary-label,
+  .employee-main-action-primary-btn.is-radar-ready .employee-main-action-primary-bracket,
+  .employee-last-action-card.is-fresh,
+  .employee-last-action-time.is-fresh,
+  .employee-secondary-section[open],
+  .demo-visit-btn::before,
+  .demo-visit-btn::after,
+  .action-cta-btn::before,
+  .action-cta-btn::after,
+  .scan-success-halo,
+  .scan-success-ring,
+  .scan-success-spark,
+  .scan-success-core,
+  .checkout-confirm-light {
+    animation: none !important;
+  }
+
+  .employee-boot-loader {
+    display: none;
+  }
+
+  .employee-main-action-primary-btn,
+  .demo-visit-btn,
+  .action-cta-btn,
+  .employee-secondary-summary,
+  .btn {
+    transition-duration: 120ms !important;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

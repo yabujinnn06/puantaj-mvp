@@ -160,12 +160,6 @@ export const adminNavItems: AdminNavItem[] = [
     section: 'administration',
   },
   {
-    to: '/communications',
-    label: 'Kurumsal Iletisim',
-    permission: 'notifications',
-    section: 'administration',
-  },
-  {
     to: '/audit-logs',
     label: 'Sistem Logları',
     permission: 'audit_logs',
@@ -216,7 +210,7 @@ export const adminPageTitles: Record<string, string> = {
   '/reports/department-summary': 'Departman Özeti',
   '/reports/excel-export': 'Excel Disa Aktar',
   '/notifications': 'Bildirimler',
-  '/communications': 'Kurumsal Iletisim',
+  '/communications': 'Bildirimler',
   '/audit-logs': 'Sistem Logları',
   '/admin-users': 'Admin Kullanıcıları',
 }

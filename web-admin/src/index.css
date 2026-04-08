@@ -11051,6 +11051,45 @@ button[class*="bg-slate-900"] {
   }
 }
 
+@media (max-width: 900px), (hover: none), (pointer: coarse) {
+  body::before,
+  body::after,
+  .admin-shell::before,
+  .admin-shell::after,
+  .admin-panel::after,
+  .welcome-hero-logo__planet,
+  .welcome-hero-logo__shadow,
+  .welcome-hero-logo__nebula,
+  .welcome-hero-logo__aura,
+  .welcome-hero-logo__orbit,
+  .welcome-hero-logo__ring,
+  .welcome-hero-logo__satellite,
+  .welcome-hero-logo__spark,
+  .welcome-hero-logo__core,
+  .dashboard-hero__pulse,
+  .dashboard-hero__pulse-card,
+  .cr-map-marker__pulse,
+  .control-room-boot-orbit,
+  .mobile-nav-loader,
+  .mobile-nav-loader-halo,
+  .mobile-nav-loader-ring,
+  .mobile-nav-loader-spark,
+  .mobile-nav-loader-core {
+    animation: none !important;
+  }
+
+  .loading-block__visual {
+    display: none;
+  }
+
+  .admin-panel,
+  .welcome-page,
+  .cr-ops-page,
+  .btn {
+    transition-duration: 120ms !important;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .cr-map-marker__pulse,
   .cr-mobile-sheet__panel,

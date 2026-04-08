@@ -187,6 +187,8 @@ const LEAVE_ATTACHMENT_ACCEPT = [
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ].join(',')
 
+const EMPLOYEE_LIVE_SUPPORT_ENABLED = false
+
 function formatAttachmentSize(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) {
     return '0 KB'
@@ -1868,6 +1870,12 @@ export function HomePage() {
       setIsCommunicationReady(false)
       return
     }
+    if (!EMPLOYEE_LIVE_SUPPORT_ENABLED) {
+      setCommunicationList([])
+      setIsCommunicationLoading(false)
+      setIsCommunicationReady(false)
+      return
+    }
     if (!isCommunicationModalOpen) {
       return
     }
@@ -2142,6 +2150,9 @@ export function HomePage() {
     : null
   const showSupportComposer = isCommunicationComposerOpen || !hasCommunicationHistory
   const requestedConversationId = useMemo(() => {
+    if (!EMPLOYEE_LIVE_SUPPORT_ENABLED) {
+      return null
+    }
     const params = new URLSearchParams(location.search)
     if (params.get('communication') !== '1') {
       return null
@@ -2363,6 +2374,9 @@ export function HomePage() {
       subject?: string
       message?: string
     }) => {
+      if (!EMPLOYEE_LIVE_SUPPORT_ENABLED) {
+        return
+      }
       setCommunicationFormError(null)
       setCommunicationCategory(preset?.category ?? 'ATTENDANCE')
       setCommunicationSubject(preset?.subject ?? '')
@@ -2382,12 +2396,18 @@ export function HomePage() {
   }, [])
 
   const openCommunicationModal = useCallback(() => {
+    if (!EMPLOYEE_LIVE_SUPPORT_ENABLED) {
+      return
+    }
     setCommunicationFormError(null)
     setIsCommunicationComposerOpen(false)
     setIsCommunicationModalOpen(true)
   }, [])
 
   const openLeaveCommunicationModal = useCallback((leave?: EmployeeLeaveRecord) => {
+    if (!EMPLOYEE_LIVE_SUPPORT_ENABLED) {
+      return
+    }
     const leaveRange = leave ? formatLeaveRange(leave.start_date, leave.end_date) : null
     setIsLeaveModalOpen(false)
     openCommunicationComposer({
@@ -2417,7 +2437,7 @@ export function HomePage() {
   }, [isCommunicationSubmitting, resetCommunicationComposerState])
 
   useEffect(() => {
-    if (!isCommunicationModalOpen || typeof window === 'undefined') {
+    if (!EMPLOYEE_LIVE_SUPPORT_ENABLED || !isCommunicationModalOpen || typeof window === 'undefined') {
       return
     }
 
@@ -2446,7 +2466,7 @@ export function HomePage() {
 
   const loadCommunicationThread = useCallback(
     async (conversationId: number) => {
-      if (!deviceFingerprint) {
+      if (!EMPLOYEE_LIVE_SUPPORT_ENABLED || !deviceFingerprint) {
         return
       }
       setCommunicationThreadLoadingId(conversationId)
@@ -2467,7 +2487,7 @@ export function HomePage() {
   )
 
   const refreshCommunicationFeed = useCallback(async () => {
-    if (!deviceFingerprint || !isCommunicationModalOpen || communicationFeedSyncBusyRef.current) {
+    if (!EMPLOYEE_LIVE_SUPPORT_ENABLED || !deviceFingerprint || !isCommunicationModalOpen || communicationFeedSyncBusyRef.current) {
       return
     }
 
@@ -4842,7 +4862,7 @@ export function HomePage() {
                                           >
                                             {activeLeaveThreadId === leave.id ? 'Detayı Gizle' : 'Detayı Gör'}
                                           </button>
-                                          {deviceFingerprint ? (
+                                          {EMPLOYEE_LIVE_SUPPORT_ENABLED && deviceFingerprint ? (
                                             <button
                                               type="button"
                                               className="btn btn-ghost leave-thread-toggle-btn"
@@ -5839,6 +5859,8 @@ export function HomePage() {
           type="button"
           className="employee-support-fab employee-support-fab--legacy"
           aria-label="Canlı desteği aç"
+          hidden={!EMPLOYEE_LIVE_SUPPORT_ENABLED}
+          aria-hidden={!EMPLOYEE_LIVE_SUPPORT_ENABLED}
           onClick={openCommunicationModal}
         >
           <span className="employee-support-fab-icon" aria-hidden="true">
@@ -5850,12 +5872,14 @@ export function HomePage() {
           </span>
         </button>
 
-        {!isCommunicationModalOpen && typeof document !== 'undefined'
+        {EMPLOYEE_LIVE_SUPPORT_ENABLED && !isCommunicationModalOpen && typeof document !== 'undefined'
           ? createPortal(
               <button
                 type="button"
                 className="employee-support-fab employee-support-fab--legacy"
-                aria-label="CanlÄ± desteÄŸi aÃ§"
+          aria-label="CanlÄ± desteÄŸi aÃ§"
+          hidden={!EMPLOYEE_LIVE_SUPPORT_ENABLED}
+          aria-hidden={!EMPLOYEE_LIVE_SUPPORT_ENABLED}
                 aria-haspopup="dialog"
                 aria-expanded="false"
                 onClick={openCommunicationModal}
@@ -5872,7 +5896,7 @@ export function HomePage() {
             )
           : null}
 
-        {!isCommunicationModalOpen && typeof document !== 'undefined'
+        {EMPLOYEE_LIVE_SUPPORT_ENABLED && !isCommunicationModalOpen && typeof document !== 'undefined'
           ? createPortal(
               <button
                 type="button"
@@ -6027,9 +6051,9 @@ export function HomePage() {
                   </span>
                 ) : null}
               </label>
-              <div className="warn-box">
+              <div className="warn-box" hidden={!EMPLOYEE_LIVE_SUPPORT_ENABLED} aria-hidden={!EMPLOYEE_LIVE_SUPPORT_ENABLED}>
                 <p>Yöneticiye soru veya ek açıklama göndermek için ayrı canlı destek alanını kullan.</p>
-                {deviceFingerprint ? (
+                {EMPLOYEE_LIVE_SUPPORT_ENABLED && deviceFingerprint ? (
                   <button
                     type="button"
                     className="btn btn-soft"
@@ -6058,7 +6082,7 @@ export function HomePage() {
           </EmployeeFocusModal>
         ) : null}
 
-        {isCommunicationModalOpen ? (
+        {EMPLOYEE_LIVE_SUPPORT_ENABLED && isCommunicationModalOpen ? (
           <EmployeeFocusModal
             titleId="employee-communication-modal-title"
             descriptionId="employee-communication-modal-description"
