@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import logging
 import hashlib
 from math import ceil
 
@@ -11,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.audit import log_audit
 from app.db import get_db
 from app.errors import ApiError
-from app.models import AuditActorType, Device, DeviceInvite, Employee
+from app.models import AttendanceType, AuditActorType, Device, DeviceInvite, Employee
 from app.schemas import (
     AttendanceActionResponse,
     AttendanceCheckinRequest,
@@ -68,6 +69,7 @@ from app.services.location_events import sync_location_event_from_audit_log
 from app.services.push_notifications import (
     deactivate_device_push_subscription,
     get_push_public_config,
+    send_push_to_employees,
     send_test_push_to_device_subscription,
     upsert_device_push_subscription,
 )
@@ -112,6 +114,43 @@ router = APIRouter(tags=["attendance"])
 settings = get_settings()
 DEVICE_FINGERPRINT_COOKIE = "pf_device_fingerprint"
 DEVICE_FINGERPRINT_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365 * 3
+logger = logging.getLogger(__name__)
+
+
+def _notify_employee_about_attendance_action(db: Session, *, event) -> None:  # type: ignore[no-untyped-def]
+    if event.type == AttendanceType.IN:
+        title = "Mesainiz başladı"
+        body = "Giriş kaydınız başarıyla alındı."
+        notification_type = "ATTENDANCE_SHIFT_STARTED"
+    elif event.type == AttendanceType.OUT:
+        title = "Mesainiz bitti"
+        body = "Çıkış kaydınız başarıyla alındı."
+        notification_type = "ATTENDANCE_SHIFT_ENDED"
+    else:
+        return
+
+    try:
+        send_push_to_employees(
+            db,
+            employee_ids=[event.employee_id],
+            title=title,
+            body=body,
+            data={
+                "type": notification_type,
+                "employee_id": event.employee_id,
+                "event_id": event.id,
+                "url": "/employee/",
+            },
+        )
+    except Exception:
+        logger.exception(
+            "attendance_employee_push_failed",
+            extra={
+                "employee_id": event.employee_id,
+                "event_id": event.id,
+                "event_type": event.type.value,
+            },
+        )
 
 
 async def _read_leave_attachment_upload(upload: UploadFile | None) -> LeaveAttachmentPayload | None:
@@ -283,6 +322,7 @@ def checkin(
         },
         request_id=getattr(request.state, "request_id", None),
     )
+    _notify_employee_about_attendance_action(db, event=event)
     return AttendanceActionResponse(
         ok=True,
         employee_id=event.employee_id,
@@ -335,6 +375,7 @@ def checkout(
         },
         request_id=getattr(request.state, "request_id", None),
     )
+    _notify_employee_about_attendance_action(db, event=event)
     return AttendanceActionResponse(
         ok=True,
         employee_id=event.employee_id,
@@ -423,6 +464,8 @@ def employee_qr_scan(
         },
         request_id=getattr(request.state, "request_id", None),
     )
+
+    _notify_employee_about_attendance_action(db, event=event)
 
     return AttendanceActionResponse(
         ok=True,
