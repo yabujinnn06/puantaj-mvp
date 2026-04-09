@@ -9847,6 +9847,11 @@ button[class*="bg-slate-900"] {
   overflow-x: clip;
 }
 
+.welcome-page > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .welcome-reveal {
   opacity: 0;
   transform: translateY(18px);
@@ -9953,6 +9958,8 @@ button[class*="bg-slate-900"] {
 .welcome-hero__content h2 {
   font-size: clamp(2.2rem, 5vw, 4rem);
   max-width: 12ch;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .welcome-table-panel__head h3 {
@@ -9982,6 +9989,8 @@ button[class*="bg-slate-900"] {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
+  min-width: 0;
+  max-width: 100%;
   min-height: 40px;
   border-radius: 999px;
   border: 1px solid rgba(197, 209, 220, 0.92);
@@ -10084,11 +10093,15 @@ button[class*="bg-slate-900"] {
   display: grid;
   gap: 0.9rem;
   align-content: start;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .welcome-scene {
   position: relative;
   min-height: 420px;
+  width: 100%;
+  max-width: 100%;
   display: grid;
   justify-items: center;
   align-content: center;
@@ -10181,6 +10194,7 @@ button[class*="bg-slate-900"] {
   position: relative;
   z-index: 2;
   width: min(100%, 320px);
+  max-width: 100%;
   display: flex;
   align-items: center;
   gap: 0.9rem;
@@ -10308,6 +10322,8 @@ button[class*="bg-slate-900"] {
   font-weight: 900;
   color: #17384c;
   text-transform: uppercase;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .welcome-scene__signature-copy span {
@@ -10316,6 +10332,8 @@ button[class*="bg-slate-900"] {
   font-weight: 700;
   color: #597384;
   text-transform: uppercase;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .welcome-hero-logo {
@@ -11390,7 +11408,9 @@ button[class*="bg-slate-900"] {
 
   .welcome-hero__content h2 {
     max-width: none;
-    font-size: clamp(2rem, 11vw, 2.85rem);
+    font-size: clamp(1.7rem, 8.6vw, 2.35rem);
+    line-height: 1.02;
+    letter-spacing: -0.04em;
   }
 
   .welcome-chip {
@@ -11402,6 +11422,10 @@ button[class*="bg-slate-900"] {
     min-height: 0;
     gap: 0.85rem;
     padding-top: 1.2rem;
+  }
+
+  .welcome-hero__visual {
+    display: none;
   }
 
   .welcome-scene__chip {
