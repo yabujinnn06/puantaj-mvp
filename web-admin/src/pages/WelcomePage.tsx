@@ -45,15 +45,18 @@ type WelcomeTableRow = {
 type WelcomeAbsenceRow = {
   jobId: number
   employeeId: number | null
+  employeeKey: string | null
   fullName: string
   departmentName: string
   shiftWindow: string
   shiftDate: string
   status: 'PENDING' | 'SENDING' | 'SENT' | 'CANCELED' | 'FAILED'
+  consecutiveAbsenceDays: number
 }
 
 const WELCOME_PAGE_SIZES = [12, 24, 48]
 const WELCOME_ABSENCE_LIMIT = 200
+const WELCOME_ABSENCE_QUERY_LIMIT = WELCOME_ABSENCE_LIMIT * 2
 const TYPE_ABSENCE = 'devamsizlik'
 const ABSENCE_BOARD_ID = 'absence-board'
 
@@ -96,6 +99,46 @@ function formatIsoDayLabel(value: string): string {
 function readPayloadText(payload: Record<string, unknown>, key: string): string {
   const value = payload[key]
   return typeof value === 'string' ? value.trim() : ''
+}
+
+function shiftIsoDay(value: string, offsetDays: number): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (!match) return value
+
+  const [, year, month, day] = match
+  const reference = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), 12, 0, 0))
+  reference.setUTCDate(reference.getUTCDate() + offsetDays)
+  return reference.toISOString().slice(0, 10)
+}
+
+function resolveAbsenceEmployeeId(payload: Record<string, unknown>, fallbackEmployeeId: number | null): number | null {
+  const payloadEmployeeId = payload.employee_id
+  if (typeof payloadEmployeeId === 'number' && payloadEmployeeId > 0) {
+    return payloadEmployeeId
+  }
+  if (typeof payloadEmployeeId === 'string' && /^\d+$/.test(payloadEmployeeId.trim())) {
+    return Number(payloadEmployeeId.trim())
+  }
+  return fallbackEmployeeId
+}
+
+function resolveAbsenceEmployeeKey(employeeId: number | null): string | null {
+  return employeeId != null ? `employee:${employeeId}` : null
+}
+
+function absenceStatusTone(status: WelcomeAbsenceRow['status']): string {
+  if (status === 'SENT') return 'is-verified'
+  if (status === 'FAILED') return 'is-alert'
+  if (status === 'PENDING' || status === 'SENDING') return 'is-waiting'
+  return 'is-muted'
+}
+
+function absenceStatusLabel(status: WelcomeAbsenceRow['status']): string {
+  if (status === 'SENT') return 'Gonderildi'
+  if (status === 'FAILED') return 'Hata'
+  if (status === 'SENDING') return 'Gonderiliyor'
+  if (status === 'PENDING') return 'Bekliyor'
+  return 'Iptal'
 }
 
 function compareRows(
@@ -217,6 +260,7 @@ export function WelcomePage() {
   }, [location.hash, location.search])
 
   const [absenceDate, setAbsenceDate] = useState(requestedAbsenceDate)
+  const previousAbsenceDate = useMemo(() => shiftIsoDay(absenceDate, -1), [absenceDate])
 
   const employeesQuery = useQuery({
     queryKey: controlRoomQueryKeys.employees,
@@ -254,14 +298,14 @@ export function WelcomePage() {
 
   const absenceJobsQuery = useQuery({
     enabled: canViewAbsenceBoard,
-    queryKey: ['welcome', 'absence-board', absenceDate],
+    queryKey: ['welcome', 'absence-board', previousAbsenceDate, absenceDate],
     queryFn: () =>
       getNotificationJobs({
         audience: 'admin',
         notification_type: TYPE_ABSENCE,
-        start_date: absenceDate,
+        start_date: previousAbsenceDate,
         end_date: absenceDate,
-        limit: WELCOME_ABSENCE_LIMIT,
+        limit: WELCOME_ABSENCE_QUERY_LIMIT,
         offset: 0,
       }),
     staleTime: 60_000,
@@ -420,21 +464,13 @@ export function WelcomePage() {
 
   const absenceRows = useMemo<WelcomeAbsenceRow[]>(() => {
     const seenEmployeeDays = new Set<string>()
-
-    return (absenceJobsQuery.data?.items ?? []).flatMap((job) => {
+    const normalizedRows = (absenceJobsQuery.data?.items ?? []).flatMap((job) => {
       const payload = job.payload ?? {}
       const shiftDate =
         normalizeIsoDay(readPayloadText(payload, 'shift_date')) ?? normalizeIsoDay(job.local_day) ?? absenceDate
 
-      const payloadEmployeeId = payload.employee_id
-      let employeeId = job.employee_id
-      if (typeof payloadEmployeeId === 'number' && payloadEmployeeId > 0) {
-        employeeId = payloadEmployeeId
-      } else if (typeof payloadEmployeeId === 'string' && /^\d+$/.test(payloadEmployeeId.trim())) {
-        employeeId = Number(payloadEmployeeId.trim())
-      }
-
-      const dedupeKey = `${employeeId ?? job.id}:${shiftDate}`
+      const employeeId = resolveAbsenceEmployeeId(payload, job.employee_id)
+      const dedupeKey = `${employeeId ?? `job:${job.id}`}:${shiftDate}`
       if (seenEmployeeDays.has(dedupeKey)) {
         return []
       }
@@ -444,15 +480,37 @@ export function WelcomePage() {
         {
           jobId: job.id,
           employeeId,
+          employeeKey: resolveAbsenceEmployeeKey(employeeId),
           fullName: readPayloadText(payload, 'employee_full_name') || `Calisan #${employeeId ?? job.id}`,
           departmentName: readPayloadText(payload, 'department_name') || 'Departman belirtilmedi',
           shiftWindow: readPayloadText(payload, 'shift_window_local') || job.shift_summary || 'Vardiya bilgisi yok',
           shiftDate,
           status: job.status,
+          consecutiveAbsenceDays: 1,
         },
       ]
     })
-  }, [absenceDate, absenceJobsQuery.data?.items])
+    const previousDayEmployeeKeys = new Set(
+      normalizedRows
+        .filter((row) => row.shiftDate === previousAbsenceDate && row.employeeKey)
+        .map((row) => row.employeeKey as string),
+    )
+
+    return normalizedRows
+      .filter((row) => row.shiftDate === absenceDate)
+      .map((row) => ({
+        ...row,
+        consecutiveAbsenceDays: row.employeeKey && previousDayEmployeeKeys.has(row.employeeKey) ? 2 : 1,
+      }))
+      .sort((left, right) => {
+        if (right.consecutiveAbsenceDays !== left.consecutiveAbsenceDays) {
+          return right.consecutiveAbsenceDays - left.consecutiveAbsenceDays
+        }
+        const departmentCompare = left.departmentName.localeCompare(right.departmentName, 'tr')
+        if (departmentCompare !== 0) return departmentCompare
+        return left.fullName.localeCompare(right.fullName, 'tr')
+      })
+  }, [absenceDate, absenceJobsQuery.data?.items, previousAbsenceDate])
 
   const absenceDayLabel = useMemo(() => formatIsoDayLabel(absenceDate), [absenceDate])
 
@@ -468,6 +526,11 @@ export function WelcomePage() {
 
   const absenceDeliveredCount = useMemo(
     () => absenceRows.filter((row) => row.status === 'SENT').length,
+    [absenceRows],
+  )
+
+  const absenceStreakCount = useMemo(
+    () => absenceRows.filter((row) => row.consecutiveAbsenceDays >= 2).length,
     [absenceRows],
   )
 
@@ -632,8 +695,8 @@ export function WelcomePage() {
             <div className="welcome-absence-panel__head welcome-reveal is-delay-6">
               <div>
                 <p className="welcome-panel-kicker">GUNLUK DEVAMSIZLIK</p>
-                <h3>{absenceDayLabel} icin devamsizlik panosu</h3>
-                <p>Admin absence bildirimiyle gelen calisanlari sade bir listede buradan takip edebilirsiniz.</p>
+                <h3>{absenceDayLabel} devamsizlik tablosu</h3>
+                <p>Secilen gunde devamsizlik yapan calisanlar burada gunluk tablo halinde listelenir.</p>
               </div>
 
               <div className="welcome-absence-panel__actions">
@@ -671,48 +734,60 @@ export function WelcomePage() {
             ) : (
               <>
                 <div className="welcome-absence-summary">
-                  <article className="welcome-absence-metric">
-                    <span>Kayitli calisan</span>
-                    <strong>{absenceRows.length}</strong>
-                  </article>
-                  <article className="welcome-absence-metric">
-                    <span>Departman yayilimi</span>
-                    <strong>{absenceDepartmentCount}</strong>
-                  </article>
-                  <article className="welcome-absence-metric">
-                    <span>Teslim / bekleyen</span>
-                    <strong>
-                      {absenceDeliveredCount} / {absencePendingCount}
-                    </strong>
-                  </article>
+                  <span className="welcome-absence-summary-chip">{absenceRows.length} calisan</span>
+                  <span className="welcome-absence-summary-chip">{absenceDepartmentCount} departman</span>
+                  <span className="welcome-absence-summary-chip">
+                    {absenceDeliveredCount} gonderildi / {absencePendingCount} bekliyor
+                  </span>
+                  <span className={`welcome-absence-summary-chip ${absenceStreakCount ? 'is-alert' : ''}`}>
+                    {absenceStreakCount} kisi 2 gun ust uste
+                  </span>
                 </div>
 
                 {absenceRows.length ? (
-                  <div className="welcome-absence-list">
-                    {absenceRows.map((row) => (
-                      <article key={`${row.jobId}-${row.employeeId ?? 'na'}`} className="welcome-absence-card">
-                        <div className="welcome-absence-card__body">
-                          <span className="welcome-absence-card__eyebrow">{row.departmentName}</span>
-                          <strong>{row.fullName}</strong>
-                          <p>{row.shiftWindow}</p>
-                        </div>
-
-                        <div className="welcome-absence-card__meta">
-                          <span>#{row.employeeId ?? row.jobId}</span>
-                          <span
-                            className={`welcome-status ${
-                              row.status === 'SENT'
-                                ? 'is-verified'
-                                : row.status === 'PENDING' || row.status === 'SENDING'
-                                  ? 'is-waiting'
-                                  : 'is-muted'
-                            }`}
+                  <div className="welcome-absence-table-shell">
+                    <table className="welcome-absence-table">
+                      <thead>
+                        <tr>
+                          <th>Calisan</th>
+                          <th>Departman</th>
+                          <th>Vardiya</th>
+                          <th>Bildirim</th>
+                          <th>Seri</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {absenceRows.map((row) => (
+                          <tr
+                            key={`${row.jobId}-${row.employeeId ?? 'na'}`}
+                            className={`welcome-absence-row ${row.consecutiveAbsenceDays >= 2 ? 'is-streak' : ''}`}
                           >
-                            {row.status}
-                          </span>
-                        </div>
-                      </article>
-                    ))}
+                            <td>
+                              <div className="welcome-absence-employee">
+                                <strong>{row.fullName}</strong>
+                                <span>#{row.employeeId ?? row.jobId}</span>
+                              </div>
+                            </td>
+                            <td>{row.departmentName}</td>
+                            <td>{row.shiftWindow}</td>
+                            <td>
+                              <span className={`welcome-status ${absenceStatusTone(row.status)}`}>
+                                {absenceStatusLabel(row.status)}
+                              </span>
+                            </td>
+                            <td>
+                              <span
+                                className={`welcome-absence-streak ${
+                                  row.consecutiveAbsenceDays >= 2 ? 'is-alert' : 'is-idle'
+                                }`}
+                              >
+                                {row.consecutiveAbsenceDays >= 2 ? '2 gun ust uste' : 'Gunluk'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 ) : (
                   <div className="welcome-empty welcome-absence-empty">
