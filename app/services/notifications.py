@@ -37,6 +37,7 @@ from app.services.attendance_notification_monitor import (
     AUDIENCE_ADMIN,
     AUDIENCE_EMPLOYEE,
     JOB_TYPE_ATTENDANCE_MONITOR,
+    TYPE_ABSENCE,
     schedule_attendance_monitor_notifications,
 )
 from app.services.exports import build_puantaj_xlsx_bytes
@@ -75,6 +76,7 @@ JOB_TYPE_ADMIN_AUTO_MIDNIGHT_CHECKOUT = "ADMIN_AUTO_MIDNIGHT_CHECKOUT"
 JOB_TYPE_ADMIN_MISSING_CHECKIN = "ADMIN_MISSING_CHECKIN"
 JOB_TYPE_ADMIN_DAILY_REPORT_READY = "ADMIN_DAILY_REPORT_READY"
 JOB_TYPE_ADMIN_SCHEDULED_BROADCAST = "ADMIN_SCHEDULED_BROADCAST"
+GROUPED_ADMIN_ABSENCE_PREVIEW_LIMIT = 8
 
 logger = logging.getLogger("app.notifications")
 
@@ -898,6 +900,91 @@ def _payload_local_day(value: Any) -> date | None:
         return None
 
 
+def _is_grouped_admin_absence_job(job: NotificationJob) -> bool:
+    return (
+        job.job_type == JOB_TYPE_ATTENDANCE_MONITOR
+        and _job_audience(job) == AUDIENCE_ADMIN
+        and str(job.notification_type or "").strip().lower() == TYPE_ABSENCE
+    )
+
+
+def _grouped_admin_absence_key(job: NotificationJob) -> str:
+    payload = job.payload if isinstance(job.payload, dict) else {}
+    shift_date = payload.get("shift_date")
+    if isinstance(shift_date, str) and shift_date.strip():
+        return shift_date.strip()[:10]
+    if job.local_day is not None:
+        return job.local_day.isoformat()
+    return "-"
+
+
+def _grouped_admin_absence_employee_id(job: NotificationJob) -> int | None:
+    payload = job.payload if isinstance(job.payload, dict) else {}
+    raw_value = payload.get("employee_id")
+    if isinstance(raw_value, int) and raw_value > 0:
+        return raw_value
+    if isinstance(raw_value, str):
+        normalized = raw_value.strip()
+        if normalized.isdigit():
+            value = int(normalized)
+            if value > 0:
+                return value
+    if job.employee_id is not None and job.employee_id > 0:
+        return int(job.employee_id)
+    return None
+
+
+def _build_grouped_admin_absence_message(session: Session, jobs: list[NotificationJob]) -> NotificationMessage:
+    recipients = _admin_notification_emails(session)
+    if not jobs:
+        return NotificationMessage(
+            recipients=recipients,
+            subject="Devamsizlik Tespit Edildi",
+            body="Devamsizlik listesi olusturulamadi.",
+        )
+
+    ordered_jobs = sorted(
+        jobs,
+        key=lambda item: (
+            _grouped_admin_absence_employee_id(item) or 0,
+            item.id or 0,
+        ),
+    )
+    shift_date = _grouped_admin_absence_key(ordered_jobs[0])
+    total_count = len(ordered_jobs)
+    visible_jobs = ordered_jobs[:GROUPED_ADMIN_ABSENCE_PREVIEW_LIMIT]
+    body_lines = [f"{shift_date} icin giris/cikis kaydi olmayan {total_count} calisan tespit edildi.", ""]
+
+    for job in visible_jobs:
+        payload = job.payload if isinstance(job.payload, dict) else {}
+        employee_id = _grouped_admin_absence_employee_id(job)
+        employee_name = str(payload.get("employee_full_name") or "-").strip() or "-"
+        department_name = str(payload.get("department_name") or "").strip()
+        shift_window = str(payload.get("shift_window_local") or job.shift_summary or "").strip()
+        line_parts = [f"#{employee_id}" if employee_id is not None else "#-", employee_name]
+        if department_name:
+            line_parts.append(department_name)
+        if shift_window:
+            line_parts.append(shift_window)
+        body_lines.append(" | ".join(line_parts))
+
+    hidden_count = total_count - len(visible_jobs)
+    if hidden_count > 0:
+        body_lines.append(f"+{hidden_count} calisan daha")
+
+    body_lines.extend(
+        [
+            "",
+            "Aksiyon: Izin, rapor veya manuel duzeltme gerekip gerekmedigini kontrol edin.",
+        ]
+    )
+    return NotificationMessage(
+        recipients=recipients,
+        subject=f"Devamsizlik Tespit Edildi ({total_count} calisan)",
+        body="\n".join(body_lines),
+    )
+
+
 def _build_message_for_job(session: Session, job: NotificationJob) -> NotificationMessage:
     payload = job.payload or {}
     shift_date = str(payload.get("shift_date", "-"))
@@ -1313,6 +1400,48 @@ def _send_push_for_job(
     return {"total_targets": 0, "sent": 0, "failed": 0, "deactivated": 0, "failures": []}
 
 
+def _send_grouped_admin_absence_push(
+    session: Session,
+    *,
+    jobs: list[NotificationJob],
+    message: NotificationMessage,
+) -> dict[str, Any]:
+    if not jobs:
+        return {"total_targets": 0, "sent": 0, "failed": 0, "deactivated": 0, "failures": []}
+
+    primary_job = jobs[0]
+    shift_date = _grouped_admin_absence_key(primary_job)
+    grouped_job_ids = [int(job.id) for job in jobs if job.id is not None]
+    employee_ids = [
+        employee_id
+        for employee_id in (_grouped_admin_absence_employee_id(job) for job in jobs)
+        if employee_id is not None
+    ]
+    target_url = "/admin-panel/notifications"
+    if shift_date != "-":
+        target_url = (
+            f"/admin-panel/notifications?notification_type={TYPE_ABSENCE}"
+            f"&start_date={shift_date}&end_date={shift_date}"
+        )
+
+    return send_push_to_admins(
+        session,
+        admin_user_ids=None,
+        title=message.subject,
+        body=message.body,
+        data={
+            "job_id": primary_job.id,
+            "job_ids": grouped_job_ids,
+            "job_type": primary_job.job_type,
+            "notification_type": TYPE_ABSENCE,
+            "employee_ids": employee_ids,
+            "absence_count": len(jobs),
+            "shift_date": shift_date if shift_date != "-" else None,
+            "url": target_url,
+        },
+    )
+
+
 def _mark_job_sent(
     session: Session,
     *,
@@ -1444,7 +1573,130 @@ def _record_delivery_logs(
                 error=email_result.get("error") if isinstance(email_result.get("error"), str) else None,
                 delivered_at=now_utc if email_status == "SENT" else None,
             )
+            )
+
+
+def _process_grouped_admin_absence_jobs(
+    session: Session,
+    *,
+    jobs: list[NotificationJob],
+    reference_utc: datetime,
+    email_enabled: bool,
+    email_channel: NotificationChannel,
+) -> list[NotificationJob]:
+    ordered_jobs = sorted(jobs, key=lambda item: (item.scheduled_at_utc, item.id or 0))
+    if not ordered_jobs:
+        return []
+
+    primary_job = ordered_jobs[0]
+    grouped_job_ids = [int(job.id) for job in ordered_jobs if job.id is not None]
+    processed: list[NotificationJob] = []
+
+    try:
+        message = _build_grouped_admin_absence_message(session, ordered_jobs)
+        push_summary = _send_grouped_admin_absence_push(session, jobs=ordered_jobs, message=message)
+        email_result: dict[str, Any] = {
+            "mode": "disabled" if not email_enabled else "not_attempted",
+            "sent": 0,
+            "recipients": [],
+        }
+        if email_enabled and int(push_summary.get("sent", 0)) <= 0:
+            email_result = _safe_send_email(email_channel, message)
+
+        push_total_targets = int(push_summary.get("total_targets", 0))
+        push_sent = int(push_summary.get("sent", 0))
+        push_failed = int(push_summary.get("failed", 0))
+        push_deactivated = int(push_summary.get("deactivated", 0))
+        email_sent = _as_int(email_result.get("sent"), 0)
+        _record_delivery_logs(
+            session,
+            job=primary_job,
+            push_summary=push_summary,
+            email_result=email_result,
+            now_utc=reference_utc,
         )
+        delivery_ok = push_sent > 0 or (email_enabled and email_sent > 0)
+        if not delivery_ok:
+            raise RuntimeError(
+                "Notification delivery failed on all channels "
+                f"(push_targets={push_total_targets}, push_sent={push_sent}, email_mode={email_result.get('mode')})"
+            )
+
+        for job in ordered_jobs:
+            delivery_details = {
+                "grouped_delivery": True,
+                "primary_job_id": primary_job.id,
+                "grouped_absence_count": len(ordered_jobs),
+                "grouped_job_ids": grouped_job_ids,
+                "push_total_targets": push_total_targets if job.id == primary_job.id else 0,
+                "push_sent": push_sent if job.id == primary_job.id else 0,
+                "push_failed": push_failed if job.id == primary_job.id else 0,
+                "push_deactivated": push_deactivated if job.id == primary_job.id else 0,
+                "email_mode": str(email_result.get("mode") or "unknown"),
+                "email_sent": email_sent,
+                "email_enabled": email_enabled,
+                "email_required": False,
+                "email_forced": email_enabled,
+                "push_error": push_summary.get("error"),
+            }
+            sent_job = _mark_job_sent(
+                session,
+                job_id=job.id,
+                delivery_details=delivery_details,
+            )
+            if sent_job is None:
+                continue
+            processed.append(sent_job)
+            log_audit(
+                session,
+                actor_type=AuditActorType.SYSTEM,
+                actor_id="notification_runner",
+                action="NOTIFICATION_JOB_SENT",
+                success=True,
+                entity_type="notification_job",
+                entity_id=str(sent_job.id),
+                details={
+                    "job_type": sent_job.job_type,
+                    "employee_id": sent_job.employee_id,
+                    "attempts": sent_job.attempts,
+                    "idempotency_key": sent_job.idempotency_key,
+                    "grouped_delivery": True,
+                    "grouped_absence_count": len(ordered_jobs),
+                    "primary_job_id": primary_job.id,
+                },
+            )
+    except Exception as exc:
+        for job in ordered_jobs:
+            failed_job = _mark_job_failure(
+                session,
+                job_id=job.id,
+                error=exc,
+                now_utc=reference_utc,
+            )
+            if failed_job is None:
+                continue
+            processed.append(failed_job)
+            log_audit(
+                session,
+                actor_type=AuditActorType.SYSTEM,
+                actor_id="notification_runner",
+                action="NOTIFICATION_JOB_FAILED",
+                success=False,
+                entity_type="notification_job",
+                entity_id=str(failed_job.id),
+                details={
+                    "job_type": failed_job.job_type,
+                    "employee_id": failed_job.employee_id,
+                    "attempts": failed_job.attempts,
+                    "status": failed_job.status,
+                    "error": failed_job.last_error,
+                    "grouped_delivery": True,
+                    "grouped_absence_count": len(ordered_jobs),
+                    "primary_job_id": primary_job.id,
+                },
+            )
+
+    return processed
 
 
 def _shift_crosses_midnight(shift: DepartmentShift | None) -> bool:
@@ -2258,11 +2510,37 @@ def send_pending_notifications(
     if not claimed_jobs:
         return []
 
+    current_jobs_by_id: dict[int, NotificationJob] = {}
+    grouped_admin_absence_jobs: dict[str, list[NotificationJob]] = {}
+    for claimed in claimed_jobs:
+        current_job = session.get(NotificationJob, claimed.id)
+        if current_job is None:
+            continue
+        current_jobs_by_id[int(current_job.id)] = current_job
+        if _is_grouped_admin_absence_job(current_job):
+            grouped_admin_absence_jobs.setdefault(_grouped_admin_absence_key(current_job), []).append(current_job)
+
     processed: list[NotificationJob] = []
+    handled_group_keys: set[str] = set()
     for claimed in claimed_jobs:
         try:
-            current_job = session.get(NotificationJob, claimed.id)
+            current_job = current_jobs_by_id.get(int(claimed.id))
             if current_job is None:
+                continue
+            if _is_grouped_admin_absence_job(current_job):
+                group_key = _grouped_admin_absence_key(current_job)
+                if group_key in handled_group_keys:
+                    continue
+                handled_group_keys.add(group_key)
+                processed.extend(
+                    _process_grouped_admin_absence_jobs(
+                        session,
+                        jobs=grouped_admin_absence_jobs.get(group_key, []),
+                        reference_utc=reference_utc,
+                        email_enabled=email_enabled,
+                        email_channel=email_channel,
+                    )
+                )
                 continue
             message = _build_message_for_job(session, current_job)
             push_summary: dict[str, Any] = {
