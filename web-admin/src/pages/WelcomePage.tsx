@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useLocation } from 'react-router-dom'
 
@@ -54,11 +54,21 @@ type WelcomeAbsenceRow = {
   consecutiveAbsenceDays: number
 }
 
+type WelcomeAbsenceStatusFilter = 'all' | WelcomeAbsenceRow['status']
+
 const WELCOME_PAGE_SIZES = [12, 24, 48]
 const WELCOME_ABSENCE_LIMIT = 200
 const WELCOME_ABSENCE_QUERY_LIMIT = WELCOME_ABSENCE_LIMIT * 2
 const TYPE_ABSENCE = 'devamsizlik'
 const ABSENCE_BOARD_ID = 'absence-board'
+const WELCOME_ABSENCE_STATUS_OPTIONS: Array<{ value: WelcomeAbsenceStatusFilter; label: string }> = [
+  { value: 'all', label: 'Tum durumlar' },
+  { value: 'PENDING', label: 'Bekliyor' },
+  { value: 'SENDING', label: 'Gonderiliyor' },
+  { value: 'SENT', label: 'Gonderildi' },
+  { value: 'FAILED', label: 'Hata' },
+  { value: 'CANCELED', label: 'Iptal' },
+]
 
 const WELCOME_INPUT_DAY_FORMAT = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Europe/Istanbul',
@@ -260,6 +270,11 @@ export function WelcomePage() {
   }, [location.hash, location.search])
 
   const [absenceDate, setAbsenceDate] = useState(requestedAbsenceDate)
+  const [absenceSearchTerm, setAbsenceSearchTerm] = useState('')
+  const [absenceDepartmentFilter, setAbsenceDepartmentFilter] = useState('all')
+  const [absenceStatusFilter, setAbsenceStatusFilter] = useState<WelcomeAbsenceStatusFilter>('all')
+  const [absenceStreakOnly, setAbsenceStreakOnly] = useState(false)
+  const deferredAbsenceSearchTerm = useDeferredValue(absenceSearchTerm)
   const previousAbsenceDate = useMemo(() => shiftIsoDay(absenceDate, -1), [absenceDate])
 
   const employeesQuery = useQuery({
@@ -519,20 +534,71 @@ export function WelcomePage() {
     [absenceRows],
   )
 
-  const absencePendingCount = useMemo(
-    () => absenceRows.filter((row) => row.status === 'PENDING' || row.status === 'SENDING').length,
+  const absenceDepartmentOptions = useMemo(
+    () =>
+      [...new Set(absenceRows.map((row) => row.departmentName))]
+        .filter(Boolean)
+        .sort((left, right) => left.localeCompare(right, 'tr')),
     [absenceRows],
+  )
+
+  const filteredAbsenceRows = useMemo(() => {
+    const normalizedSearch = deferredAbsenceSearchTerm.trim().toLocaleLowerCase('tr')
+
+    return absenceRows.filter((row) => {
+      if (absenceDepartmentFilter !== 'all' && row.departmentName !== absenceDepartmentFilter) {
+        return false
+      }
+      if (absenceStatusFilter !== 'all' && row.status !== absenceStatusFilter) {
+        return false
+      }
+      if (absenceStreakOnly && row.consecutiveAbsenceDays < 2) {
+        return false
+      }
+      if (!normalizedSearch) {
+        return true
+      }
+
+      const searchIndex = [
+        row.fullName,
+        row.departmentName,
+        row.shiftWindow,
+        row.employeeId != null ? String(row.employeeId) : '',
+      ]
+        .join(' ')
+        .toLocaleLowerCase('tr')
+
+      return searchIndex.includes(normalizedSearch)
+    })
+  }, [absenceDepartmentFilter, absenceRows, absenceStatusFilter, absenceStreakOnly, deferredAbsenceSearchTerm])
+
+  const absenceVisibleDepartmentCount = useMemo(
+    () => new Set(filteredAbsenceRows.map((row) => row.departmentName)).size,
+    [filteredAbsenceRows],
+  )
+
+  const absencePendingCount = useMemo(
+    () => filteredAbsenceRows.filter((row) => row.status === 'PENDING' || row.status === 'SENDING').length,
+    [filteredAbsenceRows],
   )
 
   const absenceDeliveredCount = useMemo(
-    () => absenceRows.filter((row) => row.status === 'SENT').length,
-    [absenceRows],
+    () => filteredAbsenceRows.filter((row) => row.status === 'SENT').length,
+    [filteredAbsenceRows],
   )
 
   const absenceStreakCount = useMemo(
-    () => absenceRows.filter((row) => row.consecutiveAbsenceDays >= 2).length,
-    [absenceRows],
+    () => filteredAbsenceRows.filter((row) => row.consecutiveAbsenceDays >= 2).length,
+    [filteredAbsenceRows],
   )
+
+  const absenceHasActiveFilters =
+    absenceSearchTerm.trim().length > 0 ||
+    absenceDepartmentFilter !== 'all' ||
+    absenceStatusFilter !== 'all' ||
+    absenceStreakOnly
+
+  const absenceFilteredOutCount = Math.max(absenceRows.length - filteredAbsenceRows.length, 0)
 
   useEffect(() => {
     if (!absenceFocusRequested || !canViewAbsenceBoard) return
@@ -695,8 +761,8 @@ export function WelcomePage() {
             <div className="welcome-absence-panel__head welcome-reveal is-delay-6">
               <div>
                 <p className="welcome-panel-kicker">GUNLUK DEVAMSIZLIK</p>
-                <h3>{absenceDayLabel} devamsizlik tablosu</h3>
-                <p>Secilen gunde devamsizlik yapan calisanlar burada gunluk tablo halinde listelenir.</p>
+                <h3>Gunluk devamsizlik raporu</h3>
+                <p>16:00 admin ozeti icin secilen gunde devamsizlik yapan calisanlar burada raporlanir.</p>
               </div>
 
               <div className="welcome-absence-panel__actions">
@@ -733,42 +799,144 @@ export function WelcomePage() {
               <ErrorBlock message="Gunluk devamsizlik panosu yuklenemedi." />
             ) : (
               <>
-                <div className="welcome-absence-summary">
-                  <span className="welcome-absence-summary-chip">{absenceRows.length} calisan</span>
-                  <span className="welcome-absence-summary-chip">{absenceDepartmentCount} departman</span>
-                  <span className="welcome-absence-summary-chip">
-                    {absenceDeliveredCount} gonderildi / {absencePendingCount} bekliyor
-                  </span>
-                  <span className={`welcome-absence-summary-chip ${absenceStreakCount ? 'is-alert' : ''}`}>
-                    {absenceStreakCount} kisi 2 gun ust uste
-                  </span>
+                <div className="welcome-absence-overview">
+                  <div className="welcome-absence-overview__copy">
+                    <span className="welcome-absence-overview__eyebrow">OPERASYON RAPORU</span>
+                    <strong>{absenceDayLabel}</strong>
+                    <p>
+                      {absenceHasActiveFilters
+                        ? `${filteredAbsenceRows.length} kayit gorunuyor, ${absenceFilteredOutCount} kayit filtre disi.`
+                        : 'Gun sonu admin ozeti icin takip edilen devamsizlik kayitlari.'}
+                    </p>
+                  </div>
+
+                  <div className="welcome-absence-summary">
+                    <span className="welcome-absence-summary-chip">
+                      {filteredAbsenceRows.length}/{absenceRows.length} calisan
+                    </span>
+                    <span className="welcome-absence-summary-chip">
+                      {absenceVisibleDepartmentCount}/{absenceDepartmentCount} departman
+                    </span>
+                    <span className="welcome-absence-summary-chip">
+                      {absenceDeliveredCount} gonderildi / {absencePendingCount} bekliyor
+                    </span>
+                    <span className={`welcome-absence-summary-chip ${absenceStreakCount ? 'is-alert' : ''}`}>
+                      {absenceStreakCount} kisi 2 gun ust uste
+                    </span>
+                  </div>
                 </div>
 
-                {absenceRows.length ? (
+                <div className="welcome-filter-bar welcome-absence-filter-bar">
+                  <div className="welcome-absence-filters">
+                    <label className="welcome-filter welcome-absence-filter is-search">
+                      <span className="welcome-filter__label">Arama</span>
+                      <input
+                        type="search"
+                        value={absenceSearchTerm}
+                        onChange={(event) => setAbsenceSearchTerm(event.target.value)}
+                        className="welcome-filter__control"
+                        placeholder="Ad soyad, departman, vardiya veya #ID"
+                      />
+                    </label>
+
+                    <label className="welcome-filter welcome-absence-filter">
+                      <span className="welcome-filter__label">Departman</span>
+                      <select
+                        value={absenceDepartmentFilter}
+                        onChange={(event) => setAbsenceDepartmentFilter(event.target.value)}
+                        className="welcome-filter__control"
+                      >
+                        <option value="all">Tum departmanlar</option>
+                        {absenceDepartmentOptions.map((departmentName) => (
+                          <option key={departmentName} value={departmentName}>
+                            {departmentName}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="welcome-filter welcome-absence-filter">
+                      <span className="welcome-filter__label">Bildirim durumu</span>
+                      <select
+                        value={absenceStatusFilter}
+                        onChange={(event) => setAbsenceStatusFilter(event.target.value as WelcomeAbsenceStatusFilter)}
+                        className="welcome-filter__control"
+                      >
+                        {WELCOME_ABSENCE_STATUS_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <div className="welcome-filter welcome-absence-filter">
+                      <span className="welcome-filter__label">Izleme</span>
+                      <button
+                        type="button"
+                        onClick={() => setAbsenceStreakOnly((current) => !current)}
+                        className={`welcome-absence-toggle ${absenceStreakOnly ? 'is-active' : ''}`}
+                        aria-pressed={absenceStreakOnly}
+                      >
+                        Sadece 2 gun ust uste olanlar
+                      </button>
+                    </div>
+
+                    <div className="welcome-filter welcome-absence-filter is-actions">
+                      <span className="welcome-filter__label">Temizle</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAbsenceSearchTerm('')
+                          setAbsenceDepartmentFilter('all')
+                          setAbsenceStatusFilter('all')
+                          setAbsenceStreakOnly(false)
+                        }}
+                        className="welcome-absence-clear"
+                        disabled={!absenceHasActiveFilters}
+                      >
+                        Filtreleri sifirla
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {filteredAbsenceRows.length ? (
                   <div className="welcome-absence-table-shell">
                     <table className="welcome-absence-table">
+                      <caption className="welcome-absence-table__caption">
+                        {absenceHasActiveFilters
+                          ? 'Filtrelenmis gunluk devamsizlik listesi'
+                          : 'Gunluk devamsizlik listesi'}
+                      </caption>
                       <thead>
                         <tr>
-                          <th>Calisan</th>
+                          <th>No</th>
+                          <th>Personel</th>
                           <th>Departman</th>
-                          <th>Vardiya</th>
-                          <th>Bildirim</th>
-                          <th>Seri</th>
+                          <th>Planlanan vardiya</th>
+                          <th>Bildirim durumu</th>
+                          <th>Izleme notu</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {absenceRows.map((row) => (
+                        {filteredAbsenceRows.map((row, index) => (
                           <tr
                             key={`${row.jobId}-${row.employeeId ?? 'na'}`}
                             className={`welcome-absence-row ${row.consecutiveAbsenceDays >= 2 ? 'is-streak' : ''}`}
                           >
+                            <td>
+                              <span className="welcome-absence-row-index">{String(index + 1).padStart(2, '0')}</span>
+                            </td>
                             <td>
                               <div className="welcome-absence-employee">
                                 <strong>{row.fullName}</strong>
                                 <span>#{row.employeeId ?? row.jobId}</span>
                               </div>
                             </td>
-                            <td>{row.departmentName}</td>
+                            <td>
+                              <span className="welcome-absence-department">{row.departmentName}</span>
+                            </td>
                             <td>{row.shiftWindow}</td>
                             <td>
                               <span className={`welcome-status ${absenceStatusTone(row.status)}`}>
@@ -791,7 +959,9 @@ export function WelcomePage() {
                   </div>
                 ) : (
                   <div className="welcome-empty welcome-absence-empty">
-                    {absenceDayLabel} icin admin devamsizlik kaydi bulunmuyor.
+                    {absenceRows.length
+                      ? 'Secili filtrelerle eslesen devamsizlik kaydi bulunmuyor.'
+                      : `${absenceDayLabel} icin admin devamsizlik kaydi bulunmuyor.`}
                   </div>
                 )}
               </>
