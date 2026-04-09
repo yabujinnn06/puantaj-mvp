@@ -65,6 +65,7 @@ DEFAULT_OFF_SHIFT_TOLERANCE_MINUTES = 0
 OVERTIME_WARNING_HOURS = 3
 OVERTIME_MAX_HOURS = 6
 ABSENCE_DAILY_SUMMARY_HOUR_LOCAL = 16
+ABSENCE_ADMIN_SUMMARY_EVENT_VARIANT = "daily-summary-v2"
 LATE_STREAK_ESCALATION_DAYS = 2
 LATE_STREAK_CRITICAL_DAYS = 3
 LATE_STREAK_LOOKBACK_DAYS = 14
@@ -147,10 +148,17 @@ def _build_event_identity(
     local_day: date,
     notification_type: str,
     audience: str,
+    variant: str | None = None,
 ) -> tuple[str, str]:
+    normalized_variant = str(variant or "").strip().lower() or None
     raw = f"{employee_id}:{local_day.isoformat()}:{notification_type}:{audience}"
+    if normalized_variant is not None:
+        raw = f"{raw}:{normalized_variant}"
     event_hash = hashlib.sha256(raw.encode("utf-8")).hexdigest()
     event_id = f"ATT-{local_day.strftime('%Y%m%d')}-{employee_id}-{notification_type.upper()}-{audience.upper()}"
+    if normalized_variant is not None:
+        suffix = normalized_variant.upper().replace("-", "_").replace(":", "_").replace(" ", "_")
+        event_id = f"{event_id}-{suffix}"
     return event_id, event_hash
 
 
@@ -642,11 +650,17 @@ def _create_notification_job(
     suggested_action: str,
     extra_payload: dict[str, Any] | None = None,
 ) -> NotificationJob | None:
+    event_variant = (
+        ABSENCE_ADMIN_SUMMARY_EVENT_VARIANT
+        if notification_type == TYPE_ABSENCE and audience == AUDIENCE_ADMIN
+        else None
+    )
     event_id, event_hash = _build_event_identity(
         employee_id=assessment.employee.id,
         local_day=assessment.local_day,
         notification_type=notification_type,
         audience=audience,
+        variant=event_variant,
     )
     existing = session.scalar(select(NotificationJob).where(NotificationJob.event_hash == event_hash))
     if existing is not None:

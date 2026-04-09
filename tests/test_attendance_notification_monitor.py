@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 import unittest
 from datetime import date, datetime, time, timezone, timedelta
 from unittest.mock import patch
 
 from app.models import AttendanceEvent, AttendanceType, DepartmentShift, Employee, LocationStatus, NotificationJob
 from app.services.attendance_notification_monitor import (
+    ABSENCE_ADMIN_SUMMARY_EVENT_VARIANT,
     AUDIENCE_ADMIN,
     TYPE_ABSENCE,
     TYPE_EARLY_CHECKOUT,
@@ -321,6 +323,32 @@ class AttendanceNotificationMonitorTests(unittest.TestCase):
         self.assertTrue(all(job.notification_type == TYPE_ABSENCE for job in created_jobs))
         self.assertEqual({job.audience for job in created_jobs}, {AUDIENCE_ADMIN})
         self.assertTrue(all(job.scheduled_at_utc == datetime(2026, 3, 1, 16, 0, tzinfo=timezone.utc) for job in created_jobs))
+
+    def test_admin_absence_summary_uses_versioned_event_identity(self) -> None:
+        session = _DummySession(scalar_values=[None])
+        assessment = _build_assessment(
+            override_active=False,
+            checkout_ts_utc=None,
+            first_checkin_ts_utc=None,
+            has_any_activity=False,
+        )
+        created_jobs: list[NotificationJob] = []
+
+        with patch("app.services.attendance_notification_monitor._attendance_timezone", return_value=timezone.utc):
+            _schedule_absence(
+                session,  # type: ignore[arg-type]
+                created_jobs=created_jobs,
+                assessment=assessment,
+                now_utc=datetime(2026, 3, 1, 16, 0, tzinfo=timezone.utc),
+            )
+
+        self.assertEqual(len(created_jobs), 1)
+        admin_job = created_jobs[0]
+        legacy_hash = hashlib.sha256("7:2026-03-01:devamsizlik:admin".encode("utf-8")).hexdigest()
+        self.assertNotEqual(admin_job.event_hash, legacy_hash)
+        self.assertIn("DAILY_SUMMARY_V2", admin_job.event_id or "")
+        self.assertEqual(admin_job.idempotency_key, admin_job.event_hash)
+        self.assertEqual(ABSENCE_ADMIN_SUMMARY_EVENT_VARIANT, "daily-summary-v2")
 
 
 if __name__ == "__main__":
