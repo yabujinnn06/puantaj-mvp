@@ -47,6 +47,7 @@ from app.services.notification_tasks import (
     get_task_next_run_at_utc,
     normalize_scheduled_notification_task_payload,
 )
+from app.services.attendance_notification_monitor import JOB_TYPE_ATTENDANCE_MONITOR, TYPE_ABSENCE
 
 
 class _ScalarRows:
@@ -199,6 +200,24 @@ class _FakeNotificationRunnerSession:
     def get(self, model, pk):  # type: ignore[no-untyped-def]
         if model is NotificationJob and pk == self.job.id:
             return self.job
+        return None
+
+    def commit(self) -> None:
+        self.commit_count += 1
+
+    def refresh(self, _obj) -> None:  # type: ignore[no-untyped-def]
+        self.refresh_count += 1
+
+
+class _FakeMultiNotificationRunnerSession:
+    def __init__(self, *, jobs: list[NotificationJob]) -> None:
+        self.jobs = {int(job.id): job for job in jobs if job.id is not None}
+        self.commit_count = 0
+        self.refresh_count = 0
+
+    def get(self, model, pk):  # type: ignore[no-untyped-def]
+        if model is NotificationJob:
+            return self.jobs.get(int(pk))
         return None
 
     def commit(self) -> None:
@@ -981,6 +1000,199 @@ class NotificationServiceTests(unittest.TestCase):
         self.assertEqual(processed[0].status, "PENDING")
         self.assertEqual(processed[0].attempts, 1)
         self.assertIn("Notification delivery failed on all channels", processed[0].last_error or "")
+
+    def test_send_pending_notifications_suppresses_non_driver_demo_jobs(self) -> None:
+        job = NotificationJob(
+            id=1550,
+            employee_id=17,
+            admin_user_id=None,
+            job_type="DEMO_MONITOR",
+            notification_type="demo_gap",
+            audience="admin",
+            payload={"department_name": "Arge"},
+            scheduled_at_utc=datetime(2026, 4, 1, 12, 0, tzinfo=timezone.utc),
+            status="PENDING",
+            attempts=0,
+            idempotency_key="DEMO_MONITOR:17:2026-04-01:demo_gap",
+        )
+        fake_db = _FakeNotificationRunnerSession(job=job)
+
+        with (
+            patch(
+                "app.services.notifications.get_settings",
+                return_value=SimpleNamespace(notification_email_enabled=False),
+            ),
+            patch("app.services.notifications._claim_due_pending_jobs", return_value=[job]),
+            patch("app.services.notifications.log_audit", return_value=None),
+        ):
+            processed = send_pending_notifications(
+                limit=10,
+                now_utc=datetime(2026, 4, 1, 12, 1, tzinfo=timezone.utc),
+                db=fake_db,  # type: ignore[arg-type]
+            )
+
+        self.assertEqual(len(processed), 1)
+        self.assertEqual(processed[0].status, "SENT")
+        self.assertIsNone(processed[0].last_error)
+        self.assertEqual(processed[0].attempts, 0)
+        self.assertTrue(processed[0].payload["delivery"]["suppressed"])
+        self.assertEqual(
+            processed[0].payload["delivery"]["reason"],
+            "demo_notifications_disabled_for_department",
+        )
+
+    def test_send_pending_notifications_groups_admin_absence_jobs_into_single_push(self) -> None:
+        scheduled_at = datetime(2026, 4, 1, 12, 0, tzinfo=timezone.utc)
+        job_one = NotificationJob(
+            id=2101,
+            employee_id=7,
+            admin_user_id=None,
+            job_type=JOB_TYPE_ATTENDANCE_MONITOR,
+            notification_type=TYPE_ABSENCE,
+            audience="admin",
+            payload={
+                "employee_id": 7,
+                "employee_full_name": "Ahmet Yilmaz",
+                "department_name": "Operasyon",
+                "shift_date": "2026-04-01",
+                "shift_window_local": "10:00-18:00",
+            },
+            scheduled_at_utc=scheduled_at,
+            status="PENDING",
+            attempts=0,
+            idempotency_key="ATTENDANCE_MONITOR:7:2026-04-01:devamsizlik:admin",
+        )
+        job_two = NotificationJob(
+            id=2102,
+            employee_id=8,
+            admin_user_id=None,
+            job_type=JOB_TYPE_ATTENDANCE_MONITOR,
+            notification_type=TYPE_ABSENCE,
+            audience="admin",
+            payload={
+                "employee_id": 8,
+                "employee_full_name": "Ayse Demir",
+                "department_name": "Saha",
+                "shift_date": "2026-04-01",
+                "shift_window_local": "09:00-18:00",
+            },
+            scheduled_at_utc=scheduled_at,
+            status="PENDING",
+            attempts=0,
+            idempotency_key="ATTENDANCE_MONITOR:8:2026-04-01:devamsizlik:admin",
+        )
+        fake_db = _FakeMultiNotificationRunnerSession(jobs=[job_one, job_two])
+
+        with (
+            patch(
+                "app.services.notifications.get_settings",
+                return_value=SimpleNamespace(notification_email_enabled=False),
+            ),
+            patch("app.services.notifications._claim_due_pending_jobs", return_value=[job_one, job_two]),
+            patch("app.services.notifications._admin_notification_emails", return_value=["admin@example.com"]),
+            patch(
+                "app.services.notifications.send_push_to_admins",
+                return_value={
+                    "total_targets": 1,
+                    "sent": 1,
+                    "failed": 0,
+                    "deactivated": 0,
+                },
+            ) as push_mock,
+            patch("app.services.notifications._send_push_for_job") as single_push_mock,
+            patch("app.services.notifications._record_delivery_logs", return_value=None) as delivery_log_mock,
+            patch("app.services.notifications.log_audit", return_value=None),
+        ):
+            processed = send_pending_notifications(
+                limit=10,
+                now_utc=datetime(2026, 4, 1, 12, 1, tzinfo=timezone.utc),
+                db=fake_db,  # type: ignore[arg-type]
+            )
+
+        self.assertEqual(len(processed), 2)
+        self.assertTrue(all(job.status == "SENT" for job in processed))
+        self.assertEqual(single_push_mock.call_count, 0)
+        push_mock.assert_called_once()
+        self.assertEqual(delivery_log_mock.call_count, 1)
+        self.assertEqual(delivery_log_mock.call_args.kwargs["job"].id, job_one.id)
+        push_body = push_mock.call_args.kwargs["body"]
+        self.assertIn("Ahmet Yilmaz", push_body)
+        self.assertIn("Ayse Demir", push_body)
+        self.assertTrue(job_one.payload["delivery"]["grouped_delivery"])
+        self.assertEqual(job_one.payload["delivery"]["grouped_absence_count"], 2)
+        self.assertTrue(job_two.payload["delivery"]["grouped_delivery"])
+        self.assertEqual(job_two.payload["delivery"]["primary_job_id"], job_one.id)
+
+    def test_send_pending_notifications_retries_all_grouped_admin_absence_jobs_when_bulk_send_fails(self) -> None:
+        scheduled_at = datetime(2026, 4, 1, 12, 0, tzinfo=timezone.utc)
+        job_one = NotificationJob(
+            id=2201,
+            employee_id=17,
+            admin_user_id=None,
+            job_type=JOB_TYPE_ATTENDANCE_MONITOR,
+            notification_type=TYPE_ABSENCE,
+            audience="admin",
+            payload={
+                "employee_id": 17,
+                "employee_full_name": "Mehmet Kaya",
+                "shift_date": "2026-04-01",
+                "shift_window_local": "08:00-17:00",
+            },
+            scheduled_at_utc=scheduled_at,
+            status="PENDING",
+            attempts=0,
+            idempotency_key="ATTENDANCE_MONITOR:17:2026-04-01:devamsizlik:admin",
+        )
+        job_two = NotificationJob(
+            id=2202,
+            employee_id=18,
+            admin_user_id=None,
+            job_type=JOB_TYPE_ATTENDANCE_MONITOR,
+            notification_type=TYPE_ABSENCE,
+            audience="admin",
+            payload={
+                "employee_id": 18,
+                "employee_full_name": "Fatma Tas",
+                "shift_date": "2026-04-01",
+                "shift_window_local": "08:00-17:00",
+            },
+            scheduled_at_utc=scheduled_at,
+            status="PENDING",
+            attempts=0,
+            idempotency_key="ATTENDANCE_MONITOR:18:2026-04-01:devamsizlik:admin",
+        )
+        fake_db = _FakeMultiNotificationRunnerSession(jobs=[job_one, job_two])
+
+        with (
+            patch(
+                "app.services.notifications.get_settings",
+                return_value=SimpleNamespace(notification_email_enabled=False),
+            ),
+            patch("app.services.notifications._claim_due_pending_jobs", return_value=[job_one, job_two]),
+            patch("app.services.notifications._admin_notification_emails", return_value=["admin@example.com"]),
+            patch(
+                "app.services.notifications.send_push_to_admins",
+                return_value={
+                    "total_targets": 2,
+                    "sent": 0,
+                    "failed": 2,
+                    "deactivated": 0,
+                    "error": "push_gateway_failed",
+                },
+            ),
+            patch("app.services.notifications._record_delivery_logs", return_value=None),
+            patch("app.services.notifications.log_audit", return_value=None),
+        ):
+            processed = send_pending_notifications(
+                limit=10,
+                now_utc=datetime(2026, 4, 1, 12, 1, tzinfo=timezone.utc),
+                db=fake_db,  # type: ignore[arg-type]
+            )
+
+        self.assertEqual(len(processed), 2)
+        self.assertTrue(all(job.status == "PENDING" for job in processed))
+        self.assertTrue(all(job.attempts == 1 for job in processed))
+        self.assertTrue(all("Notification delivery failed on all channels" in (job.last_error or "") for job in processed))
 
     def test_send_pending_notifications_suppresses_non_driver_demo_jobs(self) -> None:
         job = NotificationJob(
