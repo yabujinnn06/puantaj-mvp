@@ -1456,11 +1456,16 @@ def _send_grouped_admin_absence_push(
         for employee_id in (_grouped_admin_absence_employee_id(job) for job in jobs)
         if employee_id is not None
     ]
-    target_url = "/admin-panel/notifications"
+    target_url = (
+        f"/admin-panel/welcome?focus=absence-board"
+        f"&notification_type={TYPE_ABSENCE}#absence-board"
+    )
     if shift_date != "-":
         target_url = (
-            f"/admin-panel/notifications?notification_type={TYPE_ABSENCE}"
-            f"&start_date={shift_date}&end_date={shift_date}"
+            f"/admin-panel/welcome?focus=absence-board"
+            f"&notification_type={TYPE_ABSENCE}"
+            f"&absence_date={shift_date}"
+            f"&start_date={shift_date}&end_date={shift_date}#absence-board"
         )
 
     return send_push_to_admins(

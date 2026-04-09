@@ -1116,8 +1116,16 @@ class NotificationServiceTests(unittest.TestCase):
         self.assertEqual(delivery_log_mock.call_count, 1)
         self.assertEqual(delivery_log_mock.call_args.kwargs["job"].id, job_one.id)
         push_body = push_mock.call_args.kwargs["body"]
+        push_data = push_mock.call_args.kwargs["data"]
         self.assertIn("Ahmet Yilmaz", push_body)
         self.assertIn("Ayse Demir", push_body)
+        self.assertEqual(
+            push_data["url"],
+            "/admin-panel/welcome?focus=absence-board"
+            "&notification_type=devamsizlik"
+            "&absence_date=2026-04-01"
+            "&start_date=2026-04-01&end_date=2026-04-01#absence-board",
+        )
         self.assertTrue(job_one.payload["delivery"]["grouped_delivery"])
         self.assertEqual(job_one.payload["delivery"]["grouped_absence_count"], 2)
         self.assertTrue(job_two.payload["delivery"]["grouped_delivery"])

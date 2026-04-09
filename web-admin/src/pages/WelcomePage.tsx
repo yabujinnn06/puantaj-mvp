@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Link, useLocation } from 'react-router-dom'
 
-import { getControlRoomOverview, getDepartments, getEmployees, getRegions } from '../api/admin'
+import { getControlRoomOverview, getDepartments, getEmployees, getNotificationJobs, getRegions } from '../api/admin'
 import { EmployeeAutocompleteField } from '../components/EmployeeAutocompleteField'
 import { ErrorBlock } from '../components/ErrorBlock'
 import { LoadingBlock } from '../components/LoadingBlock'
@@ -12,6 +13,7 @@ import { Panel } from '../components/Panel'
 import { controlRoomQueryKeys } from '../components/control-room/queryKeys'
 import { formatDateTime, todayStatusLabel } from '../components/control-room/utils'
 import { UI_BRANDING } from '../config/ui'
+import { useAuth } from '../hooks/useAuth'
 import type { ControlRoomEmployeeState } from '../types/api'
 
 type WelcomeSortField =
@@ -40,7 +42,61 @@ type WelcomeTableRow = {
   extraWorkMinutes: number
 }
 
+type WelcomeAbsenceRow = {
+  jobId: number
+  employeeId: number | null
+  fullName: string
+  departmentName: string
+  shiftWindow: string
+  shiftDate: string
+  status: 'PENDING' | 'SENDING' | 'SENT' | 'CANCELED' | 'FAILED'
+}
+
 const WELCOME_PAGE_SIZES = [12, 24, 48]
+const WELCOME_ABSENCE_LIMIT = 200
+const TYPE_ABSENCE = 'devamsizlik'
+const ABSENCE_BOARD_ID = 'absence-board'
+
+const WELCOME_INPUT_DAY_FORMAT = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Europe/Istanbul',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+})
+
+const WELCOME_DAY_LABEL_FORMAT = new Intl.DateTimeFormat('tr-TR', {
+  timeZone: 'Europe/Istanbul',
+  weekday: 'long',
+  day: '2-digit',
+  month: 'long',
+  year: 'numeric',
+})
+
+function getTodayIsoDay(): string {
+  return WELCOME_INPUT_DAY_FORMAT.format(new Date())
+}
+
+function normalizeIsoDay(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null
+  const normalized = value.trim()
+  if (!normalized) return null
+  const match = /^(\d{4}-\d{2}-\d{2})/.exec(normalized)
+  return match?.[1] ?? null
+}
+
+function formatIsoDayLabel(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (!match) return value
+
+  const [, year, month, day] = match
+  const reference = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), 12, 0, 0))
+  return WELCOME_DAY_LABEL_FORMAT.format(reference)
+}
+
+function readPayloadText(payload: Record<string, unknown>, key: string): string {
+  const value = payload[key]
+  return typeof value === 'string' ? value.trim() : ''
+}
 
 function compareRows(
   left: WelcomeTableRow,
@@ -127,6 +183,9 @@ function WelcomeSignalCard({
 }
 
 export function WelcomePage() {
+  const location = useLocation()
+  const { hasPermission } = useAuth()
+  const absenceBoardRef = useRef<HTMLDivElement | null>(null)
   const [employeeId, setEmployeeId] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
   const [regionId, setRegionId] = useState('')
@@ -136,6 +195,28 @@ export function WelcomePage() {
   const [page, setPage] = useState(1)
   const [sortField, setSortField] = useState<WelcomeSortField>('overtime')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
+  const [isAbsenceBoardFocused, setIsAbsenceBoardFocused] = useState(false)
+  const todayIsoDay = useMemo(() => getTodayIsoDay(), [])
+  const canViewAbsenceBoard = hasPermission('notifications')
+
+  const requestedAbsenceDate = useMemo(() => {
+    const params = new URLSearchParams(location.search)
+    return (
+      normalizeIsoDay(params.get('absence_date')) ??
+      normalizeIsoDay(params.get('shift_date')) ??
+      normalizeIsoDay(params.get('start_date')) ??
+      todayIsoDay
+    )
+  }, [location.search, todayIsoDay])
+
+  const absenceFocusRequested = useMemo(() => {
+    const params = new URLSearchParams(location.search)
+    const focus = (params.get('focus') ?? '').trim().toLowerCase()
+    const notificationType = (params.get('notification_type') ?? '').trim().toLowerCase()
+    return focus === ABSENCE_BOARD_ID || notificationType === TYPE_ABSENCE || location.hash === `#${ABSENCE_BOARD_ID}`
+  }, [location.hash, location.search])
+
+  const [absenceDate, setAbsenceDate] = useState(requestedAbsenceDate)
 
   const employeesQuery = useQuery({
     queryKey: controlRoomQueryKeys.employees,
@@ -167,6 +248,21 @@ export function WelcomePage() {
         offset: 0,
         sort_by: 'employee_name',
         sort_dir: 'asc',
+    }),
+    staleTime: 60_000,
+  })
+
+  const absenceJobsQuery = useQuery({
+    enabled: canViewAbsenceBoard,
+    queryKey: ['welcome', 'absence-board', absenceDate],
+    queryFn: () =>
+      getNotificationJobs({
+        audience: 'admin',
+        notification_type: TYPE_ABSENCE,
+        start_date: absenceDate,
+        end_date: absenceDate,
+        limit: WELCOME_ABSENCE_LIMIT,
+        offset: 0,
       }),
     staleTime: 60_000,
   })
@@ -174,6 +270,10 @@ export function WelcomePage() {
   useEffect(() => {
     setPage(1)
   }, [departmentId, employeeId, employmentFilter, pageSize, regionId, searchTerm, sortDirection, sortField])
+
+  useEffect(() => {
+    setAbsenceDate(requestedAbsenceDate)
+  }, [requestedAbsenceDate])
 
   const employees = employeesQuery.data ?? []
   const departments = departmentsQuery.data ?? []
@@ -318,6 +418,77 @@ export function WelcomePage() {
     }
   }, [filteredRows, summary.active, summary.total])
 
+  const absenceRows = useMemo<WelcomeAbsenceRow[]>(() => {
+    const seenEmployeeDays = new Set<string>()
+
+    return (absenceJobsQuery.data?.items ?? []).flatMap((job) => {
+      const payload = job.payload ?? {}
+      const shiftDate =
+        normalizeIsoDay(readPayloadText(payload, 'shift_date')) ?? normalizeIsoDay(job.local_day) ?? absenceDate
+
+      const payloadEmployeeId = payload.employee_id
+      let employeeId = job.employee_id
+      if (typeof payloadEmployeeId === 'number' && payloadEmployeeId > 0) {
+        employeeId = payloadEmployeeId
+      } else if (typeof payloadEmployeeId === 'string' && /^\d+$/.test(payloadEmployeeId.trim())) {
+        employeeId = Number(payloadEmployeeId.trim())
+      }
+
+      const dedupeKey = `${employeeId ?? job.id}:${shiftDate}`
+      if (seenEmployeeDays.has(dedupeKey)) {
+        return []
+      }
+      seenEmployeeDays.add(dedupeKey)
+
+      return [
+        {
+          jobId: job.id,
+          employeeId,
+          fullName: readPayloadText(payload, 'employee_full_name') || `Calisan #${employeeId ?? job.id}`,
+          departmentName: readPayloadText(payload, 'department_name') || 'Departman belirtilmedi',
+          shiftWindow: readPayloadText(payload, 'shift_window_local') || job.shift_summary || 'Vardiya bilgisi yok',
+          shiftDate,
+          status: job.status,
+        },
+      ]
+    })
+  }, [absenceDate, absenceJobsQuery.data?.items])
+
+  const absenceDayLabel = useMemo(() => formatIsoDayLabel(absenceDate), [absenceDate])
+
+  const absenceDepartmentCount = useMemo(
+    () => new Set(absenceRows.map((row) => row.departmentName)).size,
+    [absenceRows],
+  )
+
+  const absencePendingCount = useMemo(
+    () => absenceRows.filter((row) => row.status === 'PENDING' || row.status === 'SENDING').length,
+    [absenceRows],
+  )
+
+  const absenceDeliveredCount = useMemo(
+    () => absenceRows.filter((row) => row.status === 'SENT').length,
+    [absenceRows],
+  )
+
+  useEffect(() => {
+    if (!absenceFocusRequested || !canViewAbsenceBoard) return
+    if (!absenceBoardRef.current) return
+
+    const frameId = window.requestAnimationFrame(() => {
+      absenceBoardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      setIsAbsenceBoardFocused(true)
+    })
+    const timeoutId = window.setTimeout(() => {
+      setIsAbsenceBoardFocused(false)
+    }, 2600)
+
+    return () => {
+      window.cancelAnimationFrame(frameId)
+      window.clearTimeout(timeoutId)
+    }
+  }, [absenceFocusRequested, canViewAbsenceBoard, absenceDate, absenceRows.length])
+
   const handleSort = (field: WelcomeSortField) => {
     if (field === sortField) {
       setSortDirection((current) => (current === 'asc' ? 'desc' : 'asc'))
@@ -454,6 +625,105 @@ export function WelcomePage() {
           </div>
         </div>
       </Panel>
+
+      {canViewAbsenceBoard ? (
+        <div id={ABSENCE_BOARD_ID} ref={absenceBoardRef}>
+          <Panel className={`welcome-absence-panel ${isAbsenceBoardFocused ? 'is-focus' : ''}`}>
+            <div className="welcome-absence-panel__head welcome-reveal is-delay-6">
+              <div>
+                <p className="welcome-panel-kicker">GUNLUK DEVAMSIZLIK</p>
+                <h3>{absenceDayLabel} icin devamsizlik panosu</h3>
+                <p>Admin absence bildirimiyle gelen calisanlari sade bir listede buradan takip edebilirsiniz.</p>
+              </div>
+
+              <div className="welcome-absence-panel__actions">
+                <label className="welcome-inline-field">
+                  <span>Tarih</span>
+                  <input
+                    type="date"
+                    value={absenceDate}
+                    onChange={(event) => setAbsenceDate(event.target.value || todayIsoDay)}
+                    className="welcome-filter__control welcome-absence-panel__date"
+                  />
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => setAbsenceDate(todayIsoDay)}
+                  className="welcome-absence-action"
+                >
+                  Bugune don
+                </button>
+
+                <Link
+                  to={`/notifications?notification_type=${TYPE_ABSENCE}&start_date=${absenceDate}&end_date=${absenceDate}`}
+                  className="welcome-absence-action is-primary"
+                >
+                  Bildirim kayitlari
+                </Link>
+              </div>
+            </div>
+
+            {absenceJobsQuery.isPending ? (
+              <div className="welcome-absence-loading">Devamsizlik kayitlari yukleniyor...</div>
+            ) : absenceJobsQuery.isError ? (
+              <ErrorBlock message="Gunluk devamsizlik panosu yuklenemedi." />
+            ) : (
+              <>
+                <div className="welcome-absence-summary">
+                  <article className="welcome-absence-metric">
+                    <span>Kayitli calisan</span>
+                    <strong>{absenceRows.length}</strong>
+                  </article>
+                  <article className="welcome-absence-metric">
+                    <span>Departman yayilimi</span>
+                    <strong>{absenceDepartmentCount}</strong>
+                  </article>
+                  <article className="welcome-absence-metric">
+                    <span>Teslim / bekleyen</span>
+                    <strong>
+                      {absenceDeliveredCount} / {absencePendingCount}
+                    </strong>
+                  </article>
+                </div>
+
+                {absenceRows.length ? (
+                  <div className="welcome-absence-list">
+                    {absenceRows.map((row) => (
+                      <article key={`${row.jobId}-${row.employeeId ?? 'na'}`} className="welcome-absence-card">
+                        <div className="welcome-absence-card__body">
+                          <span className="welcome-absence-card__eyebrow">{row.departmentName}</span>
+                          <strong>{row.fullName}</strong>
+                          <p>{row.shiftWindow}</p>
+                        </div>
+
+                        <div className="welcome-absence-card__meta">
+                          <span>#{row.employeeId ?? row.jobId}</span>
+                          <span
+                            className={`welcome-status ${
+                              row.status === 'SENT'
+                                ? 'is-verified'
+                                : row.status === 'PENDING' || row.status === 'SENDING'
+                                  ? 'is-waiting'
+                                  : 'is-muted'
+                            }`}
+                          >
+                            {row.status}
+                          </span>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="welcome-empty welcome-absence-empty">
+                    {absenceDayLabel} icin admin devamsizlik kaydi bulunmuyor.
+                  </div>
+                )}
+              </>
+            )}
+          </Panel>
+        </div>
+      ) : null}
 
       <Panel className="welcome-table-panel">
         <div className="welcome-table-panel__head welcome-reveal is-delay-6">
