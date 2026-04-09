@@ -64,6 +64,7 @@ DEFAULT_OVERTIME_GRACE_MINUTES = 0
 DEFAULT_OFF_SHIFT_TOLERANCE_MINUTES = 0
 OVERTIME_WARNING_HOURS = 3
 OVERTIME_MAX_HOURS = 6
+ABSENCE_DAILY_SUMMARY_HOUR_LOCAL = 16
 LATE_STREAK_ESCALATION_DAYS = 2
 LATE_STREAK_CRITICAL_DAYS = 3
 LATE_STREAK_LOOKBACK_DAYS = 14
@@ -947,8 +948,9 @@ def _schedule_absence(
 ) -> None:
     if assessment.first_checkin_ts_utc is not None or assessment.has_any_activity or assessment.shift_start_local_dt is None:
         return
-    trigger_utc = (
-        assessment.shift_start_local_dt + timedelta(hours=1)
+    trigger_utc = datetime.combine(
+        assessment.local_day,
+        time(hour=ABSENCE_DAILY_SUMMARY_HOUR_LOCAL, tzinfo=_attendance_timezone()),
     ).astimezone(timezone.utc)
     if now_utc < trigger_utc:
         return

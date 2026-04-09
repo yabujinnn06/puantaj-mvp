@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import date, datetime, time, timezone, timedelta
+from unittest.mock import patch
 
 from app.models import AttendanceEvent, AttendanceType, DepartmentShift, Employee, LocationStatus, NotificationJob
 from app.services.attendance_notification_monitor import (
@@ -290,7 +291,7 @@ class AttendanceNotificationMonitorTests(unittest.TestCase):
         self.assertEqual(admin_job.risk_level, "Kritik")
         self.assertEqual(admin_job.payload.get("late_streak_days"), 3)
 
-    def test_absence_triggers_one_hour_after_shift_start_for_admin_only(self) -> None:
+    def test_absence_triggers_daily_admin_summary_at_1600_for_admin_only(self) -> None:
         session = _DummySession(scalar_values=[None])
         assessment = _build_assessment(
             override_active=False,
@@ -300,25 +301,26 @@ class AttendanceNotificationMonitorTests(unittest.TestCase):
         )
         created_jobs: list[NotificationJob] = []
 
-        _schedule_absence(
-            session,  # type: ignore[arg-type]
-            created_jobs=created_jobs,
-            assessment=assessment,
-            now_utc=datetime(2026, 3, 1, 10, 59, tzinfo=timezone.utc),
-        )
-        self.assertEqual(created_jobs, [])
+        with patch("app.services.attendance_notification_monitor._attendance_timezone", return_value=timezone.utc):
+            _schedule_absence(
+                session,  # type: ignore[arg-type]
+                created_jobs=created_jobs,
+                assessment=assessment,
+                now_utc=datetime(2026, 3, 1, 15, 59, tzinfo=timezone.utc),
+            )
+            self.assertEqual(created_jobs, [])
 
-        _schedule_absence(
-            session,  # type: ignore[arg-type]
-            created_jobs=created_jobs,
-            assessment=assessment,
-            now_utc=datetime(2026, 3, 1, 11, 0, tzinfo=timezone.utc),
-        )
+            _schedule_absence(
+                session,  # type: ignore[arg-type]
+                created_jobs=created_jobs,
+                assessment=assessment,
+                now_utc=datetime(2026, 3, 1, 16, 0, tzinfo=timezone.utc),
+            )
 
         self.assertEqual(len(created_jobs), 1)
         self.assertTrue(all(job.notification_type == TYPE_ABSENCE for job in created_jobs))
         self.assertEqual({job.audience for job in created_jobs}, {AUDIENCE_ADMIN})
-        self.assertTrue(all(job.scheduled_at_utc == datetime(2026, 3, 1, 11, 0, tzinfo=timezone.utc) for job in created_jobs))
+        self.assertTrue(all(job.scheduled_at_utc == datetime(2026, 3, 1, 16, 0, tzinfo=timezone.utc) for job in created_jobs))
 
 
 if __name__ == "__main__":
